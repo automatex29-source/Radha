@@ -42,8 +42,8 @@ export default function MessageBubble({ message, streaming }) {
         <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-[#222738] bg-[#141721] px-4 py-3 text-[0.95rem] leading-relaxed text-foreground sm:px-5">
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary">
-          <User className="h-4 w-4 text-muted-foreground" />
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#2E364A] bg-[#1D2230]">
+          <User className="h-4 w-4 text-[#A5B4FC]" />
         </div>
       </div>
     );
