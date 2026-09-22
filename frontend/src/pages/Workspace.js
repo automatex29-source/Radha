@@ -1,0 +1,296 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { api, API, getToken, formatApiError } from "@/lib/api";
+import Sidebar from "@/components/Sidebar";
+import MessageBubble from "@/components/MessageBubble";
+import ComposerInput from "@/components/ComposerInput";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
+import { Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2 } from "lucide-react";
+
+const STARTERS = [
+  { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
+  { icon: Braces, title: "Refactor an async Python service", prompt: "Show me how to structure a clean, testable async Python service that calls an external API with retries." },
+  { icon: Network, title: "Design a vector search pipeline", prompt: "Design a distributed vector search pipeline for semantic document retrieval. Cover ingestion, embedding, storage and querying." },
+];
+
+export default function Workspace() {
+  const [conversations, setConversations] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const [streamText, setStreamText] = useState("");
+  const [loadingConv, setLoadingConv] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [models, setModels] = useState([]);
+  const [model, setModel] = useState(null);
+
+  const scrollRef = useRef(null);
+  const abortRef = useRef(null);
+  const streamTextRef = useRef("");
+
+  const activeConv = conversations.find((c) => c.id === activeId);
+
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    });
+  }, []);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const { data } = await api.get("/conversations");
+      setConversations(data);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConversations();
+    api.get("/models").then(({ data }) => {
+      setModels(data.models);
+      setModel(data.default);
+    }).catch(() => {});
+  }, [loadConversations]);
+
+  useEffect(() => { scrollToBottom(); }, [messages, streamText, scrollToBottom]);
+
+  const openConversation = async (id) => {
+    setActiveId(id);
+    setSidebarOpen(false);
+    setLoadingConv(true);
+    try {
+      const { data } = await api.get(`/conversations/${id}`);
+      setMessages(data.messages);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setLoadingConv(false);
+    }
+  };
+
+  const newConversation = () => {
+    setActiveId(null);
+    setMessages([]);
+    setSidebarOpen(false);
+  };
+
+  const deleteConversation = async (id) => {
+    try {
+      await api.delete(`/conversations/${id}`);
+      setConversations((c) => c.filter((x) => x.id !== id));
+      if (activeId === id) newConversation();
+      toast.success("Conversation deleted");
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  };
+
+  const renameConversation = async (id, title) => {
+    try {
+      const { data } = await api.patch(`/conversations/${id}`, { title });
+      setConversations((c) => c.map((x) => (x.id === id ? { ...x, title: data.title } : x)));
+      toast.success("Renamed");
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  };
+
+  const stopGeneration = () => {
+    if (abortRef.current) abortRef.current.abort();
+  };
+
+  const sendMessage = async (text) => {
+    const content = (text ?? input).trim();
+    if (!content || streaming) return;
+
+    let convId = activeId;
+    // Create a conversation lazily on the first message.
+    if (!convId) {
+      try {
+        const { data } = await api.post("/conversations", {});
+        convId = data.id;
+        setActiveId(convId);
+        setConversations((c) => [data, ...c]);
+      } catch (e) {
+        toast.error(formatApiError(e));
+        return;
+      }
+    }
+
+    const userMsg = { id: `tmp-${Date.now()}`, role: "user", content, conversationId: convId };
+    setMessages((m) => [...m, userMsg]);
+    setInput("");
+    setStreaming(true);
+    setStreamText("");
+    streamTextRef.current = "";
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const res = await fetch(`${API}/conversations/${convId}/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ content, model }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to reach RADHA");
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        for (const evt of events) {
+          const lines = evt.split("\n");
+          let eventName = "message";
+          let dataStr = "";
+          for (const line of lines) {
+            if (line.startsWith("event:")) eventName = line.slice(6).trim();
+            else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
+          }
+          if (eventName === "error") {
+            throw new Error(JSON.parse(dataStr || '"Stream error"'));
+          }
+          if (eventName === "done") continue;
+          if (dataStr) {
+            const delta = JSON.parse(dataStr);
+            streamTextRef.current += delta;
+            setStreamText(streamTextRef.current);
+          }
+        }
+      }
+    } catch (e) {
+      if (e.name !== "AbortError") toast.error(e.message || "Something went wrong");
+    } finally {
+      abortRef.current = null;
+      setStreaming(false);
+      // Persist final assistant message locally and refresh from server for accurate ids.
+      const finalText = streamTextRef.current;
+      if (finalText) {
+        setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model }]);
+      }
+      setStreamText("");
+      // Sync ordering/titles from server.
+      try {
+        const { data } = await api.get(`/conversations/${convId}`);
+        setMessages(data.messages);
+      } catch { /* keep local */ }
+      loadConversations();
+    }
+  };
+
+  return (
+    <div className="flex h-screen w-full overflow-hidden bg-background">
+      {/* Desktop sidebar */}
+      <div className="hidden lg:block">
+        <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
+          onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation} onCollapse={() => {}} />
+      </div>
+
+      {/* Mobile drawer */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
+          <div className="absolute left-0 top-0 h-full">
+            <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
+              onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation} onCollapse={() => setSidebarOpen(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* Main */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Top bar */}
+        <header data-testid="chat-workspace-header" className="z-40 flex items-center justify-between border-b border-border bg-background/80 px-4 py-3 backdrop-blur-xl">
+          <div className="flex min-w-0 items-center gap-3">
+            <button onClick={() => setSidebarOpen(true)} className="text-muted-foreground hover:text-foreground lg:hidden">
+              <PanelLeft className="h-5 w-5" />
+            </button>
+            <h1 data-testid="active-conversation-title" className="truncate text-sm font-semibold tracking-tight">
+              {activeConv ? activeConv.title : "New conversation"}
+            </h1>
+          </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" data-testid="model-selector-dropdown" className="gap-2 border-border bg-card">
+                <Cpu className="h-3.5 w-3.5 text-primary" />
+                <span className="text-xs font-medium">{models.find((m) => m.id === model)?.label || "Model"}</span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {models.map((m) => (
+                <DropdownMenuItem key={m.id} data-testid={`model-option-${m.id}`} onClick={() => setModel(m.id)} className="flex-col items-start gap-0.5">
+                  <span className="text-sm font-medium">{m.label}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">{m.id}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
+
+        {/* Messages */}
+        <div ref={scrollRef} className="radha-scroll flex-1 overflow-y-auto">
+          {loadingConv ? (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : messages.length === 0 && !streaming ? (
+            <EmptyState onPick={(p) => sendMessage(p)} />
+          ) : (
+            <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
+              {messages.map((m) => <MessageBubble key={m.id} message={m} />)}
+              {streaming && (
+                <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model }} streaming />
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Composer */}
+        <ComposerInput value={input} onChange={setInput} onSend={() => sendMessage()} onStop={stopGeneration} streaming={streaming} disabled={loadingConv} />
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ onPick }) {
+  return (
+    <div data-testid="empty-state-welcome" className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4">
+      <div className="radha-fade-up flex flex-col items-center text-center">
+        <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-[0_0_40px_rgba(99,102,241,0.5)]">
+          <Sparkles className="h-7 w-7 text-white" />
+        </div>
+        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">How can RADHA help today?</h2>
+        <p className="mt-2 max-w-md text-sm text-muted-foreground">
+          A premium AI workspace by A.utomateX. Start a conversation — everything is saved and reloadable.
+        </p>
+      </div>
+      <div className="radha-fade-up mt-8 grid w-full gap-3 sm:grid-cols-3">
+        {STARTERS.map((s, i) => (
+          <button key={i} data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
+            className="group rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/50 hover:bg-[#171B26]">
+            <s.icon className="mb-3 h-5 w-5 text-primary" />
+            <p className="text-sm font-medium leading-snug text-foreground">{s.title}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

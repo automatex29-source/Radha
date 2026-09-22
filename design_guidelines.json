@@ -1,0 +1,156 @@
+{
+  "project_name": "RADHA AI Workspace by A.utomateX",
+  "archetype": "The Swiss Precision & Obsidian Studio (Dark AI Cognitive Workspace)",
+  "emotional_tone": "Stealth luxury, intellectual precision, high-velocity cognitive workspace, authoritative and calm",
+  "theme": "dark",
+  "typography": {
+    "google_fonts_url": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&display=swap",
+    "heading_font": "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+    "body_font": "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+    "mono_font": "'JetBrains Mono', monospace",
+    "editorial_accent_font": "'Newsreader', serif",
+    "rules": {
+      "anti_default": "Never use Inter for headings. Keep headings in Plus Jakarta Sans with tight tracking (tracking-tight or tracking-tighter).",
+      "h1_limit": "Hero / Primary workspace heading maximum text-4xl sm:text-5xl (never text-7xl or text-8xl).",
+      "h2_limit": "Section / modal headings text-2xl sm:text-3xl font-semibold.",
+      "h3_limit": "Card titles, prompt chips text-lg font-medium.",
+      "code_blocks": "JetBrains Mono with 13px/14px, muted border, syntax highlight background #0B0D13.",
+      "overline_labels": "text-[10px] uppercase font-bold tracking-[0.2em] text-[#8E95A5]"
+    }
+  },
+  "colors": {
+    "background_canvas": "#07080B",
+    "sidebar_background": "#0B0D12",
+    "surface_elevated": "#11141D",
+    "surface_elevated_hover": "#171B26",
+    "surface_active": "#1D2230",
+    "border_subtle": "#1E2330",
+    "border_active": "#2E364A",
+    "border_highlight": "rgba(99, 102, 241, 0.4)",
+    "text_primary": "#F3F4F6",
+    "text_secondary": "#9CA3AF",
+    "text_muted": "#64748B",
+    "accent_brand_primary": "#6366F1",
+    "accent_brand_glow": "rgba(99, 102, 241, 0.15)",
+    "accent_brand_cyan": "#06B6D4",
+    "accent_brand_emerald": "#10B981",
+    "accent_destructive": "#EF4444",
+    "forbidden_colors": ["#7351B7", "#1B93A4", "pure #000000 as flat fills", "full-screen rainbow gradients"],
+    "contrast_notice": "Every button and badge must guarantee minimum 4.5:1 APCA/WCAG contrast. Hover colors must explicitly set both text and background."
+  },
+  "surface_strategy": {
+    "sidebar": "1px solid #1E2330 border-r, background #0B0D12 with subtle vertical micro-texture. Never fully transparent.",
+    "top_navbar": "Solid #07080B with 80% opacity and backdrop-blur-xl, 1px bottom border #1E2330, z-index 40. Never transparent.",
+    "chat_container": "Centered reading column (max-w-3xl or max-w-4xl) with generous top/bottom padding.",
+    "user_message_bubble": "Background #141721 with 1px border #222738, crisp rounded-2xl p-4 sm:p-5 text-[#F3F4F6].",
+    "ai_message_stream": "Cardless editorial flow with subtle left accent line or crisp avatar, markdown formatting, syntax highlighted code blocks with copy-to-clipboard button.",
+    "input_dock": "Floating bottom dock with #11141D elevated surface, 1px border #222738, subtle ring focus #6366F1, multiline auto-expand textarea, tool action icons, and lightning send CTA."
+  },
+  "visual_enhancers": {
+    "ambient_glow": "Subtle top radial gradient: radial-gradient(ellipse 60% 40% at 50% -10%, rgba(99,102,241,0.08), transparent 70%)",
+    "subtle_grid_lines": "Optional faint 32px grid pattern with opacity 0.03 for architectural engineering feel",
+    "streaming_cursor": "Animated blinking pulse cursor (w-2 h-4 bg-indigo-400 inline-block align-middle ml-1)",
+    "badge_style": "px-2 py-0.5 rounded-full text-[11px] font-mono tracking-wide bg-[#171B26] border border-[#262C3E] text-[#A5B4FC]"
+  },
+  "image_urls": {
+    "brand_hero_abstract": {
+      "url": "https://images.unsplash.com/photo-1637946175559-22c4fe13fc54?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwyfHxtaW5pbWFsaXN0JTIwZGFyayUyMHRlY2hub2xvZ3klMjBhYnN0cmFjdHxlbnwwfHx8fDE3OTAwNTg4MjF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Curved black architectural fins creating a rhythmic pattern against dark background - used in Auth modal / Welcome banner",
+      "category": "branding"
+    },
+    "brand_abstract_mesh": {
+      "url": "https://images.unsplash.com/photo-1678366633407-7f49da199a42?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwZGFyayUyMHRlY2hub2xvZ3klMjBhYnN0cmFjdHxlbnwwfHx8fDE3OTAwNTg4MjF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Curved dark ribbons with soft highlights for login showcase backdrop",
+      "category": "auth"
+    },
+    "avatar_placeholder": {
+      "url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHxzbGVlayUyMGF2YXRhciUyMHBvcnRyYWl0JTIwdGVjaHxlbnwwfHx8fDE3OTAwNTg4MjV8MA&ixlib=rb-4.1.0&q=85",
+      "description": "User profile avatar image",
+      "category": "user_avatar"
+    }
+  },
+  "component_structure": {
+    "AuthModalOrPage": {
+      "path": "frontend/src/components/AuthModal.js",
+      "description": "Dual Tab Login & Register with A.utomateX RADHA branding, demo credentials quick-fill buttons, password toggling, error toasts",
+      "test_ids": [
+        "login-email-input",
+        "login-password-input",
+        "login-submit-button",
+        "register-name-input",
+        "register-email-input",
+        "register-password-input",
+        "register-submit-button",
+        "auth-tab-login",
+        "auth-tab-register",
+        "quick-demo-login-button"
+      ]
+    },
+    "Sidebar": {
+      "path": "frontend/src/components/Sidebar.js",
+      "description": "Collapsible sidebar with A.utomateX brand badge, New Chat button (+ keyboard shortcut pill '⌘K'), search input, grouped conversation list (Today, Yesterday, Previous 7 Days), conversation title editing, delete confirmation, and bottom user profile popover",
+      "test_ids": [
+        "new-chat-button",
+        "conversation-search-input",
+        "conversation-item-{id}",
+        "delete-conversation-button-{id}",
+        "rename-conversation-button-{id}",
+        "sidebar-toggle-button",
+        "user-profile-menu-button",
+        "user-logout-button"
+      ]
+    },
+    "ChatWorkspace": {
+      "path": "frontend/src/components/ChatWorkspace.js",
+      "description": "Main area with persistent session state, streaming response state with auto-scroll and stop generation button, welcome empty state with high-value prompt starter cards",
+      "test_ids": [
+        "chat-workspace-header",
+        "active-conversation-title",
+        "model-selector-dropdown",
+        "message-list-container",
+        "empty-state-welcome",
+        "prompt-starter-card-0",
+        "prompt-starter-card-1",
+        "prompt-starter-card-2",
+        "export-conversation-button"
+      ]
+    },
+    "MessageBubble": {
+      "path": "frontend/src/components/MessageBubble.js",
+      "description": "Renders user messages with crisp avatar & bubble, and RADHA assistant responses with markdown parsing, code copy button, timestamp, and token/model meta pill",
+      "test_ids": [
+        "user-message-item-{id}",
+        "ai-message-item-{id}",
+        "copy-code-button",
+        "copy-message-button-{id}"
+      ]
+    },
+    "ComposerInput": {
+      "path": "frontend/src/components/ComposerInput.js",
+      "description": "Ergonomic multiline textarea that expands up to 200px, Shift+Enter for newline, Enter to send, model capability pills, quick clear, file/context attachment mock pill, and Stop/Send button",
+      "test_ids": [
+        "message-composer-textarea",
+        "send-message-button",
+        "stop-generation-button",
+        "clear-composer-button"
+      ]
+    }
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "core_imperatives": [
+      "Keep everything strictly in dark mode matching the Obsidian Studio theme (#07080B background, #11141D elevated surfaces, #1E2330 borders).",
+      "Do NOT use pure #000000 flat black or bright purple gradient (#7351B7 is forbidden).",
+      "Ensure all buttons, inputs, dropdowns, and message items have data-testid attributes for testing.",
+      "The app is using React JS (.js / .jsx), NOT .tsx files. Write pure JavaScript with JSX.",
+      "Streaming must feel immediate with a live blinking indicator and smooth progressive scroll.",
+      "Conversations MUST persist in backend SQLite/PostgreSQL database via FastAPI endpoints and reload seamlessly.",
+      "Provide pre-filled demo accounts so judges or users can test in 1 click without typing credentials."
+    ],
+    "ux_details": [
+      "Include a prompt starter grid when no messages exist in the conversation (e.g. 'Synthesize executive summary', 'Refactor async Python service', 'Design distributed vector pipeline').",
+      "Add a model picker toggle (e.g., 'RADHA Omni-4' / 'RADHA DeepThink') in the top bar to give that serious enterprise AI tool feel.",
+      "Add a copy button to code blocks and full AI responses.",
+      "Use sonner for non-blocking elegant toasts for errors, saves, deletions, and auth actions."
+    ]
+  }
+}
