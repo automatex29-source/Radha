@@ -3,7 +3,6 @@ import { createRequire } from "node:module";
 import { defineConfig, loadEnv, transformWithOxc } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { visualEdits } from "@emergentbase/visual-edits/vite";
 
 const require = createRequire(import.meta.url);
 
@@ -75,17 +74,30 @@ if (!hotReloadDisabled) {
   process.env.CHOKIDAR_USEPOLLING = "true";
 }
 
+// Emergent's visual-edits plugin is only installed on Emergent; everywhere else the
+// build simply runs without it.
+async function loadVisualEdits() {
+  if (visualEditsDisabled) return null;
+  try {
+    const mod = await import("@emergentbase/visual-edits/vite");
+    return mod.visualEdits();
+  } catch {
+    return null;
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(async ({ mode, command }) => {
   const env = loadEnv(mode, __dirname, ["REACT_APP_", "VITE_"]);
   const emergentOverlay = await loadEmergentOverlay();
+  const visualEditsPlugin = await loadVisualEdits();
   return {
     plugins: [
       // Visual-edit tagging is dev-server-only, matching the package's own apply: serve.
-      jsxInJs({ tagForVisualEdits: command === "serve" && !visualEditsDisabled }),
+      jsxInJs({ tagForVisualEdits: command === "serve" && !!visualEditsPlugin }),
       react(),
       tailwindcss(),
-      ...(visualEditsDisabled ? [] : [visualEdits()]),
+      ...(visualEditsPlugin ? [visualEditsPlugin] : []),
       // No isServe guard: this factory takes no ConfigEnv arg, so build purity here rests
       // on the package's own `apply: "serve"`.
       ...(emergentOverlay ? [emergentOverlay] : []),

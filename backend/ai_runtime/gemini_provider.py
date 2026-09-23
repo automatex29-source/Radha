@@ -1,9 +1,9 @@
-"""Gemini provider backed by the Emergent LLM integration."""
+"""Gemini provider (Emergent LLM integration, or LiteLLM with your own key)."""
 from typing import AsyncIterator
 
 from .base import ModelProvider
 from .types import AIRequest
-from ._emergent import stream_via_emergent
+from ._backend import stream_text
 
 _MODELS = {"gemini-3-flash-preview", "gemini-3.1-pro-preview", "gemini-2.5-flash"}
 
@@ -18,5 +18,5 @@ class GeminiProvider(ModelProvider):
         return model in _MODELS
 
     async def stream(self, request: AIRequest) -> AsyncIterator[str]:
-        async for delta in stream_via_emergent(self._api_key, "gemini", request):
+        async for delta in stream_text(self._api_key, "gemini", request):
             yield delta
