@@ -48,3 +48,12 @@ Build RADHA, the first AI product of A.utomateX: a real, working AI workspace (n
 ## Next Tasks
 - Add file upload + document Q&A (object storage) as the first "knowledge" capability.
 - Register a second provider to prove multi-model routing.
+
+## Phase 4 — Agent, vision and voice
+- **Agent tool-use framework** (`backend/agent/`): `ToolRegistry` + `run_agent` loop (max 8 steps, last step forces an answer). Tools: `web_search` (Tavily or DuckDuckGo), `fetch_url` (SSRF-guarded), `run_python` (sandbox: rlimits, timeout, no network via `unshare -rn` when available, drops to `nobody`), `generate_image`. Streams SSE `tool` / `tool_result` events; steps + produced media saved on the assistant message.
+- **LLM path**: agent turns and any conversation with images go through LiteLLM (`agent/llm.py`) with provider keys or `LLM_GATEWAY_URL`; plain chat still uses the Emergent router.
+- **Vision**: `POST /api/media` (images), message `images: [mediaId]`, sent as image parts.
+- **Voice**: `POST /api/audio/transcribe`, `POST /api/audio/speech` (OpenAI). UI: mic dictation, "Listen" on replies, hands-free Voice mode (silence detection).
+- **Media store**: `media` collection (≤12MB/item), served by `GET /api/media/{id}?auth=`.
+- **Capabilities**: `GET /api/capabilities` tells the UI which features are configured.
+- **Next phases**: video generation/understanding, browser automation, automations/workflows, app builder + virtual FS, test runner, live preview, deployment, git.

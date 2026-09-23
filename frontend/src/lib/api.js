@@ -18,6 +18,10 @@ export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
 export const api = axios.create({ baseURL: API });
 
+// <img>/<audio>/download links can't send headers, so media URLs carry the token.
+export const mediaUrl = (path) =>
+  `${BACKEND_URL}${path}${path.includes("?") ? "&" : "?"}auth=${encodeURIComponent(getToken() || "")}`;
+
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;

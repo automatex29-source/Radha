@@ -5,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import IconRail from "@/components/IconRail";
 import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
+import VoiceMode from "@/components/VoiceMode";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -36,11 +37,30 @@ export default function Workspace() {
   const [streamSources, setStreamSources] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [pendingImages, setPendingImages] = useState([]);
+  const [streamSteps, setStreamSteps] = useState([]);
+  const [caps, setCaps] = useState(null);
+  const [agentMode, setAgentMode] = useState(() => {
+    try { return localStorage.getItem("radha_agent_mode") === "1"; } catch { return false; }
+  });
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
   const streamTextRef = useRef("");
   const streamSourcesRef = useRef([]);
+  const streamStepsRef = useRef([]);
+
+  const agentAvailable = !!(caps && model && caps.agent?.[model]);
+  const voiceEnabled = !!caps?.voice;
+
+  const toggleAgent = () => {
+    setAgentMode((on) => {
+      const next = !on;
+      try { localStorage.setItem("radha_agent_mode", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const activeConv = conversations.find((c) => c.id === activeId);
 
@@ -65,6 +85,7 @@ export default function Workspace() {
       setModels(data.models);
       setModel(data.default);
     }).catch(() => {});
+    api.get("/capabilities").then(({ data }) => setCaps(data)).catch(() => {});
   }, [loadConversations]);
 
   useEffect(() => { scrollToBottom(); }, [messages, streamText, scrollToBottom]);
@@ -117,6 +138,7 @@ export default function Workspace() {
     setActiveId(null);
     setMessages([]);
     setAttachments([]);
+    setPendingImages([]);
     setSidebarOpen(false);
     setSearchParams((sp) => {
       const n = new URLSearchParams();
@@ -176,8 +198,10 @@ export default function Workspace() {
     setStreaming(true);
     setStreamText("");
     setStreamSources([]);
+    setStreamSteps([]);
     streamTextRef.current = "";
     streamSourcesRef.current = [];
+    streamStepsRef.current = [];
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -218,6 +242,14 @@ export default function Workspace() {
             setStreamSources(streamSourcesRef.current);
             continue;
           }
+          if (eventName === "tool" || eventName === "tool_result") {
+            const step = JSON.parse(dataStr);
+            const others = streamStepsRef.current.filter((s) => s.id !== step.id);
+            streamStepsRef.current = eventName === "tool" ? [...others, step]
+              : streamStepsRef.current.map((s) => (s.id === step.id ? step : s));
+            setStreamSteps(streamStepsRef.current);
+            continue;
+          }
           if (eventName === "done") continue;
           if (dataStr) {
             streamTextRef.current += JSON.parse(dataStr);
@@ -231,11 +263,14 @@ export default function Workspace() {
       abortRef.current = null;
       setStreaming(false);
       const finalText = streamTextRef.current;
-      if (finalText) {
-        setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model, sources: streamSourcesRef.current.length ? streamSourcesRef.current : null }]);
+      if (finalText || streamStepsRef.current.length) {
+        setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model,
+          sources: streamSourcesRef.current.length ? streamSourcesRef.current : null,
+          steps: streamStepsRef.current, media: streamStepsRef.current.flatMap((s) => s.media || []) }]);
       }
       setStreamText("");
       setStreamSources([]);
+      setStreamSteps([]);
       // Sync ordering/titles/ids from server.
       try {
         const { data } = await api.get(`/conversations/${convId}`);
@@ -243,6 +278,7 @@ export default function Workspace() {
       } catch { /* keep local */ }
       loadConversations();
     }
+    return streamTextRef.current;
   };
 
   const ensureConversation = async () => {
@@ -259,7 +295,24 @@ export default function Workspace() {
     return data.id;
   };
 
+  const attachImage = async (file) => {
+    setUploading(true);
+    try {
+      const convId = await ensureConversation();
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("conversationId", convId);
+      const { data } = await api.post("/media", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setPendingImages((imgs) => [...imgs, data]);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const attachFile = async (file) => {
+    if (file.type?.startsWith("image/")) return attachImage(file);
     setUploading(true);
     try {
       const convId = await ensureConversation();
@@ -282,21 +335,28 @@ export default function Workspace() {
   };
 
   const sendMessage = async (text) => {
-    const content = (text ?? input).trim();
-    if (!content || streaming) return;
+    const images = text === undefined ? pendingImages : [];
+    const content = (text ?? input).trim() || (images.length ? "What's in this image?" : "");
+    if (!content || streaming) return "";
 
     let convId;
     try {
       convId = await ensureConversation();
     } catch (e) {
       toast.error(formatApiError(e));
-      return;
+      return "";
     }
 
-    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, conversationId: convId }]);
-    setInput("");
-    await runStream(`${API}/conversations/${convId}/stream`, { content, model }, convId);
+    const imageIds = images.map((i) => i.id);
+    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
+    if (text === undefined) { setInput(""); setPendingImages([]); }
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentMode && agentAvailable }, convId);
   };
+
+  // Voice mode keeps its first callback for the whole session; route through a ref
+  // so each utterance uses the current conversation, model and agent setting.
+  const sendRef = useRef(sendMessage);
+  sendRef.current = sendMessage;
 
   const regenerate = async () => {
     if (!activeId || streaming) return;
@@ -305,7 +365,7 @@ export default function Workspace() {
       if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
       return copy;
     });
-    await runStream(`${API}/conversations/${activeId}/regenerate`, { model }, activeId);
+    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentMode && agentAvailable }, activeId);
   };
 
   return (
@@ -384,9 +444,10 @@ export default function Workspace() {
             <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
-              {messages.map((m) => <MessageBubble key={m.id} message={m} />)}
+              {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={voiceEnabled} />)}
               {streaming && (
-                <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources }} streaming />
+                <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
+                  steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
                 <div className="flex justify-center pt-1">
@@ -403,8 +464,14 @@ export default function Workspace() {
         {/* Composer */}
         <ComposerInput value={input} onChange={setInput} onSend={() => sendMessage()} onStop={stopGeneration}
           streaming={streaming} disabled={loadingConv}
-          onAttach={attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading} />
+          onAttach={attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
+          images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
+          agentMode={agentMode && agentAvailable} onToggleAgent={toggleAgent} agentAvailable={agentAvailable}
+          agentHint="Agent mode needs a provider API key for this model on the backend"
+          voiceEnabled={voiceEnabled} voiceHint="Voice needs OPENAI_API_KEY on the backend"
+          onVoiceMode={() => setVoiceOpen(true)} />
       </div>
+      {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onUtterance={(t) => sendRef.current(t)} />}
     </div>
   );
 }
