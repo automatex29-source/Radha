@@ -8,7 +8,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download } from "lucide-react";
+import { Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw } from "lucide-react";
 
 const STARTERS = [
   { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
@@ -126,39 +126,18 @@ export default function Workspace() {
     toast.success("Conversation exported");
   };
 
-  const sendMessage = async (text) => {
-    const content = (text ?? input).trim();
-    if (!content || streaming) return;
-
-    let convId = activeId;
-    // Create a conversation lazily on the first message.
-    if (!convId) {
-      try {
-        const { data } = await api.post("/conversations", {});
-        convId = data.id;
-        setActiveId(convId);
-        setConversations((c) => [data, ...c]);
-      } catch (e) {
-        toast.error(formatApiError(e));
-        return;
-      }
-    }
-
-    const userMsg = { id: `tmp-${Date.now()}`, role: "user", content, conversationId: convId };
-    setMessages((m) => [...m, userMsg]);
-    setInput("");
+  const runStream = async (url, body, convId) => {
     setStreaming(true);
     setStreamText("");
     streamTextRef.current = "";
-
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
-      const res = await fetch(`${API}/conversations/${convId}/stream`, {
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ content, model }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -185,13 +164,10 @@ export default function Workspace() {
             if (line.startsWith("event:")) eventName = line.slice(6).trim();
             else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
           }
-          if (eventName === "error") {
-            throw new Error(JSON.parse(dataStr || '"Stream error"'));
-          }
+          if (eventName === "error") throw new Error(JSON.parse(dataStr || '"Stream error"'));
           if (eventName === "done") continue;
           if (dataStr) {
-            const delta = JSON.parse(dataStr);
-            streamTextRef.current += delta;
+            streamTextRef.current += JSON.parse(dataStr);
             setStreamText(streamTextRef.current);
           }
         }
@@ -201,19 +177,51 @@ export default function Workspace() {
     } finally {
       abortRef.current = null;
       setStreaming(false);
-      // Persist final assistant message locally and refresh from server for accurate ids.
       const finalText = streamTextRef.current;
       if (finalText) {
         setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model }]);
       }
       setStreamText("");
-      // Sync ordering/titles from server.
+      // Sync ordering/titles/ids from server.
       try {
         const { data } = await api.get(`/conversations/${convId}`);
         setMessages(data.messages);
       } catch { /* keep local */ }
       loadConversations();
     }
+  };
+
+  const sendMessage = async (text) => {
+    const content = (text ?? input).trim();
+    if (!content || streaming) return;
+
+    let convId = activeId;
+    // Create a conversation lazily on the first message.
+    if (!convId) {
+      try {
+        const { data } = await api.post("/conversations", {});
+        convId = data.id;
+        setActiveId(convId);
+        setConversations((c) => [data, ...c]);
+      } catch (e) {
+        toast.error(formatApiError(e));
+        return;
+      }
+    }
+
+    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, conversationId: convId }]);
+    setInput("");
+    await runStream(`${API}/conversations/${convId}/stream`, { content, model }, convId);
+  };
+
+  const regenerate = async () => {
+    if (!activeId || streaming) return;
+    setMessages((m) => {
+      const copy = [...m];
+      if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
+      return copy;
+    });
+    await runStream(`${API}/conversations/${activeId}/regenerate`, { model }, activeId);
   };
 
   return (
@@ -288,6 +296,14 @@ export default function Workspace() {
               {messages.map((m) => <MessageBubble key={m.id} message={m} />)}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model }} streaming />
+              )}
+              {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
+                <div className="flex justify-center pt-1">
+                  <Button variant="outline" size="sm" onClick={regenerate} data-testid="regenerate-button"
+                    className="gap-1.5 border-border bg-card text-muted-foreground hover:text-foreground">
+                    <RefreshCw className="h-3.5 w-3.5" /> Regenerate
+                  </Button>
+                </div>
               )}
             </div>
           )}

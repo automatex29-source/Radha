@@ -89,6 +89,10 @@ class MessageIn(BaseModel):
     model: Optional[str] = None
 
 
+class RegenerateIn(BaseModel):
+    model: Optional[str] = None
+
+
 def public_user(doc: dict) -> dict:
     return {
         "id": doc["id"],
@@ -223,44 +227,23 @@ async def delete_conversation(conv_id: str, user_id: str = Depends(current_user_
 
 
 # ------------------------------------------------------------------- streaming
-@api.post("/conversations/{conv_id}/stream")
-async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
-    conv = await _owned_conversation(conv_id, user_id)
-    model = body.model or AI_MODEL
+SYSTEM_PROMPT = (
+    "You are RADHA, the flagship AI assistant built by A.utomateX. "
+    "You are precise, thoughtful, and helpful. Use clean markdown with code blocks where useful."
+)
 
-    ts = now_iso()
-    user_msg = {
-        "id": str(uuid.uuid4()),
-        "conversationId": conv_id,
-        "role": "user",
-        "content": body.content,
-        "model": None,
-        "createdAt": ts,
-    }
-    await db.messages.insert_one(user_msg)
 
-    # Auto-title on first user message.
-    existing_count = await db.messages.count_documents({"conversationId": conv_id})
-    if existing_count == 1 and (conv["title"] in ("New conversation", "", None)):
-        auto_title = body.content.strip().split("\n")[0][:60]
-        await db.conversations.update_one({"id": conv_id}, {"$set": {"title": auto_title}})
+def _stream_response(conv_id: str, model: str) -> StreamingResponse:
+    """Build the SSE response for the current message history of a conversation.
 
-    history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
-    messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs]
-
-    system_prompt = (
-        "You are RADHA, the flagship AI assistant built by A.utomateX. "
-        "You are precise, thoughtful, and helpful. Use clean markdown with code blocks where useful."
-    )
-
-    ai_request = AIRequest(
-        messages=messages,
-        model=model,
-        system=system_prompt,
-        session_id=conv_id,
-    )
+    Assumes the desired history (ending on a user turn) is already persisted.
+    """
 
     async def event_generator():
+        history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
+        messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs]
+        ai_request = AIRequest(messages=messages, model=model, system=SYSTEM_PROMPT, session_id=conv_id)
+
         full = []
         try:
             async for delta in model_router.stream(ai_request):
@@ -291,6 +274,50 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+@api.post("/conversations/{conv_id}/stream")
+async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
+    conv = await _owned_conversation(conv_id, user_id)
+    model = body.model or AI_MODEL
+
+    user_msg = {
+        "id": str(uuid.uuid4()),
+        "conversationId": conv_id,
+        "role": "user",
+        "content": body.content,
+        "model": None,
+        "createdAt": now_iso(),
+    }
+    await db.messages.insert_one(user_msg)
+
+    # Auto-title on first user message.
+    existing_count = await db.messages.count_documents({"conversationId": conv_id})
+    if existing_count == 1 and (conv["title"] in ("New conversation", "", None)):
+        auto_title = body.content.strip().split("\n")[0][:60]
+        await db.conversations.update_one({"id": conv_id}, {"$set": {"title": auto_title}})
+
+    return _stream_response(conv_id, model)
+
+
+@api.post("/conversations/{conv_id}/regenerate")
+async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
+    conv = await _owned_conversation(conv_id, user_id)
+    model = body.model or conv.get("model") or AI_MODEL
+
+    history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
+    if not history_docs:
+        raise HTTPException(status_code=400, detail="Nothing to regenerate")
+
+    # Drop the trailing assistant turn so we re-answer the last user message.
+    if history_docs[-1]["role"] == "assistant":
+        await db.messages.delete_one({"id": history_docs[-1]["id"]})
+
+    remaining = await db.messages.count_documents({"conversationId": conv_id})
+    if remaining == 0:
+        raise HTTPException(status_code=400, detail="Nothing to regenerate")
+
+    return _stream_response(conv_id, model)
 
 
 import json as _json

@@ -34,6 +34,7 @@ Build RADHA, the first AI product of A.utomateX: a real, working AI workspace (n
 - 4 selectable models (RADHA Omni/Swift = Claude, Vision = GPT-5.4, Flash = Gemini) exposed via /api/models and the top-bar model selector. Each verified streaming real tokens with no chat-code changes — proves the provider extensibility from the vision.
 - Per-conversation model memory: conversation stores last-used model, restored on reopen (verified gemini persists).
 - Conversation export to markdown (client-side download) via header Export button.
+- Regenerate reply: POST /conversations/{id}/regenerate drops the trailing assistant turn and re-streams (optionally on a different model). Verified — old answer replaced, re-answered on Gemini. Shared `_stream_response` helper used by both stream + regenerate.
 
 ## Backlog (not built — future foundations already accommodated by architecture)
 - **P1**: Memory/context recall across conversations; file/knowledge upload & retrieval.
