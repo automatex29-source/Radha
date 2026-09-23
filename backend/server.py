@@ -103,6 +103,7 @@ def public_conversation(doc: dict) -> dict:
     return {
         "id": doc["id"],
         "title": doc["title"],
+        "model": doc.get("model"),
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
     }
@@ -181,6 +182,7 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
         "id": str(uuid.uuid4()),
         "userId": user_id,
         "title": (body.title or "New conversation").strip()[:200],
+        "model": AI_MODEL,
         "createdAt": ts,
         "updatedAt": ts,
     }
@@ -280,7 +282,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
                 }
                 await db.messages.insert_one(assistant_msg)
                 await db.conversations.update_one(
-                    {"id": conv_id}, {"$set": {"updatedAt": now_iso()}}
+                    {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": model}}
                 )
                 yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"
 

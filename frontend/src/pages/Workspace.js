@@ -8,7 +8,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2 } from "lucide-react";
+import { Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download } from "lucide-react";
 
 const STARTERS = [
   { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
@@ -66,6 +66,7 @@ export default function Workspace() {
     try {
       const { data } = await api.get(`/conversations/${id}`);
       setMessages(data.messages);
+      if (data.conversation?.model) setModel(data.conversation.model);
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {
@@ -102,6 +103,27 @@ export default function Workspace() {
 
   const stopGeneration = () => {
     if (abortRef.current) abortRef.current.abort();
+  };
+
+  const exportConversation = () => {
+    if (!messages.length) {
+      toast.error("Nothing to export yet");
+      return;
+    }
+    const title = activeConv?.title || "RADHA conversation";
+    const lines = [`# ${title}`, "", `_Exported from RADHA by A.utomateX_`, ""];
+    messages.forEach((m) => {
+      lines.push(m.role === "user" ? "## You" : `## RADHA${m.model ? ` (${m.model})` : ""}`);
+      lines.push("", m.content, "");
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 50)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Conversation exported");
   };
 
   const sendMessage = async (text) => {
@@ -226,7 +248,14 @@ export default function Workspace() {
             </h1>
           </div>
 
-          <DropdownMenu>
+          <div className="flex items-center gap-2">
+            {activeId && messages.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={exportConversation} data-testid="export-conversation-button" className="gap-1.5 text-muted-foreground hover:text-foreground">
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden text-xs sm:inline">Export</span>
+              </Button>
+            )}
+            <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" data-testid="model-selector-dropdown" className="gap-2 border-border bg-card">
                 <Cpu className="h-3.5 w-3.5 text-primary" />
@@ -243,6 +272,7 @@ export default function Workspace() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </header>
 
         {/* Messages */}
