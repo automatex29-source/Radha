@@ -208,7 +208,7 @@ async def register(body: RegisterIn):
 async def login(body: LoginIn):
     email = body.email.lower()
     doc = await db.users.find_one({"email": email})
-    if not doc or not verify_password(body.password, doc["password_hash"]):
+    if not doc or not verify_password(body.password, doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(doc["id"], email)
     return {"token": token, "user": public_user(doc)}

@@ -179,6 +179,11 @@ export default defineConfig(async ({ mode, command }) => {
       allowedHosts: true,
       // Preview probe + /edit-file are cross-origin from the Emergent tab; Vite defaults to localhost-only CORS.
       cors: true,
+      // Same-origin fallback when REACT_APP_BACKEND_URL is not set: forward API calls
+      // to the local FastAPI backend.
+      proxy: {
+        "/api": { target: process.env.BACKEND_PROXY_TARGET || "http://localhost:8001", changeOrigin: true },
+      },
       // No hmr.clientPort override: Vite infers the WS target from window.location, which
       // is correct on both localhost:3000 (smoke) and the https/:443 preview proxy.
       // Build-error rendering: emergent-overlay when it loaded, else Vite's own overlay.
