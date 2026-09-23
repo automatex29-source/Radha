@@ -150,7 +150,8 @@ def public_project(doc: dict) -> dict:
 def public_file(doc: dict) -> dict:
     return {
         "id": doc["id"],
-        "projectId": doc["projectId"],
+        "projectId": doc.get("projectId"),
+        "conversationId": doc.get("conversationId"),
         "filename": doc["original_filename"],
         "contentType": doc.get("content_type"),
         "size": doc.get("size"),
@@ -334,27 +335,30 @@ def _stream_response(conv_id: str, model: str) -> StreamingResponse:
             if proj and proj.get("instructions"):
                 system_parts.append(f"Project instructions:\n{proj['instructions']}")
 
-            # RAG retrieval over the project's document chunks.
-            if last_user:
-                chunk_docs = await db.chunks.find({"userId": user_id, "projectId": project_id}).to_list(5000)
-                if chunk_docs:
-                    try:
-                        qvec = embeddings.embed_query(last_user)
-                        top = embeddings.cosine_rank(qvec, chunk_docs, top_k=5, threshold=0.3)
-                        if top:
-                            ctx = "\n\n".join(f"[{c['fileName']}] {c['text']}" for c in top)
-                            system_parts.append(
-                                "Use the following context from the user's uploaded documents to answer. "
-                                "Cite the source file names in [brackets]. If the answer is not in the context, say so.\n\n"
-                                + ctx
-                            )
-                            seen = set()
-                            for c in top:
-                                if c["fileName"] not in seen:
-                                    seen.add(c["fileName"])
-                                    sources.append({"fileName": c["fileName"], "score": c["score"]})
-                    except Exception:
-                        logger.exception("RAG retrieval failed")
+        # RAG retrieval over project documents AND files attached to this chat.
+        if user_id and last_user:
+            or_conds = [{"conversationId": conv_id}]
+            if project_id:
+                or_conds.append({"projectId": project_id})
+            chunk_docs = await db.chunks.find({"userId": user_id, "$or": or_conds}).to_list(5000)
+            if chunk_docs:
+                try:
+                    qvec = embeddings.embed_query(last_user)
+                    top = embeddings.cosine_rank(qvec, chunk_docs, top_k=5, threshold=0.3)
+                    if top:
+                        ctx = "\n\n".join(f"[{c['fileName']}] {c['text']}" for c in top)
+                        system_parts.append(
+                            "Use the following context from the user's uploaded documents to answer. "
+                            "Cite the source file names in [brackets]. If the answer is not in the context, say so.\n\n"
+                            + ctx
+                        )
+                        seen = set()
+                        for c in top:
+                            if c["fileName"] not in seen:
+                                seen.add(c["fileName"])
+                                sources.append({"fileName": c["fileName"], "score": c["score"]})
+                except Exception:
+                    logger.exception("RAG retrieval failed")
 
         system_prompt = "\n\n".join(system_parts)
         ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id)
@@ -513,7 +517,7 @@ async def delete_project(pid: str, user_id: str = Depends(current_user_id)):
 
 
 # ---------------------------------------------------------------------- files
-async def _process_file(file_id: str, user_id: str, project_id: str, data: bytes, ext: str, filename: str, content_type: str):
+async def _process_file(file_id: str, user_id: str, project_id, data: bytes, ext: str, filename: str, content_type: str, conversation_id=None):
     """Extract text, chunk, embed, and store chunks. Updates file status."""
     try:
         text = extractor.extract_text(data, ext, content_type)
@@ -525,6 +529,7 @@ async def _process_file(file_id: str, user_id: str, project_id: str, data: bytes
                     "id": str(uuid.uuid4()),
                     "userId": user_id,
                     "projectId": project_id,
+                    "conversationId": conversation_id,
                     "fileId": file_id,
                     "fileName": filename,
                     "index": i,
@@ -577,6 +582,50 @@ async def upload_file(pid: str, file: UploadFile = File(...), user_id: str = Dep
     }
     await db.files.insert_one(doc)
     await _process_file(file_id, user_id, pid, data, ext, file.filename, content_type)
+    updated = await db.files.find_one({"id": file_id})
+    return public_file(updated)
+
+
+@api.get("/conversations/{conv_id}/files")
+async def list_conversation_files(conv_id: str, user_id: str = Depends(current_user_id)):
+    await _owned_conversation(conv_id, user_id)
+    docs = await db.files.find({"conversationId": conv_id, "is_deleted": False}).sort("createdAt", -1).to_list(200)
+    return [public_file(f) for f in docs]
+
+
+@api.post("/conversations/{conv_id}/files")
+async def upload_conversation_file(conv_id: str, file: UploadFile = File(...), user_id: str = Depends(current_user_id)):
+    conv = await _owned_conversation(conv_id, user_id)
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 20MB)")
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
+    file_id = str(uuid.uuid4())
+    path = storage.object_path(user_id, file_id, ext)
+    content_type = file.content_type or "application/octet-stream"
+    try:
+        result = storage.put_object(path, data, content_type)
+    except Exception as exc:
+        logger.exception("Storage upload failed")
+        raise HTTPException(status_code=502, detail=f"Storage upload failed: {exc}")
+
+    doc = {
+        "id": file_id,
+        "userId": user_id,
+        "projectId": conv.get("projectId"),
+        "conversationId": conv_id,
+        "storage_path": result["path"],
+        "original_filename": file.filename,
+        "content_type": content_type,
+        "size": result.get("size", len(data)),
+        "status": "processing",
+        "chunk_count": 0,
+        "error": None,
+        "is_deleted": False,
+        "createdAt": now_iso(),
+    }
+    await db.files.insert_one(doc)
+    await _process_file(file_id, user_id, conv.get("projectId"), data, ext, file.filename, content_type, conversation_id=conv_id)
     updated = await db.files.find_one({"id": file_id})
     return public_file(updated)
 

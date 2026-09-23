@@ -35,6 +35,8 @@ Build RADHA, the first AI product of A.utomateX: a real, working AI workspace (n
 - Per-conversation model memory: conversation stores last-used model, restored on reopen (verified gemini persists).
 - Conversation export to markdown (client-side download) via header Export button.
 - Regenerate reply: POST /conversations/{id}/regenerate drops the trailing assistant turn and re-streams (optionally on a different model). Verified — old answer replaced, re-answered on Gemini. Shared `_stream_response` helper used by both stream + regenerate.
+- Chat attachments: upload a document directly in the composer (POST /conversations/{id}/files) — extracted/chunked/embedded and RAG-grounded into that chat with citations, no project required. Verified "Golden Otter" grounded answer with [note.txt] citation.
+- UI polish pass: gradient headline treatment, ambient orbs on empty state, lift-on-hover starter/project cards, refined composer with attach chips.
 
 ## Backlog (not built — future foundations already accommodated by architecture)
 - **P1**: Memory/context recall across conversations; file/knowledge upload & retrieval.

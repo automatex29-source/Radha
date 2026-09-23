@@ -54,7 +54,7 @@ export default function ProjectsPage() {
         <div className="mx-auto max-w-5xl px-6 py-10">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Projects</h1>
+              <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter sm:text-3xl">Projects</h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
                 Group conversations, files and knowledge. RADHA grounds answers in a project's documents.
               </p>
@@ -104,8 +104,8 @@ export default function ProjectsPage() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {projects.map((p) => (
                   <button key={p.id} data-testid={`project-card-${p.id}`} onClick={() => navigate(`/projects/${p.id}`)}
-                    className="group rounded-xl border border-border bg-card p-5 text-left transition-all hover:border-primary/50 hover:bg-[#171B26]">
-                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[#1D2230] text-primary">
+                    className="radha-lift group rounded-xl border border-border bg-card p-5 text-left hover:border-primary/50">
+                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[#1D2230] text-primary transition-colors group-hover:bg-primary group-hover:text-white">
                       <FolderKanban className="h-5 w-5" />
                     </div>
                     <p className="truncate font-semibold tracking-tight">{p.name}</p>

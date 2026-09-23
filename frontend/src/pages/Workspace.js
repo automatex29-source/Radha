@@ -34,6 +34,8 @@ export default function Workspace() {
   const [models, setModels] = useState([]);
   const [model, setModel] = useState(null);
   const [streamSources, setStreamSources] = useState([]);
+  const [attachments, setAttachments] = useState([]);
+  const [uploading, setUploading] = useState(false);
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
@@ -94,6 +96,10 @@ export default function Workspace() {
       setMessages(data.messages);
       if (data.conversation?.model) setModel(data.conversation.model);
       setProjectId(data.conversation?.projectId || null);
+      try {
+        const filesRes = await api.get(`/conversations/${id}/files`);
+        setAttachments(filesRes.data);
+      } catch { setAttachments([]); }
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {
@@ -104,6 +110,7 @@ export default function Workspace() {
   const newConversation = () => {
     setActiveId(null);
     setMessages([]);
+    setAttachments([]);
     setSidebarOpen(false);
   };
 
@@ -226,22 +233,46 @@ export default function Workspace() {
     }
   };
 
+  const ensureConversation = async () => {
+    if (activeId) return activeId;
+    const { data } = await api.post("/conversations", projectId ? { projectId } : {});
+    setActiveId(data.id);
+    setConversations((c) => [data, ...c]);
+    return data.id;
+  };
+
+  const attachFile = async (file) => {
+    setUploading(true);
+    try {
+      const convId = await ensureConversation();
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post(`/conversations/${convId}/files`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setAttachments((a) => [...a, data]);
+      if (data.status === "failed") toast.error(`Could not read ${data.filename}`);
+      else toast.success(`${data.filename} attached (${data.chunkCount} chunks)`);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAttachment = async (fid) => {
+    try { await api.delete(`/files/${fid}`); } catch { /* ignore */ }
+    setAttachments((a) => a.filter((x) => x.id !== fid));
+  };
+
   const sendMessage = async (text) => {
     const content = (text ?? input).trim();
     if (!content || streaming) return;
 
-    let convId = activeId;
-    // Create a conversation lazily on the first message.
-    if (!convId) {
-      try {
-        const { data } = await api.post("/conversations", projectId ? { projectId } : {});
-        convId = data.id;
-        setActiveId(convId);
-        setConversations((c) => [data, ...c]);
-      } catch (e) {
-        toast.error(formatApiError(e));
-        return;
-      }
+    let convId;
+    try {
+      convId = await ensureConversation();
+    } catch (e) {
+      toast.error(formatApiError(e));
+      return;
     }
 
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, conversationId: convId }]);
@@ -352,7 +383,9 @@ export default function Workspace() {
         </div>
 
         {/* Composer */}
-        <ComposerInput value={input} onChange={setInput} onSend={() => sendMessage()} onStop={stopGeneration} streaming={streaming} disabled={loadingConv} />
+        <ComposerInput value={input} onChange={setInput} onSend={() => sendMessage()} onStop={stopGeneration}
+          streaming={streaming} disabled={loadingConv}
+          onAttach={attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading} />
       </div>
     </div>
   );
@@ -360,21 +393,25 @@ export default function Workspace() {
 
 function EmptyState({ onPick }) {
   return (
-    <div data-testid="empty-state-welcome" className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4">
-      <div className="radha-fade-up flex flex-col items-center text-center">
-        <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-[0_0_40px_rgba(99,102,241,0.5)]">
-          <Sparkles className="h-7 w-7 text-white" />
+    <div data-testid="empty-state-welcome" className="relative mx-auto flex h-full max-w-3xl flex-col items-center justify-center overflow-hidden px-4">
+      <div className="radha-orb -top-10 left-1/4 h-56 w-56 bg-indigo-600/30" />
+      <div className="radha-orb bottom-10 right-1/4 h-56 w-56 bg-cyan-500/20" />
+      <div className="radha-fade-up relative flex flex-col items-center text-center">
+        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)]">
+          <Sparkles className="h-8 w-8 text-white" />
         </div>
-        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">How can RADHA help today?</h2>
-        <p className="mt-2 max-w-md text-sm text-muted-foreground">
-          A premium AI workspace by A.utomateX. Start a conversation — everything is saved and reloadable.
+        <h2 className="radha-heading-gradient text-3xl font-extrabold tracking-tighter sm:text-4xl">How can RADHA help today?</h2>
+        <p className="mt-3 max-w-md text-sm text-muted-foreground">
+          A premium AI workspace by A.utomateX. Ask anything, attach a document, or open a project — everything is saved and reloadable.
         </p>
       </div>
-      <div className="radha-fade-up mt-8 grid w-full gap-3 sm:grid-cols-3">
+      <div className="radha-fade-up relative mt-9 grid w-full gap-3 sm:grid-cols-3" style={{ animationDelay: "0.1s" }}>
         {STARTERS.map((s, i) => (
           <button key={i} data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
-            className="group rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/50 hover:bg-[#171B26]">
-            <s.icon className="mb-3 h-5 w-5 text-primary" />
+            className="radha-lift group rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50">
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[#1D2230] text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+              <s.icon className="h-4.5 w-4.5" />
+            </div>
             <p className="text-sm font-medium leading-snug text-foreground">{s.title}</p>
           </button>
         ))}
