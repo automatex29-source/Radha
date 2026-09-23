@@ -238,7 +238,7 @@ export default function Workspace() {
               {models.map((m) => (
                 <DropdownMenuItem key={m.id} data-testid={`model-option-${m.id}`} onClick={() => setModel(m.id)} className="flex-col items-start gap-0.5">
                   <span className="text-sm font-medium">{m.label}</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">{m.id}</span>
+                  <span className="text-[11px] text-muted-foreground">{m.description}</span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

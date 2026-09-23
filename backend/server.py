@@ -22,7 +22,7 @@ from auth import (
     create_access_token,
     get_user_id_from_request,
 )
-from ai_runtime import ModelRouter, AnthropicProvider, AIRequest, ChatMessage
+from ai_runtime import ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, AIRequest, ChatMessage
 
 # ---------------------------------------------------------------- infra setup
 mongo_url = os.environ["MONGO_URL"]
@@ -33,11 +33,20 @@ AI_API_KEY = os.environ["AI_API_KEY"]
 AI_MODEL = os.environ.get("AI_MODEL", "claude-sonnet-4-6")
 
 # AI Runtime: RADHA -> Router -> Provider -> LLM
-model_router = ModelRouter(default_model=AI_MODEL).register(AnthropicProvider(AI_API_KEY))
+# Every provider runs through the Emergent Universal Key. Adding a provider is a
+# single .register() call — the chat system never changes.
+model_router = (
+    ModelRouter(default_model=AI_MODEL)
+    .register(AnthropicProvider(AI_API_KEY))
+    .register(OpenAIProvider(AI_API_KEY))
+    .register(GeminiProvider(AI_API_KEY))
+)
 
 AVAILABLE_MODELS = [
-    {"id": "claude-sonnet-4-6", "label": "RADHA Omni", "provider": "anthropic"},
-    {"id": "claude-haiku-4-5-20251001", "label": "RADHA Swift", "provider": "anthropic"},
+    {"id": "claude-sonnet-4-6", "label": "RADHA Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
+    {"id": "claude-haiku-4-5-20251001", "label": "RADHA Swift", "provider": "anthropic", "description": "Fast · lightweight"},
+    {"id": "gpt-5.4", "label": "RADHA Vision", "provider": "openai", "description": "Versatile · OpenAI"},
+    {"id": "gemini-3-flash-preview", "label": "RADHA Flash", "provider": "gemini", "description": "Snappy · Google"},
 ]
 
 app = FastAPI(title="RADHA API")

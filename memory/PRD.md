@@ -25,9 +25,13 @@ Build RADHA, the first AI product of A.utomateX: a real, working AI workspace (n
 - JWT auth: register, login, logout, /me, protected routes.
 - Conversations CRUD + messages, per-user isolation (verified 404/401).
 - Real Claude Sonnet 4.6 streaming via ModelRouter/AnthropicProvider (Emergent Universal Key).
-- Premium dark "Obsidian Studio" UI: auth showcase page, sidebar (grouped by date, search, rename, delete), workspace with empty-state starter cards, streaming message thread with markdown + code copy, model selector (RADHA Omni / RADHA Swift), composer with auto-grow + stop generation.
+- Premium dark "Obsidian Studio" UI: auth showcase page, sidebar (grouped by date, search, rename, delete), workspace with empty-state starter cards, streaming message thread with markdown + code copy, model selector, composer with auto-grow + stop generation.
 - Auto-titling of conversations from first message.
 - Tested: 11/11 backend pytest + full UI e2e, all green.
+
+## Implemented (2026-06-23)
+- Multi-provider AI runtime: added OpenAIProvider + GeminiProvider alongside AnthropicProvider, all registered on ModelRouter. Shared `_emergent.py` streaming helper keeps each provider ~10 lines.
+- 4 selectable models (RADHA Omni/Swift = Claude, Vision = GPT-5.4, Flash = Gemini) exposed via /api/models and the top-bar model selector. Each verified streaming real tokens with no chat-code changes — proves the provider extensibility from the vision.
 
 ## Backlog (not built — future foundations already accommodated by architecture)
 - **P1**: Memory/context recall across conversations; file/knowledge upload & retrieval.

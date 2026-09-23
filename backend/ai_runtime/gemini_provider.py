@@ -1,20 +1,15 @@
-"""Anthropic (Claude) provider backed by the Emergent LLM integration."""
+"""Gemini provider backed by the Emergent LLM integration."""
 from typing import AsyncIterator
 
 from .base import ModelProvider
 from .types import AIRequest
 from ._emergent import stream_via_emergent
 
-_MODELS = {
-    "claude-sonnet-4-6",
-    "claude-sonnet-5",
-    "claude-opus-4-8",
-    "claude-haiku-4-5-20251001",
-}
+_MODELS = {"gemini-3-flash-preview", "gemini-3.1-pro-preview", "gemini-2.5-flash"}
 
 
-class AnthropicProvider(ModelProvider):
-    name = "anthropic"
+class GeminiProvider(ModelProvider):
+    name = "gemini"
 
     def __init__(self, api_key: str):
         self._api_key = api_key
@@ -23,5 +18,5 @@ class AnthropicProvider(ModelProvider):
         return model in _MODELS
 
     async def stream(self, request: AIRequest) -> AsyncIterator[str]:
-        async for delta in stream_via_emergent(self._api_key, "anthropic", request):
+        async for delta in stream_via_emergent(self._api_key, "gemini", request):
             yield delta
