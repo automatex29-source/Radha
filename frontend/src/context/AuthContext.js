@@ -15,8 +15,10 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
-    } catch {
-      clearToken();
+    } catch (err) {
+      // Only drop the token when the server rejects it; a network blip or
+      // backend restart shouldn't log the user out.
+      if (err?.response?.status === 401) clearToken();
       setUser(false);
     }
   }, []);

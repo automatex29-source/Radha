@@ -6,6 +6,9 @@ import AuthPage from "@/components/AuthPage";
 import Workspace from "@/pages/Workspace";
 import ProjectsPage from "@/pages/ProjectsPage";
 import ProjectView from "@/pages/ProjectView";
+import AppsPage from "@/pages/AppsPage";
+import AppBuilder from "@/pages/AppBuilder";
+import AutomationsPage from "@/pages/AutomationsPage";
 import { Loader2 } from "lucide-react";
 
 function Gate() {
@@ -34,6 +37,9 @@ function Gate() {
       <Route path="/" element={<Workspace />} />
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/projects/:id" element={<ProjectView />} />
+      <Route path="/apps" element={<AppsPage />} />
+      <Route path="/apps/:id" element={<AppBuilder />} />
+      <Route path="/automations" element={<AutomationsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

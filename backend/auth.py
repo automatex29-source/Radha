@@ -11,7 +11,10 @@ ACCESS_TOKEN_DAYS = 7
 
 
 def _secret() -> str:
-    return os.environ["AUTH_SECRET"]
+    secret = os.environ.get("AUTH_SECRET")
+    if not secret:
+        raise HTTPException(status_code=500, detail="Server misconfigured: AUTH_SECRET is not set")
+    return secret
 
 
 def hash_password(password: str) -> str:
@@ -19,7 +22,13 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    if not hashed:
+        return False
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except ValueError:
+        # Malformed stored hash: treat as a failed login rather than a 500.
+        return False
 
 
 def create_access_token(user_id: str, email: str) -> str:

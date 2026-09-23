@@ -1,7 +1,17 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// REACT_APP_BACKEND_URL is inlined by Vite only when it is set in frontend/.env.
+// Without it, `process` does not exist in the browser, so guard the lookup and
+// fall back to same-origin requests (served via the Vite /api proxy in dev).
+const BACKEND_URL = (
+  (typeof process !== "undefined" && process.env && process.env.REACT_APP_BACKEND_URL) ||
+  import.meta.env.VITE_BACKEND_URL ||
+  ""
+).replace(/\/+$/, "");
 export const API = `${BACKEND_URL}/api`;
+
+/** Absolute URL for an /api path (for links people copy or open in a new tab). */
+export const absoluteUrl = (path) => `${BACKEND_URL || window.location.origin}${path}`;
 
 const TOKEN_KEY = "radha_token";
 
@@ -10,6 +20,10 @@ export const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
 export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
 export const api = axios.create({ baseURL: API });
+
+// <img>/<audio>/download links can't send headers, so media URLs carry the token.
+export const mediaUrl = (path) =>
+  `${BACKEND_URL}${path}${path.includes("?") ? "&" : "?"}auth=${encodeURIComponent(getToken() || "")}`;
 
 api.interceptors.request.use((config) => {
   const token = getToken();

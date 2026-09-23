@@ -48,3 +48,25 @@ Build RADHA, the first AI product of A.utomateX: a real, working AI workspace (n
 ## Next Tasks
 - Add file upload + document Q&A (object storage) as the first "knowledge" capability.
 - Register a second provider to prove multi-model routing.
+
+## Phase 4 — Agent, vision and voice
+- **Agent tool-use framework** (`backend/agent/`): `ToolRegistry` + `run_agent` loop (max 8 steps, last step forces an answer). Tools: `web_search` (Tavily or DuckDuckGo), `fetch_url` (SSRF-guarded), `run_python` (sandbox: rlimits, timeout, no network via `unshare -rn` when available, drops to `nobody`), `generate_image`. Streams SSE `tool` / `tool_result` events; steps + produced media saved on the assistant message.
+- **LLM path**: agent turns and any conversation with images go through LiteLLM (`agent/llm.py`) with provider keys or `LLM_GATEWAY_URL`; plain chat still uses the Emergent router.
+- **Vision**: `POST /api/media` (images), message `images: [mediaId]`, sent as image parts.
+- **Voice**: `POST /api/audio/transcribe`, `POST /api/audio/speech` (OpenAI). UI: mic dictation, "Listen" on replies, hands-free Voice mode (silence detection).
+- **Media store**: `media` collection (≤12MB/item), served by `GET /api/media/{id}?auth=`.
+- **Capabilities**: `GET /api/capabilities` tells the UI which features are configured.
+- **Next phases**: video generation/understanding, browser automation, automations/workflows, app builder + virtual FS, test runner, live preview, deployment, git.
+
+## Phase 5 — Files like Claude, video, browser
+- **File creation tools** (`agent/documents.py`): `create_spreadsheet` (xlsx: styled headers, formulas, number formats, native charts), `create_presentation` (16:9 pptx: title/section/bullets/two_column/table/quote layouts, dark/light themes, speaker notes), `create_document` (docx or pdf from Markdown; custom fpdf2 renderer with Unicode + CJK fallback fonts), `create_html` (self-contained pages). `run_python` also returns xlsx/docx/pptx/pdf it writes.
+- **Preview panel** (Claude-style side panel): `GET /api/media/{id}/preview` → sheet rows (common formulas evaluated), slide text/tables/notes, escaped docx HTML; PDF via blob iframe; HTML live in a sandboxed iframe (scripts, no same-origin) with a Code tab. Auto-opens when a document is created.
+- **Video generation** (`agent/video.py`): Sora via REST (submit/poll/download) or Veo via google-genai; SSE heartbeats keep long tool calls alive.
+- **Video understanding**: the browser samples frames from an attached video and sends them as labelled images (works with any vision model; audio is not analysed).
+- **Browser tool** (`agent/browser.py`): Playwright Chromium per conversation; actions open/click/type/press/scroll/back/read/wait; numbered element refs + screenshot each step; every page request passes the SSRF guard. Deploy needs `playwright install chromium`.
+
+## Phase 6 — App builder, automations, high-quality media
+- **High-quality media**: video defaults to Sora 2 Pro 1792x1024 or Veo 3 1080p (`VIDEO_QUALITY=standard` for 720p); images use gpt-image-1 `quality=high`. Media over 8MB is stored in 4MB `media_chunks`; `GET /api/media/{id}` supports HTTP Range for video seeking.
+- **App builder** (`backend/apps.py`, `/apps`, `/apps/:id`): per-app virtual file system (`app_files`), content-addressed version history (`app_blobs`, `app_commits`) with diff and restore, sandboxed terminal (`POST /apps/{id}/run`, Node + Python, no network), live preview served under a scoped preview token with a console bridge, publish/unpublish to `/api/sites/{slug}/`, download as zip with real git history (dulwich). Preview and sites always send `Content-Security-Policy: sandbox …` so app code runs in an opaque origin. Builder agent tools (scope "app"): list/read/write/edit/delete file, run_command, check_preview (headless Chromium: screenshot, console, failed requests), commit.
+- **Automations** (`backend/automations.py`, `/automations`): agent tasks on interval (≥15 min), daily or weekly schedules in the user's timezone (DST-safe), manual runs and secret webhook URLs (`POST /api/hooks/{secret}`, payload passed to the task). Each run gets its own conversation (hidden from the main list) and a run record with output and files. The scheduler claims due automations atomically.
+- `server.run_turn()` is the reusable agent/chat turn; app and automation conversations are excluded from the main sidebar.
