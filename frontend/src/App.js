@@ -4,6 +4,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import AuthPage from "@/components/AuthPage";
 import Workspace from "@/pages/Workspace";
+import ProjectsPage from "@/pages/ProjectsPage";
+import ProjectView from "@/pages/ProjectView";
 import { Loader2 } from "lucide-react";
 
 function Gate() {
@@ -17,10 +19,21 @@ function Gate() {
     );
   }
 
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <AuthPage />} />
-      <Route path="/" element={user ? <Workspace /> : <Navigate to="/login" replace />} />
+      <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/" element={<Workspace />} />
+      <Route path="/projects" element={<ProjectsPage />} />
+      <Route path="/projects/:id" element={<ProjectView />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

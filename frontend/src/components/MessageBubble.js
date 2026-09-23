@@ -1,7 +1,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Sparkles, Copy, Check, User } from "lucide-react";
+import { Sparkles, Copy, Check, User, FileText as FileIcon } from "lucide-react";
 import { toast } from "sonner";
 
 function CodeBlock({ inline, className, children }) {
@@ -69,6 +69,16 @@ export default function MessageBubble({ message, streaming }) {
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
         </div>
+        {message.sources?.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid={`message-sources-${message.id}`}>
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Sources</span>
+            {message.sources.map((s, i) => (
+              <span key={i} className="flex items-center gap-1 rounded-full border border-[#262C3E] bg-[#171B26] px-2 py-0.5 font-mono text-[10px] text-[#A5B4FC]">
+                <FileIcon className="h-2.5 w-2.5" /> {s.fileName}
+              </span>
+            ))}
+          </div>
+        )}
         {!streaming && message.content && (
           <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`}
             className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100">

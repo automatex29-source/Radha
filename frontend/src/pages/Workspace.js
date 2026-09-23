@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { api, API, getToken, formatApiError } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
+import IconRail from "@/components/IconRail";
 import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
 import { Button } from "@/components/ui/button";
@@ -8,7 +10,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw } from "lucide-react";
+import { Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, FolderKanban } from "lucide-react";
 
 const STARTERS = [
   { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
@@ -17,6 +19,10 @@ const STARTERS = [
 ];
 
 export default function Workspace() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [projectId, setProjectId] = useState(searchParams.get("project") || null);
+  const [project, setProject] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -27,10 +33,12 @@ export default function Workspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [models, setModels] = useState([]);
   const [model, setModel] = useState(null);
+  const [streamSources, setStreamSources] = useState([]);
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
   const streamTextRef = useRef("");
+  const streamSourcesRef = useRef([]);
 
   const activeConv = conversations.find((c) => c.id === activeId);
 
@@ -59,6 +67,24 @@ export default function Workspace() {
 
   useEffect(() => { scrollToBottom(); }, [messages, streamText, scrollToBottom]);
 
+  // React to ?conversation= and ?project= deep links (e.g. from a project view).
+  useEffect(() => {
+    const convParam = searchParams.get("conversation");
+    const projParam = searchParams.get("project");
+    if (projParam) setProjectId(projParam);
+    if (convParam) openConversation(convParam);
+    else if (projParam) { setActiveId(null); setMessages([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (projectId) {
+      api.get(`/projects/${projectId}`).then(({ data }) => setProject(data.project)).catch(() => setProject(null));
+    } else {
+      setProject(null);
+    }
+  }, [projectId]);
+
   const openConversation = async (id) => {
     setActiveId(id);
     setSidebarOpen(false);
@@ -67,6 +93,7 @@ export default function Workspace() {
       const { data } = await api.get(`/conversations/${id}`);
       setMessages(data.messages);
       if (data.conversation?.model) setModel(data.conversation.model);
+      setProjectId(data.conversation?.projectId || null);
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {
@@ -129,7 +156,9 @@ export default function Workspace() {
   const runStream = async (url, body, convId) => {
     setStreaming(true);
     setStreamText("");
+    setStreamSources([]);
     streamTextRef.current = "";
+    streamSourcesRef.current = [];
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -165,6 +194,11 @@ export default function Workspace() {
             else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
           }
           if (eventName === "error") throw new Error(JSON.parse(dataStr || '"Stream error"'));
+          if (eventName === "sources") {
+            streamSourcesRef.current = JSON.parse(dataStr || "[]");
+            setStreamSources(streamSourcesRef.current);
+            continue;
+          }
           if (eventName === "done") continue;
           if (dataStr) {
             streamTextRef.current += JSON.parse(dataStr);
@@ -179,9 +213,10 @@ export default function Workspace() {
       setStreaming(false);
       const finalText = streamTextRef.current;
       if (finalText) {
-        setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model }]);
+        setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model, sources: streamSourcesRef.current.length ? streamSourcesRef.current : null }]);
       }
       setStreamText("");
+      setStreamSources([]);
       // Sync ordering/titles/ids from server.
       try {
         const { data } = await api.get(`/conversations/${convId}`);
@@ -199,7 +234,7 @@ export default function Workspace() {
     // Create a conversation lazily on the first message.
     if (!convId) {
       try {
-        const { data } = await api.post("/conversations", {});
+        const { data } = await api.post("/conversations", projectId ? { projectId } : {});
         convId = data.id;
         setActiveId(convId);
         setConversations((c) => [data, ...c]);
@@ -226,6 +261,7 @@ export default function Workspace() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
+      <IconRail />
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
@@ -254,6 +290,12 @@ export default function Workspace() {
             <h1 data-testid="active-conversation-title" className="truncate text-sm font-semibold tracking-tight">
               {activeConv ? activeConv.title : "New conversation"}
             </h1>
+            {project && (
+              <button onClick={() => navigate(`/projects/${project.id}`)} data-testid="active-project-badge"
+                className="flex shrink-0 items-center gap-1.5 rounded-full border border-[#262C3E] bg-[#171B26] px-2.5 py-1 text-[11px] font-medium text-[#A5B4FC] hover:border-primary/50">
+                <FolderKanban className="h-3 w-3" /> {project.name}
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -295,7 +337,7 @@ export default function Workspace() {
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
               {messages.map((m) => <MessageBubble key={m.id} message={m} />)}
               {streaming && (
-                <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model }} streaming />
+                <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources }} streaming />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
                 <div className="flex justify-center pt-1">
