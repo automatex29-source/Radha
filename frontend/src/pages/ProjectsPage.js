@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { FolderKanban, Plus, FileText, MessageSquare, Loader2 } from "lucide-react";
@@ -64,7 +64,10 @@ export default function ProjectsPage() {
                 <Button data-testid="new-project-button" className="gap-2 font-semibold"><Plus className="h-4 w-4" /> New project</Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle>Create project</DialogTitle></DialogHeader>
+                <DialogHeader>
+                  <DialogTitle>Create project</DialogTitle>
+                  <DialogDescription>Group conversations and documents. RADHA grounds answers in this project's files.</DialogDescription>
+                </DialogHeader>
                 <div className="space-y-4 py-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="p-name">Name</Label>

@@ -1,0 +1,37 @@
+{
+  "summary": "Phase 2 (Projects + Files + RAG + Memory) end-to-end testing. Backend: 20/20 pytest cases pass across auth, models, conversations CRUD, isolation, SSE streaming, projects CRUD, real file upload → local BGE-small embedding → chunk storage, RAG grounded chat (SSE 'sources' event + persisted 'sources' on message), project-scoped memory recall, cross-user isolation (404), unauth (401), file/project delete lifecycle including conversation detachment. Frontend UI: login → icon rail nav → create project → sections rendered → real .txt upload reaches Ready in ~1s with chunk count → custom instructions saved and PERSIST after reload → memory add → project-scoped New chat with active-project-badge → question with fact only in file answered as 'PURPLE_TIGER_UI_9911' with visible source citation chip (radha_ui_memo.txt) → memory recall works in fresh chat (uses stored preference) → delete file removes it → delete project removes it from list → general chat still usable.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ProjectView dialogs", "issues": ["Radix DialogContent missing `Description` / `aria-describedby` (a11y warning in console)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_radha_phase2.py",
+    "/app/backend/tests/test_radha_backend.py",
+    "/app/test_reports/pytest/radha_phase2.xml",
+    "/app/test_reports/pytest/radha_all.xml"
+  ],
+  "action_items": [
+    "(nit) Add DialogDescription / aria-describedby to project dialogs to silence Radix a11y warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py still uses deprecated @app.on_event startup/shutdown — migrate to FastAPI lifespan handler.",
+    "CORS `allow_credentials=True` combined with wildcard `*` fallback is invalid per CORS spec (works here only because auth uses Bearer token).",
+    "upload_file endpoint runs _process_file synchronously inline (extraction + embedding) which blocks the request; fine for small text files (<20MB) but larger PDFs will hold the connection open — consider BackgroundTasks or a work queue.",
+    "GET /api/files/{fid}/download accepts token via ?auth= query param — useful for <img>/<a> tags but the token then lands in server access logs. Consider signed short-lived download URLs.",
+    "RAG cosine similarity is done in Python over ALL chunks for a project (loaded via to_list(5000)). Fine at MVP scale, but at 100k+ chunks per project this will be slow — plan for a vector index (Atlas Search / pgvector / Qdrant).",
+    "No rate limiting on any endpoint, including /auth/login (no lockout after N failures as playbook suggests).",
+    "Regenerate endpoint drops the trailing assistant turn before streaming but doesn't verify the second-to-last message is a user turn — edge cases with two consecutive assistant messages could regen the wrong thing."
+  ],
+  "updated_files": ["/app/backend/tests/test_radha_phase2.py"],
+  "success_rate": {"backend": "100% (20/20 pytest)", "frontend": "100% of tested Phase-2 flows"},
+  "test_credentials": "demo@radha.ai/demo1234, other@radha.ai/other123",
+  "seed_data_creation": "TEST_-prefixed projects/files/memories/conversations created per test and cleaned up in fixtures/teardown; one throwaway UI project (UI_TEST_PROJ_A2) created and deleted by the Playwright run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 1 & Phase 2 fully green. Two pytest files: test_radha_backend.py (Phase 1: 11 tests) and test_radha_phase2.py (Phase 2: 9 tests). RAG citation format is `[{fileName}]` inline plus a structured SSE 'sources' event that MessageBubble renders as a chip via data-testid `message-sources-{msgId}`. Real fastembed BGE-small runs locally; first embed call warms the model (~2s). Auth is JWT Bearer in localStorage `radha_token`, no httpOnly cookies.",
+  "rca of the issue": "N/A — no bugs found."
+}
