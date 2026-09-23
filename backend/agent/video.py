@@ -11,8 +11,16 @@ from typing import Optional, Tuple
 
 import httpx
 
-SORA_MODEL = os.environ.get("SORA_MODEL", "sora-2")
-VEO_MODEL = os.environ.get("VEO_MODEL", "veo-3.0-fast-generate-001")
+# "high" (default): Sora 2 Pro at 1792x1024 / Veo 3 at 1080p. "standard": faster, cheaper, 720p.
+DEFAULT_QUALITY = os.environ.get("VIDEO_QUALITY", "high")
+SORA = {
+    "high": {"model": os.environ.get("SORA_PRO_MODEL", "sora-2-pro"), "landscape": "1792x1024", "portrait": "1024x1792"},
+    "standard": {"model": os.environ.get("SORA_MODEL", "sora-2"), "landscape": "1280x720", "portrait": "720x1280"},
+}
+VEO = {
+    "high": {"model": os.environ.get("VEO_MODEL", "veo-3.0-generate-001"), "resolution": "1080p"},
+    "standard": {"model": os.environ.get("VEO_FAST_MODEL", "veo-3.0-fast-generate-001"), "resolution": "720p"},
+}
 TIMEOUT_SECONDS = int(os.environ.get("VIDEO_TIMEOUT_SECONDS", "600"))
 POLL_SECONDS = 8
 SORA_SECONDS = {4, 8, 12}
@@ -43,13 +51,14 @@ def _http_client() -> httpx.AsyncClient:
                              headers={"Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', '')}"})
 
 
-async def _sora(prompt: str, seconds: int, portrait: bool) -> bytes:
+async def _sora(prompt: str, seconds: int, portrait: bool, quality: str) -> bytes:
     seconds = min(SORA_SECONDS, key=lambda s: abs(s - seconds))
-    size = "720x1280" if portrait else "1280x720"
+    cfg = SORA[quality]
+    size = cfg["portrait" if portrait else "landscape"]
     async with _http_client() as client:
         # Multipart form, as the Videos API expects.
         resp = await client.post("/videos", files={
-            "model": (None, SORA_MODEL), "prompt": (None, prompt),
+            "model": (None, cfg["model"]), "prompt": (None, prompt),
             "seconds": (None, str(seconds)), "size": (None, size),
         })
         if resp.status_code >= 400:
@@ -74,14 +83,15 @@ def _genai_client():
     return genai.Client(api_key=os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
 
 
-async def _veo(prompt: str, portrait: bool) -> bytes:
+async def _veo(prompt: str, portrait: bool, quality: str) -> bytes:
     from google.genai import types
 
+    cfg = VEO[quality]
     client = _genai_client()
-    op = await client.aio.models.generate_videos(
-        model=VEO_MODEL, prompt=prompt,
-        config=types.GenerateVideosConfig(number_of_videos=1, aspect_ratio="9:16" if portrait else "16:9"),
-    )
+    config = types.GenerateVideosConfig(number_of_videos=1, aspect_ratio="9:16" if portrait else "16:9")
+    if not portrait:
+        config.resolution = cfg["resolution"]  # Veo 3 serves 1080p for 16:9
+    op = await client.aio.models.generate_videos(model=cfg["model"], prompt=prompt, config=config)
     deadline = time.monotonic() + TIMEOUT_SECONDS
     while not op.done:
         if time.monotonic() > deadline:
@@ -100,11 +110,13 @@ async def _veo(prompt: str, portrait: bool) -> bytes:
     return data
 
 
-async def generate_video(prompt: str, seconds: int = 8, orientation: str = "landscape") -> Tuple[bytes, str]:
+async def generate_video(prompt: str, seconds: int = 8, orientation: str = "landscape",
+                         quality: Optional[str] = None) -> Tuple[bytes, str]:
     which = provider()
     portrait = orientation == "portrait"
+    quality = quality if quality in ("high", "standard") else (DEFAULT_QUALITY if DEFAULT_QUALITY in ("high", "standard") else "high")
     if which == "openai":
-        return await _sora(prompt, seconds, portrait), "video/mp4"
+        return await _sora(prompt, seconds, portrait, quality), "video/mp4"
     if which == "gemini":
-        return await _veo(prompt, portrait), "video/mp4"
+        return await _veo(prompt, portrait, quality), "video/mp4"
     raise VideoError("Set OPENAI_API_KEY or GEMINI_API_KEY to enable video generation")

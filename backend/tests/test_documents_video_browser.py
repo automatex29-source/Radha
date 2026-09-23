@@ -160,7 +160,7 @@ class TestVideo:
             seen.append((req.method, req.url.path))
             if req.method == "POST":
                 body = req.content.decode()
-                assert 'name="seconds"\r\n\r\n12' in body and "720x1280" in body and "sora-2" in body
+                assert 'name="seconds"\r\n\r\n12' in body and "1024x1792" in body and "sora-2-pro" in body
                 return httpx.Response(200, json={"id": "v1", "status": "queued"})
             if req.url.path.endswith("/content"):
                 return httpx.Response(200, content=b"MP4")
@@ -213,6 +213,25 @@ class TestVideo:
         monkeypatch.setattr(video, "_genai_client", lambda: SimpleNamespace(aio=FakeAio))
         assert run(video.generate_video("sunset", orientation="portrait")) == (b"VEO", "video/mp4")
         assert calls["config"].aspect_ratio == "9:16"
+        run(video.generate_video("sunset"))
+        assert calls["config"].aspect_ratio == "16:9" and calls["config"].resolution == "1080p"
+
+    def test_standard_quality_uses_fast_720p(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "k")
+        monkeypatch.delenv("VIDEO_PROVIDER", raising=False)
+        monkeypatch.setattr(video, "POLL_SECONDS", 0)
+        bodies = []
+
+        def handler(req):
+            if req.method == "POST":
+                bodies.append(req.content.decode())
+                return httpx.Response(200, json={"id": "v", "status": "completed"})
+            return httpx.Response(200, content=b"M")
+
+        monkeypatch.setattr(video, "_http_client", lambda: httpx.AsyncClient(
+            base_url="https://x/v1", transport=httpx.MockTransport(handler)))
+        run(video.generate_video("x", quality="standard"))
+        assert "1280x720" in bodies[0] and "sora-2\r\n" in bodies[0]
 
 
 class TestHeartbeat:
@@ -309,3 +328,28 @@ class TestBrowser:
         assert hits == []  # the page's request to an internal host was blocked
         assert "[1]" in browser.describe({"url": url, "title": "t", "text": "x", "elements": [
             {"ref": 1, "kind": "button", "label": "Go", "inView": True}]})
+
+
+class TestChunkedMedia:
+    def test_large_media_is_chunked_and_ranges_read_correctly(self):
+        mongomock_motor = pytest.importorskip("mongomock_motor")
+        import media
+
+        db = mongomock_motor.AsyncMongoMockClient()["t"]
+        data = bytes(range(256)) * (40 * 1024 * 3 // 8)  # ~ 3.75 MB * ... below
+        data = data * 3  # > INLINE_LIMIT
+        assert len(data) > media.INLINE_LIMIT
+
+        async def scenario():
+            saved = await media.save_media(db, "u", data, "video/mp4", "generated", name="v.mp4")
+            doc = await media.load_media(db, "u", saved["id"])
+            assert doc["chunks"] > 1 and "data" not in doc
+            assert await media.read_bytes(db, doc) == data
+            s, e = media.CHUNK_BYTES - 10, media.CHUNK_BYTES + 10  # spans a chunk boundary
+            assert await media.read_bytes(db, doc, s, e) == data[s:e + 1]
+            small = await media.save_media(db, "u", b"abc", "text/plain", "upload")
+            assert await media.read_bytes(db, await media.load_media(db, "u", small["id"]), 1) == b"bc"
+            await media.delete_media(db, {"userId": "u"})
+            assert await db.media_chunks.count_documents({}) == 0 and await db.media.count_documents({}) == 0
+
+        run(scenario())

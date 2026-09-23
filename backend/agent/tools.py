@@ -23,6 +23,7 @@ class ToolContext:
     db: Any
     user_id: str
     conversation_id: Optional[str] = None
+    app_id: Optional[str] = None
 
 
 @dataclass
@@ -44,6 +45,12 @@ class Tool:
     handler: Handler
     label: str = ""
     available: Callable[[], bool] = lambda: True
+    scope: str = "general"  # "app" tools are only offered inside an app-builder conversation
+
+    def usable(self, ctx: Optional[ToolContext]) -> bool:
+        if self.scope == "app" and not (ctx and ctx.app_id):
+            return False
+        return self.available()
 
     def schema(self) -> dict:
         return {"type": "function", "function": {
@@ -58,18 +65,19 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         return self
 
-    def active(self) -> List[Tool]:
-        return [t for t in self._tools.values() if t.available()]
+    def active(self, ctx: Optional[ToolContext] = None) -> List[Tool]:
+        return [t for t in self._tools.values() if t.usable(ctx)]
 
-    def schemas(self) -> List[dict]:
-        return [t.schema() for t in self.active()]
+    def schemas(self, ctx: Optional[ToolContext] = None) -> List[dict]:
+        return [t.schema() for t in self.active(ctx)]
 
     def describe(self) -> List[dict]:
-        return [{"name": t.name, "label": t.label or t.name, "available": t.available()} for t in self._tools.values()]
+        return [{"name": t.name, "label": t.label or t.name, "available": t.available(), "scope": t.scope}
+                for t in self._tools.values()]
 
     async def run(self, name: str, raw_args: str, ctx: ToolContext) -> ToolOutput:
         tool = self._tools.get(name)
-        if not tool or not tool.available():
+        if not tool or not tool.usable(ctx):
             return ToolOutput(content=f"Error: unknown or unavailable tool '{name}'.", summary="Unknown tool", ok=False)
         try:
             args = json.loads(raw_args or "{}")
@@ -142,7 +150,7 @@ async def _run_python(ctx: ToolContext, args: dict) -> ToolOutput:
 
 async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
-    data = await media.generate_image(prompt, args.get("size") or "1024x1024")
+    data = await media.generate_image(prompt, args.get("size") or "1024x1024", args.get("quality"))
     saved = await media.save_media(ctx.db, ctx.user_id, data, "image/png", "generated",
                                    name="image.png", conversation_id=ctx.conversation_id)
     return ToolOutput(content="Image generated and shown to the user. Do not embed it; just describe it briefly.",
@@ -199,7 +207,8 @@ async def _create_html(ctx: ToolContext, args: dict) -> ToolOutput:
 
 async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
-    data, ctype = await video.generate_video(prompt, int(args.get("seconds") or 8), args.get("orientation") or "landscape")
+    data, ctype = await video.generate_video(prompt, int(args.get("seconds") or 8), args.get("orientation") or "landscape",
+                                             args.get("quality"))
     saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated", name="video.mp4",
                                    conversation_id=ctx.conversation_id)
     return ToolOutput(content="Video generated and shown to the user. Briefly describe what you asked for.",
@@ -252,6 +261,7 @@ def default_registry() -> ToolRegistry:
             parameters={"type": "object", "properties": {
                 "prompt": {"type": "string", "description": "Detailed description of the image"},
                 "size": {"type": "string", "enum": ["1024x1024", "1536x1024", "1024x1536"]},
+                "quality": {"type": "string", "enum": ["high", "medium", "low"], "description": "Default high"},
             }, "required": ["prompt"]},
             handler=_generate_image, available=media.openai_configured))
         .register(Tool(
@@ -321,12 +331,14 @@ def default_registry() -> ToolRegistry:
             handler=_create_html))
         .register(Tool(
             name="generate_video", label="Generate video",
-            description="Generate a short video clip from a detailed text description (subject, action, camera, "
-                        "style, lighting). Takes one to several minutes.",
+            description="Generate a high-quality video clip (Sora 2 Pro 1792x1024 or Veo 3 1080p by default) from a "
+                        "detailed, cinematic description: subject, action, setting, camera movement, lens, lighting, "
+                        "style and mood. Takes one to several minutes.",
             parameters={"type": "object", "properties": {
                 "prompt": {"type": "string"},
                 "seconds": {"type": "integer", "description": "4, 8 or 12 (default 8)"},
                 "orientation": {"type": "string", "enum": ["landscape", "portrait"]},
+                "quality": {"type": "string", "enum": ["high", "standard"], "description": "high (default) or standard (faster, 720p)"},
             }, "required": ["prompt"]},
             handler=_generate_video, available=video.available))
         .register(Tool(

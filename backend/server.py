@@ -29,6 +29,8 @@ import embeddings
 import extract as extractor
 import media
 import preview as previewer
+import apps
+import automations
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -59,6 +61,8 @@ AVAILABLE_MODELS = [
 ]
 
 tool_registry = default_registry()
+apps.init(db)
+apps.register_tools(tool_registry)
 
 app = FastAPI(title="RADHA API")
 api = APIRouter(prefix="/api")
@@ -253,7 +257,8 @@ async def models(user_id: str = Depends(current_user_id)):
 # --------------------------------------------------------------- conversations
 @api.get("/conversations")
 async def list_conversations(user_id: str = Depends(current_user_id)):
-    docs = await db.conversations.find({"userId": user_id}).sort("updatedAt", -1).to_list(500)
+    # App-builder and automation chats live on their own pages.
+    docs = await db.conversations.find({"userId": user_id, "appId": None, "automationId": None}).sort("updatedAt", -1).to_list(500)
     return [public_conversation(d) for d in docs]
 
 
@@ -307,7 +312,7 @@ async def rename_conversation(conv_id: str, body: ConversationPatch, user_id: st
 async def delete_conversation(conv_id: str, user_id: str = Depends(current_user_id)):
     await _owned_conversation(conv_id, user_id)
     await db.messages.delete_many({"conversationId": conv_id})
-    await db.media.delete_many({"conversationId": conv_id, "userId": user_id})
+    await media.delete_media(db, {"conversationId": conv_id, "userId": user_id})
     await agent_browser.manager.close(f"{user_id}:{conv_id}")
     await db.conversations.delete_one({"id": conv_id})
     return {"ok": True}
@@ -351,137 +356,143 @@ async def _llm_messages(history_docs: list, system_prompt: str, user_id: str) ->
                 if mid in allowed:
                     doc = await media.load_media(db, user_id, mid)
                     if doc:
-                        parts.append({"type": "image_url", "image_url": {"url": media.data_url(doc)}})
+                        parts.append({"type": "image_url", "image_url": {"url": await media.data_url(db, doc)}})
             out.append({"role": "user", "content": parts})
         elif m["content"]:
             out.append({"role": m["role"], "content": m["content"]})
     return out
 
 
-def _stream_response(conv_id: str, model: str, agent: bool = False) -> StreamingResponse:
-    """Build the SSE response for the current message history of a conversation.
+async def run_turn(conv_id: str, model: str, agent: bool = False):
+    """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
 
     If the conversation belongs to a project, relevant document chunks (RAG) and
     project/user memory are retrieved and injected as grounding context.
 
-    Plain chat streams through the model router. Agent turns (tool use) and any
-    conversation containing images stream through the agent runtime instead.
+    Plain chat streams through the model router. Agent turns (tool use), any
+    conversation containing images, and app-builder conversations stream through
+    the agent runtime instead. The reply is saved when the turn ends.
     """
+    conv = await db.conversations.find_one({"id": conv_id})
+    user_id = conv["userId"] if conv else None
+    project_id = conv.get("projectId") if conv else None
 
-    async def event_generator():
-        conv = await db.conversations.find_one({"id": conv_id})
-        user_id = conv["userId"] if conv else None
-        project_id = conv.get("projectId") if conv else None
+    history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
+    messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs]
 
-        history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
-        messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs]
+    system_parts = [SYSTEM_PROMPT]
+    sources = []
+    last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
-        system_parts = [SYSTEM_PROMPT]
-        sources = []
-        last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
+    # Memory (user-global + project) — real, user-controlled facts.
+    mem_query = {"userId": user_id, "$or": [{"projectId": None}, {"projectId": project_id}]} if user_id else None
+    if mem_query:
+        mems = await db.memories.find(mem_query).sort("createdAt", -1).to_list(50)
+        if mems:
+            system_parts.append(
+                "Known facts the user asked you to remember:\n"
+                + "\n".join(f"- {m['content']}" for m in mems)
+            )
 
-        # Memory (user-global + project) — real, user-controlled facts.
-        mem_query = {"userId": user_id, "$or": [{"projectId": None}, {"projectId": project_id}]} if user_id else None
-        if mem_query:
-            mems = await db.memories.find(mem_query).sort("createdAt", -1).to_list(50)
-            if mems:
-                system_parts.append(
-                    "Known facts the user asked you to remember:\n"
-                    + "\n".join(f"- {m['content']}" for m in mems)
-                )
+    # Project instructions.
+    if project_id:
+        proj = await db.projects.find_one({"id": project_id})
+        if proj and proj.get("instructions"):
+            system_parts.append(f"Project instructions:\n{proj['instructions']}")
 
-        # Project instructions.
+    # RAG retrieval over project documents AND files attached to this chat.
+    if user_id and last_user:
+        or_conds = [{"conversationId": conv_id}]
         if project_id:
-            proj = await db.projects.find_one({"id": project_id})
-            if proj and proj.get("instructions"):
-                system_parts.append(f"Project instructions:\n{proj['instructions']}")
+            or_conds.append({"projectId": project_id})
+        chunk_docs = await db.chunks.find({"userId": user_id, "$or": or_conds}).to_list(5000)
+        if chunk_docs:
+            try:
+                qvec = embeddings.embed_query(last_user)
+                top = embeddings.cosine_rank(qvec, chunk_docs, top_k=5, threshold=0.3)
+                if top:
+                    ctx = "\n\n".join(f"[{c['fileName']}] {c['text']}" for c in top)
+                    system_parts.append(
+                        "Use the following context from the user's uploaded documents to answer. "
+                        "Cite the source file names in [brackets]. If the answer is not in the context, say so.\n\n"
+                        + ctx
+                    )
+                    seen = set()
+                    for c in top:
+                        if c["fileName"] not in seen:
+                            seen.add(c["fileName"])
+                            sources.append({"fileName": c["fileName"], "score": c["score"]})
+            except Exception:
+                logger.exception("RAG retrieval failed")
 
-        # RAG retrieval over project documents AND files attached to this chat.
-        if user_id and last_user:
-            or_conds = [{"conversationId": conv_id}]
-            if project_id:
-                or_conds.append({"projectId": project_id})
-            chunk_docs = await db.chunks.find({"userId": user_id, "$or": or_conds}).to_list(5000)
-            if chunk_docs:
-                try:
-                    qvec = embeddings.embed_query(last_user)
-                    top = embeddings.cosine_rank(qvec, chunk_docs, top_k=5, threshold=0.3)
-                    if top:
-                        ctx = "\n\n".join(f"[{c['fileName']}] {c['text']}" for c in top)
-                        system_parts.append(
-                            "Use the following context from the user's uploaded documents to answer. "
-                            "Cite the source file names in [brackets]. If the answer is not in the context, say so.\n\n"
-                            + ctx
-                        )
-                        seen = set()
-                        for c in top:
-                            if c["fileName"] not in seen:
-                                seen.add(c["fileName"])
-                                sources.append({"fileName": c["fileName"], "score": c["score"]})
-                except Exception:
-                    logger.exception("RAG retrieval failed")
+    app_id = conv.get("appId") if conv else None
+    if app_id:
+        agent = True  # the app builder always works with its tools
+        system_parts.append(await apps.app_prompt(db, app_id))
+    use_runtime = agent or any(m.get("images") for m in history_docs)
+    if agent:
+        system_parts.append(AGENT_PROMPT)
+    system_prompt = "\n\n".join(system_parts)
 
-        use_runtime = agent or any(m.get("images") for m in history_docs)
-        if agent:
-            system_parts.append(AGENT_PROMPT)
-        system_prompt = "\n\n".join(system_parts)
+    if sources:
+        yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
 
-        if sources:
-            yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
+    full, steps, produced = [], [], []
+    try:
+        if use_runtime:
+            if not agent_llm.configured(model):
+                raise RuntimeError(agent_llm.missing_key_message(model))
+            llm_messages = await _llm_messages(history_docs, system_prompt, user_id)
+            ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id)
+            async for ev in run_agent(agent_llm.stream_completion, tool_registry, ctx, model, llm_messages, use_tools=agent):
+                if ev["type"] == "text":
+                    full.append(ev["text"])
+                    yield f"data: {_sse_json(ev['text'])}\n\n"
+                elif ev["type"] == "tool_start":
+                    steps.append({"id": ev["id"], "name": ev["name"], "label": ev["label"], "args": ev["args"], "status": "running"})
+                    yield f"event: tool\ndata: {_sse_json(steps[-1])}\n\n"
+                elif ev["type"] == "heartbeat":
+                    yield ": keepalive\n\n"
+                elif ev["type"] == "tool_end":
+                    step = next((s for s in steps if s["id"] == ev["id"]), None)
+                    if step is not None:
+                        step.update(status="done" if ev["ok"] else "error", summary=ev["summary"],
+                                    output=ev["output"], media=ev["media"])
+                        produced.extend(ev["media"])
+                        yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
+        else:
+            ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id)
+            async for delta in model_router.stream(ai_request):
+                full.append(delta)
+                yield f"data: {_sse_json(delta)}\n\n"
+    except Exception as exc:  # surface provider errors to the client
+        logger.exception("AI stream failed")
+        yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"
+    finally:
+        content = "".join(full).strip()
+        if content or steps:
+            assistant_msg = {
+                "id": str(uuid.uuid4()),
+                "conversationId": conv_id,
+                "role": "assistant",
+                "content": content,
+                "model": model,
+                "sources": sources or None,
+                "steps": steps or None,
+                "media": produced or None,
+                "createdAt": now_iso(),
+            }
+            await db.messages.insert_one(assistant_msg)
+            await db.conversations.update_one(
+                {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": model}}
+            )
+            yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"
 
-        full, steps, produced = [], [], []
-        try:
-            if use_runtime:
-                if not agent_llm.configured(model):
-                    raise RuntimeError(agent_llm.missing_key_message(model))
-                llm_messages = await _llm_messages(history_docs, system_prompt, user_id)
-                ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id)
-                async for ev in run_agent(agent_llm.stream_completion, tool_registry, ctx, model, llm_messages, use_tools=agent):
-                    if ev["type"] == "text":
-                        full.append(ev["text"])
-                        yield f"data: {_sse_json(ev['text'])}\n\n"
-                    elif ev["type"] == "tool_start":
-                        steps.append({"id": ev["id"], "name": ev["name"], "label": ev["label"], "args": ev["args"], "status": "running"})
-                        yield f"event: tool\ndata: {_sse_json(steps[-1])}\n\n"
-                    elif ev["type"] == "heartbeat":
-                        yield ": keepalive\n\n"
-                    elif ev["type"] == "tool_end":
-                        step = next((s for s in steps if s["id"] == ev["id"]), None)
-                        if step is not None:
-                            step.update(status="done" if ev["ok"] else "error", summary=ev["summary"],
-                                        output=ev["output"], media=ev["media"])
-                            produced.extend(ev["media"])
-                            yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
-            else:
-                ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id)
-                async for delta in model_router.stream(ai_request):
-                    full.append(delta)
-                    yield f"data: {_sse_json(delta)}\n\n"
-        except Exception as exc:  # surface provider errors to the client
-            logger.exception("AI stream failed")
-            yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"
-        finally:
-            content = "".join(full).strip()
-            if content or steps:
-                assistant_msg = {
-                    "id": str(uuid.uuid4()),
-                    "conversationId": conv_id,
-                    "role": "assistant",
-                    "content": content,
-                    "model": model,
-                    "sources": sources or None,
-                    "steps": steps or None,
-                    "media": produced or None,
-                    "createdAt": now_iso(),
-                }
-                await db.messages.insert_one(assistant_msg)
-                await db.conversations.update_one(
-                    {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": model}}
-                )
-                yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"
 
+
+def _stream_response(conv_id: str, model: str, agent: bool = False) -> StreamingResponse:
     return StreamingResponse(
-        event_generator(),
+        run_turn(conv_id, model, agent),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
@@ -785,6 +796,8 @@ async def upload_media(file: UploadFile = File(...), conversationId: Optional[st
     if conversationId:
         await _owned_conversation(conversationId, user_id)
     data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image too large (max 20MB)")
     try:
         return await media.save_media(db, user_id, data, content_type, "upload",
                                       name=file.filename, conversation_id=conversationId)
@@ -793,16 +806,41 @@ async def upload_media(file: UploadFile = File(...), conversationId: Optional[st
 
 
 @api.get("/media/{mid}")
-async def get_media(mid: str, authorization: str = Header(None), auth: str = Query(None)):
+async def get_media(mid: str, authorization: str = Header(None), auth: str = Query(None),
+                    range_header: Optional[str] = Header(None, alias="Range")):
     user_id = _user_from_header_or_query(authorization, auth)
     doc = await media.load_media(db, user_id, mid)
     if not doc:
         raise HTTPException(status_code=404, detail="Media not found")
-    headers = {"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"}
+    size = doc.get("size") or 0
+    headers = {"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes"}
     if doc["contentType"] in ("text/html", "image/svg+xml"):
         # Code-produced HTML/SVG could carry script: force download, never render inline.
         headers["Content-Disposition"] = f'attachment; filename="{doc.get("name") or mid}"'
-    return Response(content=doc["data"], media_type=doc["contentType"], headers=headers)
+    # Byte ranges let the video player seek and start quickly on large files.
+    if range_header and range_header.startswith("bytes=") and size:
+        spec = range_header[6:].split(",")[0].strip()
+        start_s, _, end_s = spec.partition("-")
+        try:
+            if start_s:
+                start, end = int(start_s), int(end_s) if end_s else size - 1
+            else:
+                start, end = max(size - int(end_s), 0), size - 1
+        except ValueError:
+            start, end = 0, size - 1
+        if start >= size or start > end:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+        end = min(end, size - 1, start + 8 * 1024 * 1024 - 1)
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+        return Response(content=await media.read_bytes(db, doc, start, end), status_code=206,
+                        media_type=doc["contentType"], headers=headers)
+    if doc.get("chunks"):
+        async def body():
+            for offset in range(0, size, media.CHUNK_BYTES):
+                yield await media.read_bytes(db, doc, offset, offset + media.CHUNK_BYTES - 1)
+        headers["Content-Length"] = str(size)
+        return StreamingResponse(body(), media_type=doc["contentType"], headers=headers)
+    return Response(content=await media.read_bytes(db, doc), media_type=doc["contentType"], headers=headers)
 
 
 @api.get("/media/{mid}/preview")
@@ -811,7 +849,9 @@ async def preview_media(mid: str, user_id: str = Depends(current_user_id)):
     if not doc:
         raise HTTPException(status_code=404, detail="Media not found")
     try:
-        preview = previewer.build_preview(doc["contentType"], doc["data"], doc.get("name") or "")
+        if doc.get("size", 0) > 30 * 1024 * 1024 and not doc["contentType"].startswith(("video/", "image/")):
+            raise ValueError("File too large to preview — download it instead")
+        preview = previewer.build_preview(doc["contentType"], await media.read_bytes(db, doc), doc.get("name") or "")
     except Exception as exc:
         logger.exception("Preview failed")
         preview = {"type": "unsupported", "error": str(exc)[:200]}
@@ -897,6 +937,9 @@ async def root():
 
 
 app.include_router(api)
+app.include_router(apps.router)
+automations.init(db, run_turn, AI_MODEL)
+app.include_router(automations.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -918,6 +961,11 @@ async def startup():
     await db.memories.create_index([("userId", 1), ("projectId", 1)])
     await db.media.create_index("id", unique=True)
     await db.media.create_index([("userId", 1), ("conversationId", 1)])
+    await db.media_chunks.create_index([("mediaId", 1), ("n", 1)], unique=True)
+    await apps.ensure_indexes()
+    await automations.ensure_indexes()
+    if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":
+        automations.start_scheduler()
     try:
         storage.init_storage()
         logger.info("Object storage initialized")
@@ -928,5 +976,6 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    await automations.stop_scheduler()
     await agent_browser.manager.shutdown()
     client.close()

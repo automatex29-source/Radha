@@ -19,7 +19,7 @@ import tempfile
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 CPU_SECONDS = int(os.environ.get("SANDBOX_CPU_SECONDS", "20"))
 WALL_SECONDS = int(os.environ.get("SANDBOX_WALL_SECONDS", "30"))
@@ -130,19 +130,52 @@ def _content_type(ext: str) -> str:
     }.get(ext, "text/plain")
 
 
+def _search_path() -> str:
+    """PATH for sandboxed commands: system dirs plus wherever python3/node live (if reachable)."""
+    dirs = ["/usr/local/bin", "/usr/bin", "/bin"]
+    for tool in ("python3", "node"):
+        found = shutil.which(tool)
+        if found and _world_executable(found) and os.path.dirname(found) not in dirs:
+            dirs.append(os.path.dirname(found))
+    return ":".join(dirs)
+
+
+def _write_files(workdir: Path, files: Dict[str, Union[str, bytes]]):
+    for rel, content in files.items():
+        target = (workdir / rel).resolve()
+        if workdir.resolve() not in target.parents:
+            continue  # paths are validated upstream; never write outside the sandbox
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, str):
+            target.write_text(content)
+        else:
+            target.write_bytes(content)
+    if _drop_root():
+        for path in [workdir, *workdir.rglob("*")]:
+            os.chown(path, NOBODY, NOBODY)
+
+
 async def run_python(code: str) -> RunResult:
+    return await _run(lambda wd: [python_executable(), "-I", str(wd / "main.py")], {"main.py": _PRELUDE + code},
+                      collect_artifacts=True, skip={"main.py"})
+
+
+async def run_shell(command: str, files: Optional[Dict[str, Union[str, bytes]]] = None) -> RunResult:
+    """Run a shell command in a scratch copy of `files` (changes are not written back)."""
+    return await _run(lambda wd: ["/bin/sh", "-c", command], files or {}, collect_artifacts=False)
+
+
+async def _run(build_cmd, files: Dict[str, Union[str, bytes]], collect_artifacts: bool, skip=frozenset()) -> RunResult:
     workdir = Path(tempfile.mkdtemp(prefix="radha-sbx-"))
     try:
-        if _drop_root():
-            os.chown(workdir, NOBODY, NOBODY)
-        script = workdir / "main.py"
-        script.write_text(_PRELUDE + code)
+        _write_files(workdir, files)
         isolated = network_isolation_available()
-        cmd = [python_executable(), "-I", str(script)]
+        cmd = build_cmd(workdir)
         if isolated:
             cmd = ["unshare", "-rn"] + cmd
-        env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(workdir), "TMPDIR": str(workdir),
-               "MPLCONFIGDIR": str(workdir), "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8"}
+        env = {"PATH": _search_path(), "HOME": str(workdir), "TMPDIR": str(workdir),
+               "MPLCONFIGDIR": str(workdir), "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8",
+               "NODE_OPTIONS": "--max-old-space-size=512", "CI": "1"}
 
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=workdir, env=env, stdin=asyncio.subprocess.DEVNULL,
@@ -160,8 +193,8 @@ async def run_python(code: str) -> RunResult:
             out, err = await proc.communicate()
 
         artifacts = []
-        for path in sorted(workdir.rglob("*")):
-            if path.is_file() and path.name != "main.py" and path.suffix.lower() in ARTIFACT_EXTS:
+        for path in sorted(workdir.rglob("*")) if collect_artifacts else []:
+            if path.is_file() and path.name not in skip and path.suffix.lower() in ARTIFACT_EXTS:
                 if path.stat().st_size <= MAX_ARTIFACT_BYTES and len(artifacts) < 10:
                     artifacts.append(Artifact(path.name, _content_type(path.suffix.lower()), path.read_bytes()))
 

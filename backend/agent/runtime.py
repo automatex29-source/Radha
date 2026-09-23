@@ -19,8 +19,8 @@ UI_OUTPUT_CHARS = 4000
 
 async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContext,
                     model: str, messages: List[dict], use_tools: bool = True) -> AsyncIterator[dict]:
-    tools = registry.schemas() if use_tools else []
-    labels = {t.name: (t.label or t.name) for t in registry.active()}
+    tools = registry.schemas(ctx) if use_tools else []
+    labels = {t.name: (t.label or t.name) for t in registry.active(ctx)}
     for step in range(MAX_STEPS):
         # Last step: withhold tools so the model must answer with what it has.
         step_tools = tools if step < MAX_STEPS - 1 else []
