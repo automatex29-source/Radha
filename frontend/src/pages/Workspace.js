@@ -19,7 +19,7 @@ const STARTERS = [
 ];
 
 export default function Workspace() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [projectId, setProjectId] = useState(searchParams.get("project") || null);
   const [project, setProject] = useState(null);
@@ -74,7 +74,7 @@ export default function Workspace() {
     const convParam = searchParams.get("conversation");
     const projParam = searchParams.get("project");
     if (projParam) setProjectId(projParam);
-    if (convParam) openConversation(convParam);
+    if (convParam && convParam !== activeId) openConversation(convParam);
     else if (projParam) { setActiveId(null); setMessages([]); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -91,6 +91,12 @@ export default function Workspace() {
     setActiveId(id);
     setSidebarOpen(false);
     setLoadingConv(true);
+    setSearchParams((sp) => {
+      const n = new URLSearchParams(sp);
+      n.set("conversation", id);
+      n.delete("project");
+      return n;
+    }, { replace: true });
     try {
       const { data } = await api.get(`/conversations/${id}`);
       setMessages(data.messages);
@@ -112,6 +118,12 @@ export default function Workspace() {
     setMessages([]);
     setAttachments([]);
     setSidebarOpen(false);
+    setSearchParams((sp) => {
+      const n = new URLSearchParams();
+      const proj = sp.get("project");
+      if (proj) n.set("project", proj);
+      return n;
+    }, { replace: true });
   };
 
   const deleteConversation = async (id) => {
@@ -238,6 +250,12 @@ export default function Workspace() {
     const { data } = await api.post("/conversations", projectId ? { projectId } : {});
     setActiveId(data.id);
     setConversations((c) => [data, ...c]);
+    setSearchParams((sp) => {
+      const n = new URLSearchParams(sp);
+      n.set("conversation", data.id);
+      n.delete("project");
+      return n;
+    }, { replace: true });
     return data.id;
   };
 
