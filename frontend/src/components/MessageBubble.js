@@ -50,7 +50,7 @@ function SpeakButton({ text, voice, id }) {
   );
 }
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia }) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
 
@@ -103,7 +103,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice 
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
         </div>
-        <MediaGallery items={message.media} />
+        <MediaGallery items={message.media} onOpen={onOpenMedia} />
         {message.sources?.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid={`message-sources-${message.id}`}>
             <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Sources</span>

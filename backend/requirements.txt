@@ -135,3 +135,6 @@ watchfiles==1.2.0
 websockets==16.1.1
 yarl==1.25.1
 zipp==4.1.0
+fpdf2==2.8.8
+playwright==1.56.0
+python-pptx==1.0.2

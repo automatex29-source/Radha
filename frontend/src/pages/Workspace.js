@@ -6,6 +6,8 @@ import IconRail from "@/components/IconRail";
 import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
+import PreviewPanel from "@/components/PreviewPanel";
+import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -44,6 +46,7 @@ export default function Workspace() {
     try { return localStorage.getItem("radha_agent_mode") === "1"; } catch { return false; }
   });
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [previewItem, setPreviewItem] = useState(null);
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
@@ -135,6 +138,7 @@ export default function Workspace() {
   };
 
   const newConversation = () => {
+    setPreviewItem(null);
     setActiveId(null);
     setMessages([]);
     setAttachments([]);
@@ -248,6 +252,9 @@ export default function Workspace() {
             streamStepsRef.current = eventName === "tool" ? [...others, step]
               : streamStepsRef.current.map((s) => (s.id === step.id ? step : s));
             setStreamSteps(streamStepsRef.current);
+            // Like Claude's artifacts: open newly created documents in the side panel.
+            const doc = eventName === "tool_result" && (step.media || []).find((m) => m.kind === "document");
+            if (doc) setPreviewItem(doc);
             continue;
           }
           if (eventName === "done") continue;
@@ -311,8 +318,33 @@ export default function Workspace() {
     }
   };
 
+  const attachVideo = async (file) => {
+    setUploading(true);
+    try {
+      const convId = await ensureConversation();
+      const { duration, frames } = await sampleVideoFrames(file, 8);
+      if (!frames.length) throw new Error("Couldn't read any frames from that video");
+      const group = { id: `vid-${Date.now()}`, name: file.name, duration };
+      const uploaded = [];
+      for (const f of frames) {
+        const fd = new FormData();
+        fd.append("file", new File([f.blob], `${file.name}@${f.time.toFixed(1)}s.jpg`, { type: "image/jpeg" }));
+        fd.append("conversationId", convId);
+        const { data } = await api.post("/media", fd, { headers: { "Content-Type": "multipart/form-data" } });
+        uploaded.push({ ...data, videoGroup: group, time: f.time });
+      }
+      setPendingImages((imgs) => [...imgs, ...uploaded]);
+      toast.success(`${file.name}: ${uploaded.length} frames ready`);
+    } catch (e) {
+      toast.error(e?.response ? formatApiError(e) : e.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const attachFile = async (file) => {
     if (file.type?.startsWith("image/")) return attachImage(file);
+    if (file.type?.startsWith("video/")) return attachVideo(file);
     setUploading(true);
     try {
       const convId = await ensureConversation();
@@ -336,7 +368,14 @@ export default function Workspace() {
 
   const sendMessage = async (text) => {
     const images = text === undefined ? pendingImages : [];
-    const content = (text ?? input).trim() || (images.length ? "What's in this image?" : "");
+    const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
+    const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
+    // Tell the model which images are video frames (and when they were taken).
+    const videoNotes = groups.map((g) => {
+      const times = images.filter((i) => i.videoGroup?.id === g.id).map((i) => `${i.time.toFixed(1)}s`);
+      return `[Video attached: “${g.name}” (${g.duration.toFixed(1)}s). Its ${times.length} frames below were sampled at ${times.join(", ")}.]`;
+    });
+    const content = [...videoNotes, typed].join("\n\n").trim();
     if (!content || streaming) return "";
 
     let convId;
@@ -444,10 +483,10 @@ export default function Workspace() {
             <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
-              {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={voiceEnabled} />)}
+              {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={voiceEnabled} onOpenMedia={setPreviewItem} />)}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
-                  steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming />
+                  steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem} />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
                 <div className="flex justify-center pt-1">
@@ -471,6 +510,7 @@ export default function Workspace() {
           voiceEnabled={voiceEnabled} voiceHint="Voice needs OPENAI_API_KEY on the backend"
           onVoiceMode={() => setVoiceOpen(true)} />
       </div>
+      {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
       {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onUtterance={(t) => sendRef.current(t)} />}
     </div>
   );

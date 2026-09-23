@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { mediaUrl } from "@/lib/api";
-import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, CheckCircle2, XCircle, ChevronRight, FileDown } from "lucide-react";
+import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, CheckCircle2, XCircle, ChevronRight, FileDown,
+  FileSpreadsheet, Presentation, FileText, Clapperboard, MousePointerClick, Eye } from "lucide-react";
+import { fileKind, KIND_META } from "@/components/PreviewPanel";
 
-const ICONS = { web_search: Search, fetch_url: Globe, run_python: Code2, generate_image: ImagePlus };
+const ICONS = {
+  web_search: Search, fetch_url: Globe, run_python: Code2, generate_image: ImagePlus, generate_video: Clapperboard,
+  create_spreadsheet: FileSpreadsheet, create_presentation: Presentation, create_document: FileText, create_html: Globe,
+  browser: MousePointerClick,
+};
 
 function argPreview(step) {
   const a = step.args || {};
@@ -10,6 +16,12 @@ function argPreview(step) {
   if (step.name === "fetch_url") return a.url;
   if (step.name === "generate_image") return a.prompt;
   if (step.name === "run_python") return (a.code || "").split("\n").find((l) => l.trim()) || "";
+  if (step.name === "generate_video") return a.prompt;
+  if (step.name.startsWith("create_")) return a.filename;
+  if (step.name === "browser") {
+    return [a.action, a.url || (a.ref != null ? `#${a.ref}` : ""), a.text ? `“${a.text}”` : "", a.key || "", a.direction || ""]
+      .filter(Boolean).join(" ");
+  }
   return JSON.stringify(a);
 }
 
@@ -57,11 +69,40 @@ export function ToolSteps({ steps }) {
 }
 
 const INLINE_IMAGE = /^image\/(png|jpe?g|gif|webp)$/;
+const PREVIEWABLE = new Set(["sheet", "slides", "doc", "pdf", "html"]);
 
-export function MediaGallery({ items }) {
+function FileCard({ item, onOpen }) {
+  const kind = fileKind(item);
+  const meta = KIND_META[kind] || KIND_META.file;
+  const canPreview = PREVIEWABLE.has(kind) || /^(text\/|application\/json)/.test(item.contentType || "");
+  return (
+    <div className="flex w-full max-w-sm items-center gap-3 rounded-xl border border-[#262C3E] bg-[#11141D] p-3" data-testid={`file-card-${item.id}`}>
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#1D2230]">
+        <meta.icon className={`h-5 w-5 ${meta.color}`} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{item.name || "file"}</p>
+        <p className="text-[11px] text-muted-foreground">{meta.label}</p>
+      </div>
+      {canPreview && onOpen && (
+        <button onClick={() => onOpen(item)} data-testid={`open-preview-${item.id}`} title="Preview"
+          className="flex h-8 items-center gap-1 rounded-lg border border-border px-2.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground">
+          <Eye className="h-3.5 w-3.5" /> Open
+        </button>
+      )}
+      <a href={mediaUrl(item.url)} download={item.name || true} title="Download"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:border-primary/50 hover:text-foreground">
+        <FileDown className="h-3.5 w-3.5" />
+      </a>
+    </div>
+  );
+}
+
+export function MediaGallery({ items, onOpen }) {
   if (!items?.length) return null;
   const images = items.filter((m) => INLINE_IMAGE.test(m.contentType || ""));
-  const files = items.filter((m) => !INLINE_IMAGE.test(m.contentType || ""));
+  const videos = items.filter((m) => (m.contentType || "").startsWith("video/"));
+  const files = items.filter((m) => !INLINE_IMAGE.test(m.contentType || "") && !(m.contentType || "").startsWith("video/"));
   return (
     <div className="mt-3 space-y-2" data-testid="message-media">
       {images.length > 0 && (
@@ -73,14 +114,13 @@ export function MediaGallery({ items }) {
           ))}
         </div>
       )}
+      {videos.map((m) => (
+        <video key={m.id} src={mediaUrl(m.url)} controls playsInline data-testid={`media-video-${m.id}`}
+          className="max-h-[480px] w-full rounded-xl border border-[#222738] bg-black" />
+      ))}
       {files.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {files.map((m) => (
-            <a key={m.id} href={mediaUrl(m.url)} download={m.name || true}
-              className="flex items-center gap-1.5 rounded-lg border border-[#262C3E] bg-[#171B26] px-2.5 py-1.5 text-xs text-foreground hover:border-primary/50">
-              <FileDown className="h-3.5 w-3.5 text-primary" /> {m.name || "file"}
-            </a>
-          ))}
+        <div className="flex flex-col gap-2">
+          {files.map((m) => <FileCard key={m.id} item={m} onOpen={onOpen} />)}
         </div>
       )}
     </div>

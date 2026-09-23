@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines } from "lucide-react";
+import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
@@ -8,6 +8,7 @@ import { transcribe } from "@/lib/voice";
 
 const DOC_TYPES = ".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.log";
 const IMAGE_TYPES = ".png,.jpg,.jpeg,.webp,.gif";
+const VIDEO_TYPES = ".mp4,.webm,.mov,.m4v";
 
 export default function ComposerInput({
   value, onChange, onSend, onStop, streaming, disabled,
@@ -57,7 +58,19 @@ export default function ComposerInput({
     <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-1">
       {images.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" data-testid="composer-images">
-          {images.map((img) => (
+          {groupImages(images).map((img) => img.videoGroup ? (
+            <div key={img.videoGroup.id} className="relative flex items-center gap-2 rounded-lg border border-[#262C3E] bg-[#171B26] py-1 pl-1 pr-3" data-testid="composer-video">
+              <img src={mediaUrl(img.url)} alt="" className="h-14 w-20 rounded-md object-cover" />
+              <div className="min-w-0">
+                <p className="flex max-w-[180px] items-center gap-1 truncate text-xs text-foreground"><Film className="h-3 w-3 shrink-0 text-primary" /> {img.videoGroup.name}</p>
+                <p className="text-[10px] text-muted-foreground">{img.count} frames · {img.videoGroup.duration.toFixed(1)}s</p>
+              </div>
+              <button onClick={() => images.filter((i) => i.videoGroup?.id === img.videoGroup.id).forEach((i) => onRemoveImage?.(i.id))}
+                title="Remove video" className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-destructive">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
             <div key={img.id} className="group/img relative">
               <img src={mediaUrl(img.url)} alt={img.name || "Attachment"} className="h-16 w-16 rounded-lg border border-[#262C3E] object-cover" />
               <button onClick={() => onRemoveImage?.(img.id)} data-testid={`remove-image-${img.id}`} title="Remove image"
@@ -98,9 +111,9 @@ export default function ComposerInput({
             {onAttach && (
               <>
                 <input ref={fileRef} type="file" className="hidden" data-testid="composer-file-input"
-                  accept={`${DOC_TYPES},${IMAGE_TYPES}`}
+                  accept={`${DOC_TYPES},${IMAGE_TYPES},${VIDEO_TYPES}`}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); if (fileRef.current) fileRef.current.value = ""; }} />
-                <button onClick={() => fileRef.current?.click()} disabled={uploading || disabled} data-testid="composer-attach-button" title="Attach a document or image"
+                <button onClick={() => fileRef.current?.click()} disabled={uploading || disabled} data-testid="composer-attach-button" title="Attach a document, image or video"
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-[#171B26] hover:text-foreground disabled:opacity-50">
                   {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 </button>
@@ -153,4 +166,18 @@ export default function ComposerInput({
       <p className="mt-2 text-center text-[11px] text-muted-foreground">RADHA can make mistakes. Verify important information.</p>
     </div>
   );
+}
+
+/** Collapse video frames into one entry per video (with a frame count). */
+function groupImages(images) {
+  const out = [];
+  const seen = new Map();
+  for (const img of images) {
+    if (!img.videoGroup) { out.push(img); continue; }
+    if (seen.has(img.videoGroup.id)) { seen.get(img.videoGroup.id).count += 1; continue; }
+    const entry = { ...img, count: 1 };
+    seen.set(img.videoGroup.id, entry);
+    out.push(entry);
+  }
+  return out;
 }

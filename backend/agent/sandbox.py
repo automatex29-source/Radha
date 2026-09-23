@@ -27,7 +27,8 @@ MEMORY_BYTES = int(os.environ.get("SANDBOX_MEMORY_MB", "768")) * 1024 * 1024
 FILE_BYTES = 20 * 1024 * 1024
 MAX_OUTPUT = 12_000
 MAX_ARTIFACT_BYTES = 8 * 1024 * 1024
-ARTIFACT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".csv", ".txt", ".json", ".md", ".html"}
+ARTIFACT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".csv", ".txt", ".json", ".md", ".html",
+                 ".xlsx", ".docx", ".pptx", ".pdf", ".mp4"}
 NOBODY = 65534
 
 # Makes matplotlib (if installed) render headless and write its cache inside the sandbox.
@@ -122,7 +123,10 @@ def _content_type(ext: str) -> str:
     return {
         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
         ".svg": "image/svg+xml", ".webp": "image/webp", ".csv": "text/csv", ".json": "application/json",
-        ".md": "text/markdown", ".html": "text/html",
+        ".md": "text/markdown", ".html": "text/html", ".pdf": "application/pdf", ".mp4": "video/mp4",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }.get(ext, "text/plain")
 
 

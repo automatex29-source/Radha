@@ -57,3 +57,10 @@ Build RADHA, the first AI product of A.utomateX: a real, working AI workspace (n
 - **Media store**: `media` collection (≤12MB/item), served by `GET /api/media/{id}?auth=`.
 - **Capabilities**: `GET /api/capabilities` tells the UI which features are configured.
 - **Next phases**: video generation/understanding, browser automation, automations/workflows, app builder + virtual FS, test runner, live preview, deployment, git.
+
+## Phase 5 — Files like Claude, video, browser
+- **File creation tools** (`agent/documents.py`): `create_spreadsheet` (xlsx: styled headers, formulas, number formats, native charts), `create_presentation` (16:9 pptx: title/section/bullets/two_column/table/quote layouts, dark/light themes, speaker notes), `create_document` (docx or pdf from Markdown; custom fpdf2 renderer with Unicode + CJK fallback fonts), `create_html` (self-contained pages). `run_python` also returns xlsx/docx/pptx/pdf it writes.
+- **Preview panel** (Claude-style side panel): `GET /api/media/{id}/preview` → sheet rows (common formulas evaluated), slide text/tables/notes, escaped docx HTML; PDF via blob iframe; HTML live in a sandboxed iframe (scripts, no same-origin) with a Code tab. Auto-opens when a document is created.
+- **Video generation** (`agent/video.py`): Sora via REST (submit/poll/download) or Veo via google-genai; SSE heartbeats keep long tool calls alive.
+- **Video understanding**: the browser samples frames from an attached video and sends them as labelled images (works with any vision model; audio is not analysed).
+- **Browser tool** (`agent/browser.py`): Playwright Chromium per conversation; actions open/click/type/press/scroll/back/read/wait; numbered element refs + screenshot each step; every page request passes the SSRF guard. Deploy needs `playwright install chromium`.

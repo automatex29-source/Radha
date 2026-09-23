@@ -28,7 +28,9 @@ import storage
 import embeddings
 import extract as extractor
 import media
+import preview as previewer
 from agent import default_registry, run_agent, ToolContext
+from agent import browser as agent_browser
 from agent import llm as agent_llm
 
 # ---------------------------------------------------------------- infra setup
@@ -306,6 +308,7 @@ async def delete_conversation(conv_id: str, user_id: str = Depends(current_user_
     await _owned_conversation(conv_id, user_id)
     await db.messages.delete_many({"conversationId": conv_id})
     await db.media.delete_many({"conversationId": conv_id, "userId": user_id})
+    await agent_browser.manager.close(f"{user_id}:{conv_id}")
     await db.conversations.delete_one({"id": conv_id})
     return {"ok": True}
 
@@ -319,9 +322,13 @@ SYSTEM_PROMPT = (
 
 AGENT_PROMPT = (
     "You have tools. Use them when they help: web_search and fetch_url for current or factual information "
-    "(cite sources as markdown links), run_python for calculations, data work and charts, and generate_image "
-    "when the user asks for a picture. Briefly say what you are doing before calling a tool, and give a clear "
-    "final answer after. Never invent tool results."
+    "(cite sources as markdown links); browser to operate websites interactively; run_python for calculations, "
+    "data work and charts; generate_image and generate_video for visual media. When the user asks for a file, "
+    "create a real one: create_spreadsheet (Excel), create_presentation (PowerPoint), create_document (Word or "
+    "PDF) or create_html (web pages, dashboards, small apps). Make files complete and polished, not outlines. "
+    "Briefly say what you are doing before calling a tool, and after it give a short summary instead of repeating "
+    "the file's contents. Never invent tool results. Images labelled as video frames come from a video the user "
+    "attached; treat them as that video."
 )
 MAX_CONTEXT_IMAGES = 6
 
@@ -436,6 +443,8 @@ def _stream_response(conv_id: str, model: str, agent: bool = False) -> Streaming
                     elif ev["type"] == "tool_start":
                         steps.append({"id": ev["id"], "name": ev["name"], "label": ev["label"], "args": ev["args"], "status": "running"})
                         yield f"event: tool\ndata: {_sse_json(steps[-1])}\n\n"
+                    elif ev["type"] == "heartbeat":
+                        yield ": keepalive\n\n"
                     elif ev["type"] == "tool_end":
                         step = next((s for s in steps if s["id"] == ev["id"]), None)
                         if step is not None:
@@ -761,6 +770,7 @@ async def capabilities(user_id: str = Depends(current_user_id)):
         "agent": {m["id"]: agent_llm.configured(m["id"]) for m in AVAILABLE_MODELS},
         "tools": tool_registry.describe(),
         "voice": media.openai_configured(),
+        "video": any(t["name"] == "generate_video" and t["available"] for t in tool_registry.describe()),
         "imageGeneration": media.openai_configured(),
         "voices": media.TTS_VOICES,
     }
@@ -793,6 +803,19 @@ async def get_media(mid: str, authorization: str = Header(None), auth: str = Que
         # Code-produced HTML/SVG could carry script: force download, never render inline.
         headers["Content-Disposition"] = f'attachment; filename="{doc.get("name") or mid}"'
     return Response(content=doc["data"], media_type=doc["contentType"], headers=headers)
+
+
+@api.get("/media/{mid}/preview")
+async def preview_media(mid: str, user_id: str = Depends(current_user_id)):
+    doc = await media.load_media(db, user_id, mid)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Media not found")
+    try:
+        preview = previewer.build_preview(doc["contentType"], doc["data"], doc.get("name") or "")
+    except Exception as exc:
+        logger.exception("Preview failed")
+        preview = {"type": "unsupported", "error": str(exc)[:200]}
+    return {"media": media.public_media(doc), "preview": preview}
 
 
 # ---------------------------------------------------------------------- voice
@@ -905,4 +928,5 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    await agent_browser.manager.shutdown()
     client.close()

@@ -4,13 +4,16 @@ Yields UI events as it goes:
   {"type": "text", "text"}                                   streamed answer text
   {"type": "tool_start", "id", "name", "label", "args"}      a tool call began
   {"type": "tool_end", "id", "name", "ok", "summary", "output", "media"}
+  {"type": "heartbeat"}                                      a slow tool is still running
 """
+import asyncio
 import json
 from typing import AsyncIterator, Callable, List
 
 from .tools import ToolContext, ToolRegistry
 
 MAX_STEPS = 8
+HEARTBEAT_SECONDS = 10
 UI_OUTPUT_CHARS = 4000
 
 
@@ -46,7 +49,17 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
                 args = {"_raw": call["arguments"]}
             yield {"type": "tool_start", "id": call["id"], "name": call["name"],
                    "label": labels.get(call["name"], call["name"]), "args": args}
-            out = await registry.run(call["name"], call["arguments"], ctx)
+            task = asyncio.create_task(registry.run(call["name"], call["arguments"], ctx))
+            try:
+                # Slow tools (video, browsing) run for minutes: keep the stream alive meanwhile.
+                while not task.done():
+                    await asyncio.wait({task}, timeout=HEARTBEAT_SECONDS)
+                    if not task.done():
+                        yield {"type": "heartbeat"}
+            finally:
+                if not task.done():
+                    task.cancel()
+            out = task.result()
             yield {"type": "tool_end", "id": call["id"], "name": call["name"], "ok": out.ok,
                    "summary": out.summary, "output": out.content[:UI_OUTPUT_CHARS], "media": out.media}
             messages.append({"role": "tool", "tool_call_id": call["id"], "content": out.content})

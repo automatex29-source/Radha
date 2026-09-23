@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import media
-from . import sandbox, web
+from . import browser, documents, sandbox, video, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -149,6 +149,74 @@ async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Generated “{prompt[:80]}”", media=[saved])
 
 
+async def _save_file(ctx: ToolContext, data: bytes, ext: str, filename: str) -> dict:
+    name = documents.safe_filename(filename, ext)
+    return await media.save_media(ctx.db, ctx.user_id, data, documents.CONTENT_TYPES[ext], "document",
+                                  name=name, conversation_id=ctx.conversation_id)
+
+
+async def _create_spreadsheet(ctx: ToolContext, args: dict) -> ToolOutput:
+    sheets = args.get("sheets")
+    if not isinstance(sheets, list) or not sheets:
+        raise ValueError("'sheets' must be a non-empty list")
+    saved = await _save_file(ctx, documents.build_xlsx(sheets), "xlsx", args.get("filename") or "spreadsheet")
+    rows = sum(len(s.get("rows") or []) for s in sheets)
+    return ToolOutput(content=f"Created {saved['name']} ({len(sheets)} sheet(s), {rows} rows). It is shown to the user "
+                              "with a preview and download button; don't paste its contents.",
+                      summary=f"Created {saved['name']}", media=[saved])
+
+
+async def _create_presentation(ctx: ToolContext, args: dict) -> ToolOutput:
+    slides = args.get("slides")
+    if not isinstance(slides, list) or not slides:
+        raise ValueError("'slides' must be a non-empty list")
+    data = documents.build_pptx(slides, title=args.get("title") or "", theme=args.get("theme") or "dark")
+    saved = await _save_file(ctx, data, "pptx", args.get("filename") or args.get("title") or "presentation")
+    return ToolOutput(content=f"Created {saved['name']} with {len(slides)} slides. It is shown to the user with a "
+                              "preview and download button.", summary=f"Created {saved['name']}", media=[saved])
+
+
+async def _create_document(ctx: ToolContext, args: dict) -> ToolOutput:
+    fmt = (args.get("format") or "docx").lower()
+    if fmt not in ("docx", "pdf"):
+        raise ValueError("format must be 'docx' or 'pdf'")
+    markdown = _require(args, "markdown")
+    title = args.get("title") or ""
+    data = documents.build_docx(markdown, title) if fmt == "docx" else documents.build_pdf(markdown, title)
+    saved = await _save_file(ctx, data, fmt, args.get("filename") or title or "document")
+    return ToolOutput(content=f"Created {saved['name']}. It is shown to the user with a preview and download button.",
+                      summary=f"Created {saved['name']}", media=[saved])
+
+
+async def _create_html(ctx: ToolContext, args: dict) -> ToolOutput:
+    page = _require(args, "html")
+    if "<html" not in page.lower():
+        page = f"<!doctype html>\n<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'></head><body>\n{page}\n</body></html>"
+    saved = await _save_file(ctx, page.encode("utf-8"), "html", args.get("filename") or "page")
+    return ToolOutput(content=f"Created {saved['name']}. The user sees a live preview of it.",
+                      summary=f"Created {saved['name']}", media=[saved])
+
+
+async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
+    prompt = _require(args, "prompt")
+    data, ctype = await video.generate_video(prompt, int(args.get("seconds") or 8), args.get("orientation") or "landscape")
+    saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated", name="video.mp4",
+                                   conversation_id=ctx.conversation_id)
+    return ToolOutput(content="Video generated and shown to the user. Briefly describe what you asked for.",
+                      summary=f"Generated video “{prompt[:70]}”", media=[saved])
+
+
+async def _browser(ctx: ToolContext, args: dict) -> ToolOutput:
+    action = _require(args, "action")
+    snap = await browser.manager.act(f"{ctx.user_id}:{ctx.conversation_id}", action, args)
+    shot = await media.save_media(ctx.db, ctx.user_id, snap["screenshot"], "image/jpeg", "screenshot",
+                                  name="screenshot.jpg", conversation_id=ctx.conversation_id)
+    return ToolOutput(content=browser.describe(snap), summary=f"{snap['title'] or snap['url']}"[:160], media=[shot])
+
+
+_CELL_NOTE = "Cell values as strings; numeric strings become numbers and strings starting with '=' become Excel formulas."
+
+
 def default_registry() -> ToolRegistry:
     return (
         ToolRegistry()
@@ -186,4 +254,98 @@ def default_registry() -> ToolRegistry:
                 "size": {"type": "string", "enum": ["1024x1024", "1536x1024", "1024x1536"]},
             }, "required": ["prompt"]},
             handler=_generate_image, available=media.openai_configured))
+        .register(Tool(
+            name="create_spreadsheet", label="Create Excel file",
+            description="Create an Excel .xlsx workbook with styled headers, optional number formats, formulas and a "
+                        "native chart per sheet. " + _CELL_NOTE,
+            parameters={"type": "object", "properties": {
+                "filename": {"type": "string"},
+                "sheets": {"type": "array", "items": {"type": "object", "properties": {
+                    "name": {"type": "string"},
+                    "columns": {"type": "array", "items": {"type": "string"}, "description": "Header row"},
+                    "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+                    "column_formats": {"type": "object", "description": "Column name -> Excel number format, e.g. {\"Revenue\": \"$#,##0.00\", \"Share\": \"0.0%\"}"},
+                    "chart": {"type": "object", "properties": {
+                        "type": {"type": "string", "enum": ["bar", "line", "pie"]},
+                        "title": {"type": "string"},
+                        "category_column": {"type": "string"},
+                        "value_columns": {"type": "array", "items": {"type": "string"}},
+                    }},
+                }, "required": ["name", "rows"]}},
+            }, "required": ["filename", "sheets"]},
+            handler=_create_spreadsheet))
+        .register(Tool(
+            name="create_presentation", label="Create PowerPoint",
+            description="Create a designed 16:9 PowerPoint .pptx deck. Layouts: title, section, bullets, two_column, "
+                        "table, quote. Keep bullets short (max ~6 per slide); indent a bullet with two leading spaces "
+                        "to nest it. Put detail in speaker notes.",
+            parameters={"type": "object", "properties": {
+                "filename": {"type": "string"},
+                "title": {"type": "string"},
+                "theme": {"type": "string", "enum": ["dark", "light"]},
+                "slides": {"type": "array", "items": {"type": "object", "properties": {
+                    "layout": {"type": "string", "enum": ["title", "section", "bullets", "two_column", "table", "quote"]},
+                    "title": {"type": "string"},
+                    "subtitle": {"type": "string", "description": "title/section/quote slides (quote: attribution)"},
+                    "bullets": {"type": "array", "items": {"type": "string"}},
+                    "left_title": {"type": "string"}, "left": {"type": "array", "items": {"type": "string"}},
+                    "right_title": {"type": "string"}, "right": {"type": "array", "items": {"type": "string"}},
+                    "table": {"type": "object", "properties": {
+                        "columns": {"type": "array", "items": {"type": "string"}},
+                        "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+                    }},
+                    "quote": {"type": "string"},
+                    "notes": {"type": "string", "description": "Speaker notes"},
+                }, "required": ["layout", "title"]}},
+            }, "required": ["filename", "slides"]},
+            handler=_create_presentation))
+        .register(Tool(
+            name="create_document", label="Create document",
+            description="Create a Word (.docx) or PDF document from Markdown: headings, bold/italic, links, nested "
+                        "lists, block quotes, tables and code blocks are all formatted properly.",
+            parameters={"type": "object", "properties": {
+                "filename": {"type": "string"},
+                "format": {"type": "string", "enum": ["docx", "pdf"]},
+                "title": {"type": "string"},
+                "markdown": {"type": "string", "description": "Full document content in Markdown"},
+            }, "required": ["filename", "format", "markdown"]},
+            handler=_create_document))
+        .register(Tool(
+            name="create_html", label="Create web page",
+            description="Create a self-contained HTML page (inline CSS/JS; CDN scripts allowed) that the user can "
+                        "preview live and download: landing pages, dashboards, reports, small apps and games.",
+            parameters={"type": "object", "properties": {
+                "filename": {"type": "string"},
+                "html": {"type": "string", "description": "Complete HTML document"},
+            }, "required": ["filename", "html"]},
+            handler=_create_html))
+        .register(Tool(
+            name="generate_video", label="Generate video",
+            description="Generate a short video clip from a detailed text description (subject, action, camera, "
+                        "style, lighting). Takes one to several minutes.",
+            parameters={"type": "object", "properties": {
+                "prompt": {"type": "string"},
+                "seconds": {"type": "integer", "description": "4, 8 or 12 (default 8)"},
+                "orientation": {"type": "string", "enum": ["landscape", "portrait"]},
+            }, "required": ["prompt"]},
+            handler=_generate_video, available=video.available))
+        .register(Tool(
+            name="browser", label="Browser",
+            description="Control a real web browser to use websites interactively (search forms, navigation, "
+                        "multi-page tasks, JavaScript-heavy sites). Actions: open {url}; click {ref}; type {ref, text, "
+                        "submit}; press {key}; scroll {direction}; back; read (full page text); wait {seconds}. Every "
+                        "result lists interactive elements as [ref] to use in the next action. Prefer fetch_url for "
+                        "simply reading a page. Never enter passwords or payment details.",
+            parameters={"type": "object", "properties": {
+                "action": {"type": "string", "enum": ["open", "click", "type", "press", "scroll", "back", "read", "wait"]},
+                "url": {"type": "string"},
+                "ref": {"type": "integer", "description": "Element number from the last result"},
+                "text": {"type": "string", "description": "Text to type"},
+                "submit": {"type": "boolean", "description": "Press Enter after typing"},
+                "key": {"type": "string", "description": "e.g. Enter, Tab, Escape, ArrowDown"},
+                "direction": {"type": "string", "enum": ["up", "down"]},
+                "seconds": {"type": "number"},
+                "selector": {"type": "string", "description": "CSS selector, only if no ref fits"},
+            }, "required": ["action"]},
+            handler=_browser, available=browser.available))
     )

@@ -15,7 +15,7 @@ STT_MODEL = os.environ.get("STT_MODEL", "gpt-4o-mini-transcribe")
 TTS_MODEL = os.environ.get("TTS_MODEL", "gpt-4o-mini-tts")
 TTS_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]
 IMAGE_SIZES = {"1024x1024", "1536x1024", "1024x1536", "auto"}
-MAX_MEDIA_BYTES = 12 * 1024 * 1024  # stays under MongoDB's 16MB document limit
+MAX_MEDIA_BYTES = 15 * 1024 * 1024  # stays under MongoDB's 16MB document limit
 MAX_TTS_CHARS = 4000
 
 
