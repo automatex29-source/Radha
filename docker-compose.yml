@@ -14,9 +14,6 @@ services:
     restart: unless-stopped
     depends_on:
       - mongo
-    env_file:
-      - path: .env
-        required: false
     environment:
       MONGO_URL: mongodb://mongo:27017
       DB_NAME: radha
@@ -25,6 +22,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      VIDEO_QUALITY: ${VIDEO_QUALITY:-high}
     ports:
       - "8080:8001"
     volumes:
