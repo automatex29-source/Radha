@@ -1,10 +1,10 @@
 {
   "name": "RADHA",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-  "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb"
   },
-  "hostRequirements": { "cpus": 2, "memory": "8gb" },
   "secrets": {
     "ANTHROPIC_API_KEY": {
       "description": "Claude key for chat, agent mode, the app builder and automations (from console.anthropic.com). Enter at least one key.",
@@ -19,12 +19,21 @@
       "documentationUrl": "https://aistudio.google.com/apikey"
     }
   },
-  "forwardPorts": [8080],
+  "forwardPorts": [
+    8080
+  ],
   "portsAttributes": {
-    "8080": { "label": "RADHA", "onAutoForward": "openBrowser" }
+    "8080": {
+      "label": "RADHA",
+      "onAutoForward": "openBrowser"
+    }
   },
   "postStartCommand": "bash .devcontainer/start.sh",
   "customizations": {
-    "codespaces": { "openFiles": [".devcontainer/HOW-TO.md"] }
+    "codespaces": {
+      "openFiles": [
+        ".devcontainer/HOW-TO.md"
+      ]
+    }
   }
 }
