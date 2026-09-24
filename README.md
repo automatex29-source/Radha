@@ -83,3 +83,13 @@ Backend tests that run offline: `cd backend && pytest tests/test_agent_tools.py 
   It is not a virtual machine; don't expose RADHA publicly to untrusted users without
   extra isolation.
 - Published apps are served from `/api/sites/<name>/` in a sandboxed origin.
+
+## Put it online (Railway)
+
+1. Sign in at https://railway.com with GitHub.
+2. **New Project → Deploy from GitHub repo →** pick `Radha`. Railway builds it from the `Dockerfile`.
+3. In the project, click **Create → Database → MongoDB**.
+4. Open the **Radha** service → **Variables**, and add:
+   - `MONGO_URL` = `${{MongoDB.MONGO_URL}}` (use *Add reference* → MongoDB → `MONGO_URL`)
+   - your key(s): `GEMINI_API_KEY`, `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY`
+5. **Settings → Networking → Generate Domain.** Open the link when the deploy is green.

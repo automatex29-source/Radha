@@ -34,4 +34,5 @@ COPY --from=frontend /frontend/build /app/frontend/build
 RUN mkdir -p /app/cache/fastembed
 
 EXPOSE 8001
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]
+# Hosting platforms (Railway, Render, Fly…) pass the port to listen on in $PORT.
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001} --proxy-headers --forwarded-allow-ips='*'"]

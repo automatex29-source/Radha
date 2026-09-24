@@ -40,7 +40,7 @@ from agent import llm as agent_llm
 # ---------------------------------------------------------------- infra setup
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
+db = client[os.environ.get("DB_NAME") or "radha"]
 
 # Emergent Universal Key (only used on Emergent). Elsewhere, set provider keys instead.
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
