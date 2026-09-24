@@ -5,7 +5,15 @@ execution), images and video, voice, Excel/PowerPoint/Word/PDF creation with
 previews, an app builder with live preview, publishing and git history, and
 scheduled automations.
 
-## Run it on your computer (easiest: Docker)
+## Try it in your browser (no install)
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/automatex29-source/Radha?quickstart=1)
+
+Click the button, paste at least one API key when GitHub asks for secrets, and click
+**Create codespace**. RADHA builds (about 10 minutes the first time) and opens in a new tab.
+Personal GitHub accounts include free Codespaces hours each month.
+
+## Run it on your computer (Docker)
 
 You need **Docker Desktop** and **at least one AI API key**.
 

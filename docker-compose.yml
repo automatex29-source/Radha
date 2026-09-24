@@ -20,6 +20,11 @@ services:
     environment:
       MONGO_URL: mongodb://mongo:27017
       DB_NAME: radha
+      # Keys from your .env file or your shell (e.g. GitHub Codespaces secrets).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
     ports:
       - "8080:8001"
     volumes:

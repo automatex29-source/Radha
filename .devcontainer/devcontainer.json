@@ -1,0 +1,30 @@
+{
+  "name": "RADHA",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  "secrets": {
+    "ANTHROPIC_API_KEY": {
+      "description": "Claude key for chat, agent mode, the app builder and automations (from console.anthropic.com). Enter at least one key.",
+      "documentationUrl": "https://console.anthropic.com/settings/keys"
+    },
+    "OPENAI_API_KEY": {
+      "description": "OpenAI key for GPT, images, voice and Sora video (optional if you entered a Claude key).",
+      "documentationUrl": "https://platform.openai.com/api-keys"
+    },
+    "GEMINI_API_KEY": {
+      "description": "Google key for Gemini and Veo video (optional).",
+      "documentationUrl": "https://aistudio.google.com/apikey"
+    }
+  },
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "RADHA", "onAutoForward": "openBrowser" }
+  },
+  "postStartCommand": "bash .devcontainer/start.sh",
+  "customizations": {
+    "codespaces": { "openFiles": [".devcontainer/HOW-TO.md"] }
+  }
+}
