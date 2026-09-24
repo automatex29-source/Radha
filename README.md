@@ -10,7 +10,7 @@ scheduled automations.
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/automatex29-source/Radha?quickstart=1)
 
 Click the button, paste at least one API key when GitHub asks for secrets, and click
-**Create codespace**. RADHA builds (about 10 minutes the first time) and opens in a new tab.
+**Create codespace**. RADHA builds in the terminal (about 10–15 minutes the first time); when it prints `Application startup complete`, open the **Ports** tab and click the globe next to 8080.
 Personal GitHub accounts include free Codespaces hours each month.
 
 ## Run it on your computer (Docker)

@@ -28,12 +28,12 @@
       "onAutoForward": "openBrowser"
     }
   },
-  "postStartCommand": "bash .devcontainer/start.sh",
   "customizations": {
     "codespaces": {
       "openFiles": [
         ".devcontainer/HOW-TO.md"
       ]
     }
-  }
+  },
+  "postAttachCommand": "bash .devcontainer/start.sh"
 }
