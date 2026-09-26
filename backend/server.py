@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import os
+import secrets
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ from auth import (
     decode_token,
 )
 from ai_runtime import ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, AIRequest, ChatMessage
+from ai_runtime._backend import uses_emergent
 import storage
 import embeddings
 import extract as extractor
@@ -38,21 +40,10 @@ from agent import llm as agent_llm
 # ---------------------------------------------------------------- infra setup
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
+db = client[os.environ.get("DB_NAME") or "radha"]
 
-AI_API_KEY = os.environ["AI_API_KEY"]
-AI_MODEL = os.environ.get("AI_MODEL", "claude-sonnet-4-6")
-
-# AI Runtime: RADHA -> Router -> Provider -> LLM
-# Every provider runs through the Emergent Universal Key. Adding a provider is a
-# single .register() call — the chat system never changes.
-model_router = (
-    ModelRouter(default_model=AI_MODEL)
-    .register(AnthropicProvider(AI_API_KEY))
-    .register(OpenAIProvider(AI_API_KEY))
-    .register(GeminiProvider(AI_API_KEY))
-)
-
+# Emergent Universal Key (only used on Emergent). Elsewhere, set provider keys instead.
+AI_API_KEY = os.environ.get("AI_API_KEY", "")
 AVAILABLE_MODELS = [
     {"id": "claude-sonnet-4-6", "label": "RADHA Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
     {"id": "claude-haiku-4-5-20251001", "label": "RADHA Swift", "provider": "anthropic", "description": "Fast · lightweight"},
@@ -60,7 +51,23 @@ AVAILABLE_MODELS = [
     {"id": "gemini-3-flash-preview", "label": "RADHA Flash", "provider": "gemini", "description": "Snappy · Google"},
 ]
 
+# Default model: AI_MODEL if set, otherwise the first model whose provider key is configured.
+AI_MODEL = (os.environ.get("AI_MODEL")
+            or next((m["id"] for m in AVAILABLE_MODELS if agent_llm.configured(m["id"])), "claude-sonnet-4-6"))
+
+# AI Runtime: RADHA -> Router -> Provider -> LLM
+# Providers use the Emergent Universal Key on Emergent, or LiteLLM with your own
+# keys elsewhere. Adding a provider is a single .register() call.
+model_router = (
+    ModelRouter(default_model=AI_MODEL)
+    .register(AnthropicProvider(AI_API_KEY))
+    .register(OpenAIProvider(AI_API_KEY))
+    .register(GeminiProvider(AI_API_KEY))
+)
+
+
 tool_registry = default_registry()
+storage.init(db)
 apps.init(db)
 apps.register_tools(tool_registry)
 
@@ -461,6 +468,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
                         produced.extend(ev["media"])
                         yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
         else:
+            if not uses_emergent(AI_API_KEY) and not agent_llm.configured(model):
+                raise RuntimeError(agent_llm.missing_key_message(model))
             ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id)
             async for delta in model_router.stream(ai_request):
                 full.append(delta)
@@ -668,7 +677,7 @@ async def upload_file(pid: str, file: UploadFile = File(...), user_id: str = Dep
     content_type = file.content_type or "application/octet-stream"
 
     try:
-        result = storage.put_object(path, data, content_type)
+        result = await storage.put_object(path, data, content_type)
     except Exception as exc:
         logger.exception("Storage upload failed")
         raise HTTPException(status_code=502, detail=f"Storage upload failed: {exc}")
@@ -711,7 +720,7 @@ async def upload_conversation_file(conv_id: str, file: UploadFile = File(...), u
     path = storage.object_path(user_id, file_id, ext)
     content_type = file.content_type or "application/octet-stream"
     try:
-        result = storage.put_object(path, data, content_type)
+        result = await storage.put_object(path, data, content_type)
     except Exception as exc:
         logger.exception("Storage upload failed")
         raise HTTPException(status_code=502, detail=f"Storage upload failed: {exc}")
@@ -760,7 +769,10 @@ async def download_file(fid: str, authorization: str = Header(None), auth: str =
     doc = await db.files.find_one({"id": fid, "userId": user_id, "is_deleted": False})
     if not doc:
         raise HTTPException(status_code=404, detail="File not found")
-    data, content_type = storage.get_object(doc["storage_path"])
+    try:
+        data, content_type = await storage.get_object(doc["storage_path"])
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File data missing")
     return Response(content=data, media_type=doc.get("content_type", content_type))
 
 
@@ -941,6 +953,22 @@ app.include_router(apps.router)
 automations.init(db, run_turn, AI_MODEL)
 app.include_router(automations.router)
 
+# Serve the built frontend (frontend/build) from the same origin, so a single
+# process runs all of RADHA. In development the Vite dev server is used instead.
+FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST") or ROOT_DIR.parent / "frontend" / "build").resolve()
+if (FRONTEND_DIST / "index.html").is_file():
+    from fastapi.responses import FileResponse
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def frontend(full_path: str):
+        if full_path.startswith("api/") or full_path == "api":
+            raise HTTPException(status_code=404, detail="Not found")
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        if full_path and candidate.is_file() and FRONTEND_DIST in candidate.parents:
+            cache = "public, max-age=31536000, immutable" if full_path.startswith("assets/") else "no-cache"
+            return FileResponse(candidate, headers={"Cache-Control": cache})
+        return FileResponse(FRONTEND_DIST / "index.html", headers={"Cache-Control": "no-cache"})
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -948,6 +976,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+async def _ensure_auth_secret():
+    """Use AUTH_SECRET if set; otherwise create one once and keep it in the database,
+    so logins survive restarts without any setup."""
+    if os.environ.get("AUTH_SECRET"):
+        return
+    await db.settings.create_index("id", unique=True)
+    doc = await db.settings.find_one({"id": "auth_secret"})
+    if not doc:
+        doc = {"id": "auth_secret", "value": secrets.token_urlsafe(48)}
+        try:
+            await db.settings.insert_one(doc)
+        except Exception:  # another process created it first
+            doc = await db.settings.find_one({"id": "auth_secret"})
+    os.environ["AUTH_SECRET"] = doc["value"]
 
 
 @app.on_event("startup")
@@ -966,11 +1010,16 @@ async def startup():
     await automations.ensure_indexes()
     if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":
         automations.start_scheduler()
-    try:
-        storage.init_storage()
-        logger.info("Object storage initialized")
-    except Exception as exc:
-        logger.error(f"Storage init failed: {exc}")
+    await _ensure_auth_secret()
+    await storage.ensure_indexes()
+    if storage.USE_EMERGENT:
+        try:
+            storage.init_storage()
+            logger.info("Object storage initialized")
+        except Exception as exc:
+            logger.error(f"Storage init failed: {exc}")
+    else:
+        logger.info("Storing uploaded files in MongoDB")
     logger.info("RADHA backend ready")
 
 

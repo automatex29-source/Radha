@@ -31,8 +31,8 @@ def configured(model: str) -> bool:
 
 
 def missing_key_message(model: str) -> str:
-    return (f"Agent mode and image understanding need {_PROVIDER_KEYS[provider_for(model)]} "
-            "(or LLM_GATEWAY_URL) set on the backend.")
+    return (f"To use {model}, set {_PROVIDER_KEYS[provider_for(model)]} (or LLM_GATEWAY_URL) in your "
+            ".env file and restart RADHA.")
 
 
 async def stream_completion(model: str, messages: List[dict], tools: List[dict]) -> AsyncIterator[dict]:

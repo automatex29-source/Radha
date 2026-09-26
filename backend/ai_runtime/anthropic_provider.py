@@ -1,9 +1,9 @@
-"""Anthropic (Claude) provider backed by the Emergent LLM integration."""
+"""Anthropic (Claude) provider (Emergent LLM integration, or LiteLLM with your own key)."""
 from typing import AsyncIterator
 
 from .base import ModelProvider
 from .types import AIRequest
-from ._emergent import stream_via_emergent
+from ._backend import stream_text
 
 _MODELS = {
     "claude-sonnet-4-6",
@@ -23,5 +23,5 @@ class AnthropicProvider(ModelProvider):
         return model in _MODELS
 
     async def stream(self, request: AIRequest) -> AsyncIterator[str]:
-        async for delta in stream_via_emergent(self._api_key, "anthropic", request):
+        async for delta in stream_text(self._api_key, "anthropic", request):
             yield delta

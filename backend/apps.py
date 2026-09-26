@@ -132,7 +132,11 @@ def init(database):
 
 async def ensure_indexes():
     await db.apps.create_index([("userId", 1), ("updatedAt", -1)])
-    await db.apps.create_index("published.slug", unique=True, sparse=True)
+    info = await db.apps.index_information()
+    partial = {"published.slug": {"$type": "string"}}
+    if "published.slug_1" in info and info["published.slug_1"].get("partialFilterExpression") != partial:
+        await db.apps.drop_index("published.slug_1")
+    await db.apps.create_index("published.slug", unique=True, partialFilterExpression=partial)
     await db.app_files.create_index([("appId", 1), ("path", 1)], unique=True)
     await db.app_blobs.create_index("hash", unique=True)
     await db.app_commits.create_index([("appId", 1), ("createdAt", -1)])

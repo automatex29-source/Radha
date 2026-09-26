@@ -46,8 +46,19 @@ def init(database, turn_runner: Callable, model: str):
 async def ensure_indexes():
     await db.automations.create_index([("userId", 1), ("createdAt", -1)])
     await db.automations.create_index([("enabled", 1), ("nextRunAt", 1)])
-    await db.automations.create_index("webhookSecret", unique=True, sparse=True)
+    # Most automations have webhookSecret=None; only index real secrets (a sparse index
+    # would still include the nulls and reject the second automation).
+    await _replace_index(db.automations, "webhookSecret_1", "webhookSecret",
+                         {"webhookSecret": {"$type": "string"}})
     await db.automation_runs.create_index([("automationId", 1), ("startedAt", -1)])
+
+
+async def _replace_index(collection, name: str, field: str, partial: dict):
+    """Create a unique partial index, dropping an older definition with the same name."""
+    info = await collection.index_information()
+    if name in info and info[name].get("partialFilterExpression") != partial:
+        await collection.drop_index(name)
+    await collection.create_index(field, name=name, unique=True, partialFilterExpression=partial)
 
 
 def _now() -> datetime:
