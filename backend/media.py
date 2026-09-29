@@ -99,11 +99,21 @@ def _dims(size: str) -> tuple:
     return int(w), int(h)
 
 
-def _check_image(resp) -> bytes:
+def _check_image(resp, size: Optional[str] = None) -> bytes:
     if resp.status_code >= 400:
         raise ImageError(f"HTTP {resp.status_code}: {resp.text[:200]}")
     if not image_type(resp.content):
         raise ImageError(f"not an image ({resp.headers.get('content-type', '?')})")
+    if size:
+        # Rate-limited or keyless requests can come back as a small "pollinations.ai" banner instead of the
+        # picture; a real result has the shape we asked for.
+        from PIL import Image
+        import io
+
+        got_w, got_h = Image.open(io.BytesIO(resp.content)).size
+        want_w, want_h = _dims(size)
+        if min(got_w, got_h) < 256 or abs(got_w / got_h - want_w / want_h) > 0.15:
+            raise ImageError(f"got a {got_w}x{got_h} placeholder instead of a {want_w}x{want_h} picture")
     return resp.content
 
 
@@ -125,7 +135,7 @@ async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Opti
         if os.environ.get("POLLINATIONS_API_KEY"):
             headers["Authorization"] = f"Bearer {os.environ['POLLINATIONS_API_KEY']}"
     async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT, follow_redirects=True) as client:
-        return _check_image(await client.get(url, params=params, headers=headers))
+        return _check_image(await client.get(url, params=params, headers=headers), size)
 
 
 async def _huggingface(prompt: str, size: str) -> bytes:

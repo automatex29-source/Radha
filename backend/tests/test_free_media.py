@@ -66,7 +66,7 @@ class TestImages:
 
         def handler(req):
             seen.append(req)
-            return httpx.Response(200, content=png(), headers={"content-type": "image/png"})
+            return httpx.Response(200, content=png(size=(768, 512)), headers={"content-type": "image/png"})
 
         fake_http(monkeypatch, handler)
         assert media.image_type(run(media.generate_image("a red fox", "1536x1024"))) == "image/png"
@@ -74,6 +74,11 @@ class TestImages:
         assert req.url.host == "gen.pollinations.ai" and req.url.raw_path.startswith(b"/image/a%20red%20fox?")
         assert req.headers["authorization"] == "Bearer sk_test"
         assert req.url.params["width"] == "1536" and req.url.params["height"] == "1024"
+
+    def test_placeholder_banner_is_rejected(self, monkeypatch):
+        fake_http(monkeypatch, lambda req: httpx.Response(200, content=png("green", (400, 120))))
+        with pytest.raises(media.ImageError, match="placeholder.*POLLINATIONS_API_KEY"):
+            run(media.generate_image("cat", "1024x1024"))
 
     def test_falls_back_to_keyless_endpoint(self, monkeypatch):
         monkeypatch.setenv("POLLINATIONS_API_KEY", "sk_bad")
@@ -83,10 +88,10 @@ class TestImages:
             hosts.append(req.url.host)
             if req.url.host == "gen.pollinations.ai":
                 return httpx.Response(401, json={"error": "key required"})
-            return httpx.Response(200, content=png())
+            return httpx.Response(200, content=png(size=(512, 512)))
 
         fake_http(monkeypatch, handler)
-        assert run(media.generate_image("cat")) == png()
+        assert run(media.generate_image("cat")) == png(size=(512, 512))
         assert hosts == ["gen.pollinations.ai", "image.pollinations.ai"]
 
     def test_all_fail_reports_errors(self, monkeypatch):
