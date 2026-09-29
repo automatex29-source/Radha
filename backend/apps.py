@@ -580,6 +580,7 @@ class AppIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     description: Optional[str] = Field(default=None, max_length=500)
     template: str = "blank"
+    files: Optional[Dict[str, str]] = None  # start from these files instead of a template (e.g. code from a chat)
 
 
 class AppPatch(BaseModel):
@@ -623,11 +624,28 @@ async def create_app(body: AppIn, user_id: str = Depends(current_user_id)):
             "projectId": None, "appId": app_id, "createdAt": ts, "updatedAt": ts}
     doc = {"id": app_id, "userId": user_id, "name": body.name.strip(), "description": (body.description or "").strip() or None,
            "conversationId": conv["id"], "published": None, "createdAt": ts, "updatedAt": ts}
+    if body.files:
+        if len(body.files) > MAX_FILES:
+            raise HTTPException(status_code=400, detail=f"Too many files (max {MAX_FILES})")
+        try:
+            source = {clean_path(p): c for p, c in body.files.items()}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        label = "Create app from chat code"
+    else:
+        template = body.template if body.template in TEMPLATES else "blank"
+        source, label = TEMPLATES[template], f"Create app from {template} template"
     await db.conversations.insert_one(conv)
     await db.apps.insert_one(doc)
-    for path, content in TEMPLATES.get(body.template, TEMPLATES["blank"]).items():
-        await write_file(app_id, path, content)
-    await commit(app_id, f"Create app from {body.template if body.template in TEMPLATES else 'blank'} template", author="RADHA")
+    try:
+        for path, content in source.items():
+            await write_file(app_id, path, content)
+    except ValueError as exc:
+        await db.app_files.delete_many({"appId": app_id})
+        await db.apps.delete_one({"id": app_id})
+        await db.conversations.delete_one({"id": conv["id"]})
+        raise HTTPException(status_code=400, detail=str(exc))
+    await commit(app_id, label, author="RADHA")
     return public_app(doc)
 
 

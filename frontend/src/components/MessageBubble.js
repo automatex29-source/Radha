@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { speak, stopSpeaking, speechText } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
+import CodeProject from "@/components/CodeProject";
 
 function CodeBlock({ inline, className, children }) {
   const [copied, setCopied] = useState(false);
@@ -23,7 +24,7 @@ function CodeBlock({ inline, className, children }) {
         {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
         {copied ? "Copied" : "Copy"}
       </button>
-      <pre><code className={className}>{children}</code></pre>
+      <pre className="max-h-[28rem] overflow-auto"><code className={className}>{children}</code></pre>
     </div>
   );
 }
@@ -50,7 +51,7 @@ function SpeakButton({ text, voice, id }) {
   );
 }
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true }) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
 
@@ -103,6 +104,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
         </div>
+        {codeProject && <CodeProject content={message.content || ""} streaming={streaming} />}
         <MediaGallery items={message.media} onOpen={onOpenMedia} />
         {message.sources?.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid={`message-sources-${message.id}`}>
