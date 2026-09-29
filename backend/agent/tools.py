@@ -112,7 +112,8 @@ async def _web_search(ctx: ToolContext, args: dict) -> ToolOutput:
     if web.CURRENCY.search(query):  # live rates beat search snippets for currency questions
         try:
             rates = await web.exchange_rates(query)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Exchange rates failed: %s", exc)
             rates = ""
     try:
         results = await web.search(query, int(args.get("max_results") or 6))

@@ -98,3 +98,48 @@ def test_web_search_tool_adds_rates_even_when_search_fails(monkeypatch):
     monkeypatch.setattr(web, "exchange_rates", fake_rates)
     out = asyncio.run(tools._web_search(None, {"query": "USD to IRHT exchange rate"}))
     assert "88.0000 INR" in out.content
+
+
+def test_parses_bing_results():
+    import base64
+    wrapped = "https://www.bing.com/ck/a?!&&p=x&u=a1" + base64.urlsafe_b64encode(b"https://example.org/b").decode().rstrip("=")
+    html = f"""<ol><li class="b_algo"><h2><a href="https://example.org/a">First</a></h2>
+      <div class="b_caption"><p>Snippet one.</p></div></li>
+      <li class="b_algo"><h2><a href="{wrapped}">Second</a></h2></li></ol>"""
+    assert web.parse_bing_html(html, 5) == [
+        {"title": "First", "url": "https://example.org/a", "snippet": "Snippet one."},
+        {"title": "Second", "url": "https://example.org/b", "snippet": ""},
+    ]
+
+
+def test_search_falls_back_to_next_engine(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    tried = []
+
+    def engine(name, result):
+        async def run(client, query, limit):
+            tried.append(name)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        run.__name__ = name
+        return run
+    monkeypatch.setattr(web, "_ddg", engine("ddg", []))
+    monkeypatch.setattr(web, "_ddg_lite", engine("lite", RuntimeError("blocked")))
+    monkeypatch.setattr(web, "_bing", engine("bing", [{"title": "B", "url": "https://b.test", "snippet": ""}]))
+    monkeypatch.setattr(web, "_wikipedia", engine("wiki", []))
+    assert asyncio.run(web.search("q"))[0]["url"] == "https://b.test"
+    assert tried == ["ddg", "lite", "bing"]
+
+
+def test_rates_fall_back_to_frankfurter(monkeypatch):
+    import httpx
+
+    def handler(request):
+        if "er-api" in str(request.url):
+            return httpx.Response(500)
+        return httpx.Response(200, json={"date": "2026-09-29", "rates": {"INR": 88.5, "EUR": 0.85}})
+    real = httpx.AsyncClient
+    monkeypatch.setattr(web.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    out = asyncio.run(web.exchange_rates("USD to INR"))
+    assert "1 USD = 88.5000 INR" in out and "ECB" in out

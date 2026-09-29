@@ -66,15 +66,12 @@ async def lookup(user_messages: List[str], search: bool = True) -> Optional[str]
         jobs.append(_search(text))
     if not jobs:
         return None
-    try:
-        found = await asyncio.wait_for(asyncio.gather(*jobs, return_exceptions=True), LOOKUP_TIMEOUT + 2)
-    except asyncio.TimeoutError:
-        logger.warning("Live lookup timed out")
-        return None
+    # Each part has its own time limit, so slow search engines never cost us the exchange rates.
+    found = await asyncio.gather(*(asyncio.wait_for(j, LOOKUP_TIMEOUT) for j in jobs), return_exceptions=True)
     parts = []
     for item in found:
         if isinstance(item, Exception):
-            logger.warning("Live lookup part failed: %s", item)
+            logger.warning("Live lookup part failed: %r", item)
         elif item:
             parts.append(item)
     return "\n\n".join(parts) or None
