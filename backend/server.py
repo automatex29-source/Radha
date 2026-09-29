@@ -439,7 +439,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
         agent = True  # the app builder always works with its tools
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
-    if agent:
+    # Free models (Groq) get only the app tools inside an app, to stay within their token budget.
+    focused = bool(app_id) and agent_llm.lean(model)
+    if agent and not focused:
         system_parts.append(AGENT_PROMPT)
     system_prompt = "\n\n".join(system_parts)
 
@@ -452,7 +454,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
             if not agent_llm.configured(model):
                 raise RuntimeError(agent_llm.missing_key_message(model))
             llm_messages = await _llm_messages(history_docs, system_prompt, user_id)
-            ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id)
+            ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused)
             async for ev in run_agent(agent_llm.stream_completion, tool_registry, ctx, model, llm_messages, use_tools=agent):
                 if ev["type"] == "text":
                     full.append(ev["text"])

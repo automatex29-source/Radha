@@ -31,6 +31,8 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
                 yield ev
             elif ev["type"] == "tool_calls":
                 calls = ev["calls"]
+            elif ev["type"] == "heartbeat":
+                yield ev
         if not calls:
             return
         if text:
