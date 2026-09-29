@@ -47,8 +47,8 @@ export default function CodeProject({ content, streaming }) {
   const btn = "flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:border-primary/50 disabled:opacity-50";
 
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-[#262C3E] bg-[#0F1219]" data-testid="code-project">
-      <div className="flex flex-wrap items-center gap-2 border-b border-[#262C3E] px-3 py-2">
+    <div className="mt-3 overflow-hidden rounded-xl border border-border-strong bg-sunken" data-testid="code-project">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border-strong px-3 py-2">
         <FileCode2 className="h-4 w-4 text-primary" />
         <span className="text-sm font-semibold">{name}</span>
         <span className="truncate font-mono text-[11px] text-muted-foreground">

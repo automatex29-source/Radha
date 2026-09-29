@@ -32,6 +32,12 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  --color-sunken: hsl(var(--sunken));
+  --color-surface: hsl(var(--surface));
+  --color-surface-strong: hsl(var(--surface-strong));
+  --color-border-strong: hsl(var(--border-strong));
+  --color-brand: hsl(var(--brand));
+  --color-brand-soft: hsl(var(--brand-soft));
 
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
@@ -58,8 +64,45 @@
 }
 
 @layer base {
+  /* Light theme (Daylight Studio) */
   :root {
-    /* RADHA runs dark-only — tokens map to the Obsidian Studio palette. */
+    --background: 220 25% 98%;     /* #F8F9FB */
+    --foreground: 224 32% 12%;     /* #151A28 */
+    --card: 0 0% 100%;
+    --card-foreground: 224 32% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 32% 12%;
+    --primary: 239 84% 62%;        /* #5053EE */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 20% 94%;
+    --secondary-foreground: 224 32% 12%;
+    --muted: 222 20% 94%;
+    --muted-foreground: 220 10% 42%;
+    --accent: 230 40% 94%;
+    --accent-foreground: 224 32% 12%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 18% 89%;         /* #DFE2EA */
+    --input: 222 18% 86%;
+    --ring: 239 84% 62%;
+    --radius: 0.75rem;
+
+    --sunken: 222 24% 96%;         /* panels, code, sidebars */
+    --surface: 224 22% 94%;        /* hover */
+    --surface-strong: 234 60% 94%; /* selected */
+    --border-strong: 222 16% 82%;
+    --brand: 243 60% 52%;          /* indigo link text */
+    --brand-soft: 243 50% 44%;
+
+    --scrollbar: 222 14% 80%;
+    --scrollbar-hover: 222 12% 68%;
+    --grid-line: rgba(15, 23, 42, 0.05);
+    --glow: rgba(99, 102, 241, 0.08);
+    --heading-gradient: linear-gradient(170deg, #0F172A 0%, #3730A3 70%, #6366F1 130%);
+  }
+
+  /* Dark theme (Obsidian Studio) */
+  .dark {
     --background: 222 30% 4%;      /* #07080B */
     --foreground: 220 14% 96%;     /* #F3F4F6 */
     --card: 224 26% 9%;            /* #11141D */
@@ -79,29 +122,45 @@
     --border: 226 24% 15%;         /* #1E2330 */
     --input: 226 24% 15%;
     --ring: 239 84% 67%;
-    --radius: 0.75rem;
+
+    --sunken: 227 29% 6%;          /* #0B0D14 */
+    --surface: 225 24% 12%;        /* #171B26 */
+    --surface-strong: 224 25% 15%; /* #1D2230 */
+    --border-strong: 225 24% 20%;  /* #262C3E */
+    --brand: 230 94% 82%;          /* #A5B4FC */
+    --brand-soft: 228 96% 89%;     /* #C7D2FE */
+
+    --scrollbar: 225 24% 20%;
+    --scrollbar-hover: 225 22% 26%;
+    --grid-line: rgba(255, 255, 255, 0.025);
+    --glow: rgba(99, 102, 241, 0.10);
+    --heading-gradient: linear-gradient(170deg, #FFFFFF 0%, #C7D2FE 60%, #818CF8 130%);
   }
 }
 
 @layer base {
-  html { color-scheme: dark; }
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
   body {
     @apply bg-background text-foreground;
-    background-image: radial-gradient(ellipse 60% 40% at 50% -10%, rgba(99, 102, 241, 0.10), transparent 70%);
+    background-image: radial-gradient(ellipse 60% 40% at 50% -10%, var(--glow), transparent 70%);
     background-attachment: fixed;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
+  ::selection { background: hsl(var(--primary) / 0.25); }
 }
 
 /* --- RADHA custom utilities --- */
 .radha-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .radha-scroll::-webkit-scrollbar-track { background: transparent; }
-.radha-scroll::-webkit-scrollbar-thumb { background: #262c3e; border-radius: 9999px; }
-.radha-scroll::-webkit-scrollbar-thumb:hover { background: #333b52; }
+.radha-scroll::-webkit-scrollbar-thumb { background: hsl(var(--scrollbar)); border-radius: 9999px; }
+.radha-scroll::-webkit-scrollbar-thumb:hover { background: hsl(var(--scrollbar-hover)); }
+.radha-scroll { scrollbar-width: thin; scrollbar-color: hsl(var(--scrollbar)) transparent; }
 
 .radha-grid {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 34px 34px;
 }
 
@@ -110,7 +169,7 @@
   display: inline-block;
   width: 8px;
   height: 1.05em;
-  background: #818cf8;
+  background: hsl(var(--primary));
   margin-left: 2px;
   vertical-align: text-bottom;
   animation: radha-blink 1s step-end infinite;
@@ -122,7 +181,7 @@
 
 /* Gradient headline treatment */
 .radha-heading-gradient {
-  background: linear-gradient(170deg, #FFFFFF 0%, #C7D2FE 60%, #818CF8 130%);
+  background: var(--heading-gradient);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -142,7 +201,7 @@
 }
 
 /* markdown prose */
-.radha-prose { line-height: 1.7; font-size: 0.95rem; color: #E5E7EB; }
+.radha-prose { line-height: 1.7; font-size: 0.95rem; color: hsl(var(--foreground) / 0.9); }
 .radha-prose p { margin: 0.6rem 0; }
 .radha-prose h1, .radha-prose h2, .radha-prose h3 { font-weight: 700; margin: 1.1rem 0 0.5rem; letter-spacing: -0.02em; }
 .radha-prose h1 { font-size: 1.4rem; }
@@ -152,11 +211,11 @@
 .radha-prose li { margin: 0.25rem 0; }
 .radha-prose ul { list-style: disc; }
 .radha-prose ol { list-style: decimal; }
-.radha-prose a { color: #A5B4FC; text-decoration: underline; text-underline-offset: 2px; }
-.radha-prose blockquote { border-left: 2px solid #6366F1; padding-left: 0.9rem; color: #9CA3AF; margin: 0.7rem 0; }
-.radha-prose code { font-family: var(--font-mono); font-size: 0.85em; background: #0B0D13; border: 1px solid #1E2330; border-radius: 5px; padding: 0.1rem 0.35rem; color: #C7D2FE; }
-.radha-prose pre { background: #0B0D13 !important; border: 1px solid #1E2330; border-radius: 10px; padding: 0.9rem 1rem; overflow-x: auto; margin: 0.7rem 0; }
-.radha-prose pre code { background: transparent; border: none; padding: 0; color: #E5E7EB; }
+.radha-prose a { color: hsl(var(--brand)); text-decoration: underline; text-underline-offset: 2px; }
+.radha-prose blockquote { border-left: 2px solid hsl(var(--primary)); padding-left: 0.9rem; color: hsl(var(--muted-foreground)); margin: 0.7rem 0; }
+.radha-prose code { font-family: var(--font-mono); font-size: 0.85em; background: hsl(var(--sunken)); border: 1px solid hsl(var(--border)); border-radius: 5px; padding: 0.1rem 0.35rem; color: hsl(var(--brand-soft)); }
+.radha-prose pre { background: hsl(var(--sunken)) !important; border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 0.9rem 1rem; overflow-x: auto; margin: 0.7rem 0; }
+.radha-prose pre code { background: transparent; border: none; padding: 0; color: hsl(var(--foreground) / 0.9); }
 .radha-prose table { width: 100%; border-collapse: collapse; margin: 0.7rem 0; font-size: 0.85rem; }
-.radha-prose th, .radha-prose td { border: 1px solid #1E2330; padding: 0.4rem 0.6rem; text-align: left; }
-.radha-prose th { background: #11141D; }
+.radha-prose th, .radha-prose td { border: 1px solid hsl(var(--border)); padding: 0.4rem 0.6rem; text-align: left; }
+.radha-prose th { background: hsl(var(--sunken)); }

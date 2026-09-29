@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, API, absoluteUrl, formatApiError, getToken } from "@/lib/api";
+import ThemeToggle from "@/components/ThemeToggle";
 import { streamSSE } from "@/lib/sse";
 import MessageBubble from "@/components/MessageBubble";
 import { Button } from "@/components/ui/button";
@@ -59,17 +60,18 @@ export default function AppBuilder() {
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background" data-testid="app-builder">
       <header className="flex items-center gap-3 border-b border-border px-4 py-2.5">
-        <button onClick={() => navigate("/apps")} title="All apps" className="rounded-md p-1.5 text-muted-foreground hover:bg-[#171B26] hover:text-foreground">
+        <button onClick={() => navigate("/apps")} title="All apps" className="rounded-md p-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
         </button>
         <AppWindow className="h-4 w-4 text-primary" />
         <h1 className="truncate text-sm font-semibold" data-testid="app-title">{app.name}</h1>
         {pending > 0 && (
-          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-400" data-testid="unsaved-changes">
+          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-400" data-testid="unsaved-changes">
             {pending} unsaved change{pending === 1 ? "" : "s"}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle className="h-8 w-8 rounded-md" />
           <Button variant="outline" size="sm" onClick={saveVersion} disabled={!pending} data-testid="save-version-button" className="gap-1.5 border-border bg-card">
             <Save className="h-3.5 w-3.5" /> Save version
           </Button>
@@ -88,7 +90,7 @@ export default function AppBuilder() {
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5">
             {[["preview", Eye, "Preview"], ["code", Code2, "Code"], ["terminal", SquareTerminal, "Terminal"], ["history", History, "History"]].map(([t, Icon, label]) => (
               <button key={t} onClick={() => setTab(t)} data-testid={`builder-tab-${t}`}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${tab === t ? "bg-[#1D2230] text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${tab === t ? "bg-surface-strong text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="h-3.5 w-3.5" /> {label}
               </button>
             ))}
@@ -178,7 +180,7 @@ function BuilderChat({ app, onFilesChanged }) {
             <p className="font-semibold text-foreground">What should we build?</p>
             <p className="mt-1">Describe the app. RADHA writes the code, checks the preview for errors, runs tests and saves versions as it goes.</p>
             {app.description && (
-              <button onClick={() => setInput(`Build this app: ${app.description}`)} className="mt-3 text-left text-xs text-[#A5B4FC] hover:underline">
+              <button onClick={() => setInput(`Build this app: ${app.description}`)} className="mt-3 text-left text-xs text-brand hover:underline">
                 Start with: “{app.description}”
               </button>
             )}
@@ -188,8 +190,8 @@ function BuilderChat({ app, onFilesChanged }) {
         {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} />}
       </div>
       <div className="border-t border-border p-3">
-        {needsKey && <p className="mb-2 text-[11px] text-amber-400">The builder needs an AI provider key on the backend (see .env.example).</p>}
-        <div className="rounded-xl border border-[#222738] bg-[#11141D] p-2 focus-within:border-primary/60">
+        {needsKey && <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">The builder needs an AI provider key on the backend (see .env.example).</p>}
+        <div className="rounded-xl border border-border bg-card p-2 focus-within:border-primary/60">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={3} data-testid="builder-input"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder="Add a dark mode toggle and save todos in the browser…"
@@ -232,7 +234,7 @@ function PreviewTab({ appId, reloadKey, onReload }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
-        <button onClick={onReload} title="Reload" data-testid="preview-reload" className="rounded p-1 hover:bg-[#171B26] hover:text-foreground"><RefreshCw className="h-3.5 w-3.5" /></button>
+        <button onClick={onReload} title="Reload" data-testid="preview-reload" className="rounded p-1 hover:bg-surface hover:text-foreground"><RefreshCw className="h-3.5 w-3.5" /></button>
         <span className="truncate font-mono">Live preview (latest files, including unsaved changes)</span>
         {url && <a href={url} target="_blank" rel="noreferrer" className="ml-auto flex items-center gap-1 hover:text-foreground"><ExternalLink className="h-3.5 w-3.5" /> Open</a>}
       </div>
@@ -242,13 +244,13 @@ function PreviewTab({ appId, reloadKey, onReload }) {
             sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads" className="h-full w-full" />
         )}
       </div>
-      <details className="max-h-48 overflow-auto border-t border-border bg-[#0B0D14]" open={errors > 0} data-testid="preview-console">
+      <details className="max-h-48 overflow-auto border-t border-border bg-sunken" open={errors > 0} data-testid="preview-console">
         <summary className="cursor-pointer px-3 py-1.5 text-xs text-muted-foreground">
           Console {logs.length ? `(${logs.length})` : ""} {errors > 0 && <span className="ml-1 text-destructive">{errors} error{errors === 1 ? "" : "s"}</span>}
         </summary>
         <div className="space-y-0.5 px-3 pb-2 font-mono text-[11px]">
           {logs.map((l, i) => (
-            <p key={i} className={l.level === "error" ? "text-destructive" : l.level === "warn" ? "text-amber-400" : "text-muted-foreground"}>{l.message}</p>
+            <p key={i} className={l.level === "error" ? "text-destructive" : l.level === "warn" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>{l.message}</p>
           ))}
         </div>
       </details>
@@ -342,8 +344,8 @@ function CodeTab({ appId, files, changes, onSaved }) {
         </div>
         {files.map((f) => (
           <button key={f.path} onClick={() => open(f.path)} data-testid={`file-${f.path}`}
-            className={`flex w-full items-center gap-1.5 truncate px-3 py-1 text-left font-mono text-xs ${f.path === path ? "bg-[#1D2230] text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-            {changes[f.path] ? <Circle className="h-2 w-2 shrink-0 fill-amber-400 text-amber-400" /> : <span className="w-2" />}
+            className={`flex w-full items-center gap-1.5 truncate px-3 py-1 text-left font-mono text-xs ${f.path === path ? "bg-surface-strong text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            {changes[f.path] ? <Circle className="h-2 w-2 shrink-0 fill-amber-400 text-amber-600 dark:text-amber-400" /> : <span className="w-2" />}
             <span className="truncate">{f.path}</span>
           </button>
         ))}
@@ -359,7 +361,7 @@ function CodeTab({ appId, files, changes, onSaved }) {
         {loading ? <div className="flex flex-1 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : (
           <textarea value={content} onChange={(e) => setContent(e.target.value)} onKeyDown={onKeyDown} spellCheck={false}
             data-testid="code-editor" disabled={!path}
-            className="radha-scroll flex-1 resize-none bg-[#07080B] p-4 font-mono text-[12.5px] leading-relaxed text-[#E5E7EB] focus:outline-none" />
+            className="radha-scroll flex-1 resize-none bg-background p-4 font-mono text-[12.5px] leading-relaxed text-foreground/90 focus:outline-none" />
         )}
       </div>
     </div>
@@ -391,7 +393,7 @@ function TerminalTab({ appId }) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-[#07080B] font-mono text-xs" data-testid="terminal">
+    <div className="flex h-full flex-col bg-background font-mono text-xs" data-testid="terminal">
       <div className="flex flex-wrap gap-1.5 border-b border-border px-3 py-2">
         {["ls -R", "node --test", "python3 -m unittest discover -v", "node --version"].map((c) => (
           <button key={c} onClick={() => run(c)} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">
@@ -403,10 +405,10 @@ function TerminalTab({ appId }) {
         {entries.length === 0 && <p className="text-muted-foreground">Commands run in a sandbox copy of the app's files (no network). Changes they make aren't saved.</p>}
         {entries.map((e, i) => (
           <div key={i}>
-            <p className="text-[#A5B4FC]">$ {e.command}</p>
-            {e.stdout && <pre className="whitespace-pre-wrap text-[#E5E7EB]">{e.stdout}</pre>}
-            {e.stderr && <pre className="whitespace-pre-wrap text-rose-300">{e.stderr}</pre>}
-            <p className={e.exitCode === 0 ? "text-emerald-400" : "text-rose-400"} data-testid="terminal-exit">
+            <p className="text-brand">$ {e.command}</p>
+            {e.stdout && <pre className="whitespace-pre-wrap text-foreground/90">{e.stdout}</pre>}
+            {e.stderr && <pre className="whitespace-pre-wrap text-rose-700 dark:text-rose-300">{e.stderr}</pre>}
+            <p className={e.exitCode === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} data-testid="terminal-exit">
               {e.timedOut ? "timed out" : `exit ${e.exitCode}`}{e.seconds != null ? ` · ${e.seconds}s` : ""}
             </p>
           </div>
@@ -414,7 +416,7 @@ function TerminalTab({ appId }) {
         <div ref={endRef} />
       </div>
       <form onSubmit={(e) => { e.preventDefault(); run(); }} className="flex items-center gap-2 border-t border-border px-3 py-2">
-        <span className="text-[#A5B4FC]">$</span>
+        <span className="text-brand">$</span>
         <input value={command} onChange={(e) => setCommand(e.target.value)} data-testid="terminal-input" placeholder="node --test"
           className="flex-1 bg-transparent text-foreground focus:outline-none" />
         {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
@@ -431,12 +433,12 @@ function DiffView({ diffs }) {
     <div className="radha-scroll h-full space-y-4 overflow-y-auto p-4" data-testid="diff-view">
       {diffs.map((d) => (
         <div key={d.path} className="overflow-hidden rounded-lg border border-border">
-          <p className="border-b border-border bg-[#11141D] px-3 py-1.5 font-mono text-xs">
-            <span className={d.status === "added" ? "text-emerald-400" : d.status === "deleted" ? "text-rose-400" : "text-amber-400"}>{d.status}</span> {d.path}
+          <p className="border-b border-border bg-card px-3 py-1.5 font-mono text-xs">
+            <span className={d.status === "added" ? "text-emerald-600 dark:text-emerald-400" : d.status === "deleted" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}>{d.status}</span> {d.path}
           </p>
-          <pre className="overflow-x-auto bg-[#07080B] p-3 font-mono text-[11px] leading-relaxed">
+          <pre className="overflow-x-auto bg-background p-3 font-mono text-[11px] leading-relaxed">
             {d.diff.split("\n").filter((l) => !l.startsWith("---") && !l.startsWith("+++")).map((l, i) => (
-              <div key={i} className={l.startsWith("+") ? "bg-emerald-500/10 text-emerald-300" : l.startsWith("-") ? "bg-rose-500/10 text-rose-300" : l.startsWith("@@") ? "text-[#A5B4FC]" : "text-muted-foreground"}>{l || " "}</div>
+              <div key={i} className={l.startsWith("+") ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : l.startsWith("-") ? "bg-rose-500/10 text-rose-700 dark:text-rose-300" : l.startsWith("@@") ? "text-brand" : "text-muted-foreground"}>{l || " "}</div>
             ))}
           </pre>
         </div>
@@ -470,13 +472,13 @@ function HistoryTab({ appId, commits, pending, onRestored }) {
     <div className="flex h-full">
       <div className="radha-scroll w-72 shrink-0 overflow-y-auto border-r border-border" data-testid="commit-list">
         {pending > 0 && (
-          <button onClick={() => setSelected("working")} className={`block w-full border-b border-border px-3 py-2.5 text-left ${selected === "working" ? "bg-[#1D2230]" : "hover:bg-[#11141D]"}`}>
-            <p className="text-xs font-semibold text-amber-400">Unsaved changes</p>
+          <button onClick={() => setSelected("working")} className={`block w-full border-b border-border px-3 py-2.5 text-left ${selected === "working" ? "bg-surface-strong" : "hover:bg-card"}`}>
+            <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Unsaved changes</p>
             <p className="text-[11px] text-muted-foreground">{pending} file{pending === 1 ? "" : "s"}</p>
           </button>
         )}
         {commits.map((c, i) => (
-          <div key={c.id} className={`group border-b border-border px-3 py-2.5 ${selected === c.id ? "bg-[#1D2230]" : "hover:bg-[#11141D]"}`} data-testid={`commit-${c.id}`}>
+          <div key={c.id} className={`group border-b border-border px-3 py-2.5 ${selected === c.id ? "bg-surface-strong" : "hover:bg-card"}`} data-testid={`commit-${c.id}`}>
             <button onClick={() => setSelected(c.id)} className="block w-full text-left">
               <p className="line-clamp-2 text-xs font-medium text-foreground">{c.message}</p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -484,7 +486,7 @@ function HistoryTab({ appId, commits, pending, onRestored }) {
               </p>
             </button>
             {i > 0 && (
-              <button onClick={() => restore(c)} className="mt-1 flex items-center gap-1 text-[11px] text-[#A5B4FC] opacity-0 hover:underline group-hover:opacity-100">
+              <button onClick={() => restore(c)} className="mt-1 flex items-center gap-1 text-[11px] text-brand opacity-0 hover:underline group-hover:opacity-100">
                 <RotateCcw className="h-3 w-3" /> Restore this version
               </button>
             )}
@@ -534,9 +536,9 @@ function PublishButton({ app, onChange }) {
         <div className="absolute right-0 top-10 z-30 w-80 rounded-xl border border-border bg-card p-4 shadow-2xl" data-testid="publish-panel">
           {app.published ? (
             <>
-              <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-400"><Globe className="h-4 w-4" /> Live on the web</p>
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400"><Globe className="h-4 w-4" /> Live on the web</p>
               <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1.5">
-                <a href={url} target="_blank" rel="noreferrer" className="truncate font-mono text-[11px] text-[#A5B4FC]" data-testid="published-url">{url}</a>
+                <a href={url} target="_blank" rel="noreferrer" className="truncate font-mono text-[11px] text-brand" data-testid="published-url">{url}</a>
                 <button onClick={() => { navigator.clipboard.writeText(url); toast.success("Link copied"); }} className="ml-auto text-muted-foreground hover:text-foreground"><Copy className="h-3.5 w-3.5" /></button>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">Visitors see the version published {new Date(app.published.publishedAt).toLocaleString()}. Publish again to ship your latest changes.</p>

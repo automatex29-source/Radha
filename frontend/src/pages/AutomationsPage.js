@@ -119,9 +119,9 @@ export default function AutomationsPage() {
 }
 
 function StatusBadge({ status }) {
-  if (status === "running") return <span className="flex items-center gap-1 text-amber-400"><Loader2 className="h-3 w-3 animate-spin" /> Running</span>;
-  if (status === "succeeded") return <span className="flex items-center gap-1 text-emerald-400"><CheckCircle2 className="h-3 w-3" /> Succeeded</span>;
-  return <span className="flex items-center gap-1 text-rose-400"><XCircle className="h-3 w-3" /> Failed</span>;
+  if (status === "running") return <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><Loader2 className="h-3 w-3 animate-spin" /> Running</span>;
+  if (status === "succeeded") return <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-3 w-3" /> Succeeded</span>;
+  return <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400"><XCircle className="h-3 w-3" /> Failed</span>;
 }
 
 function AutomationDialog({ form: initial, models, onClose, onSaved }) {
@@ -292,16 +292,16 @@ function AutomationDetail({ automation: a, onChanged, onEdit }) {
             <>
               <p className="mt-1 text-xs text-muted-foreground">POST any JSON to this secret URL to start a run; the payload is passed to the task.</p>
               <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1.5">
-                <code className="truncate text-[11px] text-[#A5B4FC]" data-testid="webhook-url">{hookUrl}</code>
+                <code className="truncate text-[11px] text-brand" data-testid="webhook-url">{hookUrl}</code>
                 <button onClick={() => { navigator.clipboard.writeText(hookUrl); toast.success("Webhook URL copied"); }} className="ml-auto text-muted-foreground hover:text-foreground"><Copy className="h-3.5 w-3.5" /></button>
               </div>
               <div className="mt-2 flex gap-3 text-xs">
-                <button onClick={() => webhook(true)} className="text-[#A5B4FC] hover:underline">Rotate URL</button>
+                <button onClick={() => webhook(true)} className="text-brand hover:underline">Rotate URL</button>
                 <button onClick={() => webhook(false)} className="text-muted-foreground hover:text-destructive">Remove</button>
               </div>
             </>
           ) : (
-            <button onClick={() => webhook(true)} data-testid="create-webhook" className="mt-2 text-xs text-[#A5B4FC] hover:underline">Create a webhook URL</button>
+            <button onClick={() => webhook(true)} data-testid="create-webhook" className="mt-2 text-xs text-brand hover:underline">Create a webhook URL</button>
           )}
         </div>
 
@@ -315,11 +315,11 @@ function AutomationDetail({ automation: a, onChanged, onEdit }) {
                 <div className="flex items-center gap-2 text-xs">
                   <StatusBadge status={r.status} />
                   <span className="text-muted-foreground">· {r.trigger} · {new Date(r.startedAt).toLocaleString()}</span>
-                  <button onClick={() => navigate(`/?conversation=${r.conversationId}`)} className="ml-auto flex items-center gap-1 text-[#A5B4FC] hover:underline">
+                  <button onClick={() => navigate(`/?conversation=${r.conversationId}`)} className="ml-auto flex items-center gap-1 text-brand hover:underline">
                     <MessageSquare className="h-3 w-3" /> Open conversation
                   </button>
                 </div>
-                {r.error && <p className="mt-2 text-xs text-rose-400">{r.error}</p>}
+                {r.error && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">{r.error}</p>}
                 {r.output && <p className="mt-2 line-clamp-6 whitespace-pre-wrap text-sm text-foreground">{r.output}</p>}
                 <MediaGallery items={r.media} onOpen={setPreview} />
               </div>

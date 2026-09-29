@@ -9,8 +9,9 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "next-themes";
 import {
-  Plus, Search, Sparkles, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose,
+  Plus, Search, Sparkles, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon,
 } from "lucide-react";
 
 function groupByDate(convs) {
@@ -31,6 +32,8 @@ function groupByDate(convs) {
 
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse }) {
   const { user, logout } = useAuth();
+  const { resolvedTheme, setTheme } = useTheme();
+  const dark = resolvedTheme !== "light";
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -46,7 +49,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   };
 
   return (
-    <div className="flex h-full w-72 flex-col border-r border-border bg-[#0B0D12]">
+    <div className="flex h-full w-72 flex-col border-r border-border bg-sunken">
       {/* Brand */}
       <div className="flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-2.5">
@@ -90,7 +93,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                 <div key={c.id} data-testid={`conversation-item-${c.id}`}
                   onClick={() => editingId !== c.id && onSelect(c.id)}
                   className={`group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                    activeId === c.id ? "bg-[#1D2230] text-foreground" : "text-muted-foreground hover:bg-[#171B26] hover:text-foreground"
+                    activeId === c.id ? "bg-surface-strong text-foreground" : "text-muted-foreground hover:bg-surface hover:text-foreground"
                   } cursor-pointer`}>
                   <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                   {editingId === c.id ? (
@@ -99,7 +102,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                         onKeyDown={(e) => { if (e.key === "Enter") commitRename(c.id); if (e.key === "Escape") setEditingId(null); }}
                         onClick={(e) => e.stopPropagation()}
                         className="flex-1 rounded border border-primary/50 bg-background px-1.5 py-0.5 text-xs focus:outline-none" />
-                      <button onClick={(e) => { e.stopPropagation(); commitRename(c.id); }}><Check className="h-3.5 w-3.5 text-emerald-400" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); commitRename(c.id); }}><Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /></button>
                       <button onClick={(e) => { e.stopPropagation(); setEditingId(null); }}><X className="h-3.5 w-3.5" /></button>
                     </div>
                   ) : (
@@ -126,7 +129,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       <div className="border-t border-border p-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button data-testid="user-profile-menu-button" className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[#171B26]">
+            <button data-testid="user-profile-menu-button" className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-sm font-bold text-white">
                 {user?.name?.[0]?.toUpperCase() || "U"}
               </div>
@@ -139,6 +142,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           <DropdownMenuContent align="end" className="w-56">
             <div className="px-2 py-1.5 text-xs text-muted-foreground">Signed in as <span className="font-medium text-foreground">{user?.email}</span></div>
             <DropdownMenuSeparator />
+            <DropdownMenuItem data-testid="menu-theme-toggle" onClick={() => setTheme(dark ? "light" : "dark")}>
+              {dark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />} {dark ? "Light theme" : "Dark theme"}
+            </DropdownMenuItem>
             <DropdownMenuItem data-testid="user-logout-button" onClick={logout} className="text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" /> Log out
             </DropdownMenuItem>

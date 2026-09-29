@@ -18,11 +18,11 @@ export function fileKind(item) {
 }
 
 export const KIND_META = {
-  sheet: { icon: FileSpreadsheet, label: "Excel", color: "text-emerald-400" },
-  slides: { icon: Presentation, label: "PowerPoint", color: "text-orange-400" },
-  doc: { icon: FileText, label: "Word", color: "text-sky-400" },
-  pdf: { icon: FileText, label: "PDF", color: "text-rose-400" },
-  html: { icon: Globe, label: "Web page", color: "text-violet-400" },
+  sheet: { icon: FileSpreadsheet, label: "Excel", color: "text-emerald-600 dark:text-emerald-400" },
+  slides: { icon: Presentation, label: "PowerPoint", color: "text-orange-600 dark:text-orange-400" },
+  doc: { icon: FileText, label: "Word", color: "text-sky-600 dark:text-sky-400" },
+  pdf: { icon: FileText, label: "PDF", color: "text-rose-600 dark:text-rose-400" },
+  html: { icon: Globe, label: "Web page", color: "text-violet-600 dark:text-violet-400" },
   file: { icon: File, label: "File", color: "text-muted-foreground" },
 };
 
@@ -43,7 +43,7 @@ function SheetView({ sheets }) {
         <div className="flex gap-1 border-b border-border px-3 pt-2">
           {sheets.map((s, i) => (
             <button key={i} onClick={() => setActive(i)}
-              className={`rounded-t-md px-3 py-1.5 text-xs font-medium ${i === active ? "bg-[#171B26] text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              className={`rounded-t-md px-3 py-1.5 text-xs font-medium ${i === active ? "bg-surface text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
               {s.name}
             </button>
           ))}
@@ -54,17 +54,17 @@ function SheetView({ sheets }) {
           {head && (
             <thead className="sticky top-0">
               <tr>
-                <th className="w-10 border border-[#222738] bg-[#11141D] px-2 py-1.5 text-muted-foreground">#</th>
-                {head.map((c, i) => <th key={i} className="border border-[#222738] bg-[#1E2140] px-3 py-1.5 text-left font-semibold text-[#C7D2FE]">{c}</th>)}
+                <th className="w-10 border border-border bg-card px-2 py-1.5 text-muted-foreground">#</th>
+                {head.map((c, i) => <th key={i} className="border border-border bg-surface-strong px-3 py-1.5 text-left font-semibold text-brand-soft">{c}</th>)}
               </tr>
             </thead>
           )}
           <tbody>
             {body.map((row, r) => (
-              <tr key={r} className="odd:bg-[#0F121A]">
-                <td className="border border-[#222738] px-2 py-1 text-center text-muted-foreground">{r + 2}</td>
+              <tr key={r} className="odd:bg-sunken">
+                <td className="border border-border px-2 py-1 text-center text-muted-foreground">{r + 2}</td>
                 {head?.map((_, c) => (
-                  <td key={c} className={`whitespace-nowrap border border-[#222738] px-3 py-1 ${/^-?[\d.,$%]+$/.test(row[c] || "") ? "text-right font-mono" : ""}`}>{row[c]}</td>
+                  <td key={c} className={`whitespace-nowrap border border-border px-3 py-1 ${/^-?[\d.,$%]+$/.test(row[c] || "") ? "text-right font-mono" : ""}`}>{row[c]}</td>
                 ))}
               </tr>
             ))}
@@ -81,20 +81,20 @@ function SlidesView({ slides }) {
     <div className="radha-scroll h-full space-y-5 overflow-y-auto p-5" data-testid="preview-slides">
       {slides.map((s) => (
         <div key={s.index}>
-          <div className="relative flex aspect-video flex-col overflow-hidden rounded-lg border border-[#262C3E] bg-[#0B0D14] p-[6%] shadow-lg">
-            <p className="text-[clamp(14px,2.4vw,24px)] font-bold leading-tight text-white">{s.title}</p>
+          <div className="relative flex aspect-video flex-col overflow-hidden rounded-lg border border-border-strong bg-sunken p-[6%] shadow-lg">
+            <p className="text-[clamp(14px,2.4vw,24px)] font-bold leading-tight text-foreground">{s.title}</p>
             <div className="mt-2 h-1 w-10 rounded bg-primary" />
             {s.table ? (
               <table className="mt-4 w-full text-[11px]">
                 <tbody>
                   {s.table.map((row, r) => (
-                    <tr key={r}>{row.map((c, i) => <td key={i} className={`border border-[#262C3E] px-2 py-1 ${r === 0 ? "bg-primary font-semibold text-white" : "text-[#D1D5DB]"}`}>{c}</td>)}</tr>
+                    <tr key={r}>{row.map((c, i) => <td key={i} className={`border border-border-strong px-2 py-1 ${r === 0 ? "bg-primary font-semibold text-white" : "text-foreground/90"}`}>{c}</td>)}</tr>
                   ))}
                 </tbody>
               </table>
             ) : (
               <div className="mt-4 space-y-1.5 overflow-hidden">
-                {s.lines.map((l, i) => <p key={i} className="whitespace-pre text-[clamp(10px,1.5vw,15px)] text-[#D1D5DB]">{l}</p>)}
+                {s.lines.map((l, i) => <p key={i} className="whitespace-pre text-[clamp(10px,1.5vw,15px)] text-foreground/90">{l}</p>)}
               </div>
             )}
             <span className="absolute bottom-2 right-3 text-[10px] text-muted-foreground">{s.index}</span>
@@ -152,7 +152,7 @@ export default function PreviewPanel({ item, onClose }) {
       srcDoc={`<!doctype html><meta charset="utf-8"><style>${DOC_CSS}</style>${data.html}`} />;
   } else if (data.type === "html") {
     body = tab === "code"
-      ? <pre className="radha-scroll h-full overflow-auto p-4 font-mono text-xs text-[#C7D2FE]">{data.html}</pre>
+      ? <pre className="radha-scroll h-full overflow-auto p-4 font-mono text-xs text-brand-soft">{data.html}</pre>
       // No allow-same-origin: the page runs scripts in an isolated origin with no access to RADHA.
       : <iframe title={item.name} sandbox="allow-scripts allow-forms allow-modals allow-popups" className="h-full w-full bg-white"
           srcDoc={data.html} data-testid="preview-html" />;
@@ -163,7 +163,7 @@ export default function PreviewPanel({ item, onClose }) {
   } else body = <p className="p-6 text-sm text-muted-foreground">No preview for this file type — download it instead.</p>;
 
   return (
-    <aside className="fixed inset-0 z-50 flex flex-col border-l border-border bg-[#0B0D14] lg:static lg:z-auto lg:w-[46%] lg:min-w-[420px] lg:max-w-[820px]"
+    <aside className="fixed inset-0 z-50 flex flex-col border-l border-border bg-sunken lg:static lg:z-auto lg:w-[46%] lg:min-w-[420px] lg:max-w-[820px]"
       data-testid="preview-panel">
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
         <meta.icon className={`h-4 w-4 shrink-0 ${meta.color}`} />
@@ -175,7 +175,7 @@ export default function PreviewPanel({ item, onClose }) {
           <div className="flex rounded-lg border border-border p-0.5">
             {[["preview", Eye], ["code", Code2]].map(([t, Icon]) => (
               <button key={t} onClick={() => setTab(t)} data-testid={`preview-tab-${t}`}
-                className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs ${tab === t ? "bg-[#1D2230] text-foreground" : "text-muted-foreground"}`}>
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs ${tab === t ? "bg-surface-strong text-foreground" : "text-muted-foreground"}`}>
                 <Icon className="h-3.5 w-3.5" /> {t === "preview" ? "Preview" : "Code"}
               </button>
             ))}
@@ -186,7 +186,7 @@ export default function PreviewPanel({ item, onClose }) {
           <Download className="h-3.5 w-3.5" /> Download
         </a>
         <button onClick={onClose} data-testid="preview-close" title="Close preview"
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-[#171B26] hover:text-foreground">
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
       </div>

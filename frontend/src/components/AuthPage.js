@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import ThemeToggle from "@/components/ThemeToggle";
 import { Eye, EyeOff, Loader2, Sparkles, ArrowRight, ShieldCheck, Database, Cpu } from "lucide-react";
 
 const HERO = "https://images.unsplash.com/photo-1637946175559-22c4fe13fc54?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400";
@@ -40,7 +41,7 @@ export default function AuthPage() {
       {/* Showcase panel */}
       <div className="relative hidden overflow-hidden border-r border-border lg:block">
         <img src={HERO} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-tr from-[#07080B] via-[#07080B]/80 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-background via-background/80 to-transparent" />
         <div className="relative z-10 flex h-full flex-col justify-between p-12">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-[0_0_30px_rgba(99,102,241,0.5)]">
@@ -71,7 +72,8 @@ export default function AuthPage() {
       </div>
 
       {/* Form panel */}
-      <div className="flex items-center justify-center p-6 sm:p-10">
+      <div className="relative flex items-center justify-center p-6 sm:p-10">
+        <ThemeToggle className="absolute right-4 top-4" />
         <div className="w-full max-w-sm radha-fade-up">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
