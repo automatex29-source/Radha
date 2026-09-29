@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import media
-from . import browser, documents, sandbox, styles, video, web
+from . import browser, documents, prompt_boost, sandbox, styles, video, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -166,8 +166,8 @@ async def _run_python(ctx: ToolContext, args: dict) -> ToolOutput:
 
 async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
-    data = await media.generate_image(styles.styled_image_prompt(prompt, args.get("style") or ""),
-                                      args.get("size") or "1024x1024", args.get("quality"))
+    final = await prompt_boost.image_prompt(prompt, args.get("style") or "")
+    data = await media.generate_image(final, args.get("size") or "1024x1024", args.get("quality"))
     ctype = media.image_type(data) or "image/png"
     ext = {"image/jpeg": "jpg", "image/webp": "webp"}.get(ctype, "png")
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "image", ext)

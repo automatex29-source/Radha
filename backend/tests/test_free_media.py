@@ -231,3 +231,40 @@ class TestToolCallRetry:
 
         with pytest.raises(RuntimeError, match="boom"):
             run(collect())
+
+
+class TestPromptBoost:
+    def fake_llm(self, monkeypatch, answer):
+        from agent import llm, prompt_boost
+
+        async def stream(model, messages, tools):
+            if isinstance(answer, Exception):
+                raise answer
+            yield {"type": "text", "text": answer}
+
+        monkeypatch.setattr(llm, "stream_completion", stream)
+        monkeypatch.setattr(llm, "configured", lambda m: True)
+        return prompt_boost
+
+    def test_image_prompt_is_rewritten(self, monkeypatch):
+        pb = self.fake_llm(monkeypatch, "A majestic tiger walking through neon rain at night, low angle, 85mm lens, "
+                                        "wet reflections, cinematic teal and magenta light, ultra detailed fur")
+        out = run(pb.image_prompt("tiger in rain", "anime"))
+        assert out.startswith("A majestic tiger") and "anime key visual" in out
+
+    def test_failure_keeps_original(self, monkeypatch):
+        pb = self.fake_llm(monkeypatch, RuntimeError("rate limited"))
+        assert run(pb.image_prompt("tiger", "photo")).startswith("tiger. professional photograph")
+
+    def test_video_scenes_share_character(self, monkeypatch):
+        pb = self.fake_llm(monkeypatch, 'Sure! {"character": "red-haired girl in a yellow raincoat", '
+                                        '"scenes": ["She runs to the bus.", "She waves goodbye."]}')
+        assert run(pb.video_scenes("girl", None, "anime", 2)) == [
+            "She runs to the bus. red-haired girl in a yellow raincoat",
+            "She waves goodbye. red-haired girl in a yellow raincoat"]
+
+    def test_disabled_without_model_key(self, monkeypatch):
+        from agent import llm, prompt_boost
+
+        monkeypatch.setattr(llm, "configured", lambda m: False)
+        assert run(prompt_boost.video_scenes("x", None, "", 3)) is None
