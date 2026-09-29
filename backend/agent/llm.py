@@ -19,7 +19,7 @@ def provider_for(model: str) -> str:
         return "anthropic"
     if model.startswith("gemini"):
         return "gemini"
-    if model.startswith("llama"):
+    if model.startswith(("llama", "openai/gpt-oss", "qwen/")):
         return "groq"
     return "openai"
 

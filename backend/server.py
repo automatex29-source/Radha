@@ -49,7 +49,7 @@ AVAILABLE_MODELS = [
     {"id": "claude-haiku-4-5-20251001", "label": "RADHA Swift", "provider": "anthropic", "description": "Fast · lightweight"},
     {"id": "gpt-5.4", "label": "RADHA Vision", "provider": "openai", "description": "Versatile · OpenAI"},
     {"id": "gemini-2.5-flash", "label": "RADHA Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
-    {"id": "llama-3.3-70b-versatile", "label": "RADHA Open", "provider": "groq", "description": "Fast · Groq · free tier"},
+    {"id": "openai/gpt-oss-120b", "label": "RADHA Open", "provider": "groq", "description": "Fast · Groq · free tier"},
 ]
 
 # Default model: AI_MODEL if set, otherwise the first model whose provider key is configured.
