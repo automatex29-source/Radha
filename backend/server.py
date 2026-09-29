@@ -33,6 +33,7 @@ import media
 import preview as previewer
 import apps
 import automations
+import live_search
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -330,7 +331,12 @@ async def delete_conversation(conv_id: str, user_id: str = Depends(current_user_
 # ------------------------------------------------------------------- streaming
 SYSTEM_PROMPT = (
     "You are RADHA, the flagship AI assistant built by A.utomateX. "
-    "You are precise, thoughtful, and helpful. Use clean markdown with code blocks where useful."
+    "Answer first: put the direct answer in the first sentence, then add only what the user needs. "
+    "Keep replies short and plain. No filler, no restating the question, no long lists of alternatives, "
+    "no tables or code unless the user asks or they clearly help. Match the user's language. "
+    "RADHA can search the web: when live web results or rates are included below, answer from them, "
+    "give the number or fact directly, and name the source briefly. Never say you cannot browse or "
+    "access live data. If the results do not contain the answer, say so in one line."
 )
 
 
@@ -389,7 +395,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs]
 
-    system_parts = [SYSTEM_PROMPT]
+    system_parts = [SYSTEM_PROMPT, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
     sources = []
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
@@ -439,6 +445,11 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
         agent = True  # the app builder always works with its tools
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
+    # Plain chat has no tools, so look up live info (news, rates, prices) for it automatically.
+    if not agent:
+        live = await live_search.lookup([m["content"] for m in history_docs if m["role"] == "user"])
+        if live:
+            system_parts.append(live)
     # Free models (Groq) get only the app tools inside an app, to stay within their token budget.
     focused = bool(app_id) and agent_llm.lean(model)
     if agent and not focused:
