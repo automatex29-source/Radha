@@ -9,6 +9,7 @@ through an OpenAI-compatible gateway with LLM_GATEWAY_URL + LLM_GATEWAY_KEY.
 """
 import asyncio
 import json
+import logging
 import os
 import re
 from typing import AsyncIterator, List, Optional
@@ -47,6 +48,8 @@ _CHARS_PER_TOKEN = 3.0
 _MIN_OUTPUT = 1500
 _MAX_OUTPUT = 8192
 _RATE_LIMIT_RETRIES = 3
+_TOOL_CALL_RETRIES = 2
+logger = logging.getLogger("radha.agent")
 _HEARTBEAT_SECONDS = 10
 
 
@@ -123,11 +126,32 @@ def _retry_after(exc: Exception) -> float:
     return min(60.0, int(m.group(1) or 0) * 60 + float(m.group(2)) + 0.5)
 
 
+def _bad_tool_call(exc: Exception) -> bool:
+    """Groq rejects a tool call whose arguments don't match the schema; asking again usually works."""
+    text = str(exc).lower()
+    return "tool call validation failed" in text or "tool_use_failed" in text or "failed to call a function" in text
+
+
 async def stream_completion(model: str, messages: List[dict], tools: List[dict]) -> AsyncIterator[dict]:
     """Yield {"type": "text", "text"} deltas, then one {"type": "tool_calls", "calls"} if the model called tools.
 
-    While waiting out a rate limit it yields {"type": "heartbeat"} so the stream stays open.
+    While waiting out a rate limit it yields {"type": "heartbeat"} so the stream stays open. A rejected tool
+    call is retried (up to _TOOL_CALL_RETRIES times) as long as nothing but heartbeats was sent yet.
     """
+    for attempt in range(_TOOL_CALL_RETRIES + 1):
+        sent = False
+        try:
+            async for event in _stream_once(model, messages, tools):
+                sent = sent or event["type"] != "heartbeat"
+                yield event
+            return
+        except Exception as exc:
+            if sent or attempt == _TOOL_CALL_RETRIES or not _bad_tool_call(exc):
+                raise
+            logger.warning("model sent an invalid tool call, asking again: %s", str(exc)[:300])
+
+
+async def _stream_once(model: str, messages: List[dict], tools: List[dict]) -> AsyncIterator[dict]:
     import litellm
 
     kwargs = {"model": f"{provider_for(model)}/{model}", "messages": messages, "stream": True, "max_tokens": _MAX_OUTPUT}

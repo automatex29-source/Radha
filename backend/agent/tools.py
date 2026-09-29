@@ -230,7 +230,11 @@ async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
     scenes = args.get("scenes") if isinstance(args.get("scenes"), list) else None
     captions = args.get("captions") if isinstance(args.get("captions"), list) else None
-    out = await video.generate(prompt, int(args.get("seconds") or 12), args.get("orientation") or "",
+    try:
+        seconds = int(float(args.get("seconds") or 12))
+    except (TypeError, ValueError):
+        seconds = 12
+    out = await video.generate(prompt, seconds, str(args.get("orientation") or "").lower(),
                                args.get("quality"), scenes, args.get("style") or "", captions)
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "video", "mp4")
     saved = await media.save_media(ctx.db, ctx.user_id, out["data"], out["contentType"], "generated", name=name,
@@ -293,10 +297,10 @@ def default_registry() -> ToolRegistry:
             parameters={"type": "object", "properties": {
                 "prompt": {"type": "string", "description": "Detailed description of the image"},
                 "filename": {"type": "string", "description": "Short file name without extension"},
-                "style": {"type": "string", "enum": styles.image_style_names(),
-                          "description": "Look to apply; pick the closest to what the user asked for"},
-                "size": {"type": "string", "enum": ["1024x1024", "1536x1024", "1024x1536"]},
-                "quality": {"type": "string", "enum": ["high", "medium", "low"], "description": "Default high"},
+                # No enums: Groq rejects the whole reply when a model writes a value outside one.
+                "style": {"type": "string", "description": "One of: " + ", ".join(styles.image_style_names())},
+                "size": {"type": "string", "description": "1024x1024, 1536x1024 (landscape) or 1024x1536 (portrait)"},
+                "quality": {"type": "string", "description": "high (default), medium or low"},
             }, "required": ["prompt"]},
             handler=_generate_image, available=media.image_available))
         .register(Tool(
@@ -374,15 +378,14 @@ def default_registry() -> ToolRegistry:
                         "benefits, then a call to action with the brand name). Takes one to a few minutes.",
             parameters={"type": "object", "properties": {
                 "prompt": {"type": "string", "description": "What the video is about, with subject and setting"},
-                "style": {"type": "string", "enum": styles.video_style_names()},
+                "style": {"type": "string", "description": "One of: " + ", ".join(styles.video_style_names())},
                 "scenes": {"type": "array", "items": {"type": "string"},
                            "description": "3-6 detailed shot descriptions in order, same characters and look"},
                 "captions": {"type": "array", "items": {"type": "string"},
                              "description": "Optional text shown on each scene (max ~8 words each; '' for none)"},
                 "seconds": {"type": "integer", "description": "Length in seconds (default 12, up to 30)"},
-                "orientation": {"type": "string", "enum": ["landscape", "portrait"],
-                                "description": "portrait for reels/stories/shorts"},
-                "quality": {"type": "string", "enum": ["high", "standard"], "description": "high (default) or standard (faster, 720p)"},
+                "orientation": {"type": "string", "description": "landscape, or portrait for reels/stories/shorts"},
+                "quality": {"type": "string", "description": "high (default) or standard (faster, 720p)"},
                 "filename": {"type": "string", "description": "Short file name without extension"},
             }, "required": ["prompt"]},
             handler=_generate_video, available=video.available))

@@ -113,6 +113,21 @@ class TestSlideshow:
         assert styles.video_style("unknown") is styles.VIDEO_STYLES["movie"]
         assert "cinematic" not in styles.video_style_names()
 
+    def test_style_names_are_forgiving(self):
+        assert styles.normalize("3D Pixar", styles.IMAGE_STYLES) == "3d_animation"
+        assert styles.normalize("Sci-Fi", styles.IMAGE_STYLES) == "sci_fi"
+        assert styles.normalize("cinematic poster", styles.IMAGE_STYLES) == "cinematic"
+        assert styles.normalize("TikTok", styles.VIDEO_STYLES) == "social_reel"
+        assert styles.normalize("vaporwave", styles.IMAGE_STYLES) == ""
+        assert "Pixar" in styles.styled_image_prompt("a fox", "Pixar")
+
+    def test_tool_schemas_have_no_enums(self):
+        from agent.tools import default_registry
+
+        for tool in default_registry()._tools.values():
+            if tool.name in ("generate_image", "generate_video"):
+                assert all("enum" not in p for p in tool.parameters["properties"].values())
+
     def test_command_uses_style_transitions_letterbox_and_captions(self):
         cmd = slideshow.build_command("ffmpeg", ["a", "b", "c"], "out.mp4", 3.0, False, "movie",
                                       [None, "cap.png", None])
@@ -175,3 +190,39 @@ class TestVideoFallback:
         monkeypatch.setattr(slideshow, "make_slideshow", fake_slideshow)
         out = run(video.generate("waves"))
         assert out["method"] == "slideshow" and out["data"] == b"SLIDES" and "allowance" in out["note"]
+
+
+class TestToolCallRetry:
+    def test_retries_rejected_tool_call(self, monkeypatch):
+        from agent import llm
+
+        calls = []
+
+        async def once(model, messages, tools):
+            calls.append(1)
+            if len(calls) == 1:
+                yield {"type": "heartbeat"}
+                raise RuntimeError("GroqException - Tool call validation failed: /style must be one of")
+            yield {"type": "text", "text": "ok"}
+
+        monkeypatch.setattr(llm, "_stream_once", once)
+
+        async def collect():
+            return [e async for e in llm.stream_completion("m", [], [])]
+
+        assert run(collect())[-1] == {"type": "text", "text": "ok"} and len(calls) == 2
+
+    def test_other_errors_are_not_retried(self, monkeypatch):
+        from agent import llm
+
+        async def once(model, messages, tools):
+            raise RuntimeError("boom")
+            yield
+
+        monkeypatch.setattr(llm, "_stream_once", once)
+
+        async def collect():
+            return [e async for e in llm.stream_completion("m", [], [])]
+
+        with pytest.raises(RuntimeError, match="boom"):
+            run(collect())
