@@ -15,7 +15,7 @@ from typing import List, Optional
 
 import media
 
-from . import styles
+from . import prompt_boost, styles
 
 logger = logging.getLogger("radha.agent")
 
@@ -165,6 +165,10 @@ async def make_slideshow(prompt: str, seconds: int = 12, portrait: bool = False,
     if not ffmpeg:
         raise SlideshowError("ffmpeg is not installed")
     prompts = scene_prompts(prompt, scenes, seconds, style)
+    boosted = await prompt_boost.video_scenes(prompt, scenes, style, len(prompts))
+    if boosted:
+        look = styles.video_scene_words(style)
+        prompts = [f"{s}. {look}" for s in boosted]
     size = "1024x1536" if portrait else "1536x1024"
     seed = random.randint(1, 2_000_000_000)  # one seed for every scene keeps the look consistent
     # Keyless image services allow about one request at a time per server, so only go parallel with a key.

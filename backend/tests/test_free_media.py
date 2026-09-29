@@ -66,7 +66,7 @@ class TestImages:
 
         def handler(req):
             seen.append(req)
-            return httpx.Response(200, content=png(), headers={"content-type": "image/png"})
+            return httpx.Response(200, content=png(size=(768, 512)), headers={"content-type": "image/png"})
 
         fake_http(monkeypatch, handler)
         assert media.image_type(run(media.generate_image("a red fox", "1536x1024"))) == "image/png"
@@ -74,6 +74,11 @@ class TestImages:
         assert req.url.host == "gen.pollinations.ai" and req.url.raw_path.startswith(b"/image/a%20red%20fox?")
         assert req.headers["authorization"] == "Bearer sk_test"
         assert req.url.params["width"] == "1536" and req.url.params["height"] == "1024"
+
+    def test_placeholder_banner_is_rejected(self, monkeypatch):
+        fake_http(monkeypatch, lambda req: httpx.Response(200, content=png("green", (400, 120))))
+        with pytest.raises(media.ImageError, match="placeholder.*POLLINATIONS_API_KEY"):
+            run(media.generate_image("cat", "1024x1024"))
 
     def test_falls_back_to_keyless_endpoint(self, monkeypatch):
         monkeypatch.setenv("POLLINATIONS_API_KEY", "sk_bad")
@@ -83,10 +88,10 @@ class TestImages:
             hosts.append(req.url.host)
             if req.url.host == "gen.pollinations.ai":
                 return httpx.Response(401, json={"error": "key required"})
-            return httpx.Response(200, content=png())
+            return httpx.Response(200, content=png(size=(512, 512)))
 
         fake_http(monkeypatch, handler)
-        assert run(media.generate_image("cat")) == png()
+        assert run(media.generate_image("cat")) == png(size=(512, 512))
         assert hosts == ["gen.pollinations.ai", "image.pollinations.ai"]
 
     def test_all_fail_reports_errors(self, monkeypatch):
@@ -226,3 +231,40 @@ class TestToolCallRetry:
 
         with pytest.raises(RuntimeError, match="boom"):
             run(collect())
+
+
+class TestPromptBoost:
+    def fake_llm(self, monkeypatch, answer):
+        from agent import llm, prompt_boost
+
+        async def stream(model, messages, tools):
+            if isinstance(answer, Exception):
+                raise answer
+            yield {"type": "text", "text": answer}
+
+        monkeypatch.setattr(llm, "stream_completion", stream)
+        monkeypatch.setattr(llm, "configured", lambda m: True)
+        return prompt_boost
+
+    def test_image_prompt_is_rewritten(self, monkeypatch):
+        pb = self.fake_llm(monkeypatch, "A majestic tiger walking through neon rain at night, low angle, 85mm lens, "
+                                        "wet reflections, cinematic teal and magenta light, ultra detailed fur")
+        out = run(pb.image_prompt("tiger in rain", "anime"))
+        assert out.startswith("A majestic tiger") and "anime key visual" in out
+
+    def test_failure_keeps_original(self, monkeypatch):
+        pb = self.fake_llm(monkeypatch, RuntimeError("rate limited"))
+        assert run(pb.image_prompt("tiger", "photo")).startswith("tiger. professional photograph")
+
+    def test_video_scenes_share_character(self, monkeypatch):
+        pb = self.fake_llm(monkeypatch, 'Sure! {"character": "red-haired girl in a yellow raincoat", '
+                                        '"scenes": ["She runs to the bus.", "She waves goodbye."]}')
+        assert run(pb.video_scenes("girl", None, "anime", 2)) == [
+            "She runs to the bus. red-haired girl in a yellow raincoat",
+            "She waves goodbye. red-haired girl in a yellow raincoat"]
+
+    def test_disabled_without_model_key(self, monkeypatch):
+        from agent import llm, prompt_boost
+
+        monkeypatch.setattr(llm, "configured", lambda m: False)
+        assert run(prompt_boost.video_scenes("x", None, "", 3)) is None

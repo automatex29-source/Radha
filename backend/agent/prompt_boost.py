@@ -1,0 +1,102 @@
+"""Turn a short request into a pro-level image prompt before it reaches the image model.
+
+Free image models follow long, concrete prompts far better than short ones, so
+one quick call to the chat model rewrites the prompt like an art director would:
+subject, composition, lens, lighting, color, mood and style details. For videos
+it also writes the scene list so every scene shows the same characters and look.
+Any failure falls back to the original text; this step must never block a picture.
+"""
+import asyncio
+import json
+import logging
+import os
+import re
+from typing import List, Optional
+
+from . import llm, styles
+
+logger = logging.getLogger("radha.agent")
+
+TIMEOUT = float(os.environ.get("PROMPT_BOOST_TIMEOUT_SECONDS", "25"))
+_MODELS = ["openai/gpt-oss-120b", "gemini-2.5-flash", "claude-haiku-4-5-20251001", "gpt-5.4", "claude-sonnet-4-6"]
+
+IMAGE_SYSTEM = (
+    "You are an award-winning art director writing prompts for an AI image model. Rewrite the user's request as "
+    "ONE vivid English prompt of 60-110 words. Keep every detail the user gave (names, text to show, colors, "
+    "brand, subject). Add: precise subject description, action, setting, composition and camera angle, lens, "
+    "lighting, color palette, textures, mood, and the style notes given. If words must appear in the picture, "
+    "put them in double quotes and keep them short. Describe only what should be visible; never write negatives "
+    "like 'no text'. Output only the prompt, no preamble."
+)
+
+SCENES_SYSTEM = (
+    "You are a film director planning a short video made of {n} still shots. Write the shots as JSON: "
+    '{{"character": "...", "scenes": ["...", ...]}}. "character" fixes how the main subject looks (age, face, '
+    "hair, clothes, colors, product design) so every shot matches. Each scene is 40-70 English words: what "
+    "happens, camera angle and lens, lighting, setting, and the style notes, and it repeats the key look of the "
+    "main subject. The shots must tell the story in order with a strong opening and ending. Output only JSON."
+)
+
+
+def _model() -> Optional[str]:
+    wanted = os.environ.get("PROMPT_BOOST_MODEL") or os.environ.get("AI_MODEL")
+    for m in ([wanted] if wanted else []) + _MODELS:
+        if m and llm.configured(m):
+            return m
+    return None
+
+
+def enabled() -> bool:
+    return os.environ.get("PROMPT_BOOST", "1") != "0" and _model() is not None
+
+
+async def _ask(system: str, user: str) -> str:
+    out = []
+
+    async def run():
+        async for ev in llm.stream_completion(_model(), [{"role": "system", "content": system},
+                                                         {"role": "user", "content": user}], []):
+            if ev["type"] == "text":
+                out.append(ev["text"])
+
+    await asyncio.wait_for(run(), TIMEOUT)
+    return "".join(out).strip()
+
+
+async def image_prompt(prompt: str, style: str = "") -> str:
+    """The rewritten prompt with the style's words, or the original + style words on any failure."""
+    fallback = styles.styled_image_prompt(prompt, style)
+    if not enabled():
+        return fallback
+    key = styles.normalize(style, styles.IMAGE_STYLES)
+    notes = styles.IMAGE_STYLES.get(key, "")
+    try:
+        text = await _ask(IMAGE_SYSTEM, f"Request: {prompt}\nStyle notes: {notes or 'choose the best fitting look'}")
+    except Exception as exc:
+        logger.info("prompt boost failed, using the original prompt: %s", exc)
+        return fallback
+    text = text.strip().strip('"').strip()
+    if len(text) < 40:
+        return fallback
+    return f"{text[:1400]}. {notes}" if notes and notes.split(",")[0] not in text else text[:1500]
+
+
+async def video_scenes(prompt: str, scenes: Optional[List[str]], style: str, count: int) -> Optional[List[str]]:
+    """Consistent, detailed scene prompts for a picture video, or None to keep the plain ones."""
+    if not enabled():
+        return None
+    notes = styles.video_scene_words(style)
+    have = "\n".join(f"- {s}" for s in scenes or [])
+    user = f"Video idea: {prompt}\nStyle notes: {notes}\n" + (f"Shots planned so far:\n{have}\n" if have else "")
+    try:
+        text = await _ask(SCENES_SYSTEM.format(n=len(scenes) if scenes else count), user)
+        match = re.search(r"\{.*\}", text, re.S)
+        data = json.loads(match.group(0) if match else text)
+        character = str(data.get("character") or "").strip()
+        out = [str(s).strip() for s in data.get("scenes") or [] if str(s).strip()]
+    except Exception as exc:
+        logger.info("scene boost failed, using plain scenes: %s", exc)
+        return None
+    if not out:
+        return None
+    return [f"{s} {character}".strip() for s in out[:6]]
