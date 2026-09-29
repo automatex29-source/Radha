@@ -9,6 +9,8 @@ import ProjectView from "@/pages/ProjectView";
 import AppsPage from "@/pages/AppsPage";
 import AppBuilder from "@/pages/AppBuilder";
 import AutomationsPage from "@/pages/AutomationsPage";
+import DecksPage from "@/pages/DecksPage";
+import DeckEditor from "@/pages/DeckEditor";
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 
@@ -40,6 +42,8 @@ function Gate() {
       <Route path="/projects/:id" element={<ProjectView />} />
       <Route path="/apps" element={<AppsPage />} />
       <Route path="/apps/:id" element={<AppBuilder />} />
+      <Route path="/decks" element={<DecksPage />} />
+      <Route path="/decks/:id" element={<DeckEditor />} />
       <Route path="/automations" element={<AutomationsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
