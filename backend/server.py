@@ -48,7 +48,7 @@ AVAILABLE_MODELS = [
     {"id": "claude-sonnet-4-6", "label": "RADHA Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
     {"id": "claude-haiku-4-5-20251001", "label": "RADHA Swift", "provider": "anthropic", "description": "Fast · lightweight"},
     {"id": "gpt-5.4", "label": "RADHA Vision", "provider": "openai", "description": "Versatile · OpenAI"},
-    {"id": "gemini-3-flash-preview", "label": "RADHA Flash", "provider": "gemini", "description": "Snappy · Google"},
+    {"id": "gemini-2.5-flash", "label": "RADHA Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
 ]
 
 # Default model: AI_MODEL if set, otherwise the first model whose provider key is configured.

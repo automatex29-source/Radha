@@ -1,6 +1,7 @@
 # One-click deploy on Render (free plan):
 #   https://render.com/deploy?repo=https://github.com/automatex29-source/Radha
 # You'll be asked for MONGO_URL (free MongoDB Atlas cluster) and at least one AI key.
+# Free option: GEMINI_API_KEY from https://aistudio.google.com/apikey (no card needed).
 services:
   - type: web
     name: radha
