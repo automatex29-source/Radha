@@ -24,7 +24,7 @@ from auth import (
     get_user_id_from_request,
     decode_token,
 )
-from ai_runtime import ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, AIRequest, ChatMessage
+from ai_runtime import ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, GroqProvider, AIRequest, ChatMessage
 from ai_runtime._backend import uses_emergent
 import storage
 import embeddings
@@ -49,6 +49,7 @@ AVAILABLE_MODELS = [
     {"id": "claude-haiku-4-5-20251001", "label": "RADHA Swift", "provider": "anthropic", "description": "Fast · lightweight"},
     {"id": "gpt-5.4", "label": "RADHA Vision", "provider": "openai", "description": "Versatile · OpenAI"},
     {"id": "gemini-2.5-flash", "label": "RADHA Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
+    {"id": "llama-3.3-70b-versatile", "label": "RADHA Open", "provider": "groq", "description": "Fast · Groq · free tier"},
 ]
 
 # Default model: AI_MODEL if set, otherwise the first model whose provider key is configured.
@@ -63,6 +64,7 @@ model_router = (
     .register(AnthropicProvider(AI_API_KEY))
     .register(OpenAIProvider(AI_API_KEY))
     .register(GeminiProvider(AI_API_KEY))
+    .register(GroqProvider())
 )
 
 
