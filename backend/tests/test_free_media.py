@@ -51,7 +51,7 @@ class TestImages:
         assert media.image_available()
         monkeypatch.setenv("HF_TOKEN", "h")
         monkeypatch.setenv("OPENAI_API_KEY", "o")
-        assert media._image_providers() == ["openai", "huggingface", "pollinations", "pollinations_legacy"]
+        assert media._image_providers() == ["openai", "huggingface", "pollinations_legacy"]
         monkeypatch.setenv("IMAGE_PROVIDER", "off")
         assert not media.image_available()
 
