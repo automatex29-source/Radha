@@ -1,14 +1,18 @@
 """Media: image generation, speech-to-text, text-to-speech, and the media store.
 
-Generation/transcription/speech use the OpenAI API (OPENAI_API_KEY, optional
-OPENAI_BASE_URL for an OpenAI-compatible gateway). Media bytes live in the
+Transcription/speech use the OpenAI API (OPENAI_API_KEY, optional
+OPENAI_BASE_URL for an OpenAI-compatible gateway). Images use OpenAI when that
+key is set and free providers (Pollinations, Hugging Face) otherwise. Media bytes live in the
 `media` collection, owned per user, and are served by GET /api/media/{id}.
 """
 import base64
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+
+logger = logging.getLogger("radha.media")
 
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
 STT_MODEL = os.environ.get("STT_MODEL", "gpt-4o-mini-transcribe")
@@ -37,7 +41,121 @@ def _client():
     return AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ.get("OPENAI_BASE_URL") or None)
 
 
+# ------------------------------------------------------------------ images
+# Free providers, used when there's no OpenAI key (or IMAGE_PROVIDER picks one):
+#   pollinations: gen.pollinations.ai; POLLINATIONS_API_KEY (free sk_ key from enter.pollinations.ai)
+#                 lifts the anonymous rate limit. Without a key we try the keyless endpoints.
+#   huggingface:  FLUX.1-schnell on HF inference with a free HF_TOKEN (small monthly allowance).
+POLLINATIONS_BASE = os.environ.get("POLLINATIONS_BASE_URL", "https://gen.pollinations.ai").rstrip("/")
+POLLINATIONS_IMAGE_MODEL = os.environ.get("POLLINATIONS_IMAGE_MODEL", "tongyi-mai/z-image-turbo")
+LEGACY_POLLINATIONS = "https://image.pollinations.ai/prompt"
+HF_IMAGE_MODEL = os.environ.get("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
+IMAGE_TIMEOUT = float(os.environ.get("IMAGE_TIMEOUT_SECONDS", "150"))
+
+
+class ImageError(Exception):
+    pass
+
+
+def image_available() -> bool:
+    return os.environ.get("IMAGE_PROVIDER", "").lower() not in ("off", "0", "none")
+
+
+def image_key_configured() -> bool:
+    return any(os.environ.get(k) for k in ("OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN"))
+
+
+def image_type(data: bytes) -> str:
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return ""
+
+
+def _image_providers() -> list:
+    explicit = os.environ.get("IMAGE_PROVIDER", "").lower()
+    if explicit in ("openai", "pollinations", "huggingface"):
+        order = [explicit]
+    else:
+        order = []
+        if openai_configured():
+            order.append("openai")
+        if os.environ.get("POLLINATIONS_API_KEY"):
+            order.append("pollinations")
+        if os.environ.get("HF_TOKEN"):
+            order.append("huggingface")
+    for free in ("pollinations", "pollinations_legacy"):
+        if free not in order:
+            order.append(free)
+    return order
+
+
+def _dims(size: str) -> tuple:
+    w, _, h = (size if size in IMAGE_SIZES and size != "auto" else "1024x1024").partition("x")
+    return int(w), int(h)
+
+
+def _check_image(resp) -> bytes:
+    if resp.status_code >= 400:
+        raise ImageError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+    if not image_type(resp.content):
+        raise ImageError(f"not an image ({resp.headers.get('content-type', '?')})")
+    return resp.content
+
+
+async def _pollinations(prompt: str, size: str, legacy: bool = False) -> bytes:
+    import random
+    from urllib.parse import quote
+
+    import httpx
+
+    w, h = _dims(size)
+    params = {"width": w, "height": h, "seed": random.randint(1, 2_000_000_000), "nologo": "true"}
+    headers = {"User-Agent": "RADHA/1.0"}
+    if legacy:
+        url = f"{LEGACY_POLLINATIONS}/{quote(prompt[:1500], safe='')}"
+        params.update({"model": "flux", "enhance": "true", "private": "true"})
+    else:
+        url = f"{POLLINATIONS_BASE}/image/{quote(prompt[:1500], safe='')}"
+        params["model"] = POLLINATIONS_IMAGE_MODEL
+        if os.environ.get("POLLINATIONS_API_KEY"):
+            headers["Authorization"] = f"Bearer {os.environ['POLLINATIONS_API_KEY']}"
+    async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT, follow_redirects=True) as client:
+        return _check_image(await client.get(url, params=params, headers=headers))
+
+
+async def _huggingface(prompt: str, size: str) -> bytes:
+    import httpx
+
+    w, h = _dims(size)
+    async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT) as client:
+        resp = await client.post(
+            f"https://router.huggingface.co/hf-inference/models/{HF_IMAGE_MODEL}",
+            headers={"Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}", "Accept": "image/png"},
+            json={"inputs": prompt, "parameters": {"width": w, "height": h}})
+        return _check_image(resp)
+
+
 async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional[str] = None) -> bytes:
+    """Best configured provider first, then the free ones. Returns PNG/JPEG/WebP bytes (see image_type)."""
+    errors = []
+    for which in _image_providers():
+        try:
+            if which == "openai":
+                return await _openai_image(prompt, size, quality)
+            if which == "huggingface":
+                return await _huggingface(prompt, size)
+            return await _pollinations(prompt, size, legacy=which == "pollinations_legacy")
+        except Exception as exc:  # fall through to the next provider
+            logger.warning("image provider %s failed: %s", which, exc)
+            errors.append(f"{which}: {exc}")
+    raise ImageError("Image generation failed. " + "; ".join(errors)[:600])
+
+
+async def _openai_image(prompt: str, size: str = "1024x1024", quality: Optional[str] = None) -> bytes:
     if size not in IMAGE_SIZES:
         size = "1024x1024"
     kwargs = {"model": IMAGE_MODEL, "prompt": prompt, "size": size, "n": 1}
