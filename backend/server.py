@@ -338,12 +338,12 @@ SYSTEM_PROMPT = (
     "give the number or fact directly, and name the source briefly. Never say you cannot browse or "
     "access live data. If the results do not contain the answer, say so in one line.\n\n"
     "When the user asks you to build an app, website, game, tool or page, build the complete, working thing right "
-    "away (real features, polished responsive design, no placeholders). Put each file in its own fenced code block "
-    "whose info string is the language followed by the file name, for example ```html index.html, ```css style.css "
-    "and ```javascript app.js, and link them from index.html by those names. Say in one line what you built before "
+    "away. Put each file in its own fenced code block whose info string is the language followed by the file name, "
+    "for example ```html index.html and ```javascript app.js, and link them from index.html by those names. "
+    "Say in one line what you built before "
     "the files. RADHA shows the user a live preview, a Download ZIP button and an Open in App Builder button for "
     "those files automatically. Never output base64, never pretend to attach or encode a ZIP or any other archive, "
-    "and never tell the user to decode anything."
+    "and never tell the user to decode anything.\n\n" + apps.DESIGN_GUIDE
 )
 
 
