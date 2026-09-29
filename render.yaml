@@ -1,0 +1,22 @@
+# One-click deploy on Render (free plan):
+#   https://render.com/deploy?repo=https://github.com/automatex29-source/Radha
+# You'll be asked for MONGO_URL (free MongoDB Atlas cluster) and at least one AI key.
+services:
+  - type: web
+    name: radha
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # The free plan has 512 MB of memory; a headless Chrome would exceed it.
+      - key: BROWSER_TOOL
+        value: "0"

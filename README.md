@@ -84,6 +84,15 @@ Backend tests that run offline: `cd backend && pytest tests/test_agent_tools.py 
   extra isolation.
 - Published apps are served from `/api/sites/<name>/` in a sandboxed origin.
 
+## Put it online for free (Render + MongoDB Atlas)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/automatex29-source/Radha)
+
+1. Create a free database at https://www.mongodb.com/cloud/atlas/register (M0 free cluster),
+   add a database user, allow access from anywhere (0.0.0.0/0), and copy the connection string.
+2. Click **Deploy to Render**, paste the connection string as `MONGO_URL` and your AI key(s),
+   and click **Apply**. The free server sleeps when unused and the browser tool is off (512 MB limit).
+
 ## Put it online (Railway)
 
 1. Sign in at https://railway.com with GitHub.
