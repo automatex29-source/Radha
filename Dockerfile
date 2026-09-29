@@ -19,8 +19,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # nodejs: lets the app builder run JavaScript tests in its sandbox.
 # util-linux: provides `unshare` for the code sandbox. Fonts: Unicode/Japanese text in PDFs.
+# tesseract-ocr: reads text in photos and scanned PDFs people upload.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nodejs util-linux fonts-dejavu-core fonts-ipafont-gothic \
+    && apt-get install -y --no-install-recommends nodejs util-linux fonts-dejavu-core fonts-ipafont-gothic tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/backend

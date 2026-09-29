@@ -165,9 +165,9 @@ export default function ProjectView() {
           </div>
 
           {/* Files */}
-          <Section title="Knowledge files" hint="PDF, DOCX, XLSX, CSV, TXT, MD, JSON — extracted, embedded and searchable.">
+          <Section title="Knowledge files" hint="PDF, Word, PowerPoint, Excel, CSV, text and photos: RADHA reads them and answers from them.">
             <input ref={fileRef} type="file" onChange={onUpload} className="hidden" data-testid="file-input"
-              accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.log" />
+              accept=".pdf,.docx,.pptx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.log,.png,.jpg,.jpeg,.webp" />
             <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="upload-file-button" className="gap-2 border-border bg-card">
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload document
             </Button>

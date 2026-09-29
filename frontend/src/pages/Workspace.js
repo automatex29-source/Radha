@@ -7,13 +7,14 @@ import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
 import PreviewPanel from "@/components/PreviewPanel";
+import ShareDialog from "@/components/ShareDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Sparkles, Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, FolderKanban } from "lucide-react";
+import { Sparkles, Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, FolderKanban, Link2 } from "lucide-react";
 
 const STARTERS = [
   { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
@@ -47,6 +48,7 @@ export default function Workspace() {
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
@@ -440,6 +442,13 @@ export default function Workspace() {
           </div>
 
           <div className="flex items-center gap-2">
+            {activeConv && messages.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} data-testid="share-conversation-button"
+                className={`gap-1.5 hover:text-foreground ${activeConv.shareId ? "text-brand" : "text-muted-foreground"}`}>
+                <Link2 className="h-3.5 w-3.5" />
+                <span className="hidden text-xs sm:inline">{activeConv.shareId ? "Shared" : "Share"}</span>
+              </Button>
+            )}
             {activeId && messages.length > 0 && (
               <Button variant="ghost" size="sm" onClick={exportConversation} data-testid="export-conversation-button" className="gap-1.5 text-muted-foreground hover:text-foreground">
                 <Download className="h-3.5 w-3.5" />
@@ -503,6 +512,8 @@ export default function Workspace() {
           voiceEnabled={voiceEnabled} voiceHint="Voice needs OPENAI_API_KEY on the backend"
           onVoiceMode={() => setVoiceOpen(true)} />
       </div>
+      <ShareDialog open={shareOpen} onOpenChange={setShareOpen} conversation={activeConv}
+        onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
       {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
       {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onUtterance={(t) => sendRef.current(t)} />}
     </div>

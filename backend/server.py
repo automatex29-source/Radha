@@ -4,7 +4,9 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+import asyncio
 import os
+import re
 import secrets
 import uuid
 import logging
@@ -29,6 +31,8 @@ from ai_runtime._backend import uses_emergent
 import storage
 import embeddings
 import extract as extractor
+import memory
+import vision
 import media
 import preview as previewer
 import apps
@@ -163,6 +167,7 @@ def public_conversation(doc: dict) -> dict:
         "title": doc["title"],
         "model": doc.get("model"),
         "projectId": doc.get("projectId"),
+        "shareId": doc.get("shareId"),
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
     }
@@ -374,8 +379,12 @@ AGENT_PROMPT = (
 MAX_CONTEXT_IMAGES = 6
 
 
-async def _llm_messages(history_docs: list, system_prompt: str, user_id: str) -> list:
-    """OpenAI-style messages for LiteLLM, with user images inlined as data URLs."""
+async def _llm_messages(history_docs: list, system_prompt: str, user_id: str, see_images: bool = True) -> list:
+    """OpenAI-style messages for LiteLLM, with user images inlined as data URLs.
+
+    For text-only models (see_images=False) each image is replaced by a written
+    description and its text (see vision.py).
+    """
     # Only the most recent images are sent, to bound request size.
     image_budget = MAX_CONTEXT_IMAGES
     allowed = set()
@@ -386,7 +395,18 @@ async def _llm_messages(history_docs: list, system_prompt: str, user_id: str) ->
                 image_budget -= 1
     out = [{"role": "system", "content": system_prompt}]
     for m in history_docs:
-        if m["role"] == "user" and m.get("images"):
+        if m["role"] == "user" and m.get("images") and not see_images:
+            notes = []
+            for n, mid in enumerate(m["images"], 1):
+                doc = await media.load_media(db, user_id, mid) if mid in allowed else None
+                if not doc:
+                    continue
+                text = await vision.describe_media(db, doc)
+                name = doc.get("name") or f"image {n}"
+                notes.append(f"[Attached image \"{name}\": {text}]" if text
+                             else f"[Attached image \"{name}\": it could not be read. Say so and ask the user to type what it shows.]")
+            out.append({"role": "user", "content": "\n\n".join([m["content"], *notes])})
+        elif m["role"] == "user" and m.get("images"):
             parts = [{"type": "text", "text": m["content"]}]
             for mid in m["images"]:
                 if mid in allowed:
@@ -397,6 +417,70 @@ async def _llm_messages(history_docs: list, system_prompt: str, user_id: str) ->
         elif m["content"]:
             out.append({"role": m["role"], "content": m["content"]})
     return out
+
+
+# How many words of attached files go into one prompt: whole files when they fit, else the best parts.
+FILE_WORDS = 6000
+FILE_WORDS_LEAN = 1400  # Groq's free tier: about 8,000 tokens per request in total
+FILE_WORDS_LEAN_TOOLS = 450  # ...of which the tool list alone takes about 3,000
+# Asks that need tools (web search, making files or pictures, code) even when a document is attached.
+_TOOL_ASK = re.compile(
+    r"\b(search|google|web|online|internet|latest|news|weather|draw|chart|graph|plot|make|create|generate|"
+    r"export|convert|download|build|design|python|calculate)\b", re.IGNORECASE)
+
+
+async def _file_context(conv_id: str, user_id: str, project_id, question: str, limit: int):
+    """(system-prompt text, sources) for the files attached to this chat and the project's documents.
+
+    Small attached files are included whole, so "summarise this" works; bigger ones and
+    project documents are searched for the parts closest to the question.
+    """
+    files = await db.files.find({"conversationId": conv_id, "userId": user_id, "is_deleted": False}).to_list(50)
+    or_conds = [{"conversationId": conv_id}] + ([{"projectId": project_id}] if project_id else [])
+    chunk_docs = await db.chunks.find({"userId": user_id, "$or": or_conds}).to_list(5000)
+    if not files and not chunk_docs:
+        return "", []
+
+    chat_file_ids = {f["id"] for f in files}
+    chat_chunks = sorted((c for c in chunk_docs if c.get("fileId") in chat_file_ids),
+                         key=lambda c: (c["fileName"], c["index"]))
+    step = 180  # chunk_text() windows are 220 words overlapping by 40
+    whole = bool(chat_chunks) and len(chat_chunks) * step <= limit
+    chosen = list(chat_chunks) if whole else []  # small files go in whole, so "summarise this" works
+    sources = [{"fileName": n, "score": 1.0} for n in dict.fromkeys(c["fileName"] for c in chosen)]
+    taken = {c["id"] for c in chosen}
+    others = [c for c in chunk_docs if c["id"] not in taken]
+    room = (limit - len(chosen) * step) // 220
+    if others and room > 0:
+        ranked = await embeddings.rank(question, others, top_k=room)
+        if not whole:
+            # A vague question ("what is this?") still gets the start of each attached file.
+            for fid in list(chat_file_ids)[:3]:
+                first = next((c for c in chat_chunks if c["fileId"] == fid), None)
+                if first and first["id"] not in {r["id"] for r in ranked}:
+                    if len(ranked) >= room:
+                        ranked.pop()
+                    ranked.insert(0, {**{k: v for k, v in first.items() if k != "embedding"}, "score": 0.0})
+        chosen += ranked
+        for c in ranked:
+            if c["fileName"] not in {s["fileName"] for s in sources}:
+                sources.append({"fileName": c["fileName"], "score": c["score"]})
+
+    parts = []
+    if files:
+        status = []
+        for f in files:
+            note = "read" if f.get("chunk_count") else ("could not be read" if f.get("status") == "failed"
+                                                          else "no readable text found (it may be a blank or photo-only file)")
+            status.append(f"- {f['original_filename']}: {note}")
+        parts.append("Files the user attached to this chat:\n" + "\n".join(status))
+    if chosen:
+        parts.append(
+            "Content of the user's files (answer from it, and name the file in [brackets] when you use it; "
+            "if the answer isn't there, say so):\n\n"
+            + "\n\n".join(f"[{c['fileName']}] {c['text']}" for c in chosen)
+        )
+    return "\n\n".join(parts), sources
 
 
 async def run_turn(conv_id: str, model: str, agent: bool = False):
@@ -421,14 +505,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
     # Memory (user-global + project) — real, user-controlled facts.
-    mem_query = {"userId": user_id, "$or": [{"projectId": None}, {"projectId": project_id}]} if user_id else None
-    if mem_query:
-        mems = await db.memories.find(mem_query).sort("createdAt", -1).to_list(50)
-        if mems:
-            system_parts.append(
-                "Known facts the user asked you to remember:\n"
-                + "\n".join(f"- {m['content']}" for m in mems)
-            )
+    if user_id:
+        remembered = await memory.prompt_section(db, user_id, project_id)
+        if remembered:
+            system_parts.append(remembered)
 
     # Project instructions.
     if project_id:
@@ -436,30 +516,21 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
         if proj and proj.get("instructions"):
             system_parts.append(f"Project instructions:\n{proj['instructions']}")
 
-    # RAG retrieval over project documents AND files attached to this chat.
+    # Files attached to this chat, plus project documents (RAG).
     if user_id and last_user:
-        or_conds = [{"conversationId": conv_id}]
-        if project_id:
-            or_conds.append({"projectId": project_id})
-        chunk_docs = await db.chunks.find({"userId": user_id, "$or": or_conds}).to_list(5000)
-        if chunk_docs:
-            try:
-                qvec = embeddings.embed_query(last_user)
-                top = embeddings.cosine_rank(qvec, chunk_docs, top_k=5, threshold=0.3)
-                if top:
-                    ctx = "\n\n".join(f"[{c['fileName']}] {c['text']}" for c in top)
-                    system_parts.append(
-                        "Use the following context from the user's uploaded documents to answer. "
-                        "Cite the source file names in [brackets]. If the answer is not in the context, say so.\n\n"
-                        + ctx
-                    )
-                    seen = set()
-                    for c in top:
-                        if c["fileName"] not in seen:
-                            seen.add(c["fileName"])
-                            sources.append({"fileName": c["fileName"], "score": c["score"]})
-            except Exception:
-                logger.exception("RAG retrieval failed")
+        lean = agent_llm.lean(model)
+        if lean and agent and not (conv or {}).get("appId") and not _TOOL_ASK.search(last_user) and \
+                await db.files.count_documents({"conversationId": conv_id, "is_deleted": False}):
+            # Groq's free tier can't fit the tools AND a document in one request; a question about
+            # the document needs the document more.
+            agent = False
+        budget = FILE_WORDS if not lean else FILE_WORDS_LEAN if not agent else FILE_WORDS_LEAN_TOOLS
+        try:
+            file_ctx, sources = await _file_context(conv_id, user_id, project_id, last_user, budget)
+            if file_ctx:
+                system_parts.append(file_ctx)
+        except Exception:
+            logger.exception("RAG retrieval failed")
 
     app_id = conv.get("appId") if conv else None
     if app_id:
@@ -485,7 +556,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
         if use_runtime:
             if not agent_llm.configured(model):
                 raise RuntimeError(agent_llm.missing_key_message(model))
-            llm_messages = await _llm_messages(history_docs, system_prompt, user_id)
+            llm_messages = await _llm_messages(history_docs, system_prompt, user_id,
+                                               see_images=agent_llm.supports_images(model))
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused)
             async for ev in run_agent(agent_llm.stream_completion, tool_registry, ctx, model, llm_messages, use_tools=agent):
                 if ev["type"] == "text":
@@ -572,7 +644,21 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         auto_title = body.content.strip().split("\n")[0][:60]
         await db.conversations.update_one({"id": conv_id}, {"$set": {"title": auto_title}})
 
+    # Learn lasting facts about the user in the background (see memory.py).
+    if not conv.get("appId") and not conv.get("automationId"):
+        _background(memory.learn(db, user_id, body.content, model))
+
     return _stream_response(conv_id, model, agent=body.agent)
+
+
+_BACKGROUND_TASKS = set()
+
+
+def _background(coro):
+    """Run a coroutine after the response without it being garbage-collected mid-way."""
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
 @api.post("/conversations/{conv_id}/regenerate")
@@ -593,6 +679,77 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
         raise HTTPException(status_code=400, detail="Nothing to regenerate")
 
     return _stream_response(conv_id, model, agent=body.agent)
+
+
+# -------------------------------------------------------------------- sharing
+# A shared chat gets a random, unguessable link that anyone can open read-only.
+# It shows the chat as it is now (later messages too) until the owner stops sharing.
+@api.post("/conversations/{conv_id}/share")
+async def share_conversation(conv_id: str, user_id: str = Depends(current_user_id)):
+    conv = await _owned_conversation(conv_id, user_id)
+    share_id = conv.get("shareId")
+    if not share_id:
+        share_id = secrets.token_urlsafe(16)
+        await db.conversations.update_one({"id": conv_id}, {"$set": {"shareId": share_id, "sharedAt": now_iso()}})
+    return {"shareId": share_id, "path": f"/share/{share_id}"}
+
+
+@api.delete("/conversations/{conv_id}/share")
+async def unshare_conversation(conv_id: str, user_id: str = Depends(current_user_id)):
+    await _owned_conversation(conv_id, user_id)
+    await db.conversations.update_one({"id": conv_id}, {"$unset": {"shareId": "", "sharedAt": ""}})
+    return {"ok": True}
+
+
+async def _shared_conversation(share_id: str) -> dict:
+    conv = await db.conversations.find_one({"shareId": share_id}) if share_id else None
+    if not conv:
+        raise HTTPException(status_code=404, detail="This link was turned off or doesn't exist")
+    return conv
+
+
+def _message_media_ids(msg: dict) -> set:
+    ids = set(msg.get("images") or [])
+    ids.update(m["id"] for m in msg.get("media") or [] if m.get("id"))
+    return ids
+
+
+@api.get("/share/{share_id}")
+async def get_shared_conversation(share_id: str):
+    """Public, read-only view of a shared chat. No sign-in; shows no account details."""
+    conv = await _shared_conversation(share_id)
+    msgs = await db.messages.find({"conversationId": conv["id"]}).sort("createdAt", 1).to_list(2000)
+    base = f"/api/share/{share_id}/media"
+    out = []
+    for m in msgs:
+        if not m.get("content") and not m.get("media"):
+            continue
+        out.append({
+            "id": m["id"],
+            "role": m["role"],
+            "content": m.get("content") or "",
+            "images": [f"{base}/{mid}" for mid in m.get("images") or []],
+            "media": [{**x, "url": f"{base}/{x['id']}"} for x in m.get("media") or [] if x.get("id")],
+            "sources": m.get("sources"),
+            "createdAt": m["createdAt"],
+        })
+    return {"title": conv["title"], "createdAt": conv["createdAt"], "updatedAt": conv["updatedAt"], "messages": out}
+
+
+@api.get("/share/{share_id}/media/{mid}")
+async def get_shared_media(share_id: str, mid: str,
+                           range_header: Optional[str] = Header(None, alias="Range")):
+    conv = await _shared_conversation(share_id)
+    # Only pictures and files that appear in this chat can be opened through its link.
+    async for m in db.messages.find({"conversationId": conv["id"]}, {"images": 1, "media": 1}):
+        if mid in _message_media_ids(m):
+            break
+    else:
+        raise HTTPException(status_code=404, detail="Media not found")
+    doc = await media.load_media(db, conv["userId"], mid)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Media not found")
+    return await _serve_media(doc, range_header)
 
 
 # ------------------------------------------------------------------- projects
@@ -672,10 +829,17 @@ async def delete_project(pid: str, user_id: str = Depends(current_user_id)):
 async def _process_file(file_id: str, user_id: str, project_id, data: bytes, ext: str, filename: str, content_type: str, conversation_id=None):
     """Extract text, chunk, embed, and store chunks. Updates file status."""
     try:
-        text = extractor.extract_text(data, ext, content_type)
+        # Parsing, OCR and embedding are CPU-bound: keep them off the event loop.
+        text = await asyncio.to_thread(extractor.extract_text, data, ext, content_type)
         chunks = extractor.chunk_text(text)
         if chunks:
-            vectors = embeddings.embed_texts(chunks)
+            try:
+                vectors = await asyncio.to_thread(embeddings.embed_texts, chunks)
+            except Exception:
+                # The embedding model couldn't load (download blocked, low memory): keep the text,
+                # which is still found by keyword search.
+                logger.exception("Embedding failed; storing chunks for keyword search")
+                vectors = [None] * len(chunks)
             docs = [
                 {
                     "id": str(uuid.uuid4()),
@@ -860,6 +1024,11 @@ async def get_media(mid: str, authorization: str = Header(None), auth: str = Que
     doc = await media.load_media(db, user_id, mid)
     if not doc:
         raise HTTPException(status_code=404, detail="Media not found")
+    return await _serve_media(doc, range_header)
+
+
+async def _serve_media(doc: dict, range_header: Optional[str]):
+    mid = doc["id"]
     size = doc.get("size") or 0
     headers = {"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes"}
     if doc["contentType"] in ("text/html", "image/svg+xml"):
@@ -972,6 +1141,28 @@ async def delete_memory(mid: str, user_id: str = Depends(current_user_id)):
     return {"ok": True}
 
 
+@api.delete("/memory")
+async def clear_memory(user_id: str = Depends(current_user_id)):
+    """Forget everything RADHA remembers about the user (project memory is kept)."""
+    res = await db.memories.delete_many({"userId": user_id, "projectId": None})
+    return {"ok": True, "deleted": res.deleted_count}
+
+
+class MemorySettingsIn(BaseModel):
+    auto: bool
+
+
+@api.get("/memory/settings")
+async def memory_settings(user_id: str = Depends(current_user_id)):
+    return {"auto": await memory.auto_enabled(db, user_id)}
+
+
+@api.put("/memory/settings")
+async def update_memory_settings(body: MemorySettingsIn, user_id: str = Depends(current_user_id)):
+    await db.users.update_one({"id": user_id}, {"$set": {"memoryAuto": body.auto}})
+    return {"auto": body.auto}
+
+
 import json as _json
 
 
@@ -1037,6 +1228,7 @@ async def _ensure_auth_secret():
 async def startup():
     await db.users.create_index("email", unique=True)
     await db.conversations.create_index([("userId", 1), ("updatedAt", -1)])
+    await db.conversations.create_index("shareId", sparse=True)
     await db.messages.create_index([("conversationId", 1), ("createdAt", 1)])
     await db.projects.create_index([("userId", 1), ("updatedAt", -1)])
     await db.files.create_index([("projectId", 1), ("is_deleted", 1)])

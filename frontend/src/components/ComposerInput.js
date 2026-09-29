@@ -6,7 +6,7 @@ import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
 import { transcribe } from "@/lib/voice";
 
-const DOC_TYPES = ".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.log";
+const DOC_TYPES = ".pdf,.docx,.pptx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.log";
 const IMAGE_TYPES = ".png,.jpg,.jpeg,.webp,.gif";
 const VIDEO_TYPES = ".mp4,.webm,.mov,.m4v";
 

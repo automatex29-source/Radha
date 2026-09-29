@@ -11,6 +11,7 @@ import AppBuilder from "@/pages/AppBuilder";
 import AutomationsPage from "@/pages/AutomationsPage";
 import DecksPage from "@/pages/DecksPage";
 import DeckEditor from "@/pages/DeckEditor";
+import SharedChat from "@/pages/SharedChat";
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 
@@ -56,7 +57,11 @@ export default function App() {
       <div className="App">
         <AuthProvider>
           <BrowserRouter>
-            <Gate />
+            <Routes>
+              {/* Shared chats open for anyone, signed in or not. */}
+              <Route path="/share/:shareId" element={<SharedChat />} />
+              <Route path="*" element={<Gate />} />
+            </Routes>
           </BrowserRouter>
           <Toaster position="top-center" />
         </AuthProvider>
