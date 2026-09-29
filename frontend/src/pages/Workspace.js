@@ -42,9 +42,6 @@ export default function Workspace() {
   const [pendingImages, setPendingImages] = useState([]);
   const [streamSteps, setStreamSteps] = useState([]);
   const [caps, setCaps] = useState(null);
-  const [agentMode, setAgentMode] = useState(() => {
-    try { return localStorage.getItem("radha_agent_mode") === "1"; } catch { return false; }
-  });
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
 
@@ -54,16 +51,9 @@ export default function Workspace() {
   const streamSourcesRef = useRef([]);
   const streamStepsRef = useRef([]);
 
+  // Chat always uses RADHA's tools (web search, code, files) whenever the model supports them; no mode switch.
   const agentAvailable = !!(caps && model && caps.agent?.[model]);
   const voiceEnabled = !!caps?.voice;
-
-  const toggleAgent = () => {
-    setAgentMode((on) => {
-      const next = !on;
-      try { localStorage.setItem("radha_agent_mode", next ? "1" : "0"); } catch { /* ignore */ }
-      return next;
-    });
-  };
 
   const activeConv = conversations.find((c) => c.id === activeId);
 
@@ -389,7 +379,7 @@ export default function Workspace() {
     const imageIds = images.map((i) => i.id);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (text === undefined) { setInput(""); setPendingImages([]); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentMode && agentAvailable }, convId);
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable }, convId);
   };
 
   // Voice mode keeps its first callback for the whole session; route through a ref
@@ -404,7 +394,7 @@ export default function Workspace() {
       if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
       return copy;
     });
-    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentMode && agentAvailable }, activeId);
+    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable }, activeId);
   };
 
   return (
@@ -505,7 +495,7 @@ export default function Workspace() {
           streaming={streaming} disabled={loadingConv}
           onAttach={attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
           images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
-          agentMode={agentMode && agentAvailable} onToggleAgent={toggleAgent} agentAvailable={agentAvailable}
+          agentMode={agentAvailable} agentAvailable={agentAvailable}
           agentHint="Agent mode needs a provider API key for this model on the backend"
           voiceEnabled={voiceEnabled} voiceHint="Voice needs OPENAI_API_KEY on the backend"
           onVoiceMode={() => setVoiceOpen(true)} />
