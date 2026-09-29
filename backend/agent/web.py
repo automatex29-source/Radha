@@ -5,8 +5,10 @@ endpoint (no key needed). Fetching guards against SSRF: only http(s), and every
 hop of a redirect must resolve to a public address.
 """
 import asyncio
+import difflib
 import ipaddress
 import os
+import re
 import socket
 from typing import List
 from urllib.parse import urljoin, urlparse, parse_qs, unquote
@@ -165,3 +167,64 @@ async def search(query: str, limit: int = 6) -> List[dict]:
         resp = await client.post("https://lite.duckduckgo.com/lite/", data={"q": query})
         resp.raise_for_status()
         return parse_ddg_lite(resp.text, limit)
+
+
+# ------------------------------------------------------------ exchange rates
+RATES_URL = "https://open.er-api.com/v6/latest/USD"  # free, no key
+CURRENCY = re.compile(
+    r"\b(dollar|dollars|usd|rupee|rupees|inr|euro|euros|eur|pound|pounds|gbp|yen|jpy|dirham|aed|riyal|sar|"
+    r"yuan|cny|currency|exchange rate|forex|fx)\b",
+    re.I,
+)
+COMMON_CODES = ["INR", "EUR", "GBP", "AED", "JPY", "CNY", "CAD", "AUD", "SGD", "SAR"]
+_NAMES = {"rupee": "INR", "euro": "EUR", "pound": "GBP", "yen": "JPY", "dirham": "AED", "riyal": "SAR",
+          "yuan": "CNY", "dollar": "USD"}
+# The currency on the other side of "USD to X" / "X to USD", even when misspelled.
+_PAIR = re.compile(r"\b(?:usd|dollars?)\s*(?:to|in|into|vs|->|=)\s*([a-z]{2,8})\b"
+                   r"|\b([a-z]{2,8})\s*(?:to|in|into|vs|->|=)\s*(?:usd|dollars?)\b", re.I)
+
+
+def resolve_currency(word: str, known) -> str:
+    """The currency code a user meant: an exact code, a name like "rupee", or the closest code to a typo."""
+    w = word.strip().upper()
+    if w in known:
+        return w
+    for name, code in _NAMES.items():
+        if w.lower().rstrip("s") == name:
+            return code
+    close = difflib.get_close_matches(w, COMMON_CODES, n=1, cutoff=0.5) or \
+        difflib.get_close_matches(w, list(known), n=1, cutoff=0.6)
+    return close[0] if close else ""
+
+
+def pick_currencies(text: str, known) -> tuple:
+    """(codes to show, notes about guessed typos) for a currency question."""
+    wanted, notes = [], []
+    for m in _PAIR.finditer(text):
+        word = m.group(1) or m.group(2)
+        code = resolve_currency(word, known)
+        if code and code != "USD":
+            wanted.append(code)
+            if code != word.upper() and word.lower().rstrip("s") not in _NAMES:
+                notes.append(f"'{word}' is not a currency code; it most likely means {code}.")
+    wanted += [c for c in re.findall(r"\b[A-Z]{3}\b", text.upper()) if c in known and c != "USD"]
+    wanted += [code for name, code in _NAMES.items() if name in text.lower() and code != "USD"]
+    return list(dict.fromkeys(wanted + COMMON_CODES)), notes
+
+
+async def exchange_rates(text: str) -> str:
+    """Live USD exchange rates relevant to the question, with notes on guessed typos."""
+    async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
+        resp = await client.get(RATES_URL)
+        resp.raise_for_status()
+        data = resp.json()
+    rates = data.get("rates") or {}
+    codes, notes = pick_currencies(text, rates)
+    lines = [f"1 USD = {rates[c]:,.4f} {c}" for c in codes if c in rates]
+    if not lines:
+        return ""
+    updated = data.get("time_last_update_utc", "recently")
+    out = f"Live exchange rates (source: open.er-api.com, updated {updated}):\n" + "\n".join(lines)
+    if notes:
+        out += "\n" + "\n".join(notes) + " Say which currency you assumed, then give its rate."
+    return out

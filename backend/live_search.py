@@ -11,13 +11,10 @@ import logging
 import re
 from typing import List, Optional
 
-import httpx
-
 from agent import web
 
 logger = logging.getLogger(__name__)
 
-RATES_URL = "https://open.er-api.com/v6/latest/USD"  # free, no key
 LOOKUP_TIMEOUT = 10.0
 
 _CURRENT = re.compile(
@@ -27,15 +24,7 @@ _CURRENT = re.compile(
     r"search|google|look ?up|browse|internet|who won|who is the|20[2-9]\d)\b",
     re.I,
 )
-_CURRENCY = re.compile(
-    r"\b(dollar|dollars|usd|rupee|rupees|inr|euro|euros|eur|pound|pounds|gbp|yen|jpy|dirham|aed|riyal|sar|"
-    r"yuan|cny|currency|exchange rate|forex|fx)\b",
-    re.I,
-)
-_CODES = re.compile(r"\b[A-Z]{3}\b")
-_DEFAULT_CODES = ["INR", "EUR", "GBP", "AED", "JPY", "CNY", "CAD", "AUD", "SGD", "SAR"]
-_NAMES = {"rupee": "INR", "euro": "EUR", "pound": "GBP", "yen": "JPY", "dirham": "AED", "riyal": "SAR",
-          "yuan": "CNY"}
+_CURRENCY = web.CURRENCY
 
 
 def _recent_user_text(user_messages: List[str]) -> str:
@@ -53,19 +42,7 @@ def needs_lookup(text: str) -> bool:
 
 
 async def _rates(text: str) -> Optional[str]:
-    async with httpx.AsyncClient(timeout=LOOKUP_TIMEOUT, headers={"User-Agent": web.USER_AGENT}) as client:
-        resp = await client.get(RATES_URL)
-        resp.raise_for_status()
-        data = resp.json()
-    rates = data.get("rates") or {}
-    wanted = [c for c in _CODES.findall(text.upper()) if c in rates and c != "USD"]
-    wanted += [code for name, code in _NAMES.items() if name in text.lower()]
-    codes = list(dict.fromkeys(wanted + _DEFAULT_CODES))
-    lines = [f"1 USD = {rates[c]:,.4f} {c}" for c in codes if c in rates]
-    if not lines:
-        return None
-    updated = data.get("time_last_update_utc", "recently")
-    return f"Live exchange rates (source: open.er-api.com, updated {updated}):\n" + "\n".join(lines)
+    return await web.exchange_rates(text) or None
 
 
 async def _search(text: str) -> Optional[str]:
@@ -76,14 +53,19 @@ async def _search(text: str) -> Optional[str]:
     return "Web search results:\n" + "\n".join(lines)
 
 
-async def lookup(user_messages: List[str]) -> Optional[str]:
-    """Live context for the latest question, or None when it doesn't need any (or the lookup fails)."""
+async def lookup(user_messages: List[str], search: bool = True) -> Optional[str]:
+    """Live context for the latest question, or None when it doesn't need any (or the lookup fails).
+
+    With search=False only exchange rates are fetched (agent turns search with their own tool).
+    """
     text = _recent_user_text(user_messages)
     if not needs_lookup(text):
         return None
-    jobs = [_search(text)]
-    if _CURRENCY.search(text):
-        jobs.insert(0, _rates(text))
+    jobs = [_rates(text)] if _CURRENCY.search(text) else []
+    if search:
+        jobs.append(_search(text))
+    if not jobs:
+        return None
     try:
         found = await asyncio.wait_for(asyncio.gather(*jobs, return_exceptions=True), LOOKUP_TIMEOUT + 2)
     except asyncio.TimeoutError:

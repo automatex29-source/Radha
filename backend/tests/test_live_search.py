@@ -56,3 +56,45 @@ def test_parses_duckduckgo_lite():
       <tr><td></td><td class='result-snippet'>ad</td></tr>
     </table>"""
     assert web.parse_ddg_lite(html, 5) == [{"title": "First", "url": "https://example.org/a", "snippet": "Snippet one."}]
+
+
+KNOWN = {"USD", "INR", "IRR", "EUR", "GBP", "JPY", "AED", "CNY", "CAD", "AUD", "SGD", "SAR"}
+
+
+def test_guesses_misspelled_currency():
+    codes, notes = web.pick_currencies("USD to IRHT exchange rate", KNOWN)
+    assert codes[0] == "INR"
+    assert notes and "INR" in notes[0]
+
+
+def test_understands_names_and_exact_codes():
+    codes, notes = web.pick_currencies("dollar to rupees", KNOWN)
+    assert codes[0] == "INR" and not notes
+    codes, notes = web.pick_currencies("USD to JPY", KNOWN)
+    assert codes[0] == "JPY" and not notes
+
+
+def test_agent_turns_only_fetch_rates(monkeypatch):
+    async def boom(*a, **k):
+        raise AssertionError("agent turns search with their own tool")
+
+    async def fake_rates(text):
+        return "1 USD = 88.0000 INR"
+    monkeypatch.setattr(web, "search", boom)
+    monkeypatch.setattr(live_search, "_rates", fake_rates)
+    assert asyncio.run(live_search.lookup(["USD to IRHT"], search=False)) == "1 USD = 88.0000 INR"
+    assert asyncio.run(live_search.lookup(["latest news"], search=False)) is None
+
+
+def test_web_search_tool_adds_rates_even_when_search_fails(monkeypatch):
+    from agent import tools
+
+    async def broken(*a, **k):
+        raise RuntimeError("blocked")
+
+    async def fake_rates(text):
+        return "1 USD = 88.0000 INR"
+    monkeypatch.setattr(web, "search", broken)
+    monkeypatch.setattr(web, "exchange_rates", fake_rates)
+    out = asyncio.run(tools._web_search(None, {"query": "USD to IRHT exchange rate"}))
+    assert "88.0000 INR" in out.content

@@ -338,7 +338,9 @@ SYSTEM_PROMPT = (
     "no tables or code unless the user asks or they clearly help. Match the user's language. "
     "RADHA can search the web: when live web results or rates are included below, answer from them, "
     "give the number or fact directly, and name the source briefly. Never say you cannot browse or "
-    "access live data. If the results do not contain the answer, say so in one line.\n\n"
+    "access live data. If a word looks like a misspelled currency, place or name, assume the closest match, "
+    "say so in a few words (\"Assuming you meant INR\"), and answer. Never stop at \"I couldn't find it\" "
+    "when the results or your own knowledge give a useful answer.\n\n"
     "When the user asks you to build an app, website, game, tool or page, build the complete, working thing right "
     "away. Put each file in its own fenced code block whose info string is the language followed by the file name, "
     "for example ```html index.html and ```javascript app.js, and link them from index.html by those names. "
@@ -454,9 +456,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
         agent = True  # the app builder always works with its tools
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
-    # Plain chat has no tools, so look up live info (news, rates, prices) for it automatically.
-    if not agent:
-        live = await live_search.lookup([m["content"] for m in history_docs if m["role"] == "user"])
+    # Look up live info (news, rates, prices) automatically; agent turns search with their tool, so only rates.
+    if not app_id:
+        live = await live_search.lookup([m["content"] for m in history_docs if m["role"] == "user"], search=not agent)
         if live:
             system_parts.append(live)
     # Free models (Groq) get only the app tools inside an app, to stay within their token budget.
