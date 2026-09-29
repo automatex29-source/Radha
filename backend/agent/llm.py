@@ -2,15 +2,16 @@
 
 The Emergent chat integration streams plain text only, so agent turns and
 messages with images go through LiteLLM, which speaks one OpenAI-style
-interface (tools + image parts) for Anthropic, OpenAI and Gemini.
+interface (tools + image parts) for Anthropic, OpenAI, Gemini and Groq.
 
-Keys: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY, or route everything
+Keys: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY, or route everything
 through an OpenAI-compatible gateway with LLM_GATEWAY_URL + LLM_GATEWAY_KEY.
 """
 import os
 from typing import AsyncIterator, List, Optional
 
-_PROVIDER_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
+_PROVIDER_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY",
+                 "groq": "GROQ_API_KEY"}
 
 
 def provider_for(model: str) -> str:
@@ -18,6 +19,8 @@ def provider_for(model: str) -> str:
         return "anthropic"
     if model.startswith("gemini"):
         return "gemini"
+    if model.startswith("llama"):
+        return "groq"
     return "openai"
 
 

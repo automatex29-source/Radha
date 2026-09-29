@@ -2,7 +2,7 @@
 
 On Emergent (emergentintegrations installed and AI_API_KEY set) chat streams
 through the Emergent LLM integration. Everywhere else it goes through LiteLLM
-with your own provider keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY)
+with your own provider keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY)
 or an OpenAI-compatible gateway (LLM_GATEWAY_URL).
 """
 from typing import AsyncIterator

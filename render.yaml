@@ -1,6 +1,8 @@
 # One-click deploy on Render (free plan):
 #   https://render.com/deploy?repo=https://github.com/automatex29-source/Radha
 # You'll be asked for MONGO_URL (free MongoDB Atlas cluster) and at least one AI key.
+# Free options (no card needed): GROQ_API_KEY from https://console.groq.com/keys
+# or GEMINI_API_KEY from https://aistudio.google.com/apikey.
 services:
   - type: web
     name: radha
@@ -12,6 +14,8 @@ services:
       - key: MONGO_URL
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
         sync: false
       - key: OPENAI_API_KEY
         sync: false
