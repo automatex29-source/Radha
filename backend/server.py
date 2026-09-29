@@ -32,6 +32,7 @@ import extract as extractor
 import media
 import preview as previewer
 import apps
+import decks
 import appdata
 import automations
 import live_search
@@ -982,6 +983,8 @@ async def root():
 app.include_router(api)
 app.include_router(apps.router)
 app.include_router(appdata.router)
+decks.init(db, AI_MODEL)
+app.include_router(decks.router)
 automations.init(db, run_turn, AI_MODEL)
 app.include_router(automations.router)
 
@@ -1039,6 +1042,7 @@ async def startup():
     await db.media.create_index([("userId", 1), ("conversationId", 1)])
     await db.media_chunks.create_index([("mediaId", 1), ("n", 1)], unique=True)
     await apps.ensure_indexes()
+    await decks.ensure_indexes()
     await appdata.ensure_indexes()
     await automations.ensure_indexes()
     if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":
