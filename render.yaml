@@ -21,6 +21,9 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Optional, free: raises the image/video limits (https://enter.pollinations.ai, sign in with GitHub).
+      - key: POLLINATIONS_API_KEY
+        sync: false
       # The free plan has 512 MB of memory; a headless Chrome would exceed it.
       - key: BROWSER_TOOL
         value: "0"

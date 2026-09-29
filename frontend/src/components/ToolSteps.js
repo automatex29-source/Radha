@@ -106,6 +106,15 @@ function FileCard({ item, onOpen }) {
   );
 }
 
+function MediaDownload({ item }) {
+  return (
+    <a href={mediaUrl(item.url)} download={item.name || true} title="Download" data-testid={`media-download-${item.id}`}
+      className="absolute right-2 top-2 flex h-8 items-center gap-1 rounded-lg bg-black/60 px-2.5 text-xs font-medium text-white backdrop-blur hover:bg-black/80">
+      <FileDown className="h-3.5 w-3.5" /> Download
+    </a>
+  );
+}
+
 export function MediaGallery({ items, onOpen }) {
   if (!items?.length) return null;
   const images = items.filter((m) => INLINE_IMAGE.test(m.contentType || ""));
@@ -116,15 +125,21 @@ export function MediaGallery({ items, onOpen }) {
       {images.length > 0 && (
         <div className={`grid gap-2 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
           {images.map((m) => (
-            <a key={m.id} href={mediaUrl(m.url)} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-border bg-sunken">
-              <img src={mediaUrl(m.url)} alt={m.name || "Generated image"} loading="lazy" className="max-h-[480px] w-full object-contain" data-testid={`media-image-${m.id}`} />
-            </a>
+            <div key={m.id} className="group relative">
+              <a href={mediaUrl(m.url)} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-border bg-sunken">
+                <img src={mediaUrl(m.url)} alt={m.name || "Generated image"} loading="lazy" className="max-h-[480px] w-full object-contain" data-testid={`media-image-${m.id}`} />
+              </a>
+              <MediaDownload item={m} />
+            </div>
           ))}
         </div>
       )}
       {videos.map((m) => (
-        <video key={m.id} src={mediaUrl(m.url)} controls playsInline data-testid={`media-video-${m.id}`}
-          className="max-h-[480px] w-full rounded-xl border border-border bg-black" />
+        <div key={m.id} className="group relative">
+          <video src={mediaUrl(m.url)} controls playsInline data-testid={`media-video-${m.id}`}
+            className="max-h-[480px] w-full rounded-xl border border-border bg-black" />
+          <MediaDownload item={m} />
+        </div>
       ))}
       {files.length > 0 && (
         <div className="flex flex-col gap-2">

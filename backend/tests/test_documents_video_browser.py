@@ -140,9 +140,15 @@ class TestPreview:
 
 class TestVideo:
     def test_provider_selection(self, monkeypatch):
-        for k in ("VIDEO_PROVIDER", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        for k in ("VIDEO_PROVIDER", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "POLLINATIONS_API_KEY",
+                  "IMAGE_PROVIDER"):
             monkeypatch.delenv(k, raising=False)
+        assert video.provider() == "slideshow" and video.available()  # free fallback, no key needed
+        monkeypatch.setenv("VIDEO_PROVIDER", "off")
         assert video.provider() is None and not video.available()
+        monkeypatch.delenv("VIDEO_PROVIDER")
+        monkeypatch.setenv("POLLINATIONS_API_KEY", "p")
+        assert video.provider() == "pollinations"
         monkeypatch.setenv("GEMINI_API_KEY", "g")
         assert video.provider() == "gemini"
         monkeypatch.setenv("OPENAI_API_KEY", "o")

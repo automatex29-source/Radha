@@ -1,15 +1,23 @@
-"""Video generation: OpenAI Sora (REST) or Google Veo (google-genai).
+"""Video generation: OpenAI Sora, Google Veo, Pollinations, or a free slideshow.
 
-Provider: VIDEO_PROVIDER=openai|gemini, otherwise whichever key is set
-(OPENAI_API_KEY first). Generation is asynchronous on both sides, so we submit
-a job and poll until it finishes (VIDEO_TIMEOUT_SECONDS, default 10 minutes).
+Provider: VIDEO_PROVIDER=openai|gemini|pollinations|slideshow|off, otherwise the
+first key that is set: OPENAI_API_KEY, GEMINI_API_KEY, POLLINATIONS_API_KEY.
+With no key we make a "slideshow": AI images for a few scenes, animated with
+slow camera moves and cross-fades (see slideshow.py). Pollinations falls back to
+the slideshow when its free daily allowance runs out. Sora and Veo are
+asynchronous, so we submit a job and poll (VIDEO_TIMEOUT_SECONDS, default 10 min).
 """
 import asyncio
+import logging
 import os
 import time
 from typing import Optional, Tuple
 
 import httpx
+
+import media
+
+from . import slideshow, styles
 
 # "high" (default): Sora 2 Pro at 1792x1024 / Veo 3 at 1080p. "standard": faster, cheaper, 720p.
 DEFAULT_QUALITY = os.environ.get("VIDEO_QUALITY", "high")
@@ -24,6 +32,12 @@ VEO = {
 TIMEOUT_SECONDS = int(os.environ.get("VIDEO_TIMEOUT_SECONDS", "600"))
 POLL_SECONDS = 8
 SORA_SECONDS = {4, 8, 12}
+logger = logging.getLogger("radha.agent")
+
+
+POLLINATIONS_VIDEO_MODEL = os.environ.get("POLLINATIONS_VIDEO_MODEL", "alibaba/wan-2.2-fast")
+POLLINATIONS_VIDEO_SECONDS = int(os.environ.get("POLLINATIONS_VIDEO_SECONDS", "5"))
+PROVIDERS = ("openai", "gemini", "pollinations", "slideshow")
 
 
 class VideoError(Exception):
@@ -31,13 +45,19 @@ class VideoError(Exception):
 
 
 def provider() -> Optional[str]:
-    explicit = os.environ.get("VIDEO_PROVIDER")
-    if explicit in ("openai", "gemini"):
+    explicit = os.environ.get("VIDEO_PROVIDER", "").lower()
+    if explicit in PROVIDERS:
         return explicit
+    if explicit in ("off", "0", "none"):
+        return None
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
     if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
         return "gemini"
+    if os.environ.get("POLLINATIONS_API_KEY"):
+        return "pollinations"
+    if slideshow.ffmpeg_path() and media.image_available():
+        return "slideshow"
     return None
 
 
@@ -110,13 +130,49 @@ async def _veo(prompt: str, portrait: bool, quality: str) -> bytes:
     return data
 
 
+async def _pollinations(prompt: str, seconds: int, portrait: bool) -> bytes:
+    from urllib.parse import quote
+
+    params = {"model": POLLINATIONS_VIDEO_MODEL, "duration": max(2, min(seconds, POLLINATIONS_VIDEO_SECONDS)),
+              "aspectRatio": "9:16" if portrait else "16:9"}
+    headers = {"Authorization": f"Bearer {os.environ.get('POLLINATIONS_API_KEY', '')}", "User-Agent": "RADHA/1.0"}
+    async with httpx.AsyncClient(timeout=httpx.Timeout(TIMEOUT_SECONDS, connect=20.0), follow_redirects=True) as client:
+        resp = await client.get(f"{media.POLLINATIONS_BASE}/video/{quote(prompt[:1500], safe='')}",
+                                params=params, headers=headers)
+    if resp.status_code >= 400 or not resp.headers.get("content-type", "").startswith("video/"):
+        raise VideoError(f"Pollinations video HTTP {resp.status_code}: {resp.text[:200]}")
+    return resp.content
+
+
+async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality: Optional[str] = None,
+                   scenes: Optional[list] = None, style: str = "", captions: Optional[list] = None) -> dict:
+    """{"data", "contentType", "method": "ai_video" | "slideshow", "note"}."""
+    which = provider()
+    portrait = orientation == "portrait" or (not orientation and styles.video_style(style).get("portrait", False))
+    ai_prompt = f"{prompt}. {styles.video_scene_words(style)}" if style else prompt
+    quality = quality if quality in ("high", "standard") else (DEFAULT_QUALITY if DEFAULT_QUALITY in ("high", "standard") else "high")
+    note = ""
+    if which == "openai":
+        return {"data": await _sora(ai_prompt, seconds, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
+    if which == "gemini":
+        return {"data": await _veo(ai_prompt, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
+    if which == "pollinations":
+        try:
+            return {"data": await _pollinations(ai_prompt, seconds, portrait), "contentType": "video/mp4",
+                    "method": "ai_video"}
+        except Exception as exc:
+            logger.warning("pollinations video failed, making a slideshow instead: %s", exc)
+            note = "The AI video service was unavailable (its free daily allowance may be used up). "
+    if which in ("pollinations", "slideshow"):
+        try:
+            data = await slideshow.make_slideshow(prompt, seconds or 12, portrait, scenes, style, captions)
+        except slideshow.SlideshowError as exc:
+            raise VideoError(str(exc))
+        return {"data": data, "contentType": "video/mp4", "method": "slideshow", "note": note}
+    raise VideoError("Video generation is turned off")
+
+
 async def generate_video(prompt: str, seconds: int = 8, orientation: str = "landscape",
                          quality: Optional[str] = None) -> Tuple[bytes, str]:
-    which = provider()
-    portrait = orientation == "portrait"
-    quality = quality if quality in ("high", "standard") else (DEFAULT_QUALITY if DEFAULT_QUALITY in ("high", "standard") else "high")
-    if which == "openai":
-        return await _sora(prompt, seconds, portrait, quality), "video/mp4"
-    if which == "gemini":
-        return await _veo(prompt, portrait, quality), "video/mp4"
-    raise VideoError("Set OPENAI_API_KEY or GEMINI_API_KEY to enable video generation")
+    out = await generate(prompt, seconds, orientation, quality)
+    return out["data"], out["contentType"]

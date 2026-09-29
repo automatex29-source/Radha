@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import media
-from . import browser, documents, sandbox, video, web
+from . import browser, documents, sandbox, styles, video, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -166,10 +166,15 @@ async def _run_python(ctx: ToolContext, args: dict) -> ToolOutput:
 
 async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
-    data = await media.generate_image(prompt, args.get("size") or "1024x1024", args.get("quality"))
-    saved = await media.save_media(ctx.db, ctx.user_id, data, "image/png", "generated",
-                                   name="image.png", conversation_id=ctx.conversation_id)
-    return ToolOutput(content="Image generated and shown to the user. Do not embed it; just describe it briefly.",
+    data = await media.generate_image(styles.styled_image_prompt(prompt, args.get("style") or ""),
+                                      args.get("size") or "1024x1024", args.get("quality"))
+    ctype = media.image_type(data) or "image/png"
+    ext = {"image/jpeg": "jpg", "image/webp": "webp"}.get(ctype, "png")
+    name = documents.safe_filename(args.get("filename") or prompt[:40] or "image", ext)
+    saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated",
+                                   name=name, conversation_id=ctx.conversation_id)
+    return ToolOutput(content="Image generated and shown to the user with a download button. Do not embed it or "
+                              "paste a link; just describe it in one short sentence.",
                       summary=f"Generated “{prompt[:80]}”", media=[saved])
 
 
@@ -223,12 +228,20 @@ async def _create_html(ctx: ToolContext, args: dict) -> ToolOutput:
 
 async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
-    data, ctype = await video.generate_video(prompt, int(args.get("seconds") or 8), args.get("orientation") or "landscape",
-                                             args.get("quality"))
-    saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated", name="video.mp4",
+    scenes = args.get("scenes") if isinstance(args.get("scenes"), list) else None
+    captions = args.get("captions") if isinstance(args.get("captions"), list) else None
+    out = await video.generate(prompt, int(args.get("seconds") or 12), args.get("orientation") or "",
+                               args.get("quality"), scenes, args.get("style") or "", captions)
+    name = documents.safe_filename(args.get("filename") or prompt[:40] or "video", "mp4")
+    saved = await media.save_media(ctx.db, ctx.user_id, out["data"], out["contentType"], "generated", name=name,
                                    conversation_id=ctx.conversation_id)
-    return ToolOutput(content="Video generated and shown to the user. Briefly describe what you asked for.",
-                      summary=f"Generated video “{prompt[:70]}”", media=[saved])
+    if out["method"] == "slideshow":
+        content = (out.get("note", "") + "Made a video from AI-generated images of each scene, with slow camera "
+                   "moves and fades between them (a free method; it is not full motion video). It is shown to the "
+                   "user with a download button. Tell them that in one plain sentence.")
+    else:
+        content = "Video generated and shown to the user. Briefly describe what you asked for."
+    return ToolOutput(content=content, summary=f"Generated video “{prompt[:70]}”", media=[saved])
 
 
 async def _browser(ctx: ToolContext, args: dict) -> ToolOutput:
@@ -273,13 +286,19 @@ def default_registry() -> ToolRegistry:
             handler=_run_python))
         .register(Tool(
             name="generate_image", label="Generate image",
-            description="Create an image from a detailed text description.",
+            description="Create an image (photo, ad, product shot, poster, logo, thumbnail, anime, 3D, art...) from a "
+                        "text description; pick the matching 'style'. Write "
+                        "a rich prompt in English: subject, setting, composition, lighting, style, colors, mood. Use "
+                        "1536x1024 for landscape scenes and 1024x1536 for portraits and posters. Call once per image.",
             parameters={"type": "object", "properties": {
                 "prompt": {"type": "string", "description": "Detailed description of the image"},
+                "filename": {"type": "string", "description": "Short file name without extension"},
+                "style": {"type": "string", "enum": styles.image_style_names(),
+                          "description": "Look to apply; pick the closest to what the user asked for"},
                 "size": {"type": "string", "enum": ["1024x1024", "1536x1024", "1024x1536"]},
                 "quality": {"type": "string", "enum": ["high", "medium", "low"], "description": "Default high"},
             }, "required": ["prompt"]},
-            handler=_generate_image, available=media.openai_configured))
+            handler=_generate_image, available=media.image_available))
         .register(Tool(
             name="create_spreadsheet", label="Create Excel file",
             description="Create an Excel .xlsx workbook with styled headers, optional number formats, formulas and a "
@@ -347,14 +366,24 @@ def default_registry() -> ToolRegistry:
             handler=_create_html))
         .register(Tool(
             name="generate_video", label="Generate video",
-            description="Generate a high-quality video clip (Sora 2 Pro 1792x1024 or Veo 3 1080p by default) from a "
-                        "detailed, cinematic description: subject, action, setting, camera movement, lens, lighting, "
-                        "style and mood. Takes one to several minutes.",
+            description="Generate a short video: ads, movie scenes, trailers, 3D animation, anime, cartoons, music "
+                        "videos, reels, travel, food, real estate and more (pick 'style'). Depending on the service "
+                        "it is true AI video or a video made from AI images of several scenes with camera moves and "
+                        "transitions. Always give 3-6 'scenes' that tell a story in order with the same characters, "
+                        "and for ads, reels, trailers and explainers give short on-screen 'captions' (headline, "
+                        "benefits, then a call to action with the brand name). Takes one to a few minutes.",
             parameters={"type": "object", "properties": {
-                "prompt": {"type": "string"},
-                "seconds": {"type": "integer", "description": "4, 8 or 12 (default 8)"},
-                "orientation": {"type": "string", "enum": ["landscape", "portrait"]},
+                "prompt": {"type": "string", "description": "What the video is about, with subject and setting"},
+                "style": {"type": "string", "enum": styles.video_style_names()},
+                "scenes": {"type": "array", "items": {"type": "string"},
+                           "description": "3-6 detailed shot descriptions in order, same characters and look"},
+                "captions": {"type": "array", "items": {"type": "string"},
+                             "description": "Optional text shown on each scene (max ~8 words each; '' for none)"},
+                "seconds": {"type": "integer", "description": "Length in seconds (default 12, up to 30)"},
+                "orientation": {"type": "string", "enum": ["landscape", "portrait"],
+                                "description": "portrait for reels/stories/shorts"},
                 "quality": {"type": "string", "enum": ["high", "standard"], "description": "high (default) or standard (faster, 720p)"},
+                "filename": {"type": "string", "description": "Short file name without extension"},
             }, "required": ["prompt"]},
             handler=_generate_video, available=video.available))
         .register(Tool(

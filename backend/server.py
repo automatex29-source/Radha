@@ -358,7 +358,9 @@ AGENT_PROMPT = (
     "call web_search first, open the best result with fetch_url when snippets are thin, and answer from what you "
     "found with 1-2 source links. Live exchange rates, when given, are the source of truth for currency questions. "
     "Use run_python for any calculation, data work or chart; browser to operate websites; generate_image and "
-    "generate_video for visual media. When the user asks for a file, create a real one: create_spreadsheet (Excel), "
+    "generate_video whenever the user asks to make, draw, design or animate a picture, logo, poster or video (you "
+    "can create them; never say you can't). Pick the style that fits (ad, movie, trailer, 3d_animation, anime, "
+    "cartoon, music_video, social_reel...), write 3-6 vivid scenes, and add short captions for ads and reels. When the user asks for a file, create a real one: create_spreadsheet (Excel), "
     "create_presentation (PowerPoint), create_document (Word or PDF). For apps, websites and games, follow the app "
     "instructions above (files in fenced code blocks). Make files complete and polished, not outlines. "
     "Do not narrate tool calls; after them give the answer or a short summary, not the file's contents. "
@@ -826,7 +828,7 @@ async def capabilities(user_id: str = Depends(current_user_id)):
         "tools": tool_registry.describe(),
         "voice": media.openai_configured(),
         "video": any(t["name"] == "generate_video" and t["available"] for t in tool_registry.describe()),
-        "imageGeneration": media.openai_configured(),
+        "imageGeneration": media.image_available(),
         "voices": media.TTS_VOICES,
     }
 
