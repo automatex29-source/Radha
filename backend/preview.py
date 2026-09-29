@@ -11,6 +11,7 @@ import io
 import json
 import operator
 import re
+import zipfile
 
 MAX_PREVIEW_ROWS = 300
 MAX_PREVIEW_COLS = 40
@@ -218,6 +219,16 @@ def _csv(text: str) -> dict:
     return {"type": "table", "sheets": [{"name": "CSV", "rows": [r[:MAX_PREVIEW_COLS] for r in rows], "truncated": False}]}
 
 
+def _zip(data: bytes) -> dict:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            names = [i.filename for i in zf.infolist() if not i.is_dir()]
+    except zipfile.BadZipFile:
+        return {"type": "code", "language": "text", "text": "Not a valid ZIP file."}
+    listing = "\n".join(names[:500]) + (f"\n… and {len(names) - 500} more" if len(names) > 500 else "")
+    return {"type": "code", "language": "text", "text": f"{len(names)} files in this ZIP:\n\n{listing}"}
+
+
 def build_preview(content_type: str, data: bytes, name: str = "") -> dict:
     ct = (content_type or "").split(";")[0].lower()
     lower = (name or "").lower()
@@ -235,6 +246,8 @@ def build_preview(content_type: str, data: bytes, name: str = "") -> dict:
         return {"type": "image"}
     if ct.startswith("video/"):
         return {"type": "video"}
+    if ct in ("application/zip", "application/x-zip-compressed") or lower.endswith(".zip"):
+        return _zip(data)
     text = data.decode("utf-8", "replace")[:MAX_TEXT]
     if ct == "text/csv" or lower.endswith(".csv"):
         return _csv(text)

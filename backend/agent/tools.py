@@ -226,6 +226,29 @@ async def _create_html(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Created {saved['name']}", media=[saved])
 
 
+async def _create_file(ctx: ToolContext, args: dict) -> ToolOutput:
+    name, ctype = documents.text_file(_require(args, "filename"))
+    content = args.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("'content' is required")
+    saved = await media.save_media(ctx.db, ctx.user_id, content.encode("utf-8"), ctype, "document",
+                                   name=name, conversation_id=ctx.conversation_id)
+    return ToolOutput(content=f"Created {saved['name']}. It is shown to the user with a preview and download "
+                              "button; don't paste its contents again.",
+                      summary=f"Created {saved['name']}", media=[saved])
+
+
+async def _create_zip(ctx: ToolContext, args: dict) -> ToolOutput:
+    files = args.get("files")
+    name = documents.safe_filename(args.get("filename") or "project", "zip")
+    data = documents.build_zip(files, folder=name[:-4])
+    saved = await media.save_media(ctx.db, ctx.user_id, data, documents.CONTENT_TYPES["zip"], "document",
+                                   name=name, conversation_id=ctx.conversation_id)
+    return ToolOutput(content=f"Created {saved['name']} with {len(files)} files. It is shown to the user with a "
+                              "download button; don't paste the files again, just say how to run it.",
+                      summary=f"Created {saved['name']} ({len(files)} files)", media=[saved])
+
+
 async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
     scenes = args.get("scenes") if isinstance(args.get("scenes"), list) else None
@@ -359,6 +382,28 @@ def default_registry() -> ToolRegistry:
                 "markdown": {"type": "string", "description": "Full document content in Markdown"},
             }, "required": ["filename", "format", "markdown"]},
             handler=_create_document))
+        .register(Tool(
+            name="create_file", label="Create file",
+            description="Create any text or code file the user can download: .txt, .md, .csv, .json, .py, .js, "
+                        ".ts, .css, .html, .sql, .sh, .java, .c, .go, .yaml, Dockerfile and more. Write the "
+                        "complete, working file.",
+            parameters={"type": "object", "properties": {
+                "filename": {"type": "string", "description": "Name with extension, e.g. main.py or data.csv"},
+                "content": {"type": "string", "description": "Full file content"},
+            }, "required": ["filename", "content"]},
+            handler=_create_file))
+        .register(Tool(
+            name="create_zip", label="Create ZIP project",
+            description="Create a downloadable .zip of a multi-file project (Node, Python, websites, etc.). "
+                        "Include every file needed to run it (package.json / requirements.txt, README).",
+            parameters={"type": "object", "properties": {
+                "filename": {"type": "string", "description": "Project name"},
+                "files": {"type": "array", "items": {"type": "object", "properties": {
+                    "path": {"type": "string", "description": "Relative path, e.g. src/index.js"},
+                    "content": {"type": "string"},
+                }, "required": ["path", "content"]}},
+            }, "required": ["filename", "files"]},
+            handler=_create_zip))
         .register(Tool(
             name="create_html", label="Create web page",
             description="Create a self-contained HTML page (inline CSS/JS; CDN scripts allowed) that the user can "

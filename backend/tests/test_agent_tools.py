@@ -171,3 +171,48 @@ class TestWeb:
         assert "evil" not in page["text"] and "menu" not in page["text"]
         assert "Head" in page["text"] and "Body text" in page["text"]
         assert page["links"] == [{"text": "Link", "url": "https://site.test/x"}]
+
+
+class TestFileTools:
+    def test_text_file_names_and_types(self):
+        from agent import documents
+        assert documents.text_file("main.py") == ("main.py", "text/plain")
+        assert documents.text_file("data.csv") == ("data.csv", "text/csv")
+        assert documents.text_file("Dockerfile") == ("Dockerfile", "text/plain")
+        assert documents.text_file("notes") == ("notes.txt", "text/plain")
+        with pytest.raises(ValueError):
+            documents.text_file("report.docx")
+
+    def test_zip_keeps_paths_and_blocks_escapes(self):
+        import io
+        import zipfile
+        from agent import documents
+        data = documents.build_zip([{"path": "src/index.js", "content": "console.log(1)"},
+                                    {"path": "package.json", "content": "{}"}], folder="app")
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert sorted(zf.namelist()) == ["app/package.json", "app/src/index.js"]
+            assert zf.read("app/src/index.js") == b"console.log(1)"
+        with pytest.raises(ValueError):
+            documents.build_zip([{"path": "../evil.sh", "content": "x"}])
+
+    def test_create_file_and_zip_save_real_files(self, monkeypatch):
+        import media as media_mod
+        from agent import tools
+        saved = []
+
+        async def fake_save(db, user_id, data, ctype, kind, name=None, conversation_id=None):
+            saved.append((name, ctype, data))
+            return {"id": "m1", "name": name, "contentType": ctype}
+        monkeypatch.setattr(media_mod, "save_media", fake_save)
+        ctx = ToolContext(db=None, user_id="u")
+        out = run(tools._create_file(ctx, {"filename": "hello.py", "content": "print('hi')"}))
+        assert out.media and saved[-1] == ("hello.py", "text/plain", b"print('hi')")
+        out = run(tools._create_zip(ctx, {"filename": "My App", "files": [{"path": "a.txt", "content": "x"}]}))
+        assert saved[-1][0] == "My-App.zip" and saved[-1][1] == "application/zip"
+
+    def test_zip_preview_lists_files(self):
+        import preview
+        from agent import documents
+        data = documents.build_zip([{"path": "a.txt", "content": "x"}], folder="p")
+        out = preview.build_preview("application/zip", data, "p.zip")
+        assert "p/a.txt" in out["text"]

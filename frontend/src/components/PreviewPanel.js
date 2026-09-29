@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, mediaUrl, getToken, API, formatApiError } from "@/lib/api";
-import { X, Download, Loader2, Code2, Eye, FileSpreadsheet, Presentation, FileText, Globe, File } from "lucide-react";
+import { X, Download, Loader2, Code2, Eye, FileSpreadsheet, Presentation, FileText, Globe, File, FileArchive, FileCode2 } from "lucide-react";
 
 export function fileKind(item) {
   const ct = item?.contentType || "";
@@ -14,6 +14,8 @@ export function fileKind(item) {
   if (ct === "text/html") return "html";
   if (ct.startsWith("image/")) return "image";
   if (ct.startsWith("video/")) return "video";
+  if (ct === "application/zip" || name.endsWith(".zip")) return "zip";
+  if (/\.(py|m?js|cjs|jsx|tsx?|css|scss|json|sql|sh|java|kt|c|h|cpp|hpp|cs|go|rs|rb|php|swift|dart|ya?ml|toml|xml|vue)$/.test(name)) return "code";
   return "file";
 }
 
@@ -23,6 +25,8 @@ export const KIND_META = {
   doc: { icon: FileText, label: "Word", color: "text-sky-600 dark:text-sky-400" },
   pdf: { icon: FileText, label: "PDF", color: "text-rose-600 dark:text-rose-400" },
   html: { icon: Globe, label: "Web page", color: "text-violet-600 dark:text-violet-400" },
+  zip: { icon: FileArchive, label: "ZIP project", color: "text-amber-600 dark:text-amber-400" },
+  code: { icon: FileCode2, label: "Code", color: "text-teal-600 dark:text-teal-400" },
   file: { icon: File, label: "File", color: "text-muted-foreground" },
 };
 
