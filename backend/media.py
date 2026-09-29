@@ -106,14 +106,14 @@ def _check_image(resp) -> bytes:
     return resp.content
 
 
-async def _pollinations(prompt: str, size: str, legacy: bool = False) -> bytes:
+async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Optional[int] = None) -> bytes:
     import random
     from urllib.parse import quote
 
     import httpx
 
     w, h = _dims(size)
-    params = {"width": w, "height": h, "seed": random.randint(1, 2_000_000_000), "nologo": "true"}
+    params = {"width": w, "height": h, "seed": seed or random.randint(1, 2_000_000_000), "nologo": "true"}
     headers = {"User-Agent": "RADHA/1.0"}
     if legacy:
         url = f"{LEGACY_POLLINATIONS}/{quote(prompt[:1500], safe='')}"
@@ -139,7 +139,8 @@ async def _huggingface(prompt: str, size: str) -> bytes:
         return _check_image(resp)
 
 
-async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional[str] = None) -> bytes:
+async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional[str] = None,
+                         seed: Optional[int] = None) -> bytes:
     """Best configured provider first, then the free ones. Returns PNG/JPEG/WebP bytes (see image_type)."""
     errors = []
     for which in _image_providers():
@@ -148,7 +149,7 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
                 return await _openai_image(prompt, size, quality)
             if which == "huggingface":
                 return await _huggingface(prompt, size)
-            return await _pollinations(prompt, size, legacy=which == "pollinations_legacy")
+            return await _pollinations(prompt, size, legacy=which == "pollinations_legacy", seed=seed)
         except Exception as exc:  # fall through to the next provider
             logger.warning("image provider %s failed: %s", which, exc)
             errors.append(f"{which}: {exc}")

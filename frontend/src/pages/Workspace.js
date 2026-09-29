@@ -13,12 +13,15 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, FolderKanban } from "lucide-react";
+import { Sparkles, Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, FolderKanban } from "lucide-react";
 
 const STARTERS = [
   { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
   { icon: Braces, title: "Refactor an async Python service", prompt: "Show me how to structure a clean, testable async Python service that calls an external API with retries." },
   { icon: Network, title: "Design a vector search pipeline", prompt: "Design a distributed vector search pipeline for semantic document retrieval. Cover ingestion, embedding, storage and querying." },
+  { icon: Megaphone, title: "Make a video ad", prompt: "Make a 15-second video ad for a coffee shop called Bean There, with a catchy headline and a call to action." },
+  { icon: Clapperboard, title: "Create an animated short", prompt: "Create a short 3D animation video about a little robot who finds a flower in a city." },
+  { icon: ImageIcon, title: "Design a movie poster", prompt: "Design a cinematic movie poster for a sci-fi film called Last Signal." },
 ];
 
 export default function Workspace() {

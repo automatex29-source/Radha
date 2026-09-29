@@ -17,7 +17,7 @@ import httpx
 
 import media
 
-from . import slideshow
+from . import slideshow, styles
 
 # "high" (default): Sora 2 Pro at 1792x1024 / Veo 3 at 1080p. "standard": faster, cheaper, 720p.
 DEFAULT_QUALITY = os.environ.get("VIDEO_QUALITY", "high")
@@ -144,27 +144,28 @@ async def _pollinations(prompt: str, seconds: int, portrait: bool) -> bytes:
     return resp.content
 
 
-async def generate(prompt: str, seconds: int = 8, orientation: str = "landscape", quality: Optional[str] = None,
-                   scenes: Optional[list] = None) -> dict:
+async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality: Optional[str] = None,
+                   scenes: Optional[list] = None, style: str = "", captions: Optional[list] = None) -> dict:
     """{"data", "contentType", "method": "ai_video" | "slideshow", "note"}."""
     which = provider()
-    portrait = orientation == "portrait"
+    portrait = orientation == "portrait" or (not orientation and styles.video_style(style).get("portrait", False))
+    ai_prompt = f"{prompt}. {styles.video_scene_words(style)}" if style else prompt
     quality = quality if quality in ("high", "standard") else (DEFAULT_QUALITY if DEFAULT_QUALITY in ("high", "standard") else "high")
     note = ""
     if which == "openai":
-        return {"data": await _sora(prompt, seconds, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
+        return {"data": await _sora(ai_prompt, seconds, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
     if which == "gemini":
-        return {"data": await _veo(prompt, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
+        return {"data": await _veo(ai_prompt, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
     if which == "pollinations":
         try:
-            return {"data": await _pollinations(prompt, seconds, portrait), "contentType": "video/mp4",
+            return {"data": await _pollinations(ai_prompt, seconds, portrait), "contentType": "video/mp4",
                     "method": "ai_video"}
         except Exception as exc:
             logger.warning("pollinations video failed, making a slideshow instead: %s", exc)
             note = "The AI video service was unavailable (its free daily allowance may be used up). "
     if which in ("pollinations", "slideshow"):
         try:
-            data = await slideshow.make_slideshow(prompt, seconds or 12, portrait, scenes)
+            data = await slideshow.make_slideshow(prompt, seconds or 12, portrait, scenes, style, captions)
         except slideshow.SlideshowError as exc:
             raise VideoError(str(exc))
         return {"data": data, "contentType": "video/mp4", "method": "slideshow", "note": note}

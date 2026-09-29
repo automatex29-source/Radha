@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import media  # noqa: E402
-from agent import slideshow, video  # noqa: E402
+from agent import slideshow, styles, video  # noqa: E402
 
 KEYS = ("IMAGE_PROVIDER", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN", "VIDEO_PROVIDER",
         "GEMINI_API_KEY", "GOOGLE_API_KEY")
@@ -97,21 +97,40 @@ class TestImages:
 
 class TestSlideshow:
     def test_scene_prompts(self):
-        assert len(slideshow.scene_prompts("a dragon", None, 12)) == 4
+        assert len(slideshow.scene_prompts("a dragon", None, 12)) == 3
         assert len(slideshow.scene_prompts("a dragon", None, 60)) == slideshow.MAX_SCENES
         got = slideshow.scene_prompts("x", ["dawn over hills", " ", "dragon lands"], 12)
         assert len(got) == 2 and got[0].startswith("dawn over hills.")
+        ad = slideshow.scene_prompts("running shoes", None, 12, "ad")
+        assert len(ad) == 5 and "hero shot of the product" in ad[0] and "advertising" in ad[0]
+        assert "Pixar" in slideshow.scene_prompts("a fox", None, 12, "3d_animation")[0]
+
+    def test_styles(self):
+        assert styles.styled_image_prompt("a cat", "anime").startswith("a cat. anime key visual")
+        assert styles.styled_image_prompt("a cat", "nope") == "a cat"
+        assert styles.video_style("Social Reel")["portrait"]
+        assert styles.video_style("unknown") is styles.VIDEO_STYLES["movie"]
+        assert "cinematic" not in styles.video_style_names()
+
+    def test_command_uses_style_transitions_letterbox_and_captions(self):
+        cmd = slideshow.build_command("ffmpeg", ["a", "b", "c"], "out.mp4", 3.0, False, "movie",
+                                      [None, "cap.png", None])
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        assert "transition=fadeblack" in graph and "drawbox" in graph and "overlay" in graph
+        assert cmd.count("-loop") == 1 and "cap.png" in cmd
+        reel = slideshow.build_command("ffmpeg", ["a", "b"], "o", 3.0, True, "social_reel")
+        assert "drawbox" not in reel[reel.index("-filter_complex") + 1]
 
     @pytest.mark.skipif(not slideshow.ffmpeg_path(), reason="ffmpeg not available")
     def test_makes_real_mp4(self, monkeypatch):
         colors = iter(["red", "green", "blue"])
 
-        async def fake_image(prompt, size="1024x1024", quality=None):
+        async def fake_image(prompt, size="1024x1024", quality=None, seed=None):
             return png(next(colors), (300, 200))
 
         monkeypatch.setattr(media, "generate_image", fake_image)
         monkeypatch.setattr(slideshow, "LONG_SIDE", 320)
-        data = run(slideshow.make_slideshow("x", 6, scenes=["a", "b", "c"]))
+        data = run(slideshow.make_slideshow("x", 6, scenes=["a", "b", "c"], style="ad", captions=["Hi", "", "Buy"]))
         assert data[4:8] == b"ftyp"
         path = Path(__file__).parent / "_slideshow_test.mp4"
         path.write_bytes(data)
@@ -122,7 +141,7 @@ class TestSlideshow:
         assert "Duration: 00:00:06" in info and "320x180" in info
 
     def test_no_images_is_an_error(self, monkeypatch):
-        async def broken(prompt, size="1024x1024", quality=None):
+        async def broken(prompt, size="1024x1024", quality=None, seed=None):
             raise media.ImageError("down")
 
         monkeypatch.setattr(media, "generate_image", broken)
@@ -149,7 +168,7 @@ class TestVideoFallback:
         monkeypatch.setenv("POLLINATIONS_API_KEY", "sk")
         fake_http(monkeypatch, lambda req: httpx.Response(402, json={"error": "budget"}))
 
-        async def fake_slideshow(prompt, seconds, portrait, scenes):
+        async def fake_slideshow(prompt, seconds, portrait, scenes, style, captions):
             return b"SLIDES"
 
         monkeypatch.setattr(slideshow, "make_slideshow", fake_slideshow)

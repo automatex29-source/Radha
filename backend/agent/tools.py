@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import media
-from . import browser, documents, sandbox, video, web
+from . import browser, documents, sandbox, styles, video, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -166,7 +166,8 @@ async def _run_python(ctx: ToolContext, args: dict) -> ToolOutput:
 
 async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
-    data = await media.generate_image(prompt, args.get("size") or "1024x1024", args.get("quality"))
+    data = await media.generate_image(styles.styled_image_prompt(prompt, args.get("style") or ""),
+                                      args.get("size") or "1024x1024", args.get("quality"))
     ctype = media.image_type(data) or "image/png"
     ext = {"image/jpeg": "jpg", "image/webp": "webp"}.get(ctype, "png")
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "image", ext)
@@ -228,8 +229,9 @@ async def _create_html(ctx: ToolContext, args: dict) -> ToolOutput:
 async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
     scenes = args.get("scenes") if isinstance(args.get("scenes"), list) else None
-    out = await video.generate(prompt, int(args.get("seconds") or 8), args.get("orientation") or "landscape",
-                               args.get("quality"), scenes)
+    captions = args.get("captions") if isinstance(args.get("captions"), list) else None
+    out = await video.generate(prompt, int(args.get("seconds") or 12), args.get("orientation") or "",
+                               args.get("quality"), scenes, args.get("style") or "", captions)
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "video", "mp4")
     saved = await media.save_media(ctx.db, ctx.user_id, out["data"], out["contentType"], "generated", name=name,
                                    conversation_id=ctx.conversation_id)
@@ -284,12 +286,15 @@ def default_registry() -> ToolRegistry:
             handler=_run_python))
         .register(Tool(
             name="generate_image", label="Generate image",
-            description="Create an image (photo, art, logo, poster, illustration) from a text description. Write "
+            description="Create an image (photo, ad, product shot, poster, logo, thumbnail, anime, 3D, art...) from a "
+                        "text description; pick the matching 'style'. Write "
                         "a rich prompt in English: subject, setting, composition, lighting, style, colors, mood. Use "
                         "1536x1024 for landscape scenes and 1024x1536 for portraits and posters. Call once per image.",
             parameters={"type": "object", "properties": {
                 "prompt": {"type": "string", "description": "Detailed description of the image"},
                 "filename": {"type": "string", "description": "Short file name without extension"},
+                "style": {"type": "string", "enum": styles.image_style_names(),
+                          "description": "Look to apply; pick the closest to what the user asked for"},
                 "size": {"type": "string", "enum": ["1024x1024", "1536x1024", "1024x1536"]},
                 "quality": {"type": "string", "enum": ["high", "medium", "low"], "description": "Default high"},
             }, "required": ["prompt"]},
@@ -361,16 +366,22 @@ def default_registry() -> ToolRegistry:
             handler=_create_html))
         .register(Tool(
             name="generate_video", label="Generate video",
-            description="Generate a short video from a detailed, cinematic description: subject, action, setting, "
-                        "camera movement, lighting, style and mood. Depending on the service available it is either "
-                        "true AI video or a video made from AI images of several scenes; for the latter, give 3-6 "
-                        "scenes that tell the story in order. Takes one to a few minutes.",
+            description="Generate a short video: ads, movie scenes, trailers, 3D animation, anime, cartoons, music "
+                        "videos, reels, travel, food, real estate and more (pick 'style'). Depending on the service "
+                        "it is true AI video or a video made from AI images of several scenes with camera moves and "
+                        "transitions. Always give 3-6 'scenes' that tell a story in order with the same characters, "
+                        "and for ads, reels, trailers and explainers give short on-screen 'captions' (headline, "
+                        "benefits, then a call to action with the brand name). Takes one to a few minutes.",
             parameters={"type": "object", "properties": {
-                "prompt": {"type": "string"},
+                "prompt": {"type": "string", "description": "What the video is about, with subject and setting"},
+                "style": {"type": "string", "enum": styles.video_style_names()},
                 "scenes": {"type": "array", "items": {"type": "string"},
-                           "description": "Optional: 3-6 detailed shot descriptions in order, same characters and style"},
-                "seconds": {"type": "integer", "description": "Length in seconds (default 8; slideshows up to 30)"},
-                "orientation": {"type": "string", "enum": ["landscape", "portrait"]},
+                           "description": "3-6 detailed shot descriptions in order, same characters and look"},
+                "captions": {"type": "array", "items": {"type": "string"},
+                             "description": "Optional text shown on each scene (max ~8 words each; '' for none)"},
+                "seconds": {"type": "integer", "description": "Length in seconds (default 12, up to 30)"},
+                "orientation": {"type": "string", "enum": ["landscape", "portrait"],
+                                "description": "portrait for reels/stories/shorts"},
                 "quality": {"type": "string", "enum": ["high", "standard"], "description": "high (default) or standard (faster, 720p)"},
                 "filename": {"type": "string", "description": "Short file name without extension"},
             }, "required": ["prompt"]},
