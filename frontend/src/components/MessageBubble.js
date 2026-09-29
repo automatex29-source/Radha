@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Sparkles, Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
-import { speak, stopSpeaking, speechText } from "@/lib/voice";
+import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
 import CodeProject from "@/components/CodeProject";
 
@@ -34,6 +34,7 @@ function SpeakButton({ text, voice, id }) {
   const toggle = async () => {
     if (state !== "idle") { stopSpeaking(); setState("idle"); return; }
     setState("loading");
+    unlockSpeech();
     try {
       await speak(speechText(text), voice, { onStart: () => setState("playing") });
     } catch (e) {

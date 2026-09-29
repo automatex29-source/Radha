@@ -6,6 +6,7 @@ import IconRail from "@/components/IconRail";
 import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
+import { setServerSpeech, browserSpeechAvailable, unlockSpeech } from "@/lib/voice";
 import PreviewPanel from "@/components/PreviewPanel";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ export default function Workspace() {
   // Chat always uses RADHA's tools (web search, code, files) whenever the model supports them; no mode switch.
   const agentAvailable = !!(caps && model && caps.agent?.[model]);
   const voiceEnabled = !!caps?.voice;
+  const speechEnabled = !!caps?.serverSpeech || browserSpeechAvailable();
 
   const activeConv = conversations.find((c) => c.id === activeId);
 
@@ -81,7 +83,7 @@ export default function Workspace() {
       setModels(data.models);
       setModel(data.default);
     }).catch(() => {});
-    api.get("/capabilities").then(({ data }) => setCaps(data)).catch(() => {});
+    api.get("/capabilities").then(({ data }) => { setServerSpeech(data.serverSpeech); setCaps(data); }).catch(() => {});
   }, [loadConversations]);
 
   useEffect(() => { scrollToBottom(); }, [messages, streamText, scrollToBottom]);
@@ -476,7 +478,7 @@ export default function Workspace() {
             <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
-              {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={voiceEnabled} onOpenMedia={setPreviewItem} />)}
+              {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem} />)}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
                   steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem} />
@@ -500,8 +502,8 @@ export default function Workspace() {
           images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
           agentMode={agentAvailable} agentAvailable={agentAvailable}
           agentHint="Agent mode needs a provider API key for this model on the backend"
-          voiceEnabled={voiceEnabled} voiceHint="Voice needs OPENAI_API_KEY on the backend"
-          onVoiceMode={() => setVoiceOpen(true)} />
+          voiceEnabled={voiceEnabled} voiceHint="Voice needs GROQ_API_KEY (free) on the backend"
+          onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }} />
       </div>
       {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
       {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onUtterance={(t) => sendRef.current(t)} />}
