@@ -36,6 +36,8 @@ from pydantic import BaseModel, Field
 from auth import JWT_ALGORITHM, _secret, decode_token, get_user_id_from_request
 from agent import Tool, ToolOutput, sandbox
 from agent import browser as agent_browser
+import appdata
+import github_push
 
 router = APIRouter(prefix="/api")
 db = None  # set by init()
@@ -122,6 +124,22 @@ createRoot(document.getElementById("root")).render(html`<${App} />`);
     },
 }
 
+def _load_templates():
+    """Ready-made starter apps in app_templates/<id>/ (to-do, dashboard, landing page, shop, game)."""
+    root = os.path.join(os.path.dirname(__file__), "app_templates")
+    if not os.path.isdir(root):
+        return
+    for tid in sorted(os.listdir(root)):
+        folder = os.path.join(root, tid)
+        if os.path.isdir(folder):
+            TEMPLATES[tid] = {}
+            for name in sorted(os.listdir(folder)):
+                with open(os.path.join(folder, name), encoding="utf-8") as fh:
+                    TEMPLATES[tid][name] = fh.read()
+
+
+_load_templates()
+
 # Shared by plain chat and the app builder so every generated app meets the same bar.
 DESIGN_GUIDE = (
     "Quality bar for apps you build (work like a senior product designer and engineer):\n"
@@ -135,6 +153,7 @@ DESIGN_GUIDE = (
     "- Every feature works for real: all buttons do something, input is validated, data persists in localStorage "
     "when that helps, and sample content is realistic (no lorem ipsum, no TODOs, no placeholders). Add the extra "
     "features a user would expect (e.g. for a to-do app: edit, complete, delete, filter, counts, clear completed).\n"
+    "- Need a library? Any npm package loads from https://esm.sh/<name> inside a <script type=\"module\">.\n"
     "- Before you finish, check your own code: every id and function used in JS exists in the HTML/JS, scripts run "
     "after the elements they use (put them at the end of body), and nothing throws in the console."
 )
@@ -390,7 +409,10 @@ async def app_prompt(database, app_id: str) -> str:
         + (f"Uncommitted changes: {', '.join(f'{p} ({s})' for p, s in changes.items())}\n" if changes else "")
         + "\nHow to work:\n"
         "- The app is a static web app served from index.html. Use HTML/CSS/JS; load libraries from CDNs "
-        "(esm.sh, unpkg, cdn.jsdelivr.net, cdn.tailwindcss.com). There is no npm install or build step.\n"
+        "(esm.sh, unpkg, cdn.jsdelivr.net, cdn.tailwindcss.com). There is no npm install or build step, but any npm "
+        "package works as an ES module from esm.sh, e.g. import confetti from \"https://esm.sh/canvas-confetti\" in a "
+        "<script type=\"module\">. For React, import react and react-dom/client from esm.sh and write components "
+        "with htm (import htm from \"https://esm.sh/htm\") instead of JSX, since there is no build step.\n"
         "- When asked for a new app, build the whole working app right away and write each file with write_file "
         "(index.html, app.js, more modules if needed). Replace the starter files instead of building around them.\n"
         "- Read files before editing them. Prefer edit_file for small changes and write_file for new or rewritten files.\n"
@@ -399,6 +421,13 @@ async def app_prompt(database, app_id: str) -> str:
         + "- Put logic worth testing in plain modules and add tests (e.g. tests/*.test.mjs run with `node --test`, "
         "or Python unittest) and run them with run_command.\n"
         "- When a change works, call commit with a short message describing it.\n"
+        "- Backend: every app already has a database and user accounts with no setup, through the global RADHA "
+        "object (works in the preview and on the published site): await RADHA.auth.signup(email, password, name), "
+        "await RADHA.auth.login(email, password), RADHA.auth.user (null when signed out), RADHA.auth.logout(); "
+        "await RADHA.db.list(collection, {mine: true}) returns [{id, data, ownerId, createdAt}] newest first; "
+        "RADHA.db.add(collection, data, {private: true}), RADHA.db.update(collection, id, data), "
+        "RADHA.db.remove(collection, id). All calls return promises and throw Error with a readable message. "
+        "Use it when data must be shared between visitors or the app needs accounts; otherwise use localStorage.\n"
         "- Keep your chat replies short: say what you built or changed.\n\n"
         + DESIGN_GUIDE
     )
@@ -420,7 +449,7 @@ def _decode_preview(token: str) -> dict:
     return payload
 
 
-def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str) -> Response:
+def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: Optional[str] = None) -> Response:
     path = unquote(path or "").lstrip("/")
     if not path or path.endswith("/"):
         path += "index.html"
@@ -435,13 +464,13 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str) -> Respon
     if path.endswith((".js", ".mjs")):
         ctype = "text/javascript"
     if ctype == "text/html":
-        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE if bridge else "")
+        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
     return Response(content, media_type=f"{ctype}; charset=utf-8" if ctype.startswith("text/") else ctype, headers=headers)
 
 
-async def check_preview(files: Dict[str, str], path: str = "index.html") -> dict:
+async def check_preview(files: Dict[str, str], path: str = "index.html", app_id: Optional[str] = None) -> dict:
     """Load the working copy in headless Chromium; return console output, errors and a screenshot."""
     browser = await agent_browser.manager._ensure_browser()
     context = await browser.new_context(viewport={"width": 1280, "height": 800}, accept_downloads=False)
@@ -452,7 +481,7 @@ async def check_preview(files: Dict[str, str], path: str = "index.html") -> dict
         url = route.request.url
         if url.startswith(PREVIEW_ORIGIN):
             rel = unquote(urlparse(url).path.lstrip("/"))
-            resp = _serve(files, rel, bridge=False, cache="no-store")
+            resp = _serve(files, rel, bridge=False, cache="no-store", app_id=app_id)
             await route.fulfill(status=resp.status_code, body=resp.body,
                                 headers={"Content-Type": resp.media_type or "text/plain"})
         else:
@@ -550,7 +579,7 @@ def format_run(res) -> str:
 async def _t_check(ctx, args):
     import media
 
-    result = await check_preview(await snapshot(ctx.app_id), args.get("path") or "index.html")
+    result = await check_preview(await snapshot(ctx.app_id), args.get("path") or "index.html", app_id=ctx.app_id)
     shot = await media.save_media(ctx.db, ctx.user_id, result["screenshot"], "image/jpeg", "screenshot",
                                   name="preview.jpg", conversation_id=ctx.conversation_id)
     errors = [l for l in result["logs"] if l.startswith(("[console.error]", "[uncaught", "[request failed]", "[http"))]
@@ -615,6 +644,12 @@ class CommandIn(BaseModel):
     command: str = Field(min_length=1, max_length=2000)
 
 
+class GitHubIn(BaseModel):
+    repo: str = Field(min_length=1, max_length=140)
+    token: str = Field(min_length=10, max_length=300)
+    private: bool = True
+
+
 class CommitIn(BaseModel):
     message: str = Field(min_length=1, max_length=500)
 
@@ -626,6 +661,7 @@ def public_app(doc: dict) -> dict:
         "conversationId": doc.get("conversationId"), "createdAt": doc["createdAt"], "updatedAt": doc["updatedAt"],
         "published": {"slug": pub["slug"], "url": f"/api/sites/{pub['slug']}/", "commitId": pub.get("commitId"),
                       "publishedAt": pub.get("publishedAt")} if pub else None,
+        "github": doc.get("github"),
     }
 
 
@@ -692,6 +728,7 @@ async def delete_app(app_id: str, user_id: str = Depends(current_user_id)):
     app = await owned_app(app_id, user_id)
     await db.app_files.delete_many({"appId": app_id})
     await db.app_commits.delete_many({"appId": app_id})
+    await appdata.delete_app_data(app_id)
     if app.get("conversationId"):
         await db.messages.delete_many({"conversationId": app["conversationId"]})
         await db.conversations.delete_one({"id": app["conversationId"]})
@@ -786,6 +823,19 @@ async def export_app(app_id: str, request: Request, git: bool = Query(True), aut
                     headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
 
 
+@router.post("/apps/{app_id}/github")
+async def push_to_github(app_id: str, body: GitHubIn, user_id: str = Depends(current_user_id)):
+    app = await owned_app(app_id, user_id)
+    head = await head_commit(app_id)
+    message = f"{app['name']}: {head['message']}" if head else f"{app['name']} from RADHA"
+    try:
+        result = await github_push.push(await snapshot(app_id), body.token, body.repo, message, private=body.private)
+    except github_push.PushError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.apps.update_one({"id": app_id}, {"$set": {"github": {"repo": result["repo"], "url": result["url"], "pushedAt": _now()}}})
+    return result
+
+
 @router.get("/apps/{app_id}/preview-token")
 async def get_preview_token(app_id: str, user_id: str = Depends(current_user_id)):
     await owned_app(app_id, user_id)
@@ -827,7 +877,7 @@ async def serve_preview(token: str, path: str = ""):
     app = await db.apps.find_one({"id": payload["sub"], "userId": payload["uid"]})
     if not app:
         raise HTTPException(status_code=404, detail="App not found")
-    return _serve(await snapshot(app["id"]), path, bridge=True, cache="no-store")
+    return _serve(await snapshot(app["id"]), path, bridge=True, cache="no-store", app_id=app["id"])
 
 
 @router.get("/sites/{slug}/{path:path}")
@@ -836,4 +886,4 @@ async def serve_site(slug: str, path: str = ""):
     if not app or not app.get("published"):
         return Response("This site is not published.", status_code=404, media_type="text/plain")
     version = await db.app_commits.find_one({"appId": app["id"], "id": app["published"]["commitId"]})
-    return _serve(await commit_files(version), path, bridge=False, cache="public, max-age=60")
+    return _serve(await commit_files(version), path, bridge=False, cache="public, max-age=60", app_id=app["id"])

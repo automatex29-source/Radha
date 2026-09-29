@@ -13,8 +13,13 @@ import { toast } from "sonner";
 import { AppWindow, Plus, Loader2, Globe, Trash2 } from "lucide-react";
 
 const TEMPLATES = [
-  { id: "blank", name: "HTML, CSS & JS", hint: "Plain web app — the simplest starting point" },
-  { id: "react", name: "React + Tailwind", hint: "React components via CDN, styled with Tailwind" },
+  { id: "blank", name: "Start from scratch", hint: "Empty HTML, CSS & JS app", title: "" },
+  { id: "todo", name: "To-do list", hint: "Tasks with filters, editing and saving", title: "My Tasks" },
+  { id: "dashboard", name: "Dashboard", hint: "Charts, stats and an orders table", title: "Sales Dashboard" },
+  { id: "landing", name: "Landing page", hint: "Hero, features, pricing, FAQ, sign-up", title: "Landing Page" },
+  { id: "shop", name: "Online shop", hint: "Products, search, categories and a cart", title: "My Shop" },
+  { id: "game", name: "Snake game", hint: "Neon arcade game with high score", title: "Neon Snake" },
+  { id: "react", name: "React + Tailwind", hint: "React components; any npm package via esm.sh", title: "" },
 ];
 
 export default function AppsPage() {
@@ -77,7 +82,7 @@ export default function AppsPage() {
               <DialogTrigger asChild>
                 <Button data-testid="new-app-button" className="gap-1.5"><Plus className="h-4 w-4" /> New app</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>New app</DialogTitle>
                   <DialogDescription>You can change everything later by chatting with the builder.</DialogDescription>
@@ -98,7 +103,7 @@ export default function AppsPage() {
                     <Label>Starting point</Label>
                     <div className="grid gap-2 sm:grid-cols-2">
                       {TEMPLATES.map((t) => (
-                        <button key={t.id} type="button" onClick={() => setForm((f) => ({ ...f, template: t.id }))}
+                        <button key={t.id} type="button" onClick={() => setForm((f) => ({ ...f, template: t.id, name: f.name.trim() ? f.name : t.title }))}
                           data-testid={`template-${t.id}`}
                           className={`rounded-lg border p-3 text-left transition-colors ${form.template === t.id ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"}`}>
                           <p className="text-sm font-semibold">{t.name}</p>

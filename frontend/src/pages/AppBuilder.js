@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, API, absoluteUrl, formatApiError, getToken } from "@/lib/api";
 import { streamSSE } from "@/lib/sse";
 import MessageBubble from "@/components/MessageBubble";
+import GitHubPushButton from "@/components/GitHubPushButton";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -78,6 +79,7 @@ export default function AppBuilder() {
             title="Download the code with its full git history">
             <Download className="h-3.5 w-3.5" /> Download
           </a>
+          <GitHubPushButton app={app} onPushed={refresh} />
           <PublishButton app={app} onChange={(a) => { setApp(a); refresh(); }} />
         </div>
       </header>
