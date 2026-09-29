@@ -103,7 +103,7 @@ export default function ComposerInput({
           onKeyDown={onKeyDown}
           disabled={disabled}
           rows={1}
-          placeholder={rec.recording ? "Listening… tap the mic to finish" : agentMode ? "Ask RADHA Agent — it can search, run code and create images…" : "Message RADHA…"}
+          placeholder={rec.recording ? "Listening… tap the mic to finish" : agentMode ? "Ask RADHA anything: it can search the web, run code and make files…" : "Message RADHA…"}
           className="radha-scroll max-h-[200px] w-full resize-none bg-transparent px-3 py-2 text-[0.95rem] text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
         <div className="flex items-center justify-between px-1 pt-1">

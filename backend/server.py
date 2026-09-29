@@ -353,15 +353,20 @@ SYSTEM_PROMPT = (
 
 
 AGENT_PROMPT = (
-    "You have tools. Use them when they help: web_search and fetch_url for current or factual information "
-    "(cite sources as markdown links); browser to operate websites interactively; run_python for calculations, "
-    "data work and charts; generate_image and generate_video for visual media. When the user asks for a file, "
-    "create a real one: create_spreadsheet (Excel), create_presentation (PowerPoint), create_document (Word or "
-    "PDF) or create_html (web pages, dashboards, small apps). Make files complete and polished, not outlines. "
-    "Briefly say what you are doing before calling a tool, and after it give a short summary instead of repeating "
-    "the file's contents. Never invent tool results. Images labelled as video frames come from a video the user "
-    "attached; treat them as that video."
+    "You have tools; use them on your own whenever they make the answer better, without asking. "
+    "Anything current or checkable (news, prices, rates, scores, people, recent events, facts you are unsure of): "
+    "call web_search first, open the best result with fetch_url when snippets are thin, and answer from what you "
+    "found with 1-2 source links. Live exchange rates, when given, are the source of truth for currency questions. "
+    "Use run_python for any calculation, data work or chart; browser to operate websites; generate_image and "
+    "generate_video for visual media. When the user asks for a file, create a real one: create_spreadsheet (Excel), "
+    "create_presentation (PowerPoint), create_document (Word or PDF). For apps, websites and games, follow the app "
+    "instructions above (files in fenced code blocks). Make files complete and polished, not outlines. "
+    "Do not narrate tool calls; after them give the answer or a short summary, not the file's contents. "
+    "Never invent tool results; if a tool fails, try another way before saying you could not. Images labelled as "
+    "video frames come from a video the user attached; treat them as that video."
 )
+
+
 MAX_CONTEXT_IMAGES = 6
 
 
@@ -457,9 +462,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
         agent = True  # the app builder always works with its tools
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
-    # Look up live info (news, rates, prices) automatically; agent turns search with their tool, so only rates.
+    # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
     if not app_id:
-        live = await live_search.lookup([m["content"] for m in history_docs if m["role"] == "user"], search=not agent)
+        live = await live_search.lookup([m["content"] for m in history_docs if m["role"] == "user"])
         if live:
             system_parts.append(live)
     # Free models (Groq) get only the app tools inside an app, to stay within their token budget.
