@@ -108,11 +108,24 @@ def _require(args: dict, key: str) -> str:
 
 async def _web_search(ctx: ToolContext, args: dict) -> ToolOutput:
     query = _require(args, "query")
-    results = await web.search(query, int(args.get("max_results") or 6))
-    if not results:
-        return ToolOutput(content="No results found.", summary=f"No results for “{query}”")
+    rates = ""
+    if web.CURRENCY.search(query):  # live rates beat search snippets for currency questions
+        try:
+            rates = await web.exchange_rates(query)
+        except Exception as exc:
+            logger.warning("Exchange rates failed: %s", exc)
+            rates = ""
+    try:
+        results = await web.search(query, int(args.get("max_results") or 6))
+    except Exception:
+        if not rates:
+            raise
+        results = []
     lines = [f"{i + 1}. {r['title']}\n   {r['url']}\n   {r['snippet']}" for i, r in enumerate(results)]
-    return ToolOutput(content="\n".join(lines), summary=f"{len(results)} results for “{query}”")
+    content = "\n\n".join(part for part in (rates, "\n".join(lines)) if part)
+    if not content:
+        return ToolOutput(content="No results found. Try a simpler or corrected query.", summary=f"No results for “{query}”")
+    return ToolOutput(content=content, summary=f"{len(results)} results for “{query}”" + (" + live rates" if rates else ""))
 
 
 async def _fetch_url(ctx: ToolContext, args: dict) -> ToolOutput:
