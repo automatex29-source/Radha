@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tasks</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>body { font-family: Inter, system-ui, sans-serif; }</style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100">
+  <main class="mx-auto max-w-xl px-4 py-12">
+    <header class="mb-8 flex items-center gap-3">
+      <div class="grid h-11 w-11 place-items-center rounded-2xl bg-indigo-500 shadow-lg shadow-indigo-500/30"><i data-lucide="check-check"></i></div>
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">Tasks</h1>
+        <p id="summary" class="text-sm text-slate-400"></p>
+      </div>
+    </header>
+
+    <form id="form" class="flex gap-2 rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur">
+      <label for="input" class="sr-only">New task</label>
+      <input id="input" autocomplete="off" placeholder="What needs doing?" maxlength="140"
+        class="flex-1 bg-transparent px-3 py-2 outline-none placeholder:text-slate-500" />
+      <button class="flex items-center gap-1.5 rounded-xl bg-indigo-500 px-4 py-2 font-semibold transition hover:bg-indigo-400 active:scale-95">
+        <i data-lucide="plus" class="h-4 w-4"></i> Add
+      </button>
+    </form>
+
+    <nav id="filters" class="mt-5 flex gap-1 rounded-xl bg-white/5 p-1 text-sm">
+      <button data-filter="all" class="flex-1 rounded-lg px-3 py-1.5 transition">All</button>
+      <button data-filter="active" class="flex-1 rounded-lg px-3 py-1.5 transition">Active</button>
+      <button data-filter="done" class="flex-1 rounded-lg px-3 py-1.5 transition">Done</button>
+    </nav>
+
+    <ul id="list" class="mt-4 space-y-2"></ul>
+
+    <div id="empty" class="mt-10 hidden text-center text-slate-400">
+      <i data-lucide="sparkles" class="mx-auto h-8 w-8 text-indigo-400"></i>
+      <p class="mt-2">Nothing here. Add your first task above.</p>
+    </div>
+
+    <footer class="mt-6 flex justify-end">
+      <button id="clear" class="text-sm text-slate-400 transition hover:text-rose-400">Clear completed</button>
+    </footer>
+  </main>
+  <div id="toast" class="pointer-events-none fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl bg-slate-800 px-4 py-2 text-sm opacity-0 shadow-xl transition"></div>
+  <script src="app.js"></script>
+</body>
+</html>

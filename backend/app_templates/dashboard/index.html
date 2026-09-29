@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sales Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>body { font-family: Inter, system-ui, sans-serif; }</style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900">
+  <div class="flex min-h-screen">
+    <aside class="hidden w-60 shrink-0 flex-col bg-slate-900 p-5 text-slate-300 md:flex">
+      <div class="mb-8 flex items-center gap-2 text-lg font-bold text-white"><i data-lucide="bar-chart-3" class="text-indigo-400"></i> Pulse</div>
+      <nav class="space-y-1 text-sm">
+        <a class="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-white" href="#"><i data-lucide="layout-dashboard" class="h-4 w-4"></i> Overview</a>
+        <a class="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-white/5" href="#"><i data-lucide="shopping-bag" class="h-4 w-4"></i> Orders</a>
+        <a class="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-white/5" href="#"><i data-lucide="users" class="h-4 w-4"></i> Customers</a>
+        <a class="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-white/5" href="#"><i data-lucide="settings" class="h-4 w-4"></i> Settings</a>
+      </nav>
+    </aside>
+    <main class="flex-1 p-4 sm:p-8">
+      <header class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Overview</h1>
+          <p class="text-sm text-slate-500">Your store at a glance</p>
+        </div>
+        <select id="range" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </header>
+      <section id="kpis" class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"></section>
+      <section class="mt-6 grid gap-4 lg:grid-cols-3">
+        <div class="rounded-2xl bg-white p-5 shadow-sm lg:col-span-2">
+          <h2 class="font-semibold">Revenue</h2>
+          <div class="mt-4 h-72"><canvas id="revenue"></canvas></div>
+        </div>
+        <div class="rounded-2xl bg-white p-5 shadow-sm">
+          <h2 class="font-semibold">Sales by channel</h2>
+          <div class="mt-4 h-72"><canvas id="channels"></canvas></div>
+        </div>
+      </section>
+      <section class="mt-6 rounded-2xl bg-white p-5 shadow-sm">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold">Recent orders</h2>
+          <input id="search" placeholder="Search customer…" class="rounded-xl border border-slate-200 px-3 py-1.5 text-sm" />
+        </div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="text-slate-500"><tr><th class="py-2">Order</th><th>Customer</th><th>Status</th><th class="text-right">Total</th></tr></thead>
+            <tbody id="orders" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

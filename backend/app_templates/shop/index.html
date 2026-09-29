@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bloom — Plant Shop</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>body { font-family: Inter, system-ui, sans-serif; }</style>
+</head>
+<body class="bg-stone-50 text-stone-900">
+  <header class="sticky top-0 z-20 border-b border-stone-200 bg-stone-50/80 backdrop-blur">
+    <div class="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+      <a href="#" class="flex items-center gap-2 text-lg font-bold"><i data-lucide="leaf" class="text-emerald-600"></i> Bloom</a>
+      <div class="ml-auto flex flex-1 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 sm:max-w-xs">
+        <i data-lucide="search" class="h-4 w-4 text-stone-400"></i>
+        <input id="search" placeholder="Search plants" class="w-full bg-transparent text-sm outline-none" />
+      </div>
+      <button id="cart-btn" class="relative rounded-xl bg-emerald-600 p-2.5 text-white transition hover:bg-emerald-500" aria-label="Open cart">
+        <i data-lucide="shopping-bag" class="h-5 w-5"></i>
+        <span id="cart-count" class="absolute -right-1.5 -top-1.5 hidden h-5 min-w-5 rounded-full bg-rose-500 px-1 text-center text-xs font-bold leading-5"></span>
+      </button>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-8">
+    <section class="rounded-3xl bg-gradient-to-r from-emerald-700 to-teal-600 p-8 text-white sm:p-12">
+      <p class="text-sm font-medium text-emerald-100">Spring collection</p>
+      <h1 class="mt-2 max-w-lg text-3xl font-bold tracking-tight sm:text-5xl">Bring the outside in.</h1>
+      <p class="mt-3 max-w-md text-emerald-50">Hand-picked plants, delivered in eco pots. Free shipping over $50.</p>
+    </section>
+    <div id="cats" class="mt-8 flex flex-wrap gap-2"></div>
+    <div id="grid" class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4"></div>
+  </main>
+
+  <div id="overlay" class="fixed inset-0 z-30 hidden bg-black/40"></div>
+  <aside id="cart" class="fixed right-0 top-0 z-40 flex h-full w-full max-w-sm translate-x-full flex-col bg-white shadow-2xl transition-transform">
+    <div class="flex items-center justify-between border-b border-stone-100 p-5">
+      <h2 class="text-lg font-semibold">Your cart</h2>
+      <button id="close-cart" class="rounded-lg p-1.5 hover:bg-stone-100" aria-label="Close"><i data-lucide="x"></i></button>
+    </div>
+    <ul id="cart-items" class="flex-1 space-y-4 overflow-y-auto p-5"></ul>
+    <div class="border-t border-stone-100 p-5">
+      <div class="flex justify-between text-sm"><span>Subtotal</span><span id="subtotal"></span></div>
+      <div class="mt-1 flex justify-between text-sm text-stone-500"><span>Shipping</span><span id="shipping"></span></div>
+      <div class="mt-3 flex justify-between text-lg font-bold"><span>Total</span><span id="total"></span></div>
+      <button id="checkout" class="mt-4 w-full rounded-xl bg-emerald-600 py-3 font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-40">Checkout</button>
+    </div>
+  </aside>
+  <div id="toast" class="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-stone-900 px-4 py-2 text-sm text-white opacity-0 shadow-xl transition"></div>
+  <script src="app.js"></script>
+</body>
+</html>
