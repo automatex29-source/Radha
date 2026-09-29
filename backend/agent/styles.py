@@ -99,12 +99,12 @@ def video_style_names() -> List[str]:
 
 
 def styled_image_prompt(prompt: str, style: str) -> str:
-    words = IMAGE_STYLES.get((style or "").lower())
+    words = IMAGE_STYLES.get(normalize(style, IMAGE_STYLES))
     return f"{prompt}. {words}" if words else prompt
 
 
 def video_style(style: str) -> dict:
-    return VIDEO_STYLES.get((style or "").lower().replace(" ", "_"), VIDEO_STYLES[DEFAULT_VIDEO_STYLE])
+    return VIDEO_STYLES.get(normalize(style, VIDEO_STYLES), VIDEO_STYLES[DEFAULT_VIDEO_STYLE])
 
 
 def video_scene_words(style: str) -> str:
@@ -112,3 +112,37 @@ def video_scene_words(style: str) -> str:
     extra = cfg.get("suffix")
     look = IMAGE_STYLES[cfg["image"]]
     return f"{look}, {extra}" if extra else look
+
+
+_ALIASES = {
+    "realistic": "photo", "photography": "photo", "photorealistic": "photo", "movie": "cinematic", "film": "cinematic",
+    "advertisement": "ad", "ads": "ad", "commercial": "ad", "marketing": "ad", "3d": "3d_animation",
+    "pixar": "3d_animation", "animation": "3d_animation", "animated": "3d_animation", "3d_render": "3d_animation",
+    "manga": "anime", "ghibli": "anime", "cartoonish": "cartoon", "comic": "cartoon", "painting": "oil_painting",
+    "digital_art": "illustration", "art": "illustration", "concept_art": "fantasy", "scifi": "sci_fi",
+    "science_fiction": "sci_fi", "futuristic": "sci_fi", "youtube": "thumbnail", "instagram": "social_post",
+    "social": "social_post", "social_media": "social_post", "reel": "social_reel", "reels": "social_reel",
+    "short": "social_reel", "shorts": "social_reel", "tiktok": "social_reel", "story": "social_reel",
+    "music": "music_video", "3d_animated": "3d_animation", "promo": "ad", "brand": "ad", "sci-fi": "sci_fi",
+}
+
+
+def _key(style) -> str:
+    return str(style or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def normalize(style, known) -> str:
+    """Map whatever the model wrote ("3D Pixar", "Sci-Fi", "movie") to a known style name, or ''."""
+    key = _key(style)
+    if not key:
+        return ""
+    if key in known:
+        return key
+    if _ALIASES.get(key) in known:
+        return _ALIASES[key]
+    for part in key.split("_"):  # "cinematic_poster" -> cinematic, "anime_style" -> anime
+        if part in known:
+            return part
+        if _ALIASES.get(part) in known:
+            return _ALIASES[part]
+    return ""

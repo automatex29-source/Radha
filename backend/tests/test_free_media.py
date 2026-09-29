@@ -47,11 +47,11 @@ def fake_http(monkeypatch, handler):
 
 class TestImages:
     def test_provider_order(self, monkeypatch):
-        assert media._image_providers() == ["pollinations", "pollinations_legacy"]
+        assert media._image_providers() == ["pollinations_legacy"]
         assert media.image_available()
         monkeypatch.setenv("HF_TOKEN", "h")
         monkeypatch.setenv("OPENAI_API_KEY", "o")
-        assert media._image_providers() == ["openai", "huggingface", "pollinations", "pollinations_legacy"]
+        assert media._image_providers() == ["openai", "huggingface", "pollinations_legacy"]
         monkeypatch.setenv("IMAGE_PROVIDER", "off")
         assert not media.image_available()
 
@@ -76,6 +76,7 @@ class TestImages:
         assert req.url.params["width"] == "1536" and req.url.params["height"] == "1024"
 
     def test_falls_back_to_keyless_endpoint(self, monkeypatch):
+        monkeypatch.setenv("POLLINATIONS_API_KEY", "sk_bad")
         hosts = []
 
         def handler(req):
@@ -91,7 +92,7 @@ class TestImages:
     def test_all_fail_reports_errors(self, monkeypatch):
         fake_http(monkeypatch, lambda req: httpx.Response(200, text="<html>busy</html>",
                                                           headers={"content-type": "text/html"}))
-        with pytest.raises(media.ImageError, match="not an image"):
+        with pytest.raises(media.ImageError, match="not an image.*POLLINATIONS_API_KEY"):
             run(media.generate_image("cat"))
 
 
@@ -111,6 +112,21 @@ class TestSlideshow:
         assert styles.video_style("Social Reel")["portrait"]
         assert styles.video_style("unknown") is styles.VIDEO_STYLES["movie"]
         assert "cinematic" not in styles.video_style_names()
+
+    def test_style_names_are_forgiving(self):
+        assert styles.normalize("3D Pixar", styles.IMAGE_STYLES) == "3d_animation"
+        assert styles.normalize("Sci-Fi", styles.IMAGE_STYLES) == "sci_fi"
+        assert styles.normalize("cinematic poster", styles.IMAGE_STYLES) == "cinematic"
+        assert styles.normalize("TikTok", styles.VIDEO_STYLES) == "social_reel"
+        assert styles.normalize("vaporwave", styles.IMAGE_STYLES) == ""
+        assert "Pixar" in styles.styled_image_prompt("a fox", "Pixar")
+
+    def test_tool_schemas_have_no_enums(self):
+        from agent.tools import default_registry
+
+        for tool in default_registry()._tools.values():
+            if tool.name in ("generate_image", "generate_video"):
+                assert all("enum" not in p for p in tool.parameters["properties"].values())
 
     def test_command_uses_style_transitions_letterbox_and_captions(self):
         cmd = slideshow.build_command("ffmpeg", ["a", "b", "c"], "out.mp4", 3.0, False, "movie",
@@ -174,3 +190,39 @@ class TestVideoFallback:
         monkeypatch.setattr(slideshow, "make_slideshow", fake_slideshow)
         out = run(video.generate("waves"))
         assert out["method"] == "slideshow" and out["data"] == b"SLIDES" and "allowance" in out["note"]
+
+
+class TestToolCallRetry:
+    def test_retries_rejected_tool_call(self, monkeypatch):
+        from agent import llm
+
+        calls = []
+
+        async def once(model, messages, tools):
+            calls.append(1)
+            if len(calls) == 1:
+                yield {"type": "heartbeat"}
+                raise RuntimeError("GroqException - Tool call validation failed: /style must be one of")
+            yield {"type": "text", "text": "ok"}
+
+        monkeypatch.setattr(llm, "_stream_once", once)
+
+        async def collect():
+            return [e async for e in llm.stream_completion("m", [], [])]
+
+        assert run(collect())[-1] == {"type": "text", "text": "ok"} and len(calls) == 2
+
+    def test_other_errors_are_not_retried(self, monkeypatch):
+        from agent import llm
+
+        async def once(model, messages, tools):
+            raise RuntimeError("boom")
+            yield
+
+        monkeypatch.setattr(llm, "_stream_once", once)
+
+        async def collect():
+            return [e async for e in llm.stream_completion("m", [], [])]
+
+        with pytest.raises(RuntimeError, match="boom"):
+            run(collect())
