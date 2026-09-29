@@ -1,10 +1,12 @@
 // Turns the code blocks in an AI reply into project files, a previewable page and a ZIP.
 
-const FILE_RE = /([\w\-./]*[\w-]\.(?:html?|css|m?js|jsx|tsx?|json|md|py|svg|txt|xml))\b/i;
+const FILE_RE = /([\w\-./]*[\w-]\.(?:html?|s?css|m?js|cjs|jsx|tsx?|json|md|py|svg|txt|xml|csv|tsv|ya?ml|toml|ini|env|sql|sh|bat|java|kt|c|h|cpp|hpp|cs|go|rs|rb|php|swift|dart|vue|r|lua))\b/i;
 const DEFAULT_NAMES = {
   html: "index.html", htm: "index.html", css: "style.css", js: "app.js", javascript: "app.js", mjs: "app.js",
   jsx: "App.jsx", ts: "app.ts", typescript: "app.ts", json: "data.json", py: "main.py", python: "main.py",
-  svg: "image.svg",
+  svg: "image.svg", csv: "data.csv", sql: "query.sql", sh: "script.sh", bash: "script.sh", yaml: "config.yaml",
+  yml: "config.yaml", java: "Main.java", c: "main.c", cpp: "main.cpp", go: "main.go", rust: "main.rs",
+  php: "index.php", ruby: "main.rb",
 };
 
 function cleanName(name) {

@@ -6,6 +6,7 @@ builders own the formatting, so output looks consistent across models.
 import io
 import os
 import re
+import zipfile
 from typing import Any, List
 
 from markdown_it import MarkdownIt
@@ -20,7 +21,67 @@ CONTENT_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pdf": "application/pdf",
     "html": "text/html",
+    "zip": "application/zip",
 }
+
+# Text files create_file can make, by extension. Office/PDF files have their own builders.
+TEXT_TYPES = {
+    "txt": "text/plain", "md": "text/markdown", "csv": "text/csv", "tsv": "text/tab-separated-values",
+    "json": "application/json", "xml": "application/xml", "yaml": "text/plain", "yml": "text/plain",
+    "toml": "text/plain", "ini": "text/plain", "env": "text/plain", "log": "text/plain",
+    "html": "text/html", "htm": "text/html", "css": "text/plain", "scss": "text/plain", "svg": "image/svg+xml",
+    "js": "text/plain", "mjs": "text/plain", "cjs": "text/plain", "jsx": "text/plain", "ts": "text/plain",
+    "tsx": "text/plain", "vue": "text/plain", "py": "text/plain", "ipynb": "application/json",
+    "java": "text/plain", "kt": "text/plain", "c": "text/plain", "h": "text/plain", "cpp": "text/plain",
+    "hpp": "text/plain", "cs": "text/plain", "go": "text/plain", "rs": "text/plain", "rb": "text/plain",
+    "php": "text/plain", "swift": "text/plain", "dart": "text/plain", "r": "text/plain", "lua": "text/plain",
+    "sql": "text/plain", "sh": "text/plain", "bat": "text/plain", "ps1": "text/plain",
+}
+# Well-known files that have no extension.
+EXTENSIONLESS = {"dockerfile", "makefile", "procfile", "license", "readme", "gemfile", ".gitignore", ".env",
+                 ".dockerignore", ".npmrc", ".editorconfig", ".prettierrc"}
+MAX_ZIP_FILES = 200
+
+
+def text_file(filename: str) -> tuple:
+    """(safe name, content type) for a text file, or ValueError for types that need another tool."""
+    raw = (filename or "").strip().split("/")[-1]
+    if raw.lower() in EXTENSIONLESS:
+        return raw, "text/plain"
+    ext = raw.rsplit(".", 1)[-1].lower() if "." in raw else "txt"
+    if ext in ("xlsx", "xls", "docx", "doc", "pptx", "ppt", "pdf"):
+        raise ValueError(f"Use the dedicated tool for .{ext} files (create_spreadsheet, create_document or "
+                         "create_presentation)")
+    if ext not in TEXT_TYPES:
+        ext = "txt" if "." not in raw else ext
+    return safe_filename(raw, ext), TEXT_TYPES.get(ext, "text/plain")
+
+
+def _safe_path(path: str) -> str:
+    parts = [p for p in str(path or "").replace("\\", "/").split("/") if p not in ("", ".")]
+    if not parts or ".." in parts:
+        raise ValueError(f"Bad file path in project: {path!r}")
+    return "/".join(re.sub(r"[^\w\-. ]+", "", p) or "file" for p in parts)
+
+
+def build_zip(files: List[dict], folder: str = "") -> bytes:
+    """A ZIP of text files [{path, content}], all inside one top folder."""
+    if not isinstance(files, list) or not files:
+        raise ValueError("'files' must be a non-empty list of {path, content}")
+    if len(files) > MAX_ZIP_FILES:
+        raise ValueError(f"Too many files (max {MAX_ZIP_FILES})")
+    buf = io.BytesIO()
+    seen = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in files:
+            if not isinstance(f, dict):
+                raise ValueError("Each file must be {path, content}")
+            path = _safe_path(f.get("path"))
+            if path in seen:
+                continue
+            seen.add(path)
+            zf.writestr(f"{folder}/{path}" if folder else path, str(f.get("content") or ""))
+    return buf.getvalue()
 
 
 def safe_filename(name: str, ext: str) -> str:
