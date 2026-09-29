@@ -122,6 +122,25 @@ createRoot(document.getElementById("root")).render(html`<${App} />`);
     },
 }
 
+# Shared by plain chat and the app builder so every generated app meets the same bar.
+DESIGN_GUIDE = (
+    "Quality bar for apps you build (work like a senior product designer and engineer):\n"
+    "- Style with Tailwind CSS (<script src=\"https://cdn.tailwindcss.com\"></script>), the Inter font from Google "
+    "Fonts, and Lucide icons (<script src=\"https://unpkg.com/lucide@latest\"></script>, <i data-lucide=\"plus\"></i>, "
+    "and call lucide.createIcons() after every render). Keep style.css only for what Tailwind can't do.\n"
+    "- Make it look like a modern, premium product: a clear hierarchy with a proper header, generous spacing, one "
+    "accent color over a cohesive palette, soft gradients, rounded-2xl cards with subtle borders and shadows, "
+    "hover, focus and active states, smooth transitions, friendly empty states and toasts instead of alert().\n"
+    "- Responsive from phone to desktop, with labelled inputs and good contrast.\n"
+    "- Every feature works for real: all buttons do something, input is validated, data persists in localStorage "
+    "when that helps, and sample content is realistic (no lorem ipsum, no TODOs, no placeholders). Add the extra "
+    "features a user would expect (e.g. for a to-do app: edit, complete, delete, filter, counts, clear completed).\n"
+    "- Before you finish, check your own code: every id and function used in JS exists in the HTML/JS, scripts run "
+    "after the elements they use (put them at the end of body), and nothing throws in the console."
+)
+
+# Sandboxed pages have an opaque origin, where touching localStorage throws; give them an in-memory one.
+_STORAGE_SHIM = """<script>(function(){try{window.localStorage.getItem("x")}catch(e){function S(){var m={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null},setItem:function(k,v){m[k]=String(v)},removeItem:function(k){delete m[k]},clear:function(){m={}},key:function(i){return Object.keys(m)[i]||null},get length(){return Object.keys(m).length}}}try{Object.defineProperty(window,"localStorage",{value:S(),configurable:true});Object.defineProperty(window,"sessionStorage",{value:S(),configurable:true})}catch(e){}}})();</script>"""
 _CONSOLE_BRIDGE = """<script>(function(){function s(l,a){try{parent.postMessage({source:"radha-preview",level:l,message:Array.prototype.map.call(a,function(x){try{return typeof x==="string"?x:(x instanceof Error?x.message:JSON.stringify(x))}catch(e){return String(x)}}).join(" ")},"*")}catch(e){}}["log","info","warn","error"].forEach(function(l){var o=console[l];console[l]=function(){s(l,arguments);return o.apply(console,arguments)}});addEventListener("error",function(e){s("error",[e.message+(e.filename?" ("+e.filename.split("/").pop()+":"+e.lineno+")":"")])});addEventListener("unhandledrejection",function(e){s("error",["Unhandled promise rejection: "+((e.reason&&e.reason.message)||e.reason)])})})();</script>"""
 
 
@@ -372,16 +391,16 @@ async def app_prompt(database, app_id: str) -> str:
         + "\nHow to work:\n"
         "- The app is a static web app served from index.html. Use HTML/CSS/JS; load libraries from CDNs "
         "(esm.sh, unpkg, cdn.jsdelivr.net, cdn.tailwindcss.com). There is no npm install or build step.\n"
-        "- When asked for a new app, build the whole working app right away: real features, real data handling, "
-        "a polished responsive design. Split it into files (index.html, style.css, app.js, more modules if needed) "
-        "and write each with write_file. No placeholders or TODOs.\n"
+        "- When asked for a new app, build the whole working app right away and write each file with write_file "
+        "(index.html, app.js, more modules if needed). Replace the starter files instead of building around them.\n"
         "- Read files before editing them. Prefer edit_file for small changes and write_file for new or rewritten files.\n"
         + ("- After changing the UI, call check_preview to see a screenshot and any console errors, and fix them.\n"
            if agent_browser.available() else "")
         + "- Put logic worth testing in plain modules and add tests (e.g. tests/*.test.mjs run with `node --test`, "
         "or Python unittest) and run them with run_command.\n"
         "- When a change works, call commit with a short message describing it.\n"
-        "- Keep your chat replies short: say what you built or changed."
+        "- Keep your chat replies short: say what you built or changed.\n\n"
+        + DESIGN_GUIDE
     )
 
 
@@ -415,10 +434,10 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str) -> Respon
     ctype = mimetypes.guess_type(path)[0] or "text/plain"
     if path.endswith((".js", ".mjs")):
         ctype = "text/javascript"
-    if bridge and ctype == "text/html":
-        lower = content.lower()
-        idx = lower.find("<head>")
-        content = content[:idx + 6] + _CONSOLE_BRIDGE + content[idx + 6:] if idx >= 0 else _CONSOLE_BRIDGE + content
+    if ctype == "text/html":
+        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE if bridge else "")
+        idx = content.lower().find("<head>")
+        content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
     return Response(content, media_type=f"{ctype}; charset=utf-8" if ctype.startswith("text/") else ctype, headers=headers)
 
 

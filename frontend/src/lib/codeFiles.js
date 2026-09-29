@@ -56,6 +56,9 @@ const escapeScript = (s) => s.replace(/<\/script/gi, "<\\/script");
 const escapeStyle = (s) => s.replace(/<\/style/gi, "<\\/style");
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// The preview iframe has an opaque origin, where touching localStorage throws; give it an in-memory one.
+const STORAGE_SHIM = `<script>(function(){try{window.localStorage.getItem("x")}catch(e){function S(){var m={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null},setItem:function(k,v){m[k]=String(v)},removeItem:function(k){delete m[k]},clear:function(){m={}},key:function(i){return Object.keys(m)[i]||null},get length(){return Object.keys(m).length}}}try{Object.defineProperty(window,"localStorage",{value:S(),configurable:true});Object.defineProperty(window,"sessionStorage",{value:S(),configurable:true})}catch(e){}}})();</script>`;
+
 /** One self-contained HTML page with the project's CSS and JS files inlined. */
 export function buildPreview(files) {
   const entry = entryFile(files);
@@ -90,7 +93,7 @@ export function buildPreview(files) {
     const tag = js.map((f) => `<script>\n${escapeScript(f.content)}\n</script>`).join("\n");
     html = /<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, () => `${tag}\n</body>`) : html + tag;
   }
-  return html;
+  return /<head(\s[^>]*)?>/i.test(html) ? html.replace(/<head(\s[^>]*)?>/i, (h) => h + STORAGE_SHIM) : STORAGE_SHIM + html;
 }
 
 // ---- minimal ZIP writer (stored, no compression) ----
