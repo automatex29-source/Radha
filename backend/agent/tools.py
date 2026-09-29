@@ -24,6 +24,7 @@ class ToolContext:
     user_id: str
     conversation_id: Optional[str] = None
     app_id: Optional[str] = None
+    focused: bool = False  # in an app, offer only the app tools (keeps prompts small for free models)
 
 
 @dataclass
@@ -49,6 +50,8 @@ class Tool:
 
     def usable(self, ctx: Optional[ToolContext]) -> bool:
         if self.scope == "app" and not (ctx and ctx.app_id):
+            return False
+        if self.scope != "app" and ctx and ctx.app_id and ctx.focused:
             return False
         return self.available()
 
