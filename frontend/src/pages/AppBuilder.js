@@ -184,8 +184,8 @@ function BuilderChat({ app, onFilesChanged }) {
             )}
           </div>
         )}
-        {messages.map((m) => <MessageBubble key={m.id} message={m} />)}
-        {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming />}
+        {messages.map((m) => <MessageBubble key={m.id} message={m} codeProject={false} />)}
+        {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} />}
       </div>
       <div className="border-t border-border p-3">
         {needsKey && <p className="mb-2 text-[11px] text-amber-400">The builder needs an AI provider key on the backend (see .env.example).</p>}
