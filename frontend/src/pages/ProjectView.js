@@ -16,9 +16,9 @@ import {
 } from "lucide-react";
 
 const STATUS = {
-  ready: { icon: CheckCircle2, cls: "text-emerald-400", label: "Ready" },
-  processing: { icon: Clock, cls: "text-amber-400", label: "Processing" },
-  failed: { icon: AlertCircle, cls: "text-red-400", label: "Failed" },
+  ready: { icon: CheckCircle2, cls: "text-emerald-600 dark:text-emerald-400", label: "Ready" },
+  processing: { icon: Clock, cls: "text-amber-600 dark:text-amber-400", label: "Processing" },
+  failed: { icon: AlertCircle, cls: "text-red-600 dark:text-red-400", label: "Failed" },
 };
 
 export default function ProjectView() {
@@ -224,7 +224,7 @@ export default function ProjectView() {
               {conversations.length === 0 && <p className="text-sm text-muted-foreground">No conversations yet. Start a new chat.</p>}
               {conversations.map((c) => (
                 <button key={c.id} data-testid={`project-conversation-${c.id}`} onClick={() => navigate(`/?conversation=${c.id}`)}
-                  className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-[#171B26]">
+                  className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-surface">
                   <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="truncate text-sm">{c.title}</span>
                 </button>

@@ -74,7 +74,7 @@ export default function VoiceMode({ onClose, onUtterance, voice }) {
   const busy = phase === "transcribing" || phase === "thinking";
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-[#07080B]/95 px-6 backdrop-blur-xl" data-testid="voice-mode">
+    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-background/95 px-6 backdrop-blur-xl" data-testid="voice-mode">
       <button onClick={onClose} data-testid="voice-mode-close" title="End voice mode"
         className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground">
         <X className="h-5 w-5" />

@@ -440,7 +440,7 @@ export default function Workspace() {
             </h1>
             {project && (
               <button onClick={() => navigate(`/projects/${project.id}`)} data-testid="active-project-badge"
-                className="flex shrink-0 items-center gap-1.5 rounded-full border border-[#262C3E] bg-[#171B26] px-2.5 py-1 text-[11px] font-medium text-[#A5B4FC] hover:border-primary/50">
+                className="flex shrink-0 items-center gap-1.5 rounded-full border border-border-strong bg-surface px-2.5 py-1 text-[11px] font-medium text-brand hover:border-primary/50">
                 <FolderKanban className="h-3 w-3" /> {project.name}
               </button>
             )}
@@ -534,7 +534,7 @@ function EmptyState({ onPick }) {
         {STARTERS.map((s, i) => (
           <button key={i} data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
             className="radha-lift group rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[#1D2230] text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-surface-strong text-primary transition-colors group-hover:bg-primary group-hover:text-white">
               <s.icon className="h-4.5 w-4.5" />
             </div>
             <p className="text-sm font-medium leading-snug text-foreground">{s.title}</p>

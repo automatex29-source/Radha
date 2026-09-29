@@ -10,6 +10,7 @@ import AppsPage from "@/pages/AppsPage";
 import AppBuilder from "@/pages/AppBuilder";
 import AutomationsPage from "@/pages/AutomationsPage";
 import { Loader2 } from "lucide-react";
+import { ThemeProvider } from "next-themes";
 
 function Gate() {
   const { user } = useAuth();
@@ -47,13 +48,15 @@ function Gate() {
 
 export default function App() {
   return (
-    <div className="App dark">
-      <AuthProvider>
-        <BrowserRouter>
-          <Gate />
-        </BrowserRouter>
-        <Toaster position="top-center" theme="dark" />
-      </AuthProvider>
-    </div>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="radha-theme" disableTransitionOnChange>
+      <div className="App">
+        <AuthProvider>
+          <BrowserRouter>
+            <Gate />
+          </BrowserRouter>
+          <Toaster position="top-center" />
+        </AuthProvider>
+      </div>
+    </ThemeProvider>
   );
 }

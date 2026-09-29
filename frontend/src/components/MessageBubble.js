@@ -20,8 +20,8 @@ function CodeBlock({ inline, className, children }) {
   return (
     <div className="group/code relative">
       <button onClick={copy} data-testid="copy-code-button"
-        className="absolute right-2 top-2 flex items-center gap-1 rounded-md border border-border bg-[#11141D] px-2 py-1 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/code:opacity-100">
-        {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+        className="absolute right-2 top-2 flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/code:opacity-100">
+        {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
         {copied ? "Copied" : "Copy"}
       </button>
       <pre className="max-h-[28rem] overflow-auto"><code className={className}>{children}</code></pre>
@@ -65,19 +65,19 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   if (isUser) {
     return (
       <div className="flex justify-end gap-3 radha-fade-up" data-testid={`user-message-item-${message.id}`}>
-        <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-[#222738] bg-[#141721] px-4 py-3 text-[0.95rem] leading-relaxed text-foreground sm:px-5">
+        <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-border bg-card px-4 py-3 text-[0.95rem] leading-relaxed text-foreground sm:px-5">
           {message.images?.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2" data-testid={`user-message-images-${message.id}`}>
               {message.images.map((mid) => (
                 <img key={mid} src={mediaUrl(`/api/media/${mid}`)} alt="Attached"
-                  className="h-28 max-w-[220px] rounded-lg border border-[#222738] object-cover" />
+                  className="h-28 max-w-[220px] rounded-lg border border-border object-cover" />
               ))}
             </div>
           )}
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#2E364A] bg-[#1D2230]">
-          <User className="h-4 w-4 text-[#A5B4FC]" />
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border-strong bg-surface-strong">
+          <User className="h-4 w-4 text-brand" />
         </div>
       </div>
     );
@@ -92,7 +92,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         <div className="mb-1 flex items-center gap-2">
           <span className="text-sm font-semibold tracking-tight">RADHA</span>
           {message.model && (
-            <span className="rounded-full border border-[#262C3E] bg-[#171B26] px-2 py-0.5 font-mono text-[10px] tracking-wide text-[#A5B4FC]">
+            <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand">
               {message.model}
             </span>
           )}
@@ -110,7 +110,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid={`message-sources-${message.id}`}>
             <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Sources</span>
             {message.sources.map((s, i) => (
-              <span key={i} className="flex items-center gap-1 rounded-full border border-[#262C3E] bg-[#171B26] px-2 py-0.5 font-mono text-[10px] text-[#A5B4FC]">
+              <span key={i} className="flex items-center gap-1 rounded-full border border-border-strong bg-surface px-2 py-0.5 font-mono text-[10px] text-brand">
                 <FileIcon className="h-2.5 w-2.5" /> {s.fileName}
               </span>
             ))}
@@ -120,7 +120,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           <div className="mt-2 flex items-center gap-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
             <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`}
               className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-              {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
             </button>
             {voiceEnabled && <SpeakButton text={message.content} voice={voice} id={message.id} />}

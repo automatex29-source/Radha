@@ -121,7 +121,7 @@ export default function AppsPage() {
             <div className="mt-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : apps.length === 0 ? (
             <div className="mt-16 flex flex-col items-center text-center" data-testid="apps-empty">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1D2230]"><AppWindow className="h-7 w-7 text-primary" /></div>
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-strong"><AppWindow className="h-7 w-7 text-primary" /></div>
               <p className="mt-4 font-semibold">No apps yet</p>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">Create one and ask RADHA for a to-do list, a dashboard, a game or a landing page.</p>
             </div>
@@ -130,11 +130,11 @@ export default function AppsPage() {
               {apps.map((a) => (
                 <div key={a.id} className="radha-lift group relative rounded-xl border border-border bg-card p-5 hover:border-primary/50" data-testid={`app-card-${a.id}`}>
                   <button onClick={() => navigate(`/apps/${a.id}`)} className="block w-full text-left">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#1D2230] text-primary"><AppWindow className="h-5 w-5" /></div>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-strong text-primary"><AppWindow className="h-5 w-5" /></div>
                     <p className="mt-3 font-semibold">{a.name}</p>
                     <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">{a.description || "No description"}</p>
                     <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-                      {a.published && <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-400"><Globe className="h-3 w-3" /> Live</span>}
+                      {a.published && <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-400"><Globe className="h-3 w-3" /> Live</span>}
                       <span>Updated {new Date(a.updatedAt).toLocaleString()}</span>
                     </div>
                   </button>
