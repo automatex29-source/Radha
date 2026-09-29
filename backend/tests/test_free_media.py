@@ -47,7 +47,7 @@ def fake_http(monkeypatch, handler):
 
 class TestImages:
     def test_provider_order(self, monkeypatch):
-        assert media._image_providers() == ["pollinations", "pollinations_legacy"]
+        assert media._image_providers() == ["pollinations_legacy"]
         assert media.image_available()
         monkeypatch.setenv("HF_TOKEN", "h")
         monkeypatch.setenv("OPENAI_API_KEY", "o")
@@ -76,6 +76,7 @@ class TestImages:
         assert req.url.params["width"] == "1536" and req.url.params["height"] == "1024"
 
     def test_falls_back_to_keyless_endpoint(self, monkeypatch):
+        monkeypatch.setenv("POLLINATIONS_API_KEY", "sk_bad")
         hosts = []
 
         def handler(req):
@@ -91,7 +92,7 @@ class TestImages:
     def test_all_fail_reports_errors(self, monkeypatch):
         fake_http(monkeypatch, lambda req: httpx.Response(200, text="<html>busy</html>",
                                                           headers={"content-type": "text/html"}))
-        with pytest.raises(media.ImageError, match="not an image"):
+        with pytest.raises(media.ImageError, match="not an image.*POLLINATIONS_API_KEY"):
             run(media.generate_image("cat"))
 
 

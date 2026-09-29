@@ -87,7 +87,8 @@ def _image_providers() -> list:
             order.append("pollinations")
         if os.environ.get("HF_TOKEN"):
             order.append("huggingface")
-    for free in ("pollinations", "pollinations_legacy"):
+    # gen.pollinations.ai needs a key now, so without one only the old keyless endpoint is worth trying.
+    for free in (("pollinations",) if os.environ.get("POLLINATIONS_API_KEY") else ()) + ("pollinations_legacy",):
         if free not in order:
             order.append(free)
     return order
@@ -152,8 +153,10 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
             return await _pollinations(prompt, size, legacy=which == "pollinations_legacy", seed=seed)
         except Exception as exc:  # fall through to the next provider
             logger.warning("image provider %s failed: %s", which, exc)
-            errors.append(f"{which}: {exc}")
-    raise ImageError("Image generation failed. " + "; ".join(errors)[:600])
+            errors.append(f"{which}: {str(exc)[:160]}")
+    hint = "" if image_key_configured() else (" Add a free POLLINATIONS_API_KEY (from enter.pollinations.ai) "
+                                              "on the server to turn on images.")
+    raise ImageError("Image generation failed. " + "; ".join(errors) + hint)
 
 
 async def _openai_image(prompt: str, size: str = "1024x1024", quality: Optional[str] = None) -> bytes:
