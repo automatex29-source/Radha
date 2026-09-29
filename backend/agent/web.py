@@ -127,6 +127,25 @@ def parse_ddg_html(html: str, limit: int) -> List[dict]:
     return results
 
 
+def parse_ddg_lite(html: str, limit: int) -> List[dict]:
+    doc = lxml.html.fromstring(html)
+    results = []
+    for a in doc.xpath("//a[contains(@class,'result-link')]"):
+        url = _ddg_real_url(a.get("href", ""))
+        if not url.startswith("http") or "duckduckgo.com/y.js" in url:
+            continue
+        row = a.getparent().getparent() if a.getparent() is not None else None
+        snippet = ""
+        if row is not None:
+            nxt = row.getnext()
+            cells = nxt.xpath(".//*[contains(@class,'result-snippet')]") if nxt is not None else []
+            snippet = " ".join(cells[0].text_content().split()) if cells else ""
+        results.append({"title": " ".join(a.text_content().split()), "url": url, "snippet": snippet})
+        if len(results) >= limit:
+            break
+    return results
+
+
 async def search(query: str, limit: int = 6) -> List[dict]:
     limit = max(1, min(limit, 10))
     tavily_key = os.environ.get("TAVILY_API_KEY")
@@ -139,5 +158,10 @@ async def search(query: str, limit: int = 6) -> List[dict]:
             return [{"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")[:400]}
                     for r in resp.json().get("results", [])]
         resp = await client.post("https://html.duckduckgo.com/html/", data={"q": query})
+        results = parse_ddg_html(resp.text, limit) if resp.status_code == 200 else []
+        if results:
+            return results
+        # DuckDuckGo sometimes answers cloud servers with a challenge page; its lite endpoint usually still works.
+        resp = await client.post("https://lite.duckduckgo.com/lite/", data={"q": query})
         resp.raise_for_status()
-        return parse_ddg_html(resp.text, limit)
+        return parse_ddg_lite(resp.text, limit)
