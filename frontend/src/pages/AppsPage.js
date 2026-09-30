@@ -67,11 +67,11 @@ export default function AppsPage() {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-6 py-10">
-          <div className="flex items-center justify-between gap-4">
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter sm:text-3xl">Apps</h1>
               <p className="mt-1.5 text-sm text-muted-foreground">

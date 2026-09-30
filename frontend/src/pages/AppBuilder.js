@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
-  Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow,
+  Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare,
 } from "lucide-react";
 
 const FILE_TOOLS = new Set(["write_file", "edit_file", "delete_file", "commit"]);
+
+const PANES = [["preview", Eye, "Preview"], ["code", Code2, "Code"], ["terminal", SquareTerminal, "Terminal"], ["history", History, "History"]];
 
 export default function AppBuilder() {
   const { id } = useParams();
@@ -21,7 +23,8 @@ export default function AppBuilder() {
   const [files, setFiles] = useState([]);
   const [changes, setChanges] = useState({});
   const [commits, setCommits] = useState([]);
-  const [tab, setTab] = useState("preview");
+  // Phones show one pane at a time, starting with the chat.
+  const [tab, setTab] = useState(() => (window.matchMedia?.("(max-width: 767px)").matches ? "chat" : "preview"));
   const [previewKey, setPreviewKey] = useState(0);
 
   const refresh = useCallback(async () => {
@@ -54,51 +57,60 @@ export default function AppBuilder() {
   };
 
   if (!app) {
-    return <div className="flex h-screen items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+    return <div className="flex h-dvh items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   }
   const pending = Object.keys(changes).length;
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-background" data-testid="app-builder">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-2.5">
-        <button onClick={() => navigate("/apps")} title="All apps" className="rounded-md p-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-background" data-testid="app-builder">
+      <header className="flex items-center gap-2 border-b border-border px-2 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+        <button onClick={() => navigate("/apps")} title="All apps" className="rounded-md p-2 text-muted-foreground hover:bg-surface hover:text-foreground sm:p-1.5">
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <AppWindow className="h-4 w-4 text-primary" />
+        <AppWindow className="h-4 w-4 shrink-0 text-primary max-sm:hidden" />
         <h1 className="truncate text-sm font-semibold" data-testid="app-title">{app.name}</h1>
         {pending > 0 && (
-          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-400" data-testid="unsaved-changes">
+          <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] max-sm:hidden text-amber-600 dark:text-amber-400" data-testid="unsaved-changes">
             {pending} unsaved change{pending === 1 ? "" : "s"}
           </span>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          <ThemeToggle className="h-8 w-8 rounded-md" />
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <ThemeToggle className="h-8 w-8 rounded-md max-sm:hidden" />
           <Button variant="outline" size="sm" onClick={saveVersion} disabled={!pending} data-testid="save-version-button" className="gap-1.5 border-border bg-card">
-            <Save className="h-3.5 w-3.5" /> Save version
+            <Save className="h-3.5 w-3.5" /><span className="max-sm:hidden">Save version</span>{pending > 0 && <span className="sm:hidden">{pending}</span>}
           </Button>
           <a href={`${API}/apps/${id}/export?auth=${encodeURIComponent(getToken() || "")}`} data-testid="download-app"
             className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:border-primary/50"
             title="Download the code with its full git history">
-            <Download className="h-3.5 w-3.5" /> Download
+            <Download className="h-3.5 w-3.5" /><span className="max-sm:hidden">Download</span>
           </a>
           <GitHubPushButton app={app} onPushed={refresh} />
           <PublishButton app={app} onChange={(a) => { setApp(a); refresh(); }} />
         </div>
       </header>
 
+      {/* Phones: one row of tabs, chat included */}
+      <nav className="flex items-center border-b border-border md:hidden" data-testid="builder-phone-tabs">
+        {[["chat", MessageSquare, "Chat"], ...PANES].map(([t, Icon, label]) => (
+          <button key={t} onClick={() => setTab(t)} data-testid={`builder-phone-tab-${t}`}
+            className={`flex flex-1 flex-col items-center gap-0.5 border-b-2 py-2 text-[11px] font-medium ${tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}>
+            <Icon className="h-4 w-4" /> {label}
+          </button>
+        ))}
+      </nav>
       <div className="flex min-h-0 flex-1">
-        <BuilderChat app={app} onFilesChanged={onFilesChanged} />
-        <section className="flex min-w-0 flex-1 flex-col border-l border-border">
-          <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5">
-            {[["preview", Eye, "Preview"], ["code", Code2, "Code"], ["terminal", SquareTerminal, "Terminal"], ["history", History, "History"]].map(([t, Icon, label]) => (
+        <BuilderChat app={app} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} />
+        <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
+          <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
+            {PANES.map(([t, Icon, label]) => (
               <button key={t} onClick={() => setTab(t)} data-testid={`builder-tab-${t}`}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${tab === t ? "bg-surface-strong text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${tab === t || (t === "preview" && tab === "chat") ? "bg-surface-strong text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="h-3.5 w-3.5" /> {label}
               </button>
             ))}
           </nav>
           <div className="min-h-0 flex-1">
-            {tab === "preview" && <PreviewTab appId={id} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)} />}
+            {(tab === "preview" || tab === "chat") && <PreviewTab appId={id} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
             {tab === "terminal" && <TerminalTab appId={id} />}
             {tab === "history" && <HistoryTab appId={id} commits={commits} pending={pending} onRestored={onFilesChanged} />}
@@ -110,7 +122,7 @@ export default function AppBuilder() {
 }
 
 /* ------------------------------------------------------------------ chat */
-function BuilderChat({ app, onFilesChanged }) {
+function BuilderChat({ app, onFilesChanged, hiddenOnPhone }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -175,7 +187,7 @@ function BuilderChat({ app, onFilesChanged }) {
   };
 
   return (
-    <aside className="flex w-[400px] shrink-0 flex-col" data-testid="builder-chat">
+    <aside className={`flex w-[400px] shrink-0 flex-col max-md:w-full ${hiddenOnPhone ? "max-md:hidden" : ""}`} data-testid="builder-chat">
       <div ref={scrollRef} className="radha-scroll flex-1 space-y-5 overflow-y-auto px-4 py-5">
         {messages.length === 0 && !streaming && (
           <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -191,18 +203,18 @@ function BuilderChat({ app, onFilesChanged }) {
         {messages.map((m) => <MessageBubble key={m.id} message={m} codeProject={false} />)}
         {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} />}
       </div>
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {needsKey && <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">The builder needs an AI provider key on the backend (see .env.example).</p>}
         <div className="rounded-xl border border-border bg-card p-2 focus-within:border-primary/60">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={3} data-testid="builder-input"
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); send(); } }}
             placeholder="Add a dark mode toggle and save todos in the browser…"
             className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-sm focus:outline-none" />
           <div className="flex justify-end">
             {streaming ? (
               <Button size="icon" variant="secondary" onClick={() => abortRef.current?.abort()} className="h-8 w-8"><Square className="h-3.5 w-3.5" /></Button>
             ) : (
-              <Button size="icon" onClick={send} disabled={!input.trim()} data-testid="builder-send" className="h-8 w-8"><Send className="h-3.5 w-3.5" /></Button>
+              <Button size="icon" onClick={send} disabled={!input.trim()} data-testid="builder-send" className="h-10 w-10 sm:h-8 sm:w-8"><Send className="h-3.5 w-3.5" /></Button>
             )}
           </div>
         </div>
@@ -535,7 +547,7 @@ function PublishButton({ app, onChange }) {
         <Rocket className="h-3.5 w-3.5" /> {app.published ? "Live" : "Publish"}
       </Button>
       {open && (
-        <div className="absolute right-0 top-10 z-30 w-80 rounded-xl border border-border bg-card p-4 shadow-2xl" data-testid="publish-panel">
+        <div className="absolute right-0 top-10 z-30 w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-card p-4 shadow-2xl" data-testid="publish-panel">
           {app.published ? (
             <>
               <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400"><Globe className="h-4 w-4" /> Live on the web</p>

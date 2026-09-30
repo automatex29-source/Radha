@@ -15,7 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Sparkles, Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, FolderKanban, Link2, HeartHandshake, CloudRain, Compass, HeartCrack, Flame } from "lucide-react";
+import { Sparkles, Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, FolderKanban, Link2, HeartHandshake, CloudRain, Compass, HeartCrack, Flame } from "lucide-react";
 
 const STARTERS = [
   { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
@@ -414,7 +414,7 @@ export default function Workspace({ mode = null }) {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
       <IconRail />
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
@@ -425,9 +425,9 @@ export default function Workspace({ mode = null }) {
 
       {/* Mobile drawer */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-0 top-0 h-full">
+        <div className="fixed inset-0 z-50 lg:hidden" data-testid="mobile-drawer">
+          <div className="krish-fade-in absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={() => setSidebarOpen(false)} />
+          <div className="krish-drawer-in absolute left-0 top-0 h-full max-w-[85vw] shadow-2xl">
             <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
               onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
           newLabel={counselling ? "New session" : undefined} onCollapse={() => setSidebarOpen(false)} />
@@ -436,11 +436,12 @@ export default function Workspace({ mode = null }) {
       )}
 
       {/* Main */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header data-testid="chat-workspace-header" className="z-40 flex items-center justify-between border-b border-border bg-background/80 px-4 py-3 backdrop-blur-xl">
-          <div className="flex min-w-0 items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="text-muted-foreground hover:text-foreground lg:hidden">
+        <header data-testid="chat-workspace-header" className="z-40 flex items-center justify-between gap-2 border-b border-border bg-background/80 px-2 py-2 backdrop-blur-xl sm:px-4 sm:py-3">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-3">
+            <button onClick={() => setSidebarOpen(true)} data-testid="open-sidebar-button" aria-label="Show chats"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <PanelLeft className="h-5 w-5" />
             </button>
             <h1 data-testid="active-conversation-title" className="truncate text-sm font-semibold tracking-tight">
@@ -454,7 +455,7 @@ export default function Workspace({ mode = null }) {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {activeConv && messages.length > 0 && (
               <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} data-testid="share-conversation-button"
                 className={`gap-1.5 hover:text-foreground ${activeConv.shareId ? "text-brand" : "text-muted-foreground"}`}>
@@ -463,7 +464,7 @@ export default function Workspace({ mode = null }) {
               </Button>
             )}
             {activeId && messages.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={exportConversation} data-testid="export-conversation-button" className="gap-1.5 text-muted-foreground hover:text-foreground">
+              <Button variant="ghost" size="sm" onClick={exportConversation} data-testid="export-conversation-button" className="gap-1.5 text-muted-foreground hover:text-foreground max-sm:hidden">
                 <Download className="h-3.5 w-3.5" />
                 <span className="hidden text-xs sm:inline">Export</span>
               </Button>
@@ -472,7 +473,7 @@ export default function Workspace({ mode = null }) {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" data-testid="model-selector-dropdown" className="gap-2 border-border bg-card">
                 <Cpu className="h-3.5 w-3.5 text-primary" />
-                <span className="text-xs font-medium">{models.find((m) => m.id === model)?.label || "Model"}</span>
+                <span className="max-w-[92px] truncate text-xs font-medium sm:max-w-none">{models.find((m) => m.id === model)?.label || "Model"}</span>
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
@@ -485,6 +486,10 @@ export default function Workspace({ mode = null }) {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>}
+            <button onClick={newConversation} data-testid="mobile-new-chat-button" aria-label={counselling ? "New session" : "New chat"}
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
+              <SquarePen className="h-5 w-5" />
+            </button>
           </div>
         </header>
 
@@ -497,7 +502,7 @@ export default function Workspace({ mode = null }) {
           ) : messages.length === 0 && !streaming ? (
             counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
-            <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
+            <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem} />)}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
@@ -541,23 +546,23 @@ export default function Workspace({ mode = null }) {
 
 function EmptyState({ onPick }) {
   return (
-    <div data-testid="empty-state-welcome" className="relative mx-auto flex h-full max-w-3xl flex-col items-center justify-center overflow-hidden px-4">
+    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center overflow-hidden px-4 py-6 sm:py-8">
       <div className="radha-orb -top-10 left-1/4 h-56 w-56 bg-indigo-600/30" />
       <div className="radha-orb bottom-10 right-1/4 h-56 w-56 bg-cyan-500/20" />
       <div className="radha-fade-up relative flex flex-col items-center text-center">
-        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)]">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)] sm:mb-5 sm:h-16 sm:w-16">
           <Sparkles className="h-8 w-8 text-white" />
         </div>
-        <h2 className="radha-heading-gradient text-3xl font-extrabold tracking-tighter sm:text-4xl">How can Krish AI help today?</h2>
-        <p className="mt-3 max-w-md text-sm text-muted-foreground">
+        <h2 className="radha-heading-gradient text-[1.75rem] font-extrabold leading-tight tracking-tighter sm:text-4xl">How can Krish AI help today?</h2>
+        <p className="mt-3 max-w-md text-sm text-muted-foreground max-sm:hidden">
           A premium AI workspace by EmpireX. Ask anything, attach a document, or open a project — everything is saved and reloadable.
         </p>
       </div>
-      <div className="radha-fade-up relative mt-9 grid w-full gap-3 sm:grid-cols-3" style={{ animationDelay: "0.1s" }}>
+      <div className="radha-fade-up relative mt-6 grid w-full gap-2.5 sm:mt-9 sm:gap-3 sm:grid-cols-3" style={{ animationDelay: "0.1s" }}>
         {STARTERS.map((s, i) => (
           <button key={i} data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
-            className="radha-lift group rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-surface-strong text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+            className={`${i >= 4 ? "max-sm:hidden " : ""}radha-lift group flex items-center gap-3 rounded-xl border border-border bg-card p-3 text-left hover:border-primary/50 active:scale-[0.99] sm:block sm:p-4`}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-strong sm:mb-3 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
               <s.icon className="h-4.5 w-4.5" />
             </div>
             <p className="text-sm font-medium leading-snug text-foreground">{s.title}</p>
@@ -570,24 +575,24 @@ function EmptyState({ onPick }) {
 
 function CounselEmptyState({ onPick }) {
   return (
-    <div data-testid="counsellor-welcome" className="relative mx-auto flex h-full max-w-3xl flex-col items-center justify-center overflow-hidden px-4">
+    <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center overflow-hidden px-4 py-6 sm:py-8">
       <div className="radha-orb -top-10 left-1/4 h-56 w-56 bg-amber-500/20" />
       <div className="radha-orb bottom-10 right-1/4 h-56 w-56 bg-sky-500/20" />
       <div className="radha-fade-up relative flex flex-col items-center text-center">
-        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)]">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)] sm:mb-5 sm:h-16 sm:w-16">
           <HeartHandshake className="h-8 w-8 text-white" />
         </div>
-        <h2 className="radha-heading-gradient text-3xl font-extrabold tracking-tighter sm:text-4xl">You are not alone</h2>
+        <h2 className="radha-heading-gradient text-[1.75rem] font-extrabold leading-tight tracking-tighter sm:text-4xl">You are not alone</h2>
         <p className="mt-3 max-w-md text-sm text-muted-foreground">
           Share what's on your heart. Krish AI's Counsellor listens first, then guides you with Krishna's wisdom
           from the Bhagavad Gita and a gentle next step. Hindi or English, whatever feels easy.
         </p>
       </div>
-      <div className="radha-fade-up relative mt-9 grid w-full gap-3 sm:grid-cols-2" style={{ animationDelay: "0.1s" }}>
+      <div className="radha-fade-up relative mt-6 grid w-full gap-2.5 sm:mt-9 sm:gap-3 sm:grid-cols-2" style={{ animationDelay: "0.1s" }}>
         {COUNSEL_STARTERS.map((s, i) => (
           <button key={i} data-testid={`counsellor-starter-${i}`} onClick={() => onPick(s.prompt)}
-            className="radha-lift group rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-surface-strong text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+            className="radha-lift group flex items-center gap-3 rounded-xl border border-border bg-card p-3 text-left hover:border-primary/50 active:scale-[0.99] sm:block sm:p-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-strong sm:mb-3 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
               <s.icon className="h-4.5 w-4.5" />
             </div>
             <p className="text-sm font-medium leading-snug text-foreground">{s.title}</p>

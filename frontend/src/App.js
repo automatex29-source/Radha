@@ -12,6 +12,7 @@ import AutomationsPage from "@/pages/AutomationsPage";
 import DecksPage from "@/pages/DecksPage";
 import DeckEditor from "@/pages/DeckEditor";
 import SharedChat from "@/pages/SharedChat";
+import ResetPassword from "@/pages/ResetPassword";
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 
@@ -20,7 +21,7 @@ function Gate() {
 
   if (user === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background" data-testid="auth-loading">
+      <div className="flex min-h-dvh items-center justify-center bg-background" data-testid="auth-loading">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
       </div>
     );
@@ -61,6 +62,7 @@ export default function App() {
             <Routes>
               {/* Shared chats open for anyone, signed in or not. */}
               <Route path="/share/:shareId" element={<SharedChat />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="*" element={<Gate />} />
             </Routes>
           </BrowserRouter>

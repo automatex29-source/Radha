@@ -52,7 +52,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   };
 
   return (
-    <div className="flex h-full w-72 flex-col border-r border-border bg-sunken">
+    <div className="flex h-full w-72 flex-col border-r border-border bg-sunken pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
       {/* Brand */}
       <div className="flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-2.5">
@@ -64,8 +64,8 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">EmpireX</p>
           </div>
         </div>
-        <button onClick={onCollapse} data-testid="sidebar-toggle-button" className="text-muted-foreground hover:text-foreground lg:hidden">
-          <PanelLeftClose className="h-4 w-4" />
+        <button onClick={onCollapse} data-testid="sidebar-toggle-button" aria-label="Close" className="-mr-2 flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
+          <PanelLeftClose className="h-5 w-5" />
         </button>
       </div>
 
@@ -95,7 +95,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
               {items.map((c) => (
                 <div key={c.id} data-testid={`conversation-item-${c.id}`}
                   onClick={() => editingId !== c.id && onSelect(c.id)}
-                  className={`group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+                  className={`group flex items-center gap-2 rounded-lg px-2.5 py-3 text-sm max-lg:text-[15px] lg:py-2 transition-colors ${
                     activeId === c.id ? "bg-surface-strong text-foreground" : "text-muted-foreground hover:bg-surface hover:text-foreground"
                   } cursor-pointer`}>
                   <MessageSquare className="h-3.5 w-3.5 shrink-0" />
@@ -111,7 +111,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                   ) : (
                     <>
                       <span className="flex-1 truncate">{c.title}</span>
-                      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="flex shrink-0 items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 lg:gap-1">
                         <button data-testid={`rename-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); startRename(c); }} className="hover:text-primary">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>

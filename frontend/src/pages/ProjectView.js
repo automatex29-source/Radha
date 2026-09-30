@@ -119,7 +119,7 @@ export default function ProjectView() {
 
   if (!data) {
     return (
-      <div className="flex h-screen w-full bg-background">
+      <div className="flex h-dvh w-full bg-background max-md:flex-col">
         <IconRail />
         <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
       </div>
@@ -129,17 +129,17 @@ export default function ProjectView() {
   const { project, files, conversations, memories } = data;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-6 py-8">
+        <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
           <button onClick={() => navigate("/projects")} className="mb-5 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="back-to-projects">
             <ArrowLeft className="h-4 w-4" /> All projects
           </button>
 
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{project.name}</h1>
+              <h1 className="break-words text-2xl sm:truncate font-bold tracking-tight sm:text-3xl">{project.name}</h1>
               {project.description && <p className="mt-1.5 text-sm text-muted-foreground">{project.description}</p>}
             </div>
             <div className="flex shrink-0 gap-2">

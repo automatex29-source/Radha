@@ -10,6 +10,9 @@ const DOC_TYPES = ".pdf,.docx,.pptx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.l
 const IMAGE_TYPES = ".png,.jpg,.jpeg,.webp,.gif";
 const VIDEO_TYPES = ".mp4,.webm,.mov,.m4v";
 
+const narrowScreen = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 639px)").matches;
+const phoneKeyboard = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+
 export default function ComposerInput({
   value, onChange, onSend, onStop, streaming, disabled,
   onAttach, attachments = [], onRemoveAttachment, uploading,
@@ -48,14 +51,15 @@ export default function ComposerInput({
   }, [value]);
 
   const onKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // On phones the keyboard's return key adds a new line; the send button sends.
+    if (e.key === "Enter" && !e.shiftKey && !phoneKeyboard()) {
       e.preventDefault();
       if (!streaming && canSend) onSend();
     }
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-1">
+    <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-1 sm:px-4 sm:pb-5">
       {images.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" data-testid="composer-images">
           {groupImages(images).map((img) => img.videoGroup ? (
@@ -103,7 +107,7 @@ export default function ComposerInput({
           onKeyDown={onKeyDown}
           disabled={disabled}
           rows={1}
-          placeholder={rec.recording ? "Listening… tap the mic to finish" : placeholder || (agentMode ? "Ask Krish AI anything: it can search the web, run code and make files…" : "Message Krish AI…")}
+          placeholder={rec.recording ? "Listening… tap the mic to finish" : placeholder || (agentMode && !narrowScreen() ? "Ask Krish AI anything: it can search the web, run code and make files…" : "Message Krish AI…")}
           className="radha-scroll max-h-[200px] w-full resize-none bg-transparent px-3 py-2 text-[0.95rem] text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
         <div className="flex items-center justify-between px-1 pt-1">
@@ -114,7 +118,7 @@ export default function ComposerInput({
                   accept={`${DOC_TYPES},${IMAGE_TYPES},${VIDEO_TYPES}`}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); if (fileRef.current) fileRef.current.value = ""; }} />
                 <button onClick={() => fileRef.current?.click()} disabled={uploading || disabled} data-testid="composer-attach-button" title="Attach a document, image or video"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50">
+                  className="flex h-10 w-10 items-center justify-center rounded-lg sm:h-8 sm:w-8 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50">
                   {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 </button>
               </>
@@ -130,14 +134,14 @@ export default function ComposerInput({
             )}
             <button onClick={toggleMic} disabled={!voiceEnabled || transcribing || disabled} data-testid="composer-mic-button"
               title={voiceEnabled ? (rec.recording ? "Stop and transcribe" : "Dictate") : voiceHint}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${
+              className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors sm:h-8 sm:w-8 disabled:opacity-40 ${
                 rec.recording ? "bg-destructive/20 text-destructive" : "text-muted-foreground hover:bg-surface hover:text-foreground"}`}>
               {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
             </button>
             {onVoiceMode && (
               <button onClick={onVoiceMode} disabled={!voiceEnabled || streaming || disabled} data-testid="voice-mode-button"
                 title={voiceEnabled ? "Voice conversation" : voiceHint}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-40">
+                className="flex h-10 w-10 items-center justify-center rounded-lg sm:h-8 sm:w-8 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-40">
                 <AudioLines className="h-4 w-4" />
               </button>
             )}
@@ -152,18 +156,18 @@ export default function ComposerInput({
             </span>
           </div>
           {streaming ? (
-            <Button size="icon" variant="secondary" onClick={onStop} data-testid="stop-generation-button" className="h-9 w-9 rounded-xl">
+            <Button size="icon" variant="secondary" onClick={onStop} data-testid="stop-generation-button" className="h-10 w-10 rounded-xl sm:h-9 sm:w-9">
               <Square className="h-4 w-4" />
             </Button>
           ) : (
             <Button size="icon" onClick={onSend} disabled={!canSend} data-testid="send-message-button"
-              className="h-9 w-9 rounded-xl shadow-[0_0_20px_rgba(99,102,241,0.4)]">
+              className="h-10 w-10 rounded-xl sm:h-9 sm:w-9 shadow-[0_0_20px_rgba(99,102,241,0.4)]">
               <ArrowUp className="h-4 w-4" />
             </Button>
           )}
         </div>
       </div>
-      <p className="mt-2 text-center text-[11px] text-muted-foreground">Krish AI can make mistakes. Verify important information.</p>
+      <p className="mt-2 text-center text-[11px] text-muted-foreground max-sm:hidden">Krish AI can make mistakes. Verify important information.</p>
     </div>
   );
 }

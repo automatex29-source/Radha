@@ -46,7 +46,7 @@ export default function GitHubPushButton({ app, onPushed }) {
       <DialogTrigger asChild>
         <button data-testid="github-push-button" title="Send the code to GitHub"
           className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:border-primary/50">
-          <Github className="h-3.5 w-3.5" /> GitHub
+          <Github className="h-3.5 w-3.5" /><span className="max-sm:hidden">GitHub</span>
         </button>
       </DialogTrigger>
       <DialogContent>

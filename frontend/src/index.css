@@ -223,3 +223,28 @@
 /* Krish AI wordmark: chunky Bricolage with a glowing "AI" */
 .krish-wordmark { font-family: 'Bricolage Grotesque', 'Plus Jakarta Sans', sans-serif; font-weight: 800; letter-spacing: -0.035em; white-space: nowrap; }
 .krish-wordmark-ai { background: linear-gradient(100deg, #6C6FFF 0%, #B26BFF 55%, #FF7FB8 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* --- Phones and touch screens --- */
+html { -webkit-text-size-adjust: 100%; }
+body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+
+/* iOS zooms into any field under 16px when it is tapped; keep fields at 16px on phones.
+   Unlayered, so it wins over Tailwind's text-sm/text-xs utilities. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select { font-size: 16px; }
+}
+
+/* Touch screens have no hover, so buttons that only appear on hover stay visible. */
+@media (hover: none) {
+  .group-hover\:opacity-100 { opacity: 1; }
+}
+
+/* Hide the phone tab bar while typing, so the keyboard doesn't squeeze the page. */
+@media (max-width: 767px) {
+  body:has(input:focus, textarea:focus, [contenteditable="true"]:focus) .krish-tabbar { display: none; }
+}
+
+@keyframes krish-drawer-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+.krish-drawer-in { animation: krish-drawer-in 0.22s cubic-bezier(0.32, 0.72, 0, 1) both; }
+@keyframes krish-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.krish-fade-in { animation: krish-fade-in 0.2s ease both; }

@@ -445,7 +445,7 @@ export default function DeckEditor() {
 
   if (!deck || !theme) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+      <div className="flex h-dvh items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
     );
   }
 
@@ -453,9 +453,9 @@ export default function DeckEditor() {
   const pending = generating ? Math.max(0, (deck.total || 0) - slides.length) : 0;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
-      <IconRail />
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
+      <IconRail mobileBar={false} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* top bar */}
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/decks")} title="All presentations"><ArrowLeft className="h-4 w-4" /></Button>
