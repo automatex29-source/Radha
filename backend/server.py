@@ -5,12 +5,13 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import asyncio
+import hashlib
 import os
 import re
 import secrets
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Literal, Optional
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File, Form, Header, Query
@@ -40,6 +41,7 @@ import decks
 import appdata
 import automations
 import live_search
+import mailer
 import counsellor
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
@@ -107,6 +109,15 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class ConversationIn(BaseModel):
@@ -255,6 +266,81 @@ async def login(body: LoginIn):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(doc["id"], email)
     return {"token": token, "user": public_user(doc)}
+
+
+RESET_MINUTES = 30
+RESET_RESEND_SECONDS = 60
+
+
+def _reset_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _app_url(request: Request) -> str:
+    # Prefer a configured address over the request's Host header, so a forged
+    # Host can't put someone else's site into the emailed link.
+    url = os.environ.get("APP_URL") or os.environ.get("RENDER_EXTERNAL_URL") or str(request.base_url)
+    return url.rstrip("/")
+
+
+async def _valid_reset(token: str) -> Optional[dict]:
+    doc = await db.password_resets.find_one({"tokenHash": _reset_hash(token), "usedAt": None})
+    if not doc or doc["expiresAt"] < now_iso():
+        return None
+    return doc
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn, request: Request):
+    """Email a one-time reset link. Answers the same whether or not the email has an
+    account, so this can't be used to find out who is signed up."""
+    configured = mailer.configured()
+    email = body.email.lower()
+    user = await db.users.find_one({"email": email})
+    if user and configured:
+        now = datetime.now(timezone.utc)
+        recent = await db.password_resets.find_one({
+            "userId": user["id"], "usedAt": None,
+            "createdAt": {"$gt": (now - timedelta(seconds=RESET_RESEND_SECONDS)).isoformat()},
+        })
+        if not recent:
+            token = secrets.token_urlsafe(32)
+            await db.password_resets.insert_one({
+                "id": str(uuid.uuid4()), "userId": user["id"], "tokenHash": _reset_hash(token),
+                "createdAt": now.isoformat(), "expiresAt": (now + timedelta(minutes=RESET_MINUTES)).isoformat(),
+                "usedAt": None,
+            })
+            link = f"{_app_url(request)}/reset-password?token={token}"
+            subject, html, text = mailer.reset_email(user.get("name", ""), link, RESET_MINUTES)
+            try:
+                await mailer.send(email, subject, html, text)
+            except Exception as exc:
+                logger.error(f"Password reset email failed: {exc}")
+                raise HTTPException(status_code=502, detail="We couldn't send the email right now. Please try again in a minute.")
+    return {"ok": True, "emailConfigured": configured}
+
+
+@api.get("/auth/reset-password/check")
+async def check_reset_link(token: str = Query(..., max_length=200)):
+    return {"valid": bool(await _valid_reset(token))}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetPasswordIn):
+    doc = await _valid_reset(body.token)
+    if not doc:
+        raise HTTPException(status_code=400, detail="This reset link has expired or was already used. Ask for a new one.")
+    # Claim the link atomically so it can only be used once.
+    claimed = await db.password_resets.update_one({"id": doc["id"], "usedAt": None}, {"$set": {"usedAt": now_iso()}})
+    if not claimed.modified_count:
+        raise HTTPException(status_code=400, detail="This reset link has expired or was already used. Ask for a new one.")
+    user = await db.users.find_one({"id": doc["userId"]})
+    if not user:
+        raise HTTPException(status_code=400, detail="This account no longer exists.")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.password), "updatedAt": now_iso()}})
+    # Any other links sent earlier stop working too.
+    await db.password_resets.update_many({"userId": user["id"], "usedAt": None}, {"$set": {"usedAt": now_iso()}})
+    return {"token": create_access_token(user["id"], user["email"]), "user": public_user(user)}
 
 
 @api.post("/auth/logout")
@@ -1258,6 +1344,7 @@ async def _ensure_auth_secret():
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
+    await db.password_resets.create_index("tokenHash")
     await db.conversations.create_index([("userId", 1), ("updatedAt", -1)])
     await db.conversations.create_index("shareId", sparse=True)
     await db.messages.create_index([("conversationId", 1), ("createdAt", 1)])

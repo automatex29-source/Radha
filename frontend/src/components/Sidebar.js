@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
@@ -12,7 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import MemoryDialog from "@/components/MemoryDialog";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
+  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
@@ -32,6 +31,12 @@ function groupByDate(convs) {
   });
   return groups;
 }
+
+const GROUP_ICONS = { Today: Sun, Yesterday: Moon, "Previous 7 Days": CalendarDays, Older: Archive };
+const GroupIcon = ({ label }) => {
+  const Icon = GROUP_ICONS[label] || CalendarDays;
+  return <Icon className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />;
+};
 
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel = "New conversation" }) {
   const { user, logout } = useAuth();
@@ -53,32 +58,33 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   };
 
   return (
-    <div className="flex h-full w-72 flex-col border-r border-border bg-sunken">
+    <div className="krish-glass flex h-full w-[19rem] flex-col border-r border-white/60 dark:border-border pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
       {/* Brand */}
-      <div className="flex items-center justify-between px-4 py-4">
+      <div className="flex items-center justify-between px-5 pb-4 pt-5">
         <div className="flex items-center gap-2.5">
-          <BrandMark className="h-8 w-8" />
+          <BrandMark className="h-10 w-10" />
           <div className="leading-none">
-            <p className="text-lg leading-none"><KrishWordmark /></p>
-            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">EmpireX</p>
+            <p className="text-2xl leading-none"><KrishWordmark /></p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">EmpireX</p>
           </div>
         </div>
-        <button onClick={onCollapse} data-testid="sidebar-toggle-button" className="text-muted-foreground hover:text-foreground lg:hidden">
-          <PanelLeftClose className="h-4 w-4" />
+        <button onClick={onCollapse} data-testid="sidebar-toggle-button" aria-label="Close" className="-mr-2 flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
+          <PanelLeftClose className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="px-3">
-        <Button onClick={onNew} data-testid="new-chat-button" className="w-full justify-start gap-2 font-semibold">
-          <Plus className="h-4 w-4" /> {newLabel}
-        </Button>
+      <div className="px-4">
+        <button onClick={onNew} data-testid="new-chat-button"
+          className="flex h-12 w-full items-center gap-2.5 rounded-full bg-gradient-to-r from-indigo-500 via-indigo-500 to-violet-500 px-5 text-[15px] font-semibold text-white shadow-[0_10px_30px_rgba(99,102,241,0.35)] transition-all hover:shadow-[0_14px_36px_rgba(99,102,241,0.45)] active:scale-[0.99]">
+          <Plus className="h-5 w-5" /> {newLabel}
+        </button>
       </div>
 
-      <div className="px-3 py-3">
+      <div className="px-4 py-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input data-testid="conversation-search-input" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search conversations" className="h-9 bg-card pl-9 text-sm" />
+            placeholder="Search conversations" className="h-11 rounded-full border-white/80 bg-white/80 pl-11 text-sm shadow-sm dark:border-border dark:bg-card" />
         </div>
       </div>
 
@@ -89,13 +95,15 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         )}
         {Object.entries(groups).map(([label, items]) =>
           items.length ? (
-            <div key={label} className="mb-3">
-              <p className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">{label}</p>
+            <div key={label} className="mb-4">
+              <p className="flex items-center gap-2 px-3 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/70">
+                <GroupIcon label={label} /> {label}
+              </p>
               {items.map((c) => (
                 <div key={c.id} data-testid={`conversation-item-${c.id}`}
                   onClick={() => editingId !== c.id && onSelect(c.id)}
-                  className={`group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                    activeId === c.id ? "bg-surface-strong text-foreground" : "text-muted-foreground hover:bg-surface hover:text-foreground"
+                  className={`group flex items-center gap-2.5 rounded-xl px-3 py-3 text-sm max-lg:text-[15px] lg:py-2 transition-colors ${
+                    activeId === c.id ? "bg-white text-foreground shadow-sm ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0" : "text-foreground/75 hover:bg-white/70 hover:text-foreground dark:text-muted-foreground dark:hover:bg-surface"
                   } cursor-pointer`}>
                   <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                   {editingId === c.id ? (
@@ -110,7 +118,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                   ) : (
                     <>
                       <span className="flex-1 truncate">{c.title}</span>
-                      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="flex shrink-0 items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 lg:gap-1">
                         <button data-testid={`rename-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); startRename(c); }} className="hover:text-primary">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
@@ -128,17 +136,18 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       </div>
 
       {/* User */}
-      <div className="border-t border-border p-3">
+      <div className="p-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button data-testid="user-profile-menu-button" className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-sm font-bold text-white">
+            <button data-testid="user-profile-menu-button" className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-base font-bold text-white">
                 {user?.name?.[0]?.toUpperCase() || "U"}
               </div>
               <div className="min-w-0 flex-1 leading-tight">
                 <p className="truncate text-sm font-semibold">{user?.name}</p>
                 <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
               </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

@@ -39,6 +39,12 @@ export function AuthProvider({ children }) {
     setUser(data.user);
   };
 
+  // Used after a password reset, which answers with a fresh session.
+  const startSession = (data) => {
+    setToken(data.token);
+    setUser(data.user);
+  };
+
   const logout = async () => {
     try {
       await api.post("/auth/logout");
@@ -50,7 +56,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, formatApiError }}>
+    <AuthContext.Provider value={{ user, login, register, logout, startSession, formatApiError }}>
       {children}
     </AuthContext.Provider>
   );

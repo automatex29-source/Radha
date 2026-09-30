@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Workflow, Plus, Loader2, Play, Webhook, Clock, Copy, Trash2, CheckCircle2, XCircle, MessageSquare, Pencil } from "lucide-react";
+import { Workflow, Plus, Loader2, Play, Webhook, Clock, Copy, Trash2, CheckCircle2, XCircle, MessageSquare, Pencil, ArrowLeft } from "lucide-react";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const EXAMPLES = [
@@ -29,6 +29,7 @@ export default function AutomationsPage() {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null); // form object or null
   const [models, setModels] = useState([]);
+  const [phoneDetail, setPhoneDetail] = useState(false); // phones show the list or one automation, not both
 
   const load = useCallback(async () => {
     try {
@@ -59,10 +60,10 @@ export default function AutomationsPage() {
   const current = items?.find((a) => a.id === selected);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
-      <div className="flex min-w-0 flex-1">
-        <div className="radha-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5">
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <div className={`radha-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5 max-md:max-w-none max-md:border-r-0 max-md:p-4 ${phoneDetail ? "max-md:hidden" : ""}`}>
           <div className="flex items-center justify-between">
             <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter">Automations</h1>
             <Button size="sm" onClick={() => setEditing(blank())} data-testid="new-automation" className="gap-1.5"><Plus className="h-4 w-4" /> New</Button>
@@ -83,7 +84,7 @@ export default function AutomationsPage() {
           ) : (
             <div className="mt-5 space-y-2">
               {items.map((a) => (
-                <div key={a.id} onClick={() => setSelected(a.id)} data-testid={`automation-${a.id}`}
+                <div key={a.id} onClick={() => { setSelected(a.id); setPhoneDetail(true); }} data-testid={`automation-${a.id}`}
                   className={`cursor-pointer rounded-xl border p-3.5 transition-colors ${a.id === selected ? "border-primary/60 bg-primary/5" : "border-border bg-card hover:border-primary/40"}`}>
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
@@ -102,8 +103,8 @@ export default function AutomationsPage() {
             </div>
           )}
         </div>
-        <div className="min-w-0 flex-1">
-          {current ? <AutomationDetail key={current.id} automation={current} onChanged={load}
+        <div className={`min-w-0 flex-1 ${phoneDetail ? "" : "max-md:hidden"}`}>
+          {current ? <AutomationDetail key={current.id} automation={current} onChanged={load} onBack={() => setPhoneDetail(false)}
             onEdit={() => setEditing({ ...current, schedule: { ...blank().schedule, ...current.schedule }, model: current.model || "" })} /> : (
             <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
               <Workflow className="h-10 w-10 text-primary" />
@@ -113,7 +114,7 @@ export default function AutomationsPage() {
         </div>
       </div>
       {editing && <AutomationDialog form={editing} models={models} onClose={() => setEditing(null)}
-        onSaved={(a) => { setEditing(null); setSelected(a.id); load(); }} />}
+        onSaved={(a) => { setEditing(null); setSelected(a.id); setPhoneDetail(true); load(); }} />}
     </div>
   );
 }
@@ -219,7 +220,7 @@ function AutomationDialog({ form: initial, models, onClose, onSaved }) {
   );
 }
 
-function AutomationDetail({ automation: a, onChanged, onEdit }) {
+function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
   const navigate = useNavigate();
   const [runs, setRuns] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -274,9 +275,12 @@ function AutomationDetail({ automation: a, onChanged, onEdit }) {
   const hookUrl = a.webhookUrl ? absoluteUrl(a.webhookUrl) : null;
   return (
     <div className="flex h-full">
-      <div className="radha-scroll min-w-0 flex-1 overflow-y-auto p-6" data-testid="automation-detail">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
+      <div className="radha-scroll min-w-0 flex-1 overflow-y-auto p-4 sm:p-6" data-testid="automation-detail">
+        <button onClick={onBack} className="mb-3 flex items-center gap-1.5 py-1 text-sm text-muted-foreground hover:text-foreground md:hidden" data-testid="automation-back">
+          <ArrowLeft className="h-4 w-4" /> All automations
+        </button>
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="min-w-0 flex-1 max-sm:basis-full">
             <h2 className="text-xl font-bold tracking-tight">{a.name}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{a.scheduleText}{a.enabled ? "" : " · paused"}</p>
           </div>
@@ -312,7 +316,7 @@ function AutomationDetail({ automation: a, onChanged, onEdit }) {
           <div className="mt-2 space-y-3" data-testid="run-list">
             {runs.map((r) => (
               <div key={r.id} className="rounded-xl border border-border bg-card p-4" data-testid={`run-${r.id}`}>
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   <StatusBadge status={r.status} />
                   <span className="text-muted-foreground">· {r.trigger} · {new Date(r.startedAt).toLocaleString()}</span>
                   <button onClick={() => navigate(`/?conversation=${r.conversationId}`)} className="ml-auto flex items-center gap-1 text-brand hover:underline">

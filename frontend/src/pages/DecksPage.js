@@ -164,10 +164,10 @@ export default function DecksPage() {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
           {step === "prompt" ? (
             <section className="mx-auto max-w-3xl text-center" data-testid="deck-create">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -239,12 +239,12 @@ export default function DecksPage() {
                       <span className="inline-flex items-center gap-1"><p.Icon className="h-3 w-3" /> {p.label}</span>
                     </Chip>
                   ))}
-                  <div className="ml-auto flex gap-2">
-                    <Button variant="outline" onClick={improve} disabled={busy || improving || prompt.trim().length < 2} className="gap-1.5" data-testid="deck-improve-button"
+                  <div className="flex w-full gap-2 max-sm:mt-1 sm:ml-auto sm:w-auto">
+                    <Button variant="outline" onClick={improve} disabled={busy || improving || prompt.trim().length < 2} className="gap-1.5 max-sm:flex-1" data-testid="deck-improve-button"
                       title="Turn a rough idea into a clear brief you can edit">
                       {improving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Improve prompt
                     </Button>
-                    <Button onClick={makeOutline} disabled={busy || !ready} className="gap-1.5" data-testid="deck-outline-button">
+                    <Button onClick={makeOutline} disabled={busy || !ready} className="gap-1.5 max-sm:flex-1" data-testid="deck-outline-button">
                       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Write outline
                     </Button>
                   </div>
