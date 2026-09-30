@@ -7,6 +7,7 @@ import { mediaUrl } from "@/lib/api";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
 import CodeProject from "@/components/CodeProject";
+import KrishWordmark from "@/components/KrishWordmark";
 
 function CodeBlock({ inline, className, children }) {
   const [copied, setCopied] = useState(false);
@@ -91,7 +92,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
       </div>
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
-          <span className="text-sm font-semibold tracking-tight">Krish AI</span>
+          <KrishWordmark className="text-[15px]" />
           {message.model && (
             <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand">
               {message.model}

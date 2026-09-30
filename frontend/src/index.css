@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,800&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -219,3 +219,7 @@
 .radha-prose table { width: 100%; border-collapse: collapse; margin: 0.7rem 0; font-size: 0.85rem; }
 .radha-prose th, .radha-prose td { border: 1px solid hsl(var(--border)); padding: 0.4rem 0.6rem; text-align: left; }
 .radha-prose th { background: hsl(var(--sunken)); }
+
+/* Krish AI wordmark: chunky Bricolage with a glowing "AI" */
+.krish-wordmark { font-family: 'Bricolage Grotesque', 'Plus Jakarta Sans', sans-serif; font-weight: 800; letter-spacing: -0.035em; white-space: nowrap; }
+.krish-wordmark-ai { background: linear-gradient(100deg, #6C6FFF 0%, #B26BFF 55%, #FF7FB8 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
