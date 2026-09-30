@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import ThemeToggle from "@/components/ThemeToggle";
 import { Eye, EyeOff, Loader2, Sparkles, ArrowRight, ShieldCheck, Database, Cpu } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
+import empirexLogo from "@/assets/empirex-logo.svg";
 
 const HERO = "https://images.unsplash.com/photo-1637946175559-22c4fe13fc54?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400";
 
@@ -50,7 +51,9 @@ export default function AuthPage() {
             </div>
             <div className="leading-none">
               <p className="text-2xl leading-none"><KrishWordmark /></p>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by EmpireX</p>
+              <p className="mt-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                by <img src={empirexLogo} alt="" className="h-4 w-4" /> EmpireX
+              </p>
             </div>
           </div>
 
@@ -68,7 +71,10 @@ export default function AuthPage() {
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} EmpireX · Krish AI</p>
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <img src={empirexLogo} alt="EmpireX logo" className="h-5 w-5" />
+            © {new Date().getFullYear()} EmpireX · Krish AI
+          </p>
         </div>
       </div>
 
