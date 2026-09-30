@@ -5,9 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import ThemeToggle from "@/components/ThemeToggle";
-import { Eye, EyeOff, Loader2, Sparkles, ArrowRight, ShieldCheck, Database, Cpu } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowRight, ShieldCheck, Database, Cpu } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 import empirexLogo from "@/assets/empirex-logo.svg";
+import BrandMark from "@/components/BrandMark";
 
 const HERO = "https://images.unsplash.com/photo-1637946175559-22c4fe13fc54?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400";
 
@@ -46,14 +47,10 @@ export default function AuthPage() {
         <div className="absolute inset-0 bg-gradient-to-tr from-background via-background/80 to-transparent" />
         <div className="relative z-10 flex h-full flex-col justify-between p-12">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-[0_0_30px_rgba(99,102,241,0.5)]">
-              <Sparkles className="h-5 w-5 text-white" />
-            </div>
+            <BrandMark className="h-9 w-9" />
             <div className="leading-none">
               <p className="text-2xl leading-none"><KrishWordmark /></p>
-              <p className="mt-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                by <img src={empirexLogo} alt="" className="h-4 w-4" /> EmpireX
-              </p>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by EmpireX</p>
             </div>
           </div>
 
@@ -83,9 +80,7 @@ export default function AuthPage() {
         <ThemeToggle className="absolute right-4 top-4" />
         <div className="w-full max-w-sm radha-fade-up">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-              <Sparkles className="h-5 w-5 text-white" />
-            </div>
+            <BrandMark className="h-9 w-9" />
             <p className="text-2xl leading-none"><KrishWordmark /></p>
           </div>
 

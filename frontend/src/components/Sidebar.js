@@ -12,9 +12,10 @@ import { useAuth } from "@/context/AuthContext";
 import MemoryDialog from "@/components/MemoryDialog";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, Sparkles, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
+  Plus, Search, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
+import BrandMark from "@/components/BrandMark";
 
 function groupByDate(convs) {
   const groups = { Today: [], Yesterday: [], "Previous 7 Days": [], Older: [] };
@@ -56,9 +57,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       {/* Brand */}
       <div className="flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-[0_0_20px_rgba(99,102,241,0.4)]">
-            <Sparkles className="h-4 w-4 text-white" />
-          </div>
+          <BrandMark className="h-8 w-8" />
           <div className="leading-none">
             <p className="text-lg leading-none"><KrishWordmark /></p>
             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">EmpireX</p>
