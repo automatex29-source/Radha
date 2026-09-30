@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import ThemeToggle from "@/components/ThemeToggle";
 import { Eye, EyeOff, Loader2, Sparkles, ArrowRight, ShieldCheck, Database, Cpu } from "lucide-react";
+import KrishWordmark from "@/components/KrishWordmark";
 
 const HERO = "https://images.unsplash.com/photo-1637946175559-22c4fe13fc54?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400";
 
@@ -48,7 +49,7 @@ export default function AuthPage() {
               <Sparkles className="h-5 w-5 text-white" />
             </div>
             <div className="leading-none">
-              <p className="text-lg font-extrabold tracking-tight">Krish AI</p>
+              <p className="text-2xl leading-none"><KrishWordmark /></p>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by EmpireX</p>
             </div>
           </div>
@@ -79,7 +80,7 @@ export default function AuthPage() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
-            <p className="text-lg font-extrabold tracking-tight">Krish AI</p>
+            <p className="text-2xl leading-none"><KrishWordmark /></p>
           </div>
 
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">

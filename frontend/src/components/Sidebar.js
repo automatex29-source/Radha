@@ -14,6 +14,7 @@ import { useTheme } from "next-themes";
 import {
   Plus, Search, Sparkles, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
 } from "lucide-react";
+import KrishWordmark from "@/components/KrishWordmark";
 
 function groupByDate(convs) {
   const groups = { Today: [], Yesterday: [], "Previous 7 Days": [], Older: [] };
@@ -59,7 +60,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <Sparkles className="h-4 w-4 text-white" />
           </div>
           <div className="leading-none">
-            <p className="text-sm font-extrabold tracking-tight">Krish AI</p>
+            <p className="text-lg leading-none"><KrishWordmark /></p>
             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">EmpireX</p>
           </div>
         </div>
