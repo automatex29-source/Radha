@@ -237,3 +237,34 @@ def test_import_url_reads_pages_and_rephrase_returns_brief(monkeypatch):
         assert brief["prompt"].startswith("Topic: Solar")
 
     asyncio.run(scenario())
+
+
+def test_ai_pictures_stop_after_repeated_failures(monkeypatch):
+    mongomock_motor = pytest.importorskip("mongomock_motor")
+    import deck_images
+
+    db = mongomock_motor.AsyncMongoMockClient()["t"]
+    decks.init(db, "test-model")
+    monkeypatch.setattr(deck_images, "enabled", lambda: True)
+    tries = []
+
+    async def broke_ai(*a, **k):
+        tries.append(1)
+        raise RuntimeError("HTTP 402: Insufficient balance")
+
+    async def fake_stock(slide, used, topic=""):
+        return {"url": f"https://img.test/{slide['id']}.jpg", "thumb": "", "credit": "Photo", "link": ""}
+
+    monkeypatch.setattr(deck_images, "make_ai", broke_ai)
+    monkeypatch.setattr(deck_images, "find_stock", fake_stock)
+    slides = [deck_render.normalize_slide({"layout": "image_right", "title": f"S{i}", "image_query": "sun"}) for i in range(5)]
+
+    async def scenario():
+        await db.decks.insert_one({"id": "d", "userId": "u", "title": "T", "theme": "aurora", "pictures": "ai",
+                                   "slides": slides, "status": "ready", "picturesPending": True, "updatedAt": decks._now()})
+        await decks.fill_pictures("d")
+        doc = await db.decks.find_one({"id": "d"})
+        assert all(s["image"]["url"].startswith("https://img.test/") for s in doc["slides"])
+        assert len(tries) == 2
+
+    asyncio.run(scenario())

@@ -214,6 +214,7 @@ async def fill_pictures(deck_id: str, only_ids: Optional[set] = None):
     mode = picture_mode(deck)
     topic = deck.get("title") or deck.get("prompt") or ""
     used = {s["image"]["url"] for s in deck["slides"] if s.get("image")}
+    ai_failures = 0  # after two failures (e.g. out of credit) the rest use photos instead of waiting again
     try:
         for slide in deck["slides"]:
             if mode == "none" or not deck_images.enabled():
@@ -221,10 +222,12 @@ async def fill_pictures(deck_id: str, only_ids: Optional[set] = None):
             if not needs_picture(slide) and not (only_ids and slide["id"] in only_ids and slide["layout"] in IMAGE_LAYOUTS):
                 continue
             img = None
-            if mode == "ai":
+            if mode == "ai" and ai_failures < 2:
                 try:
                     img = await deck_images.make_ai(db, deck["userId"], slide, topic)
+                    ai_failures = 0
                 except Exception as exc:
+                    ai_failures += 1
                     logger.info("AI picture failed, using a photo instead: %s", exc)
             if img is None:
                 img = await deck_images.find_stock(slide, used, topic)
