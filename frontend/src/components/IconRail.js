@@ -14,16 +14,14 @@ const ITEMS = [
 
 /** Side rail on tablets and desktops; a bottom tab bar on phones (unless mobileBar is false).
  *  The page container is a row that turns into a column on phones, so the bar sits last. */
-/** withSidebar: the page shows the chat sidebar (with its own logo) on wide screens,
- *  so the rail drops its logo there to avoid showing it twice. */
-export default function IconRail({ mobileBar = true, withSidebar = false }) {
+export default function IconRail({ mobileBar = true }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
   return (
     <>
       <div className="hidden h-full w-[68px] shrink-0 flex-col items-center border-r border-white/60 bg-white/35 py-5 backdrop-blur-xl dark:border-border dark:bg-background/40 md:flex">
-        <BrandMark className={`mb-6 h-9 w-9 ${withSidebar ? "lg:hidden" : ""}`} />
+        <BrandMark className="mb-6 h-9 w-9" />
         <nav className="flex flex-col gap-2.5">
           {ITEMS.map((it) => {
             const active = it.match(pathname);

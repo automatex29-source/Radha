@@ -14,7 +14,6 @@ import {
   Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
-import BrandMark from "@/components/BrandMark";
 
 function groupByDate(convs) {
   const groups = { Today: [], Yesterday: [], "Previous 7 Days": [], Older: [] };
@@ -61,8 +60,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
     <div className="krish-glass flex h-full w-[19rem] flex-col border-r border-white/60 dark:border-border pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
       {/* Brand */}
       <div className="flex items-center justify-between px-5 pb-4 pt-5">
-        <div className="flex items-center gap-2.5">
-          <BrandMark className="h-9 w-9" />
+        <div className="flex items-center">
           <div className="leading-none">
             <p className="text-xl leading-none"><KrishWordmark /></p>
             <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">EmpireX</p>

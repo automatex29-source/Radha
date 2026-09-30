@@ -418,7 +418,7 @@ export default function Workspace({ mode = null }) {
 
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
-      <IconRail withSidebar />
+      <IconRail />
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
