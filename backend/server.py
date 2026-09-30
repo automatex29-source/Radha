@@ -828,7 +828,8 @@ async def capabilities(user_id: str = Depends(current_user_id)):
     return {
         "agent": {m["id"]: agent_llm.configured(m["id"]) for m in AVAILABLE_MODELS},
         "tools": tool_registry.describe(),
-        "voice": media.openai_configured(),
+        "voice": media.transcription_available(),
+        "serverSpeech": media.openai_configured(),
         "video": any(t["name"] == "generate_video" and t["available"] for t in tool_registry.describe()),
         "imageGeneration": media.image_available(),
         "voices": media.TTS_VOICES,
@@ -908,14 +909,16 @@ async def preview_media(mid: str, user_id: str = Depends(current_user_id)):
 
 # ---------------------------------------------------------------------- voice
 @api.post("/audio/transcribe")
-async def transcribe_audio(file: UploadFile = File(...), user_id: str = Depends(current_user_id)):
+async def transcribe_audio(file: UploadFile = File(...), language: Optional[str] = Form(None),
+                           user_id: str = Depends(current_user_id)):
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
     try:
-        text = await media.transcribe(data, file.filename or "audio.webm")
+        lang = language if language in ("en", "hi") else None
+        text = await media.transcribe(data, file.filename or "audio.webm", lang)
     except media.MediaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:

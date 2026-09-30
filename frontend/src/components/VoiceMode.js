@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRecorder } from "@/hooks/useRecorder";
-import { transcribe, speak, stopSpeaking, speechText } from "@/lib/voice";
+import { transcribe, speak, stopSpeaking, speechText, VOICE_LANGS, getVoiceLang, setVoiceLang } from "@/lib/voice";
 import { X, Mic, Loader2, Volume2 } from "lucide-react";
 
 const LABELS = {
@@ -21,6 +21,7 @@ export default function VoiceMode({ onClose, onUtterance, voice }) {
   const [heard, setHeard] = useState("");
   const [reply, setReply] = useState("");
   const [error, setError] = useState("");
+  const [lang, setLang] = useState(getVoiceLang);
   const activeRef = useRef(true);
 
   const cycle = useCallback(async () => {
@@ -88,6 +89,15 @@ export default function VoiceMode({ onClose, onUtterance, voice }) {
           : <Mic className="h-12 w-12 text-white" />}
         {phase === "listening" && <span className="absolute inset-0 animate-ping rounded-full bg-primary/30" />}
       </button>
+
+      <div className="absolute left-5 top-5 flex rounded-full border border-border bg-card p-1 text-xs" data-testid="voice-mode-language">
+        {VOICE_LANGS.map((l) => (
+          <button key={l.id} onClick={() => { setVoiceLang(l.id); setLang(l.id); }}
+            className={`rounded-full px-3 py-1.5 ${lang === l.id ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"}`}>
+            {l.label}
+          </button>
+        ))}
+      </div>
 
       <p className="mt-8 text-sm font-medium text-foreground" data-testid="voice-mode-status">{LABELS[phase]}</p>
       {error && <p className="mt-2 max-w-md text-center text-xs text-destructive">{error}</p>}

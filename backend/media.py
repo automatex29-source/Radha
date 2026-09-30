@@ -1,7 +1,9 @@
 """Media: image generation, speech-to-text, text-to-speech, and the media store.
 
-Transcription/speech use the OpenAI API (OPENAI_API_KEY, optional
-OPENAI_BASE_URL for an OpenAI-compatible gateway). Images use OpenAI when that
+Transcription uses the OpenAI API (OPENAI_API_KEY, optional OPENAI_BASE_URL
+for an OpenAI-compatible gateway) or, without it, Groq's free Whisper
+(GROQ_API_KEY). Server speech uses OpenAI; without it the browser speaks
+replies itself. Images use OpenAI when that
 key is set and free providers (Pollinations, Hugging Face) otherwise. Media bytes live in the
 `media` collection, owned per user, and are served by GET /api/media/{id}.
 """
@@ -17,6 +19,8 @@ logger = logging.getLogger("radha.media")
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
 STT_MODEL = os.environ.get("STT_MODEL", "gpt-4o-mini-transcribe")
 TTS_MODEL = os.environ.get("TTS_MODEL", "gpt-4o-mini-tts")
+GROQ_STT_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 TTS_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]
 IMAGE_SIZES = {"1024x1024", "1536x1024", "1024x1536", "auto"}
 MAX_MEDIA_BYTES = 250 * 1024 * 1024  # high-quality video can be large
@@ -187,8 +191,21 @@ async def _openai_image(prompt: str, size: str = "1024x1024", quality: Optional[
         return r.content
 
 
-async def transcribe(data: bytes, filename: str) -> str:
-    resp = await _client().audio.transcriptions.create(model=STT_MODEL, file=(filename, data))
+def transcription_available() -> bool:
+    return openai_configured() or bool(os.environ.get("GROQ_API_KEY"))
+
+
+async def transcribe(data: bytes, filename: str, language: Optional[str] = None) -> str:
+    """Speech to text. `language` is an optional ISO-639-1 hint (e.g. "hi", "en")."""
+    extra = {"language": language} if language else {}
+    if openai_configured():
+        resp = await _client().audio.transcriptions.create(model=STT_MODEL, file=(filename, data), **extra)
+        return resp.text
+    if not os.environ.get("GROQ_API_KEY"):
+        raise MediaUnavailable("Set GROQ_API_KEY (free) or OPENAI_API_KEY on the backend to enable voice input.")
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=GROQ_BASE_URL)
+    resp = await client.audio.transcriptions.create(model=GROQ_STT_MODEL, file=(filename, data), **extra)
     return resp.text
 
 
