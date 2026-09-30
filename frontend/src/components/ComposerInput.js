@@ -108,7 +108,7 @@ export default function ComposerInput({
           disabled={disabled}
           rows={1}
           placeholder={rec.recording ? "Listening… tap the mic to finish" : placeholder || (agentMode && !narrowScreen() ? "Ask Krish AI anything: it can search the web, run code and make files…" : "Message Krish AI…")}
-          className="radha-scroll max-h-[200px] w-full resize-none bg-transparent px-3 py-2 text-[0.95rem] text-foreground placeholder:text-muted-foreground focus:outline-none"
+          className="radha-scroll max-h-[200px] w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
         <div className="flex items-center justify-between px-1 pt-1">
           <div className="flex items-center gap-1">

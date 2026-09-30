@@ -62,9 +62,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       {/* Brand */}
       <div className="flex items-center justify-between px-5 pb-4 pt-5">
         <div className="flex items-center gap-2.5">
-          <BrandMark className="h-10 w-10" />
+          <BrandMark className="h-9 w-9" />
           <div className="leading-none">
-            <p className="text-2xl leading-none"><KrishWordmark /></p>
+            <p className="text-xl leading-none"><KrishWordmark /></p>
             <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">EmpireX</p>
           </div>
         </div>
@@ -75,8 +75,8 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
 
       <div className="px-4">
         <button onClick={onNew} data-testid="new-chat-button"
-          className="flex h-12 w-full items-center gap-2.5 rounded-full bg-gradient-to-r from-indigo-500 via-indigo-500 to-violet-500 px-5 text-[15px] font-semibold text-white shadow-[0_10px_30px_rgba(99,102,241,0.35)] transition-all hover:shadow-[0_14px_36px_rgba(99,102,241,0.45)] active:scale-[0.99]">
-          <Plus className="h-5 w-5" /> {newLabel}
+          className="flex h-11 w-full items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-indigo-500 to-violet-500 px-5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(99,102,241,0.35)] transition-all hover:shadow-[0_14px_36px_rgba(99,102,241,0.45)] active:scale-[0.99]">
+          <Plus className="h-4 w-4" /> {newLabel}
         </button>
       </div>
 
@@ -84,7 +84,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <div className="relative">
           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input data-testid="conversation-search-input" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search conversations" className="h-11 rounded-full border-white/80 bg-white/80 pl-11 text-sm shadow-sm dark:border-border dark:bg-card" />
+            placeholder="Search conversations" className="h-10 rounded-full border-white/80 bg-white/80 pl-11 text-sm shadow-sm dark:border-border dark:bg-card" />
         </div>
       </div>
 
@@ -102,7 +102,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
               {items.map((c) => (
                 <div key={c.id} data-testid={`conversation-item-${c.id}`}
                   onClick={() => editingId !== c.id && onSelect(c.id)}
-                  className={`group flex items-center gap-2.5 rounded-xl px-3 py-3 text-sm max-lg:text-[15px] lg:py-2 transition-colors ${
+                  className={`group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm lg:py-1.5 lg:text-[13px] transition-colors ${
                     activeId === c.id ? "bg-white text-foreground shadow-sm ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0" : "text-foreground/75 hover:bg-white/70 hover:text-foreground dark:text-muted-foreground dark:hover:bg-surface"
                   } cursor-pointer`}>
                   <MessageSquare className="h-3.5 w-3.5 shrink-0" />
@@ -140,7 +140,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button data-testid="user-profile-menu-button" className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-base font-bold text-white">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-sm font-bold text-white">
                 {user?.name?.[0]?.toUpperCase() || "U"}
               </div>
               <div className="min-w-0 flex-1 leading-tight">

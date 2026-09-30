@@ -288,3 +288,7 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 .krish-tab-title::after { content: ""; position: absolute; left: 0; bottom: 0; width: 40px; height: 3px; border-radius: 3px; background: linear-gradient(90deg, #6366f1, #8b5cf6); }
 @media (max-width: 639px) { .krish-tab-title { padding-bottom: 0; } .krish-tab-title::after { display: none; } }
 .dark .km-glow { opacity: 0.18; }
+
+/* Slightly smaller overall scale on computers (everything in rem shrinks ~6%).
+   Phones keep 16px so text stays easy to read and fields don't zoom. */
+@media (min-width: 768px) { html { font-size: 15px; } }

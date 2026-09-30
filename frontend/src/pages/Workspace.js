@@ -447,7 +447,7 @@ export default function Workspace({ mode = null }) {
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <PanelLeft className="h-5 w-5" />
             </button>
-            <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight sm:text-[15px]">
+            <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight">
               {activeConv ? activeConv.title : counselling ? "Counsellor" : "New conversation"}
             </h1>
             {project && (
@@ -566,12 +566,12 @@ function StarterCard({ s, i, onPick, testid, hideOnPhone }) {
       <svg viewBox="0 0 200 80" preserveAspectRatio="none" aria-hidden="true" className={`pointer-events-none absolute -bottom-1 right-0 h-16 w-3/4 ${t.wave}`}>
         <path d="M0 80 C 60 70, 110 20, 200 10 L200 80 Z" fill="currentColor" />
       </svg>
-      <div className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:mb-3 sm:h-11 sm:w-11 ${t.icon}`}>
-        <s.icon className="h-5 w-5" />
+      <div className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:mb-2.5 sm:h-10 sm:w-10 ${t.icon}`}>
+        <s.icon className="h-[18px] w-[18px]" />
       </div>
       <div className="relative min-w-0 flex-1 sm:pr-6">
-        <p className="text-[15px] font-semibold leading-snug text-foreground sm:text-base">{s.title}</p>
-        {s.hint && <p className="mt-1 text-xs leading-snug text-muted-foreground max-sm:hidden sm:text-[13px]">{s.hint}</p>}
+        <p className="text-sm font-semibold leading-snug text-foreground sm:text-[15px]">{s.title}</p>
+        {s.hint && <p className="mt-1 text-xs leading-snug text-muted-foreground max-sm:hidden">{s.hint}</p>}
       </div>
       <ArrowRight className={`relative h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5 sm:absolute sm:right-5 sm:top-6 ${t.arrow}`} />
     </button>
@@ -584,19 +584,19 @@ function EmptyState({ onPick }) {
       <div className="radha-fade-up relative flex items-center gap-4 max-md:flex-col-reverse md:gap-10">
         <div className="relative min-w-0 flex-1 max-md:text-center">
           <Sparkle className="absolute -left-7 top-10 h-6 w-6 text-violet-500 max-md:hidden" />
-          <h2 className="text-[2rem] font-extrabold leading-[1.05] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+          <h2 className="text-[1.6rem] font-extrabold leading-[1.1] tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem]">
             How can<br className="max-md:hidden" /> <span className="krish-gradient-text">Krish AI</span> help today?
           </h2>
-          <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-muted-foreground max-sm:hidden md:text-base">
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground max-sm:hidden">
             A premium AI workspace by EmpireX. Ask anything, attach a document, or open a project. Everything is saved and reloadable.
           </p>
         </div>
         <div className="relative shrink-0">
-          <p className="krish-hand absolute -left-28 top-4 -rotate-12 text-[28px] text-indigo-500 max-lg:hidden dark:text-indigo-300">
+          <p className="krish-hand absolute -left-28 top-4 -rotate-12 text-2xl text-indigo-500 max-lg:hidden dark:text-indigo-300">
             Ideas<br /><span className="ml-5">to Impact</span>
             <svg viewBox="0 0 120 12" className="ml-4 mt-0.5 h-3 w-28" aria-hidden="true"><path d="M2 9 C 40 2, 80 2, 118 6" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" /></svg>
           </p>
-          <Mascot className="krish-float h-32 w-auto sm:h-44 md:h-52 lg:h-60" />
+          <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
       <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
@@ -621,10 +621,10 @@ function CounselEmptyState({ onPick }) {
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-pink-400 shadow-[0_10px_40px_rgba(244,114,182,0.35)] sm:mb-5 sm:h-16 sm:w-16">
           <HeartHandshake className="h-8 w-8 text-white" />
         </div>
-        <h2 className="text-[2rem] font-extrabold leading-tight tracking-tight text-foreground sm:text-5xl">
+        <h2 className="text-[1.6rem] font-extrabold leading-tight tracking-tight text-foreground sm:text-4xl">
           You are <span className="krish-gradient-text">not alone</span>
         </h2>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
           Share what's on your heart. Krish AI's Counsellor listens first, then guides you with Krishna's wisdom
           from the Bhagavad Gita and a gentle next step. Hindi or English, whatever feels easy.
         </p>
