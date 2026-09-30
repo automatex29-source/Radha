@@ -1,13 +1,14 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Sparkles, Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2 } from "lucide-react";
+import { Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
 import CodeProject from "@/components/CodeProject";
 import KrishWordmark from "@/components/KrishWordmark";
+import BrandMark from "@/components/BrandMark";
 
 function CodeBlock({ inline, className, children }) {
   const [copied, setCopied] = useState(false);
@@ -87,9 +88,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
 
   return (
     <div className="group flex gap-3 radha-fade-up" data-testid={`ai-message-item-${message.id}`}>
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary shadow-[0_0_20px_rgba(99,102,241,0.35)]">
-        <Sparkles className="h-4 w-4 text-white" />
-      </div>
+      <BrandMark className="mt-0.5 h-8 w-8 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
           <KrishWordmark className="text-[15px]" />

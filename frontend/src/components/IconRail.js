@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
-import { MessageSquare, FolderKanban, Sparkles, AppWindow, Workflow, Presentation, HeartHandshake } from "lucide-react";
+import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake } from "lucide-react";
+import BrandMark from "@/components/BrandMark";
 
 const ITEMS = [
   { icon: MessageSquare, label: "Chat", to: "/", match: (p) => p === "/" },
@@ -17,9 +18,7 @@ export default function IconRail() {
 
   return (
     <div className="flex h-full w-[60px] shrink-0 flex-col items-center border-r border-border bg-background py-4">
-      <div className="mb-6 flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-[0_0_20px_rgba(99,102,241,0.4)]">
-        <Sparkles className="h-5 w-5 text-white" />
-      </div>
+      <BrandMark className="mb-6 h-9 w-9" />
       <nav className="flex flex-col gap-2">
         {ITEMS.map((it) => {
           const active = it.match(pathname);
