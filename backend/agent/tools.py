@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import media
-from . import browser, documents, prompt_boost, sandbox, styles, video, web
+from . import browser, documents, prompt_boost, research, sandbox, styles, video, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -25,6 +25,7 @@ class ToolContext:
     conversation_id: Optional[str] = None
     app_id: Optional[str] = None
     focused: bool = False  # in an app, offer only the app tools (keeps prompts small for free models)
+    model: str = ""  # the chat model, for tools that call a model themselves (deep_research)
 
 
 @dataclass
@@ -217,6 +218,22 @@ async def _create_document(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Created {saved['name']}", media=[saved])
 
 
+async def _deep_research(ctx: ToolContext, args: dict) -> ToolOutput:
+    question = _require(args, "question")
+    result = await research.run(question, ctx.model or research.planner_model(""), focus=args.get("focus") or "")
+    fmt = "docx" if (args.get("format") or "").lower() == "docx" else "pdf"
+    body = result["markdown"]
+    data = documents.build_docx(body) if fmt == "docx" else documents.build_pdf(body)
+    saved = await _save_file(ctx, data, fmt, args.get("filename") or result["title"])
+    links = "\n".join(f"[{i}] {s['title']} - {s['url']}" for i, s in enumerate(result["sources"], 1))
+    return ToolOutput(
+        content=(f"Wrote the report {saved['name']} from {len(result['sources'])} sources; it is shown to the user "
+                 "with a download button. Give the user the key answer in 3-6 short lines with [n] citations and "
+                 f"say the full report is attached. Don't paste the whole report.\n\nReport summary:\n"
+                 f"{result['summary']}\n\nSources:\n{links}"),
+        summary=f"Researched {len(result['sources'])} sources, wrote {saved['name']}", media=[saved])
+
+
 async def _create_html(ctx: ToolContext, args: dict) -> ToolOutput:
     page = _require(args, "html")
     if "<html" not in page.lower():
@@ -404,6 +421,19 @@ def default_registry() -> ToolRegistry:
                 }, "required": ["path", "content"]}},
             }, "required": ["filename", "files"]},
             handler=_create_zip))
+        .register(Tool(
+            name="deep_research", label="Deep research",
+            description="Research a question in depth: runs several web searches, reads the best pages and writes a "
+                        "cited report (PDF, or Word) with summary, findings, comparison table and recommendation. Use "
+                        "it when the user asks for research, a report, a detailed comparison of tools, prices or "
+                        "options, or market/competitor analysis. For a quick fact use web_search instead.",
+            parameters={"type": "object", "properties": {
+                "question": {"type": "string", "description": "The full research question, with any constraints"},
+                "focus": {"type": "string", "description": "Optional: country, budget, audience or angle to focus on"},
+                "format": {"type": "string", "description": "pdf (default) or docx"},
+                "filename": {"type": "string", "description": "Short file name without extension"},
+            }, "required": ["question"]},
+            handler=_deep_research))
         .register(Tool(
             name="create_html", label="Create web page",
             description="Create a self-contained HTML page (inline CSS/JS; CDN scripts allowed) that the user can "
