@@ -1,13 +1,16 @@
 """Real text extraction from uploaded documents.
 
-No simulation: each format is parsed with a real library. Unsupported/binary
-formats (e.g. images) return empty text and produce zero chunks.
+No simulation: each format is parsed with a real library. Pictures and scanned
+PDFs are read with OCR (Tesseract) when it is installed; other binary formats
+return empty text and produce zero chunks.
 """
 import csv
 import io
 import json
 
 SUPPORTED_TEXT = {"txt", "md", "markdown", "json", "csv", "log"}
+IMAGE_EXTS = {"png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff"}
+OCR_MAX_PAGES = 15
 
 
 def extract_text(data: bytes, ext: str, content_type: str = "") -> str:
@@ -17,6 +20,8 @@ def extract_text(data: bytes, ext: str, content_type: str = "") -> str:
             return _pdf(data)
         if ext in ("docx",):
             return _docx(data)
+        if ext == "pptx":
+            return _pptx(data)
         if ext in ("xlsx", "xlsm"):
             return _xlsx(data)
         if ext == "csv":
@@ -25,6 +30,8 @@ def extract_text(data: bytes, ext: str, content_type: str = "") -> str:
             return _json(data)
         if ext in SUPPORTED_TEXT:
             return data.decode("utf-8", errors="replace")
+        if ext in IMAGE_EXTS:
+            return _ocr(data)
     except Exception as exc:  # extraction failures propagate as file error status
         raise RuntimeError(f"Failed to extract {ext}: {exc}")
     return ""  # images and other binaries: no text (vision handled later)
@@ -33,7 +40,24 @@ def extract_text(data: bytes, ext: str, content_type: str = "") -> str:
 def _pdf(data: bytes) -> str:
     from pypdf import PdfReader
     reader = PdfReader(io.BytesIO(data))
-    return "\n\n".join((page.extract_text() or "") for page in reader.pages)
+    text = "\n\n".join((page.extract_text() or "") for page in reader.pages)
+    if len(text.strip()) >= 20 * max(1, len(reader.pages)):
+        return text
+    # Little or no text layer: a scanned PDF. Read the page pictures with OCR.
+    scanned = []
+    for n, page in enumerate(reader.pages[:OCR_MAX_PAGES], 1):
+        try:
+            page_text = "\n".join(t for t in (_ocr(img.data) for img in page.images) if t)
+        except Exception:
+            page_text = ""
+        if page_text:
+            scanned.append(f"# Page {n}\n{page_text}")
+    return "\n\n".join(scanned) if len("".join(scanned)) > len(text.strip()) else text
+
+
+def _ocr(data: bytes) -> str:
+    from vision import ocr
+    return ocr(data)
 
 
 def _docx(data: bytes) -> str:
@@ -44,6 +68,21 @@ def _docx(data: bytes) -> str:
         for row in table.rows:
             parts.append(" | ".join(cell.text for cell in row.cells))
     return "\n".join(parts)
+
+
+def _pptx(data: bytes) -> str:
+    from pptx import Presentation
+    prs = Presentation(io.BytesIO(data))
+    out = []
+    for n, slide in enumerate(prs.slides, 1):
+        out.append(f"# Slide {n}")
+        for shape in slide.shapes:
+            if shape.has_text_frame and shape.text_frame.text.strip():
+                out.append(shape.text_frame.text)
+            if getattr(shape, "has_table", False) and shape.has_table:
+                for row in shape.table.rows:
+                    out.append(" | ".join(cell.text for cell in row.cells))
+    return "\n".join(out)
 
 
 def _xlsx(data: bytes) -> str:

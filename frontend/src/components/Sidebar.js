@@ -9,9 +9,10 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/context/AuthContext";
+import MemoryDialog from "@/components/MemoryDialog";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, Sparkles, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon,
+  Plus, Search, Sparkles, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
 } from "lucide-react";
 
 function groupByDate(convs) {
@@ -38,6 +39,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [deleteId, setDeleteId] = useState(null);
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   const filtered = conversations.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()));
   const groups = groupByDate(filtered);
@@ -142,6 +144,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           <DropdownMenuContent align="end" className="w-56">
             <div className="px-2 py-1.5 text-xs text-muted-foreground">Signed in as <span className="font-medium text-foreground">{user?.email}</span></div>
             <DropdownMenuSeparator />
+            <DropdownMenuItem data-testid="menu-memory" onClick={() => setMemoryOpen(true)}>
+              <Brain className="mr-2 h-4 w-4" /> Memory
+            </DropdownMenuItem>
             <DropdownMenuItem data-testid="menu-theme-toggle" onClick={() => setTheme(dark ? "light" : "dark")}>
               {dark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />} {dark ? "Light theme" : "Dark theme"}
             </DropdownMenuItem>
@@ -151,6 +156,8 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <MemoryDialog open={memoryOpen} onOpenChange={setMemoryOpen} />
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>

@@ -4,6 +4,10 @@ Runs fully on-box with no external API key. Vectors are stored in MongoDB and
 scored in Python — appropriate for the per-project chunk volumes in V1 and for
 a local MongoDB without Atlas Vector Search.
 """
+import asyncio
+import logging
+import re
+import time
 from functools import lru_cache
 from typing import List
 
@@ -13,8 +17,23 @@ MODEL_NAME = "BAAI/bge-small-en-v1.5"
 DIMENSIONS = 384
 
 
-@lru_cache(maxsize=1)
+_RETRY_AFTER = 600  # seconds to wait before trying to load a model that failed to load
+_failed_at = 0.0
+
+
 def _model():
+    global _failed_at
+    if _failed_at and time.monotonic() - _failed_at < _RETRY_AFTER:
+        raise RuntimeError("Embedding model unavailable")
+    try:
+        return _load()
+    except Exception:
+        _failed_at = time.monotonic()
+        raise
+
+
+@lru_cache(maxsize=1)
+def _load():
     from fastembed import TextEmbedding
     return TextEmbedding(model_name=MODEL_NAME)
 
@@ -38,6 +57,8 @@ def cosine_rank(query_vec: List[float], candidates: List[dict], top_k: int = 5, 
     q_norm = np.linalg.norm(q) or 1.0
     scored = []
     for c in candidates:
+        if not c.get("embedding"):
+            continue
         v = np.array(c["embedding"], dtype=np.float32)
         denom = (np.linalg.norm(v) or 1.0) * q_norm
         score = float(np.dot(q, v) / denom)
@@ -50,3 +71,34 @@ def cosine_rank(query_vec: List[float], candidates: List[dict], top_k: int = 5, 
         item["score"] = round(score, 4)
         out.append(item)
     return out
+
+
+_WORD = re.compile(r"\w{3,}", re.UNICODE)
+
+
+def keyword_rank(query: str, candidates: List[dict], top_k: int = 5):
+    """Fallback ranking by shared words, for when the embedding model is unavailable."""
+    words = {w.lower() for w in _WORD.findall(query)}
+    scored = []
+    for c in candidates:
+        text = c["text"].lower()
+        hits = sum(1 for w in words if w in text)
+        if hits:
+            scored.append((hits / max(1, len(words)), c))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [{**{k: v for k, v in c.items() if k != "embedding"}, "score": round(s, 4)} for s, c in scored[:top_k]]
+
+
+async def rank(query: str, candidates: List[dict], top_k: int = 5, threshold: float = 0.2):
+    """Chunks most related to the query: by meaning when possible, else by shared words."""
+    try:
+        qvec = await asyncio.to_thread(embed_query, query)
+        ranked = cosine_rank(qvec, candidates, top_k=top_k, threshold=threshold)
+    except Exception:
+        logging.getLogger("radha.embeddings").exception("Embedding the question failed; using keyword search")
+        ranked = []
+    if len(ranked) < top_k:
+        seen = {c["id"] for c in ranked}
+        extra = [c for c in candidates if c["id"] not in seen and not c.get("embedding")]
+        ranked += keyword_rank(query, extra, top_k - len(ranked))
+    return ranked

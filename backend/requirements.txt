@@ -139,3 +139,4 @@ fpdf2==2.8.8
 playwright==1.56.0
 python-pptx==1.0.2
 dulwich==1.2.15
+pytesseract==0.3.13

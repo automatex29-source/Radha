@@ -37,6 +37,13 @@ def configured(model: str) -> bool:
     return bool(gateway() or os.environ.get(_PROVIDER_KEYS[provider_for(model)]))
 
 
+def supports_images(model: str) -> bool:
+    """False for text-only models (Groq's gpt-oss and qwen); their images are sent as text instead."""
+    if gateway():
+        return True
+    return provider_for(model) != "groq" or "llama-4" in model or "vision" in model
+
+
 def missing_key_message(model: str) -> str:
     return (f"To use {model}, set {_PROVIDER_KEYS[provider_for(model)]} (or LLM_GATEWAY_URL) in your "
             ".env file and restart RADHA.")
