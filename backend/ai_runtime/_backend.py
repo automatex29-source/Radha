@@ -16,7 +16,7 @@ try:
 except ImportError:  # running outside Emergent
     EMERGENT_AVAILABLE = False
 
-_DEFAULT_SYSTEM = "You are RADHA, a premium AI assistant by A.utomateX."
+_DEFAULT_SYSTEM = "You are Krish AI, a premium AI assistant by EmpireX."
 
 
 def uses_emergent(api_key: str) -> bool:

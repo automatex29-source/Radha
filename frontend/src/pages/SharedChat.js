@@ -16,7 +16,7 @@ export default function SharedChat() {
 
   useEffect(() => {
     axios.get(`${API}/share/${encodeURIComponent(shareId)}`)
-      .then((r) => { setData(r.data); document.title = `${r.data.title} · RADHA`; })
+      .then((r) => { setData(r.data); document.title = `${r.data.title} · Krish AI`; })
       .catch((e) => setError(e?.response?.data?.detail || "Couldn't open this chat."));
   }, [shareId]);
 
@@ -25,11 +25,11 @@ export default function SharedChat() {
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/80 px-4 py-3 backdrop-blur-xl">
         <a href="/" className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary"><Sparkles className="h-4 w-4 text-white" /></div>
-          <span className="text-sm font-extrabold tracking-tight">RADHA</span>
+          <span className="text-sm font-extrabold tracking-tight">Krish AI</span>
         </a>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <a href="/" className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white">Try RADHA</a>
+          <a href="/" className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white">Try Krish AI</a>
         </div>
       </header>
 
@@ -59,7 +59,7 @@ export default function SharedChat() {
                 <div key={m.id} className="flex gap-3">
                   <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary"><Sparkles className="h-4 w-4 text-white" /></div>
                   <div className="min-w-0 flex-1">
-                    <p className="mb-1 text-sm font-semibold tracking-tight">RADHA</p>
+                    <p className="mb-1 text-sm font-semibold tracking-tight">Krish AI</p>
                     <div className="radha-prose min-w-0">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                     </div>

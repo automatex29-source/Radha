@@ -86,7 +86,7 @@ export default function CodeProject({ content, streaming }) {
               {big ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </button>
           </div>
-          {/* No allow-same-origin: the page can't touch RADHA's storage or session. */}
+          {/* No allow-same-origin: the page can't touch Krish AI's storage or session. */}
           <iframe key={reload} title={`${name} preview`} srcDoc={html} data-testid="code-project-iframe"
             sandbox="allow-scripts allow-forms allow-modals allow-popups"
             className={`block w-full border-0 ${big ? "h-[80vh]" : "h-[420px]"}`} />

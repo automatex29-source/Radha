@@ -46,7 +46,7 @@ def supports_images(model: str) -> bool:
 
 def missing_key_message(model: str) -> str:
     return (f"To use {model}, set {_PROVIDER_KEYS[provider_for(model)]} (or LLM_GATEWAY_URL) in your "
-            ".env file and restart RADHA.")
+            ".env file and restart Krish AI.")
 
 
 # Groq's free tier allows about 8,000 tokens per minute per request, counting the prompt AND max_tokens,

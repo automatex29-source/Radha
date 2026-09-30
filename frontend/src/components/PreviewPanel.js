@@ -157,7 +157,7 @@ export default function PreviewPanel({ item, onClose }) {
   } else if (data.type === "html") {
     body = tab === "code"
       ? <pre className="radha-scroll h-full overflow-auto p-4 font-mono text-xs text-brand-soft">{data.html}</pre>
-      // No allow-same-origin: the page runs scripts in an isolated origin with no access to RADHA.
+      // No allow-same-origin: the page runs scripts in an isolated origin with no access to Krish AI.
       : <iframe title={item.name} sandbox="allow-scripts allow-forms allow-modals allow-popups" className="h-full w-full bg-white"
           srcDoc={data.html} data-testid="preview-html" />;
   } else if (data.type === "markdown") {

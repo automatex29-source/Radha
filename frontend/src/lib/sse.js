@@ -13,7 +13,7 @@ export async function streamSSE(url, body, { signal, onText, onEvent } = {}) {
   });
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to reach RADHA");
+    throw new Error(err.detail || "Failed to reach Krish AI");
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

@@ -57,7 +57,7 @@ export default function Workspace() {
   const streamSourcesRef = useRef([]);
   const streamStepsRef = useRef([]);
 
-  // Chat always uses RADHA's tools (web search, code, files) whenever the model supports them; no mode switch.
+  // Chat always uses Krish AI's tools (web search, code, files) whenever the model supports them; no mode switch.
   const agentAvailable = !!(caps && model && caps.agent?.[model]);
   const voiceEnabled = !!caps?.voice;
   const speechEnabled = !!caps?.serverSpeech || browserSpeechAvailable();
@@ -179,10 +179,10 @@ export default function Workspace() {
       toast.error("Nothing to export yet");
       return;
     }
-    const title = activeConv?.title || "RADHA conversation";
-    const lines = [`# ${title}`, "", `_Exported from RADHA by A.utomateX_`, ""];
+    const title = activeConv?.title || "Krish AI conversation";
+    const lines = [`# ${title}`, "", `_Exported from Krish AI by EmpireX_`, ""];
     messages.forEach((m) => {
-      lines.push(m.role === "user" ? "## You" : `## RADHA${m.model ? ` (${m.model})` : ""}`);
+      lines.push(m.role === "user" ? "## You" : `## Krish AI${m.model ? ` (${m.model})` : ""}`);
       lines.push("", m.content, "");
     });
     const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
@@ -216,7 +216,7 @@ export default function Workspace() {
 
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Failed to reach RADHA");
+        throw new Error(err.detail || "Failed to reach Krish AI");
       }
 
       const reader = res.body.getReader();
@@ -531,9 +531,9 @@ function EmptyState({ onPick }) {
         <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)]">
           <Sparkles className="h-8 w-8 text-white" />
         </div>
-        <h2 className="radha-heading-gradient text-3xl font-extrabold tracking-tighter sm:text-4xl">How can RADHA help today?</h2>
+        <h2 className="radha-heading-gradient text-3xl font-extrabold tracking-tighter sm:text-4xl">How can Krish AI help today?</h2>
         <p className="mt-3 max-w-md text-sm text-muted-foreground">
-          A premium AI workspace by A.utomateX. Ask anything, attach a document, or open a project — everything is saved and reloadable.
+          A premium AI workspace by EmpireX. Ask anything, attach a document, or open a project — everything is saved and reloadable.
         </p>
       </div>
       <div className="radha-fade-up relative mt-9 grid w-full gap-3 sm:grid-cols-3" style={{ animationDelay: "0.1s" }}>

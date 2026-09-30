@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { toast } from "sonner";
 import { Brain, Loader2, Plus, Trash2 } from "lucide-react";
 
-/** What RADHA remembers about the user across chats: view, add, delete, turn learning on or off. */
+/** What Krish AI remembers about the user across chats: view, add, delete, turn learning on or off. */
 export default function MemoryDialog({ open, onOpenChange }) {
   const [items, setItems] = useState(null);
   const [auto, setAuto] = useState(true);
@@ -44,7 +44,7 @@ export default function MemoryDialog({ open, onOpenChange }) {
       await api.delete("/memory");
       setItems([]);
       setConfirmClear(false);
-      toast.success("RADHA forgot everything");
+      toast.success("Krish AI forgot everything");
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
@@ -59,7 +59,7 @@ export default function MemoryDialog({ open, onOpenChange }) {
       <DialogContent className="max-w-lg" data-testid="memory-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Brain className="h-4 w-4 text-primary" /> Memory</DialogTitle>
-          <DialogDescription>What RADHA remembers about you in every chat. Delete anything you don't want kept.</DialogDescription>
+          <DialogDescription>What Krish AI remembers about you in every chat. Delete anything you don't want kept.</DialogDescription>
         </DialogHeader>
 
         <label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2.5">
@@ -81,7 +81,7 @@ export default function MemoryDialog({ open, onOpenChange }) {
         <div className="radha-scroll max-h-72 space-y-2 overflow-y-auto">
           {items === null && <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>}
           {items?.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted-foreground">Nothing yet. Tell RADHA about yourself in a chat, or add a fact above.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">Nothing yet. Tell Krish AI about yourself in a chat, or add a fact above.</p>
           )}
           {items?.map((m) => (
             <div key={m.id} data-testid={`global-memory-item-${m.id}`} className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5">

@@ -2,7 +2,7 @@ import { useTheme } from "next-themes";
 import { Sun, Moon } from "lucide-react";
 
 // Sun/moon switch. The choice is remembered per browser; until the user picks,
-// RADHA follows the device's light/dark setting.
+// Krish AI follows the device's light/dark setting.
 export default function ThemeToggle({ className = "" }) {
   const { resolvedTheme, setTheme } = useTheme();
   const dark = resolvedTheme !== "light";

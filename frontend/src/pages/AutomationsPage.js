@@ -67,7 +67,7 @@ export default function AutomationsPage() {
             <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter">Automations</h1>
             <Button size="sm" onClick={() => setEditing(blank())} data-testid="new-automation" className="gap-1.5"><Plus className="h-4 w-4" /> New</Button>
           </div>
-          <p className="mt-1.5 text-sm text-muted-foreground">RADHA runs these agent tasks on a schedule or when a webhook fires — with search, code, files and every other tool.</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">Krish AI runs these agent tasks on a schedule or when a webhook fires — with search, code, files and every other tool.</p>
 
           {items === null ? <div className="mt-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : items.length === 0 ? (
             <div className="mt-6 space-y-2" data-testid="automation-examples">
@@ -155,7 +155,7 @@ function AutomationDialog({ form: initial, models, onClose, onSaved }) {
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{form.id ? "Edit automation" : "New automation"}</DialogTitle>
-          <DialogDescription>Write the task as you would ask RADHA in chat. It runs in agent mode with all tools.</DialogDescription>
+          <DialogDescription>Write the task as you would ask Krish AI in chat. It runs in agent mode with all tools.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">

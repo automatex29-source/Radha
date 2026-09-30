@@ -48,9 +48,9 @@ async def push(files: Dict[str, str], token: str, repo: str, message: str, priva
         created = False
         if r.status_code == 404:
             if owner.lower() != login.lower():
-                raise PushError(f"Repository {owner}/{name} doesn't exist, and RADHA can only create repositories in your own account.")
+                raise PushError(f"Repository {owner}/{name} doesn't exist, and Krish AI can only create repositories in your own account.")
             r = await gh.post("/user/repos", json={"name": name, "private": private, "auto_init": True,
-                                                   "description": "Built with RADHA"})
+                                                   "description": "Built with Krish AI"})
             if r.status_code != 201:
                 _raise(r, "create the repository")
             created = True

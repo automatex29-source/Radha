@@ -105,7 +105,7 @@ export default function DecksPage() {
               </div>
               <h1 className="radha-heading-gradient mt-4 text-3xl font-extrabold tracking-tighter sm:text-4xl">Presentations</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                Type a topic. RADHA writes the outline, designs the slides, and you download a real PowerPoint.
+                Type a topic. Krish AI writes the outline, designs the slides, and you download a real PowerPoint.
               </p>
               <div className="mt-6 rounded-2xl border border-border bg-card p-3 text-left shadow-sm">
                 <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} data-testid="deck-prompt"

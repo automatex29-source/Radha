@@ -20,7 +20,7 @@ import lxml.html
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "Mozilla/5.0 (compatible; RADHA-Agent/1.0; +https://automatex.ai)"
+USER_AGENT = "Mozilla/5.0 (compatible; KrishAI-Agent/1.0)"
 MAX_BYTES = 3 * 1024 * 1024
 MAX_TEXT = 15_000
 MAX_REDIRECTS = 5

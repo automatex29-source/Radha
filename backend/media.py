@@ -129,7 +129,7 @@ async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Opti
 
     w, h = _dims(size)
     params = {"width": w, "height": h, "seed": seed or random.randint(1, 2_000_000_000), "nologo": "true"}
-    headers = {"User-Agent": "RADHA/1.0"}
+    headers = {"User-Agent": "KrishAI/1.0"}
     if legacy:
         url = f"{LEGACY_POLLINATIONS}/{quote(prompt[:1500], safe='')}"
         params.update({"model": "flux", "enhance": "true", "private": "true"})

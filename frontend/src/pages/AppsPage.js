@@ -75,7 +75,7 @@ export default function AppsPage() {
             <div>
               <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter sm:text-3xl">Apps</h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                Describe an app and RADHA builds it — with live preview, tests, version history and one-click publishing.
+                Describe an app and Krish AI builds it — with live preview, tests, version history and one-click publishing.
               </p>
             </div>
             <Dialog open={open} onOpenChange={setOpen}>
@@ -128,7 +128,7 @@ export default function AppsPage() {
             <div className="mt-16 flex flex-col items-center text-center" data-testid="apps-empty">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-strong"><AppWindow className="h-7 w-7 text-primary" /></div>
               <p className="mt-4 font-semibold">No apps yet</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">Create one and ask RADHA for a to-do list, a dashboard, a game or a landing page.</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">Create one and ask Krish AI for a to-do list, a dashboard, a game or a landing page.</p>
             </div>
           ) : (
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

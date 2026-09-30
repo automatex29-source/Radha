@@ -187,7 +187,7 @@ async def _search_images(query: str) -> List[dict]:
     results: List[dict] = []
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True,
-                                     headers={"User-Agent": "RADHA/1.0 (presentation builder)"}) as client:
+                                     headers={"User-Agent": "KrishAI/1.0 (presentation builder)"}) as client:
             if os.environ.get("PEXELS_API_KEY"):
                 r = await client.get(f"https://api.pexels.com/v1/search?query={quote_plus(query)}"
                                      "&orientation=landscape&per_page=8",
@@ -251,7 +251,7 @@ def download_image(url: str) -> Optional[bytes]:
     """Fetch a photo for the .pptx, shrunk so the file stays small."""
     try:
         with httpx.stream("GET", url, timeout=12, follow_redirects=True,
-                          headers={"User-Agent": "RADHA/1.0 (presentation builder)"}) as r:
+                          headers={"User-Agent": "KrishAI/1.0 (presentation builder)"}) as r:
             r.raise_for_status()
             buf = bytearray()
             for chunk in r.iter_bytes():
@@ -441,7 +441,7 @@ async def owned_deck(deck_id: str, user_id: str) -> dict:
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(doc["updatedAt"])).total_seconds()
         if age > STALE_SECONDS:  # the server restarted mid-generation
             doc["status"] = "ready" if doc.get("slides") else "error"
-            doc["error"] = "Generation stopped before the end. Ask RADHA to add the missing slides."
+            doc["error"] = "Generation stopped before the end. Ask Krish AI to add the missing slides."
             await db.decks.update_one({"id": deck_id}, {"$set": {"status": doc["status"], "error": doc["error"]}})
     return doc
 

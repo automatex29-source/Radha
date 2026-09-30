@@ -1,4 +1,4 @@
-# RADHA — the AI workspace by A.utomateX
+# Krish AI, the AI workspace by EmpireX
 
 Chat with Claude, GPT and Gemini, plus agent tools (web search, browser, code
 execution), images and video, voice, Excel/PowerPoint/Word/PDF creation with

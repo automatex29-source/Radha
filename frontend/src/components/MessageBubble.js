@@ -91,7 +91,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
       </div>
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
-          <span className="text-sm font-semibold tracking-tight">RADHA</span>
+          <span className="text-sm font-semibold tracking-tight">Krish AI</span>
           {message.model && (
             <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand">
               {message.model}

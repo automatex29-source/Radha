@@ -52,11 +52,11 @@ db = client[os.environ.get("DB_NAME") or "radha"]
 # Emergent Universal Key (only used on Emergent). Elsewhere, set provider keys instead.
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
 AVAILABLE_MODELS = [
-    {"id": "claude-sonnet-4-6", "label": "RADHA Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
-    {"id": "claude-haiku-4-5-20251001", "label": "RADHA Swift", "provider": "anthropic", "description": "Fast · lightweight"},
-    {"id": "gpt-5.4", "label": "RADHA Vision", "provider": "openai", "description": "Versatile · OpenAI"},
-    {"id": "gemini-2.5-flash", "label": "RADHA Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
-    {"id": "openai/gpt-oss-120b", "label": "RADHA Open", "provider": "groq", "description": "Fast · Groq · free tier"},
+    {"id": "claude-sonnet-4-6", "label": "Krish Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
+    {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "provider": "anthropic", "description": "Fast · lightweight"},
+    {"id": "gpt-5.4", "label": "Krish Vision", "provider": "openai", "description": "Versatile · OpenAI"},
+    {"id": "gemini-2.5-flash", "label": "Krish Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
+    {"id": "openai/gpt-oss-120b", "label": "Krish Open", "provider": "groq", "description": "Fast · Groq · free tier"},
 ]
 
 # Default model: AI_MODEL if set, otherwise the first model whose provider key is configured.
@@ -81,7 +81,7 @@ apps.init(db)
 appdata.init(db)
 apps.register_tools(tool_registry)
 
-app = FastAPI(title="RADHA API")
+app = FastAPI(title="Krish AI API")
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
@@ -338,11 +338,11 @@ async def delete_conversation(conv_id: str, user_id: str = Depends(current_user_
 
 # ------------------------------------------------------------------- streaming
 SYSTEM_PROMPT = (
-    "You are RADHA, the flagship AI assistant built by A.utomateX. "
+    "You are Krish AI, the flagship AI assistant built by EmpireX. "
     "Answer first: put the direct answer in the first sentence, then add only what the user needs. "
     "Keep replies short and plain. No filler, no restating the question, no long lists of alternatives, "
     "no tables or code unless the user asks or they clearly help. Match the user's language. "
-    "RADHA can search the web: when live web results or rates are included below, answer from them, "
+    "Krish AI can search the web: when live web results or rates are included below, answer from them, "
     "give the number or fact directly, and name the source briefly. Never say you cannot browse or "
     "access live data. If a word looks like a misspelled currency, place or name, assume the closest match, "
     "say so in a few words (\"Assuming you meant INR\"), and answer. Never stop at \"I couldn't find it\" "
@@ -357,7 +357,7 @@ SYSTEM_PROMPT = (
     "away. Put each file in its own fenced code block whose info string is the language followed by the file name, "
     "for example ```html index.html and ```javascript app.js, and link them from index.html by those names. "
     "Say in one line what you built before "
-    "the files. RADHA shows the user a live preview, a Download ZIP button and an Open in App Builder button for "
+    "the files. Krish AI shows the user a live preview, a Download ZIP button and an Open in App Builder button for "
     "those files automatically. Never output base64, never pretend to attach or encode a ZIP or any other archive, "
     "and never tell the user to decode anything.\n\n" + apps.DESIGN_GUIDE
 )
@@ -1184,7 +1184,7 @@ def _sse_json(payload) -> str:
 
 @api.get("/")
 async def root():
-    return {"service": "RADHA", "company": "A.utomateX", "status": "ok"}
+    return {"service": "Krish AI", "company": "EmpireX", "status": "ok"}
 
 
 app.include_router(api)
@@ -1265,7 +1265,7 @@ async def startup():
             logger.error(f"Storage init failed: {exc}")
     else:
         logger.info("Storing uploaded files in MongoDB")
-    logger.info("RADHA backend ready")
+    logger.info("Krish AI backend ready")
 
 
 @app.on_event("shutdown")

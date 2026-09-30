@@ -135,7 +135,7 @@ async def _pollinations(prompt: str, seconds: int, portrait: bool) -> bytes:
 
     params = {"model": POLLINATIONS_VIDEO_MODEL, "duration": max(2, min(seconds, POLLINATIONS_VIDEO_SECONDS)),
               "aspectRatio": "9:16" if portrait else "16:9"}
-    headers = {"Authorization": f"Bearer {os.environ.get('POLLINATIONS_API_KEY', '')}", "User-Agent": "RADHA/1.0"}
+    headers = {"Authorization": f"Bearer {os.environ.get('POLLINATIONS_API_KEY', '')}", "User-Agent": "KrishAI/1.0"}
     async with httpx.AsyncClient(timeout=httpx.Timeout(TIMEOUT_SECONDS, connect=20.0), follow_redirects=True) as client:
         resp = await client.get(f"{media.POLLINATIONS_BASE}/video/{quote(prompt[:1500], safe='')}",
                                 params=params, headers=headers)

@@ -146,7 +146,7 @@ def build_deck_pptx(title: str, slides: List[dict], theme_id: str,
     prs = Presentation()
     prs.slide_width, prs.slide_height = px(W), px(H)
     prs.core_properties.title = title or "Presentation"
-    prs.core_properties.author = "RADHA"
+    prs.core_properties.author = "Krish AI"
     blank = prs.slide_layouts[6]
 
     def rect(s, x, y, w, h, color, radius=None, line=None):
