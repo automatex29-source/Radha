@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Eye, EyeOff, Loader2, Sparkles, KeyRound } from "lucide-react";
+import { Eye, EyeOff, Loader2, KeyRound } from "lucide-react";
+import BrandMark from "@/components/BrandMark";
 import KrishWordmark from "@/components/KrishWordmark";
 
 /** Opened from the emailed link: /reset-password?token=… */
@@ -48,9 +49,7 @@ export default function ResetPassword() {
       <div className="radha-orb -top-20 left-1/2 h-64 w-64 -translate-x-1/2 bg-indigo-600/25" />
       <div className="relative w-full max-w-sm radha-fade-up">
         <div className="mb-8 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary shadow-[0_0_30px_rgba(99,102,241,0.5)]">
-            <Sparkles className="h-6 w-6 text-white" />
-          </div>
+          <BrandMark className="h-11 w-11" />
           <p className="text-3xl leading-none"><KrishWordmark /></p>
         </div>
 

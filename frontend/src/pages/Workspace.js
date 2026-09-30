@@ -15,7 +15,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Sparkles, Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, FolderKanban, Link2, HeartHandshake, CloudRain, Compass, HeartCrack, Flame } from "lucide-react";
+import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, FolderKanban, Link2, HeartHandshake, CloudRain, Compass, HeartCrack, Flame } from "lucide-react";
+import BrandMark from "@/components/BrandMark";
 
 const STARTERS = [
   { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
@@ -550,9 +551,7 @@ function EmptyState({ onPick }) {
       <div className="radha-orb -top-10 left-1/4 h-56 w-56 bg-indigo-600/30" />
       <div className="radha-orb bottom-10 right-1/4 h-56 w-56 bg-cyan-500/20" />
       <div className="radha-fade-up relative flex flex-col items-center text-center">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)] sm:mb-5 sm:h-16 sm:w-16">
-          <Sparkles className="h-8 w-8 text-white" />
-        </div>
+        <BrandMark className="mb-4 h-14 w-14 sm:mb-5 sm:h-16 sm:w-16" />
         <h2 className="radha-heading-gradient text-[1.75rem] font-extrabold leading-tight tracking-tighter sm:text-4xl">How can Krish AI help today?</h2>
         <p className="mt-3 max-w-md text-sm text-muted-foreground max-sm:hidden">
           A premium AI workspace by EmpireX. Ask anything, attach a document, or open a project — everything is saved and reloadable.
