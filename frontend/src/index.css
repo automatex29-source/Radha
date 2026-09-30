@@ -292,3 +292,17 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 /* Slightly smaller overall scale on computers (everything in rem shrinks ~6%).
    Phones keep 16px so text stays easy to read and fields don't zoom. */
 @media (min-width: 768px) { html { font-size: 15px; } }
+
+/* The EmpireX name in the logo's gold. */
+.empirex-name {
+  font-family: 'Bricolage Grotesque', 'Plus Jakarta Sans', sans-serif;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  background: linear-gradient(100deg, #b08e57 0%, #d9bb7f 45%, #b08e57 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.dark .empirex-name { background-image: linear-gradient(100deg, #cdaf76 0%, #f0dcaa 45%, #cdaf76 100%); }

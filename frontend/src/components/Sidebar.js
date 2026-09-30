@@ -14,6 +14,7 @@ import {
   Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
+import EmpireXName from "@/components/EmpireXName";
 
 function groupByDate(convs) {
   const groups = { Today: [], Yesterday: [], "Previous 7 Days": [], Older: [] };
@@ -63,7 +64,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <div className="flex items-center">
           <div className="leading-none">
             <p className="text-xl leading-none"><KrishWordmark /></p>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">EmpireX</p>
+            <p className="mt-1.5"><EmpireXName /></p>
           </div>
         </div>
         <button onClick={onCollapse} data-testid="sidebar-toggle-button" aria-label="Close" className="-mr-2 flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
