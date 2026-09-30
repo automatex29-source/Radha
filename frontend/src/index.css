@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Caveat:wght@600&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -66,7 +66,7 @@
 @layer base {
   /* Light theme (Daylight Studio) */
   :root {
-    --background: 220 25% 98%;     /* #F8F9FB */
+    --background: 246 60% 98.5%;   /* #F8F7FE soft lavender white */
     --foreground: 224 32% 12%;     /* #151A28 */
     --card: 0 0% 100%;
     --card-foreground: 224 32% 12%;
@@ -248,3 +248,43 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 .krish-drawer-in { animation: krish-drawer-in 0.22s cubic-bezier(0.32, 0.72, 0, 1) both; }
 @keyframes krish-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .krish-fade-in { animation: krish-fade-in 0.2s ease both; }
+
+/* --- Refreshed look: soft pastel canvas, glass panels, colourful cards --- */
+.krish-canvas {
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(45% 40% at 22% 0%, rgba(214, 205, 255, 0.55), transparent 70%),
+    radial-gradient(40% 45% at 100% 8%, rgba(196, 226, 255, 0.55), transparent 70%),
+    radial-gradient(45% 45% at 0% 100%, rgba(255, 196, 222, 0.5), transparent 70%),
+    radial-gradient(40% 40% at 55% 105%, rgba(255, 219, 196, 0.45), transparent 70%),
+    radial-gradient(45% 45% at 100% 100%, rgba(203, 188, 255, 0.5), transparent 70%);
+}
+.dark .krish-canvas {
+  background-image:
+    radial-gradient(45% 40% at 22% 0%, rgba(99, 102, 241, 0.16), transparent 70%),
+    radial-gradient(40% 45% at 100% 8%, rgba(56, 189, 248, 0.08), transparent 70%),
+    radial-gradient(45% 45% at 0% 100%, rgba(236, 72, 153, 0.09), transparent 70%),
+    radial-gradient(45% 45% at 100% 100%, rgba(139, 92, 246, 0.12), transparent 70%);
+}
+.krish-glass { background: rgba(255, 255, 255, 0.55); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.dark .krish-glass { background: hsl(var(--sunken) / 0.72); }
+
+.krish-gradient-text {
+  background: linear-gradient(100deg, #5b5cf6 0%, #8b5cf6 50%, #a855f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.dark .krish-gradient-text { background-image: linear-gradient(100deg, #8b8dff 0%, #b28bff 55%, #f0abfc 100%); }
+.krish-hand { font-family: 'Caveat', 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive; font-weight: 600; line-height: 0.9; }
+
+@keyframes krish-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.krish-float { animation: krish-float 5s ease-in-out infinite; }
+@keyframes krish-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.krish-card { animation: krish-rise 0.45s ease both; }
+@media (prefers-reduced-motion: reduce) { .krish-float, .krish-card { animation: none; } }
+/* Title in the chat header with a short accent bar under it, like a selected tab. */
+.krish-tab-title { position: relative; padding-bottom: 6px; }
+.krish-tab-title::after { content: ""; position: absolute; left: 0; bottom: 0; width: 40px; height: 3px; border-radius: 3px; background: linear-gradient(90deg, #6366f1, #8b5cf6); }
+@media (max-width: 639px) { .krish-tab-title { padding-bottom: 0; } .krish-tab-title::after { display: none; } }
+.dark .km-glow { opacity: 0.18; }

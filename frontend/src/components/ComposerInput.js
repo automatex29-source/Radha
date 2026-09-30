@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film } from "lucide-react";
+import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
@@ -98,7 +98,7 @@ export default function ComposerInput({
           ))}
         </div>
       )}
-      <div className="rounded-2xl border border-border bg-card p-2 shadow-[0_8px_30px_rgba(15,23,42,0.08)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] transition-colors focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/40">
+      <div className="rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3">
         <textarea
           ref={ref}
           data-testid="message-composer-textarea"
@@ -152,22 +152,22 @@ export default function ComposerInput({
               </button>
             )}
             <span className="ml-1 hidden text-[11px] text-muted-foreground md:inline">
-              <span className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[10px]">Enter</span> to send
+              <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-primary/15 dark:text-brand">Enter</span> to send
             </span>
           </div>
           {streaming ? (
-            <Button size="icon" variant="secondary" onClick={onStop} data-testid="stop-generation-button" className="h-10 w-10 rounded-xl sm:h-9 sm:w-9">
+            <Button size="icon" variant="secondary" onClick={onStop} data-testid="stop-generation-button" className="h-11 w-11 rounded-full">
               <Square className="h-4 w-4" />
             </Button>
           ) : (
             <Button size="icon" onClick={onSend} disabled={!canSend} data-testid="send-message-button"
-              className="h-10 w-10 rounded-xl sm:h-9 sm:w-9 shadow-[0_0_20px_rgba(99,102,241,0.4)]">
+              className="h-11 w-11 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_8px_24px_rgba(99,102,241,0.45)] hover:from-indigo-500 hover:to-violet-600">
               <ArrowUp className="h-4 w-4" />
             </Button>
           )}
         </div>
       </div>
-      <p className="mt-2 text-center text-[11px] text-muted-foreground max-sm:hidden">Krish AI can make mistakes. Verify important information.</p>
+      <p className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground max-sm:hidden"><ShieldCheck className="h-3.5 w-3.5" /> Krish AI can make mistakes. Verify important information.</p>
     </div>
   );
 }

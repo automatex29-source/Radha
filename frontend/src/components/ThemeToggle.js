@@ -2,7 +2,7 @@ import { useTheme } from "next-themes";
 import { Sun, Moon } from "lucide-react";
 
 // Sun/moon switch. The choice is remembered per browser; until the user picks,
-// Krish AI follows the device's light/dark setting.
+// Krish AI starts in the light theme.
 export default function ThemeToggle({ className = "" }) {
   const { resolvedTheme, setTheme } = useTheme();
   const dark = resolvedTheme !== "light";

@@ -119,7 +119,7 @@ export default function ProjectView() {
 
   if (!data) {
     return (
-      <div className="flex h-dvh w-full bg-background max-md:flex-col">
+      <div className="flex h-dvh w-full krish-canvas max-md:flex-col">
         <IconRail />
         <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
       </div>
@@ -129,7 +129,7 @@ export default function ProjectView() {
   const { project, files, conversations, memories } = data;
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
+    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">

@@ -60,7 +60,7 @@ export default function AutomationsPage() {
   const current = items?.find((a) => a.id === selected);
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
+    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className={`radha-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5 max-md:max-w-none max-md:border-r-0 max-md:p-4 ${phoneDetail ? "max-md:hidden" : ""}`}>

@@ -453,7 +453,7 @@ export default function DeckEditor() {
   const pending = generating ? Math.max(0, (deck.total || 0) - slides.length) : 0;
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
+    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail mobileBar={false} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* top bar */}

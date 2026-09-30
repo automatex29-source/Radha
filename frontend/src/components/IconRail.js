@@ -20,16 +20,17 @@ export default function IconRail({ mobileBar = true }) {
 
   return (
     <>
-      <div className="hidden h-full w-[60px] shrink-0 flex-col items-center border-r border-border bg-background py-4 md:flex">
+      <div className="hidden h-full w-[68px] shrink-0 flex-col items-center border-r border-white/60 bg-white/35 py-5 backdrop-blur-xl dark:border-border dark:bg-background/40 md:flex">
         <BrandMark className="mb-6 h-9 w-9" />
-        <nav className="flex flex-col gap-2">
+        <nav className="flex flex-col gap-2.5">
           {ITEMS.map((it) => {
             const active = it.match(pathname);
             return (
               <button key={it.to} onClick={() => navigate(it.to)} data-testid={`nav-${it.label.toLowerCase()}`}
                 title={it.label}
-                className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
-                  active ? "bg-surface-strong text-primary" : "text-muted-foreground hover:bg-surface hover:text-foreground"
+                className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
+                  active ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
+                    : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
                 }`}>
                 <it.icon className="h-5 w-5" />
               </button>
@@ -41,7 +42,7 @@ export default function IconRail({ mobileBar = true }) {
 
       {mobileBar && (
         <nav data-testid="mobile-tab-bar"
-          className="krish-tabbar order-last flex shrink-0 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
+          className="krish-tabbar order-last flex shrink-0 border-t border-white/70 bg-white/80 dark:border-border dark:bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
           {ITEMS.map((it) => {
             const active = it.match(pathname);
             return (

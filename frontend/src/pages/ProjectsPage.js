@@ -48,7 +48,7 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
+    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">

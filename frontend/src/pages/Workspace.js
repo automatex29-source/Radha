@@ -15,24 +15,24 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, FolderKanban, Link2, HeartHandshake, CloudRain, Compass, HeartCrack, Flame } from "lucide-react";
-import BrandMark from "@/components/BrandMark";
+import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, HeartHandshake, CloudRain, Compass, HeartCrack, Flame } from "lucide-react";
+import Mascot from "@/components/Mascot";
 
 const STARTERS = [
-  { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
-  { icon: Braces, title: "Refactor an async Python service", prompt: "Show me how to structure a clean, testable async Python service that calls an external API with retries." },
-  { icon: Network, title: "Design a vector search pipeline", prompt: "Design a distributed vector search pipeline for semantic document retrieval. Cover ingestion, embedding, storage and querying." },
-  { icon: Megaphone, title: "Make a video ad", prompt: "Make a 15-second video ad for a coffee shop called Bean There, with a catchy headline and a call to action." },
-  { icon: Clapperboard, title: "Create an animated short", prompt: "Create a short 3D animation video about a little robot who finds a flower in a city." },
-  { icon: ImageIcon, title: "Design a movie poster", prompt: "Design a cinematic movie poster for a sci-fi film called Last Signal." },
+  { icon: FileText, tone: "indigo", hint: "Turn ideas into clear, concise summaries.", title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
+  { icon: Braces, tone: "sky", hint: "Clean, optimize and modernize your code.", title: "Refactor an async Python service", prompt: "Show me how to structure a clean, testable async Python service that calls an external API with retries." },
+  { icon: Network, tone: "emerald", hint: "Build fast, scalable search solutions.", title: "Design a vector search pipeline", prompt: "Design a distributed vector search pipeline for semantic document retrieval. Cover ingestion, embedding, storage and querying." },
+  { icon: Megaphone, tone: "pink", hint: "Turn your idea into a short, punchy video.", title: "Make a video ad", prompt: "Make a 15-second video ad for a coffee shop called Bean There, with a catchy headline and a call to action." },
+  { icon: Clapperboard, tone: "amber", hint: "Bring your story to life with animation.", title: "Create an animated short", prompt: "Create a short 3D animation video about a little robot who finds a flower in a city." },
+  { icon: ImageIcon, tone: "violet", hint: "Create stunning visuals for your next project.", title: "Design a movie poster", prompt: "Design a cinematic movie poster for a sci-fi film called Last Signal." },
 ];
 
 // The Counsellor tab: a listening companion guided by the Bhagavad Gita (see backend/counsellor.py).
 const COUNSEL_STARTERS = [
-  { icon: CloudRain, title: "I feel stressed and anxious", prompt: "I have been feeling very stressed and anxious lately and I don't know how to calm my mind." },
-  { icon: Compass, title: "I feel lost in life", prompt: "I feel lost and I don't know what I should do with my life." },
-  { icon: HeartCrack, title: "मेरा दिल टूट गया है", prompt: "मेरा दिल टूट गया है और मैं बहुत अकेला महसूस कर रहा हूँ।" },
-  { icon: Flame, title: "Help me stop overthinking results", prompt: "I keep worrying about results (exams, job, money). How can I stop overthinking?" },
+  { icon: CloudRain, tone: "sky", hint: "Calm the mind, one breath at a time.", title: "I feel stressed and anxious", prompt: "I have been feeling very stressed and anxious lately and I don't know how to calm my mind." },
+  { icon: Compass, tone: "emerald", hint: "Find your direction again.", title: "I feel lost in life", prompt: "I feel lost and I don't know what I should do with my life." },
+  { icon: HeartCrack, tone: "pink", hint: "बात करें, हम सुन रहे हैं।", title: "मेरा दिल टूट गया है", prompt: "मेरा दिल टूट गया है और मैं बहुत अकेला महसूस कर रहा हूँ।" },
+  { icon: Flame, tone: "amber", hint: "Focus on the action, not the fruit.", title: "Help me stop overthinking results", prompt: "I keep worrying about results (exams, job, money). How can I stop overthinking?" },
 ];
 
 export default function Workspace({ mode = null }) {
@@ -76,7 +76,9 @@ export default function Workspace({ mode = null }) {
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
-      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const el = scrollRef.current;
+      // The welcome screen starts at its top; a conversation follows its newest message.
+      if (el) el.scrollTop = el.querySelector("[data-testid=message-list-container]") ? el.scrollHeight : 0;
     });
   }, []);
 
@@ -415,7 +417,7 @@ export default function Workspace({ mode = null }) {
   };
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
+    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
@@ -427,8 +429,8 @@ export default function Workspace({ mode = null }) {
       {/* Mobile drawer */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden" data-testid="mobile-drawer">
-          <div className="krish-fade-in absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={() => setSidebarOpen(false)} />
-          <div className="krish-drawer-in absolute left-0 top-0 h-full max-w-[85vw] shadow-2xl">
+          <div className="krish-fade-in absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" onClick={() => setSidebarOpen(false)} />
+          <div className="krish-drawer-in krish-canvas absolute left-0 top-0 h-full max-w-[85vw] shadow-2xl">
             <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
               onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
           newLabel={counselling ? "New session" : undefined} onCollapse={() => setSidebarOpen(false)} />
@@ -439,13 +441,13 @@ export default function Workspace({ mode = null }) {
       {/* Main */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header data-testid="chat-workspace-header" className="z-40 flex items-center justify-between gap-2 border-b border-border bg-background/80 px-2 py-2 backdrop-blur-xl sm:px-4 sm:py-3">
+        <header data-testid="chat-workspace-header" className="z-40 flex items-center justify-between gap-2 px-2 py-2 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-1 sm:gap-3">
             <button onClick={() => setSidebarOpen(true)} data-testid="open-sidebar-button" aria-label="Show chats"
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <PanelLeft className="h-5 w-5" />
             </button>
-            <h1 data-testid="active-conversation-title" className="truncate text-sm font-semibold tracking-tight">
+            <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight sm:text-[15px]">
               {activeConv ? activeConv.title : counselling ? "Counsellor" : "New conversation"}
             </h1>
             {project && (
@@ -472,7 +474,7 @@ export default function Workspace({ mode = null }) {
             )}
             {!counselling && <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="model-selector-dropdown" className="gap-2 border-border bg-card">
+              <Button variant="outline" size="sm" data-testid="model-selector-dropdown" className="h-9 gap-2 rounded-full border-white/80 bg-white/80 px-3.5 shadow-sm backdrop-blur dark:border-border dark:bg-card sm:h-10">
                 <Cpu className="h-3.5 w-3.5 text-primary" />
                 <span className="max-w-[92px] truncate text-xs font-medium sm:max-w-none">{models.find((m) => m.id === model)?.label || "Model"}</span>
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -545,57 +547,91 @@ export default function Workspace({ mode = null }) {
   );
 }
 
+// Soft colour for each starter card. Full class names so Tailwind keeps them.
+const TONES = {
+  indigo: { card: "from-indigo-50/90 dark:from-indigo-500/10", icon: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300", wave: "text-indigo-200/70 dark:text-indigo-500/15", arrow: "text-indigo-500" },
+  sky: { card: "from-sky-50/90 dark:from-sky-500/10", icon: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300", wave: "text-sky-200/70 dark:text-sky-500/15", arrow: "text-sky-500" },
+  emerald: { card: "from-emerald-50/90 dark:from-emerald-500/10", icon: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300", wave: "text-emerald-200/70 dark:text-emerald-500/15", arrow: "text-emerald-500" },
+  pink: { card: "from-pink-50/90 dark:from-pink-500/10", icon: "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-300", wave: "text-pink-200/70 dark:text-pink-500/15", arrow: "text-pink-500" },
+  amber: { card: "from-amber-50/90 dark:from-amber-500/10", icon: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300", wave: "text-amber-200/70 dark:text-amber-500/15", arrow: "text-amber-500" },
+  violet: { card: "from-violet-50/90 dark:from-violet-500/10", icon: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300", wave: "text-violet-200/70 dark:text-violet-500/15", arrow: "text-violet-500" },
+};
+
+function StarterCard({ s, i, onPick, testid, hideOnPhone }) {
+  const t = TONES[s.tone] || TONES.indigo;
+  return (
+    <button data-testid={testid} onClick={() => onPick(s.prompt)}
+      className={`${hideOnPhone ? "max-sm:hidden " : ""}krish-card group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/70 bg-gradient-to-br ${t.card} to-white/70 p-3 text-left shadow-[0_8px_30px_rgba(99,102,241,0.08)] backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(99,102,241,0.16)] active:scale-[0.99] dark:border-white/5 dark:to-card/60 sm:block sm:px-5 sm:py-4`}
+      style={{ animationDelay: `${0.05 * i}s` }}>
+      <svg viewBox="0 0 200 80" preserveAspectRatio="none" aria-hidden="true" className={`pointer-events-none absolute -bottom-1 right-0 h-16 w-3/4 ${t.wave}`}>
+        <path d="M0 80 C 60 70, 110 20, 200 10 L200 80 Z" fill="currentColor" />
+      </svg>
+      <div className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:mb-3 sm:h-11 sm:w-11 ${t.icon}`}>
+        <s.icon className="h-5 w-5" />
+      </div>
+      <div className="relative min-w-0 flex-1 sm:pr-6">
+        <p className="text-[15px] font-semibold leading-snug text-foreground sm:text-base">{s.title}</p>
+        {s.hint && <p className="mt-1 text-xs leading-snug text-muted-foreground max-sm:hidden sm:text-[13px]">{s.hint}</p>}
+      </div>
+      <ArrowRight className={`relative h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5 sm:absolute sm:right-5 sm:top-6 ${t.arrow}`} />
+    </button>
+  );
+}
+
 function EmptyState({ onPick }) {
   return (
-    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center overflow-hidden px-4 py-6 sm:py-8">
-      <div className="radha-orb -top-10 left-1/4 h-56 w-56 bg-indigo-600/30" />
-      <div className="radha-orb bottom-10 right-1/4 h-56 w-56 bg-cyan-500/20" />
-      <div className="radha-fade-up relative flex flex-col items-center text-center">
-        <BrandMark className="mb-4 h-14 w-14 sm:mb-5 sm:h-16 sm:w-16" />
-        <h2 className="radha-heading-gradient text-[1.75rem] font-extrabold leading-tight tracking-tighter sm:text-4xl">How can Krish AI help today?</h2>
-        <p className="mt-3 max-w-md text-sm text-muted-foreground max-sm:hidden">
-          A premium AI workspace by EmpireX. Ask anything, attach a document, or open a project — everything is saved and reloadable.
-        </p>
+    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
+      <div className="radha-fade-up relative flex items-center gap-4 max-md:flex-col-reverse md:gap-10">
+        <div className="relative min-w-0 flex-1 max-md:text-center">
+          <Sparkle className="absolute -left-7 top-10 h-6 w-6 text-violet-500 max-md:hidden" />
+          <h2 className="text-[2rem] font-extrabold leading-[1.05] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+            How can<br className="max-md:hidden" /> <span className="krish-gradient-text">Krish AI</span> help today?
+          </h2>
+          <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-muted-foreground max-sm:hidden md:text-base">
+            A premium AI workspace by EmpireX. Ask anything, attach a document, or open a project. Everything is saved and reloadable.
+          </p>
+        </div>
+        <div className="relative shrink-0">
+          <p className="krish-hand absolute -left-28 top-4 -rotate-12 text-[28px] text-indigo-500 max-lg:hidden dark:text-indigo-300">
+            Ideas<br /><span className="ml-5">to Impact</span>
+            <svg viewBox="0 0 120 12" className="ml-4 mt-0.5 h-3 w-28" aria-hidden="true"><path d="M2 9 C 40 2, 80 2, 118 6" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" /></svg>
+          </p>
+          <Mascot className="krish-float h-32 w-auto sm:h-44 md:h-52 lg:h-60" />
+        </div>
       </div>
-      <div className="radha-fade-up relative mt-6 grid w-full gap-2.5 sm:mt-9 sm:gap-3 sm:grid-cols-3" style={{ animationDelay: "0.1s" }}>
+      <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
         {STARTERS.map((s, i) => (
-          <button key={i} data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
-            className={`${i >= 4 ? "max-sm:hidden " : ""}radha-lift group flex items-center gap-3 rounded-xl border border-border bg-card p-3 text-left hover:border-primary/50 active:scale-[0.99] sm:block sm:p-4`}>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-strong sm:mb-3 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
-              <s.icon className="h-4.5 w-4.5" />
-            </div>
-            <p className="text-sm font-medium leading-snug text-foreground">{s.title}</p>
-          </button>
+          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`prompt-starter-card-${i}`} hideOnPhone={i >= 4} />
         ))}
       </div>
     </div>
   );
 }
 
+const Sparkle = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+    <path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z" />
+  </svg>
+);
+
 function CounselEmptyState({ onPick }) {
   return (
-    <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center overflow-hidden px-4 py-6 sm:py-8">
-      <div className="radha-orb -top-10 left-1/4 h-56 w-56 bg-amber-500/20" />
-      <div className="radha-orb bottom-10 right-1/4 h-56 w-56 bg-sky-500/20" />
+    <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center px-4 py-6 sm:py-8">
       <div className="radha-fade-up relative flex flex-col items-center text-center">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)] sm:mb-5 sm:h-16 sm:w-16">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-pink-400 shadow-[0_10px_40px_rgba(244,114,182,0.35)] sm:mb-5 sm:h-16 sm:w-16">
           <HeartHandshake className="h-8 w-8 text-white" />
         </div>
-        <h2 className="radha-heading-gradient text-[1.75rem] font-extrabold leading-tight tracking-tighter sm:text-4xl">You are not alone</h2>
-        <p className="mt-3 max-w-md text-sm text-muted-foreground">
+        <h2 className="text-[2rem] font-extrabold leading-tight tracking-tight text-foreground sm:text-5xl">
+          You are <span className="krish-gradient-text">not alone</span>
+        </h2>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
           Share what's on your heart. Krish AI's Counsellor listens first, then guides you with Krishna's wisdom
           from the Bhagavad Gita and a gentle next step. Hindi or English, whatever feels easy.
         </p>
       </div>
-      <div className="radha-fade-up relative mt-6 grid w-full gap-2.5 sm:mt-9 sm:gap-3 sm:grid-cols-2" style={{ animationDelay: "0.1s" }}>
+      <div className="relative mt-6 grid w-full gap-2.5 sm:mt-9 sm:grid-cols-2 sm:gap-4">
         {COUNSEL_STARTERS.map((s, i) => (
-          <button key={i} data-testid={`counsellor-starter-${i}`} onClick={() => onPick(s.prompt)}
-            className="radha-lift group flex items-center gap-3 rounded-xl border border-border bg-card p-3 text-left hover:border-primary/50 active:scale-[0.99] sm:block sm:p-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-strong sm:mb-3 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
-              <s.icon className="h-4.5 w-4.5" />
-            </div>
-            <p className="text-sm font-medium leading-snug text-foreground">{s.title}</p>
-          </button>
+          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} />
         ))}
       </div>
     </div>

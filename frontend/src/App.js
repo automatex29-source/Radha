@@ -55,7 +55,7 @@ function Gate() {
 
 export default function App() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="radha-theme" disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem storageKey="radha-theme" disableTransitionOnChange>
       <div className="App">
         <AuthProvider>
           <BrowserRouter>
