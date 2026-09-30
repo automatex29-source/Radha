@@ -2,22 +2,31 @@
 
 Each run creates its own conversation (hidden from the main chat list), runs a
 full agent turn with every tool available, and records the outcome in
-`automation_runs`. The scheduler claims due automations atomically in MongoDB,
+`automation_runs`. Runs work as an autonomous agent: they plan first, get a
+larger step budget, can see what the previous run found (memory), and can
+deliver the result by email or to a Discord/Slack webhook. The scheduler claims due automations atomically in MongoDB,
 so several backend processes can run without double-firing.
 """
 import asyncio
+import ipaddress
 import json
 import logging
+import os
 import re
 import secrets
+import socket
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+import mailer
+from agent import prompt_boost
 from auth import get_user_id_from_request
 
 logger = logging.getLogger("radha.automations")
@@ -32,6 +41,30 @@ LOCK_MINUTES = 20
 MIN_INTERVAL_MINUTES = 15
 MAX_CONCURRENT_RUNS = 3
 MAX_PAYLOAD_CHARS = 20_000
+MAX_OUTPUT_CHARS = 12_000
+STEPS_NORMAL = 12
+STEPS_THOROUGH = 20
+MEMORY_CHARS = 1500
+MAX_RUN_STEPS_SHOWN = 30
+
+AGENT_INSTRUCTIONS = (
+    "You are running as an autonomous agent for a saved automation. Nobody is watching, so never ask questions: "
+    "make sensible assumptions and state them briefly. Work like this: 1) Start your answer with a short numbered "
+    "plan (2-6 steps). 2) Carry out every step with your tools (search, research, code, files, images...), "
+    "checking results as you go; if a tool fails, try another way. 3) End with '## Result': the finished answer, "
+    "the files you created, and one line 'Next time:' with anything worth checking on the next run."
+)
+
+PLAN_SYSTEM = (
+    "You turn a person's plain-language goal into a saved automation for an AI agent that has these tools: web "
+    "search, open web pages, deep research (cited PDF report), Python for calculations and charts, image and "
+    "video generation, and Excel, PowerPoint, Word/PDF, HTML, text and zip file creation. Reply with JSON only: "
+    '{"name": "short title, max 6 words", "task": "clear instructions for the agent: numbered steps naming the '
+    'tools to use, what to look for, the output format and which files to create", "schedule": {"type": '
+    '"daily|weekly|interval|manual", "time": "HH:MM", "weekday": 0-6 (0 = Monday), "minutes": 15-10080}}. '
+    "Pick the schedule the goal implies (daily at 08:00 when it says every day, manual when no timing is given). "
+    "Write the task in the same language as the goal, 60-180 words."
+)
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
 _scheduler_task: Optional[asyncio.Task] = None
@@ -145,17 +178,37 @@ async def start_run(auto: dict, trigger: str, payload: Optional[str] = None) -> 
     await db.messages.insert_one({"id": str(uuid.uuid4()), "conversationId": conv["id"], "role": "user",
                                   "content": prompt, "model": None, "createdAt": _iso(ts)})
     await db.automation_runs.insert_one(run)
-    task = asyncio.create_task(_execute(auto, run, conv))
+    task = asyncio.create_task(_execute(auto, run, conv, await _agent_context(auto)))
     _running.add(task)
     task.add_done_callback(_running.discard)
     return public_run(run)
 
 
-async def _execute(auto: dict, run: dict, conv: dict):
+async def _agent_context(auto: dict) -> str:
+    """The agent instructions, plus what the last successful run produced when memory is on."""
+    parts = [AGENT_INSTRUCTIONS]
+    if auto.get("memory", True):
+        last = await db.automation_runs.find_one({"automationId": auto["id"], "status": "succeeded"},
+                                                 sort=[("startedAt", -1)])
+        if last and last.get("output"):
+            parts.append(f"Memory: the previous run of this automation ({last.get('finishedAt') or last['startedAt']}) "
+                         f"ended with the result below. Build on it: skip items already reported, point out what "
+                         f"changed, and follow its 'Next time' notes.\n---\n{last['output'][-MEMORY_CHARS:]}\n---")
+    return "\n\n".join(parts)
+
+
+def _step_view(step: dict) -> dict:
+    return {"label": step.get("label") or step.get("name"), "name": step.get("name"),
+            "status": step.get("status"), "summary": (step.get("summary") or "")[:200]}
+
+
+async def _execute(auto: dict, run: dict, conv: dict, context: str = ""):
     error = None
+    steps = STEPS_THOROUGH if auto.get("thorough") else STEPS_NORMAL
     async with _semaphore:
         try:
-            async for chunk in run_turn(conv["id"], conv["model"], agent=True):
+            async for chunk in run_turn(conv["id"], conv["model"], agent=True, extra_system=context or None,
+                                        max_steps=steps):
                 if chunk.startswith("event: error"):
                     error = json.loads(chunk.split("data: ", 1)[1])
         except Exception as exc:
@@ -164,11 +217,92 @@ async def _execute(auto: dict, run: dict, conv: dict):
     reply = await db.messages.find_one({"conversationId": conv["id"], "role": "assistant"}, sort=[("createdAt", -1)])
     status = "failed" if error or not reply else "succeeded"
     update = {"status": status, "finishedAt": _iso(_now()), "error": error,
-              "output": (reply or {}).get("content", "")[:4000] or None,
-              "media": (reply or {}).get("media") or [], "steps": len((reply or {}).get("steps") or [])}
+              "output": (reply or {}).get("content", "")[:MAX_OUTPUT_CHARS] or None,
+              "media": (reply or {}).get("media") or [],
+              "steps": [_step_view(s) for s in ((reply or {}).get("steps") or [])[:MAX_RUN_STEPS_SHOWN]]}
+    update["delivery"] = await _deliver(auto, {**run, **update})
     await db.automation_runs.update_one({"id": run["id"]}, {"$set": update})
     await db.automations.update_one({"id": auto["id"]}, {"$set": {
         "lastRunAt": update["finishedAt"], "lastStatus": status, "lockedUntil": None}})
+
+
+# ----------------------------------------------------------------- delivery
+def _app_url() -> str:
+    return (os.environ.get("APP_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+
+
+def _summary_text(auto: dict, run: dict, limit: int) -> str:
+    head = f"{auto['name']}: {'finished' if run['status'] == 'succeeded' else 'failed'}"
+    body = run.get("output") or run.get("error") or ""
+    files = [m.get("name") for m in run.get("media") or [] if m.get("name")]
+    tail = (f"\n\nFiles: {', '.join(files)}" if files else "") + \
+        (f"\nOpen in Krish AI: {_app_url()}/automations" if _app_url() else "")
+    room = max(0, limit - len(head) - len(tail) - 4)
+    if len(body) > room:
+        body = body[:max(0, room - 1)] + "…"
+    return f"{head}\n\n{body}{tail}"
+
+
+async def check_notify_url(url: str) -> str:
+    """Accept only public https URLs, so a webhook can't be pointed at the server's own network."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("The notification URL must start with https://")
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(parsed.hostname, parsed.port or 443,
+                                                            type=socket.SOCK_STREAM)
+    except OSError:
+        raise ValueError("That notification URL's website can't be found")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise ValueError("The notification URL must be a public internet address")
+    return url
+
+
+async def _notify_webhook(url: str, auto: dict, run: dict):
+    await check_notify_url(url)
+    text = _summary_text(auto, run, 1900)  # Discord's message limit is 2000
+    payload = {"content": text, "text": text, "automation": auto["name"], "status": run["status"],
+               "output": run.get("output"), "error": run.get("error"),
+               "files": [m.get("name") for m in run.get("media") or [] if m.get("name")],
+               "finishedAt": run.get("finishedAt")}
+    async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+        r = await client.post(url, json=payload)
+    if r.status_code >= 400:
+        raise RuntimeError(f"The webhook answered {r.status_code}")
+
+
+async def _email(auto: dict, run: dict):
+    if not mailer.configured():
+        raise RuntimeError("Email isn't set up on the server (add BREVO_API_KEY and MAIL_FROM)")
+    user = await db.users.find_one({"id": auto["userId"]})
+    if not user or not user.get("email"):
+        raise RuntimeError("Your account has no email address")
+    text = _summary_text(auto, run, 20_000)
+    body = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    html = (f'<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;'
+            f'line-height:1.6;white-space:pre-wrap;color:#151a28">{body}</div>')
+    status = "result" if run["status"] == "succeeded" else "failed"
+    await mailer.send(user["email"], f"{auto['name']} ({status})", html, text)
+
+
+async def _deliver(auto: dict, run: dict) -> list:
+    """Send the run's result to the channels the automation asks for; never raises."""
+    jobs = []
+    if auto.get("emailResult"):
+        jobs.append(("email", _email(auto, run)))
+    if auto.get("notifyUrl"):
+        jobs.append(("webhook", _notify_webhook(auto["notifyUrl"], auto, run)))
+    out = []
+    for channel, job in jobs:
+        try:
+            await job
+            out.append({"channel": channel, "ok": True, "error": None})
+        except Exception as exc:
+            logger.info("Automation delivery by %s failed: %s", channel, exc)
+            out.append({"channel": channel, "ok": False, "error": str(exc)[:200]})
+    return out
 
 
 async def tick():
@@ -216,6 +350,10 @@ class AutomationIn(BaseModel):
     schedule: Schedule
     model: Optional[str] = None
     enabled: bool = True
+    memory: bool = True  # show the agent what the previous run produced
+    thorough: bool = False  # a bigger step budget for long multi-step jobs
+    emailResult: bool = False
+    notifyUrl: Optional[str] = Field(default=None, max_length=500)  # Discord/Slack/any webhook
 
 
 class AutomationPatch(BaseModel):
@@ -224,6 +362,14 @@ class AutomationPatch(BaseModel):
     schedule: Optional[Schedule] = None
     model: Optional[str] = None
     enabled: Optional[bool] = None
+    memory: Optional[bool] = None
+    thorough: Optional[bool] = None
+    emailResult: Optional[bool] = None
+    notifyUrl: Optional[str] = Field(default=None, max_length=500)  # "" removes it
+
+
+class PlanIn(BaseModel):
+    goal: str = Field(min_length=3, max_length=2000)
 
 
 def public_automation(doc: dict) -> dict:
@@ -232,6 +378,8 @@ def public_automation(doc: dict) -> dict:
         "scheduleText": describe_schedule(doc["schedule"]), "model": doc.get("model"), "enabled": doc["enabled"],
         "nextRunAt": doc.get("nextRunAt") if doc["enabled"] else None, "lastRunAt": doc.get("lastRunAt"),
         "lastStatus": doc.get("lastStatus"),
+        "memory": doc.get("memory", True), "thorough": bool(doc.get("thorough")),
+        "emailResult": bool(doc.get("emailResult")), "notifyUrl": doc.get("notifyUrl"),
         "webhookUrl": f"/api/hooks/{doc['webhookSecret']}" if doc.get("webhookSecret") else None,
         "createdAt": doc["createdAt"],
     }
@@ -239,7 +387,8 @@ def public_automation(doc: dict) -> dict:
 
 def public_run(doc: dict) -> dict:
     return {k: doc.get(k) for k in ("id", "automationId", "trigger", "status", "conversationId", "startedAt",
-                                    "finishedAt", "output", "error", "media", "steps")}
+                                    "finishedAt", "output", "error", "media", "steps",
+                                    "delivery")}
 
 
 async def _owned(aid: str, user_id: str) -> dict:
@@ -255,12 +404,64 @@ async def list_automations(user_id: str = Depends(current_user_id)):
     return [public_automation(d) for d in docs]
 
 
+async def _clean_notify_url(url: Optional[str]) -> Optional[str]:
+    url = (url or "").strip()
+    if not url:
+        return None
+    try:
+        return await check_notify_url(url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/automations/options")
+async def automation_options(user_id: str = Depends(current_user_id)):
+    return {"email": mailer.configured(), "planner": prompt_boost.available()}
+
+
+@router.post("/automations/plan")
+async def plan_automation(body: PlanIn, user_id: str = Depends(current_user_id)):
+    """Draft a name, detailed agent task and schedule from a plain-language goal."""
+    if not prompt_boost.available():
+        raise HTTPException(status_code=503, detail="No AI model is set up to write the plan")
+    try:
+        text = await prompt_boost.ask(PLAN_SYSTEM, f"Goal: {body.goal.strip()}")
+        match = re.search(r"\{.*\}", text, re.S)
+        data = json.loads(match.group(0) if match else text)
+    except Exception as exc:
+        logger.info("Automation plan failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Couldn't write the plan right now. Please try again.")
+    return parse_plan(data, body.goal)
+
+
+def parse_plan(data: dict, goal: str) -> dict:
+    """Keep only valid values from the model's plan, with safe defaults."""
+    name = str(data.get("name") or "").strip()[:100] or goal.strip()[:60]
+    task = str(data.get("task") or "").strip()[:8000] or goal.strip()
+    raw = data.get("schedule") if isinstance(data.get("schedule"), dict) else {}
+    kind = raw.get("type") if raw.get("type") in ("manual", "interval", "daily", "weekly") else "manual"
+    schedule = {"type": kind}
+    time = str(raw.get("time") or "08:00")
+    schedule["time"] = time if _TIME_RE.match(time) else "08:00"
+    try:
+        schedule["weekday"] = min(6, max(0, int(raw.get("weekday", 0))))
+    except (TypeError, ValueError):
+        schedule["weekday"] = 0
+    try:
+        schedule["minutes"] = min(60 * 24 * 7, max(MIN_INTERVAL_MINUTES, int(raw.get("minutes", 60))))
+    except (TypeError, ValueError):
+        schedule["minutes"] = 60
+    return {"name": name, "prompt": task, "schedule": schedule}
+
+
 @router.post("/automations")
 async def create_automation(body: AutomationIn, user_id: str = Depends(current_user_id)):
     schedule = validate_schedule(body.schedule).model_dump()
     now = _now()
     doc = {"id": str(uuid.uuid4()), "userId": user_id, "name": body.name.strip(), "prompt": body.prompt.strip(),
            "schedule": schedule, "model": body.model, "enabled": body.enabled,
+           "memory": body.memory, "thorough": body.thorough, "emailResult": body.emailResult,
+           "notifyUrl": await _clean_notify_url(body.notifyUrl),
            "nextRunAt": _iso(next_run(schedule, now)) if body.enabled else None,
            "lastRunAt": None, "lastStatus": None, "lockedUntil": None, "webhookSecret": None, "createdAt": _iso(now)}
     await db.automations.insert_one(doc)
@@ -276,6 +477,8 @@ async def get_automation(aid: str, user_id: str = Depends(current_user_id)):
 async def update_automation(aid: str, body: AutomationPatch, user_id: str = Depends(current_user_id)):
     doc = await _owned(aid, user_id)
     updates = body.model_dump(exclude_none=True)
+    if body.notifyUrl is not None:
+        updates["notifyUrl"] = await _clean_notify_url(body.notifyUrl)
     if body.schedule:
         updates["schedule"] = validate_schedule(body.schedule).model_dump()
     merged = {**doc, **updates}

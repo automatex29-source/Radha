@@ -19,12 +19,13 @@ SEQUENTIAL_TOOLS = {"browser"}
 
 
 async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContext,
-                    model: str, messages: List[dict], use_tools: bool = True) -> AsyncIterator[dict]:
+                    model: str, messages: List[dict], use_tools: bool = True,
+                    max_steps: int = MAX_STEPS) -> AsyncIterator[dict]:
     tools = registry.schemas(ctx) if use_tools else []
     labels = {t.name: (t.label or t.name) for t in registry.active(ctx)}
-    for step in range(MAX_STEPS):
+    for step in range(max_steps):
         # Last step: withhold tools so the model must answer with what it has.
-        step_tools = tools if step < MAX_STEPS - 1 else []
+        step_tools = tools if step < max_steps - 1 else []
         text, calls = [], []
         async for ev in stream_fn(model, messages, step_tools):
             if ev["type"] == "text":
