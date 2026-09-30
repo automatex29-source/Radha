@@ -625,8 +625,8 @@ function CounselEmptyState({ onPick }) {
           You are <span className="krish-gradient-text">not alone</span>
         </h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-          Share what's on your heart. Krish AI's Counsellor listens first, then guides you with Krishna's wisdom
-          from the Bhagavad Gita and a gentle next step. Hindi or English, whatever feels easy.
+          Share what's on your heart. Krish AI's Counsellor is a caring friend who listens, lifts you up and helps
+          you find a good next step, with Krishna's wisdom from the Gita when it helps. Hindi or English, whatever feels easy.
         </p>
       </div>
       <div className="relative mt-6 grid w-full gap-2.5 sm:mt-9 sm:grid-cols-2 sm:gap-4">
