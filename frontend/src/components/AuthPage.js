@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import ThemeToggle from "@/components/ThemeToggle";
 import { Eye, EyeOff, Loader2, ArrowRight, ShieldCheck, Database, Cpu } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
-import empirexLogo from "@/assets/empirex-logo.svg";
 import BrandMark from "@/components/BrandMark";
 
 const HERO = "https://images.unsplash.com/photo-1637946175559-22c4fe13fc54?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400";
@@ -68,10 +67,7 @@ export default function AuthPage() {
             </div>
           </div>
 
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <img src={empirexLogo} alt="EmpireX logo" className="h-5 w-5" />
-            © {new Date().getFullYear()} EmpireX · Krish AI
-          </p>
+          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} EmpireX · Krish AI</p>
         </div>
       </div>
 
