@@ -9,8 +9,9 @@ import re
 import uuid
 from typing import Callable, Dict, List, Optional
 
-LAYOUTS = ("cover", "section", "bullets", "image_right", "image_left", "cards", "stats", "steps", "quote",
+LAYOUTS = ("cover", "section", "bullets", "image_right", "image_left", "cards", "stats", "chart", "steps", "quote",
            "comparison", "closing")
+CHART_TYPES = ("bar", "line", "pie", "doughnut")
 IMAGE_LAYOUTS = ("cover", "image_right", "image_left")
 MAX_SLIDES = 30
 
@@ -88,16 +89,51 @@ def _column(v) -> dict:
 
 
 def _image(v) -> Optional[dict]:
-    if not isinstance(v, dict) or not str(v.get("url") or "").startswith("https://"):
+    url = str(v.get("url") or "") if isinstance(v, dict) else ""
+    if not (url.startswith("https://") or re.fullmatch(r"/api/media/[\w-]{8,64}", url)):
         return None
     return {k: str(v.get(k) or "")[:500] for k in ("url", "thumb", "credit", "link")}
+
+
+def _num(v) -> Optional[float]:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    m = re.search(r"-?\d+(?:\.\d+)?", str(v or "").replace(",", ""))
+    return float(m.group()) if m else None
+
+
+def _chart(v) -> Optional[dict]:
+    """{type, labels, series: [{name, values}]} with numbers only; None when there is no usable data."""
+    if not isinstance(v, dict):
+        return None
+    labels = [_s(x, 30) for x in (v.get("labels") or [])][:12]
+    series = []
+    for sr in (v.get("series") or [])[:4]:
+        if not isinstance(sr, dict):
+            continue
+        vals = [_num(x) for x in (sr.get("values") or [])][: len(labels)]
+        vals += [None] * (len(labels) - len(vals))
+        if any(x is not None for x in vals):
+            series.append({"name": _s(sr.get("name"), 40) or f"Series {len(series) + 1}",
+                           "values": [x if x is not None else 0.0 for x in vals]})
+    if not labels or not series:
+        return None
+    kind = str(v.get("type") or "bar").lower()
+    kind = {"column": "bar", "donut": "doughnut", "area": "line"}.get(kind, kind)
+    if kind not in CHART_TYPES:
+        kind = "bar"
+    if kind in ("pie", "doughnut"):
+        series = series[:1]
+    return {"type": kind, "labels": labels, "series": series, "unit": _s(v.get("unit"), 12)}
 
 
 def normalize_slide(raw: dict, keep_id: bool = True) -> dict:
     """Clamp a model- or user-written slide to the fields and lengths the layouts can draw."""
     raw = raw if isinstance(raw, dict) else {}
     layout = str(raw.get("layout") or "bullets").strip().lower().replace("-", "_").replace(" ", "_")
-    layout = {"title": "cover", "two_column": "comparison", "timeline": "steps", "image": "image_right",
+    layout = {"graph": "chart", "data": "chart", "title": "cover", "two_column": "comparison", "timeline": "steps", "image": "image_right",
               "end": "closing", "thanks": "closing"}.get(layout, layout)
     if layout not in LAYOUTS:
         layout = "bullets"
@@ -114,11 +150,24 @@ def normalize_slide(raw: dict, keep_id: bool = True) -> dict:
         "author": _s(raw.get("author"), 80),
         "left": _column(raw.get("left")),
         "right": _column(raw.get("right")),
+        "chart": _chart(raw.get("chart")),
         "image_query": _s(raw.get("image_query"), 60),
+        "image_prompt": _s(raw.get("image_prompt"), 400),
         "image": _image(raw.get("image")),
         "notes": str(raw.get("notes") or "")[:2000],
     }
     return slide
+
+
+def _mix(a: str, b: str, k: float) -> str:
+    ca, cb = [int(a[i:i + 2], 16) for i in (0, 2, 4)], [int(b[i:i + 2], 16) for i in (0, 2, 4)]
+    return "".join(f"{round(x + (y - x) * k):02X}" for x, y in zip(ca, cb))
+
+
+def palette(t: dict) -> List[str]:
+    """Chart colours from the theme: accents first, then blends that stay readable on the background."""
+    return [t["accent"], t["accent2"], _mix(t["accent"], t["title"], 0.45), _mix(t["accent2"], t["bg"], 0.35),
+            _mix(t["accent"], t["accent2"], 0.5), t["muted"], _mix(t["accent"], t["bg"], 0.5), _mix(t["accent2"], t["title"], 0.5)]
 
 
 # --------------------------------------------------------------- PowerPoint
@@ -243,6 +292,65 @@ def build_deck_pptx(title: str, slides: List[dict], theme_id: str,
             cut = (1 - img_ratio / box_ratio) / 2
             pic.crop_top = pic.crop_bottom = cut
 
+    def add_chart(s, ch, x, y, w, h):
+        from pptx.chart.data import CategoryChartData
+        from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION
+
+        data = CategoryChartData()
+        data.categories = ch["labels"]
+        for sr in ch["series"]:
+            data.add_series(sr["name"], sr["values"])
+        kind = {"bar": XL_CHART_TYPE.COLUMN_CLUSTERED, "line": XL_CHART_TYPE.LINE_MARKERS, "pie": XL_CHART_TYPE.PIE,
+                "doughnut": XL_CHART_TYPE.DOUGHNUT}[ch["type"]]
+        chart = s.shapes.add_chart(kind, px(x), px(y), px(w), px(h), data).chart
+        chart.has_title = False
+        chart.font.size = Pt(13)
+        chart.font.name = t["pptx_body"]
+        chart.font.color.rgb = rgb(t["text"])
+        colors = palette(t)
+        round_pie = ch["type"] in ("pie", "doughnut")
+        chart.has_legend = round_pie or len(ch["series"]) > 1
+        if chart.has_legend:
+            chart.legend.position = XL_LEGEND_POSITION.RIGHT if round_pie else XL_LEGEND_POSITION.TOP
+            chart.legend.include_in_layout = False
+            chart.legend.font.color.rgb = rgb(t["text"])
+            chart.legend.font.size = Pt(15)
+        plot = chart.plots[0]
+        if round_pie:
+            for i, point in enumerate(plot.series[0].points):
+                point.format.fill.solid()
+                point.format.fill.fore_color.rgb = rgb(colors[i % len(colors)])
+            plot.has_data_labels = True
+            plot.data_labels.show_percentage = True
+            plot.data_labels.show_value = False
+            plot.data_labels.number_format = "0%"
+            plot.data_labels.number_format_is_linked = False
+            plot.data_labels.font.color.rgb = rgb("FFFFFF")
+            plot.data_labels.font.bold = True
+        else:
+            for i, sr in enumerate(plot.series):
+                color = rgb(colors[i % len(colors)])
+                if ch["type"] == "line":
+                    sr.format.line.color.rgb = color
+                    sr.format.line.width = Pt(3)
+                    sr.smooth = False
+                else:
+                    sr.format.fill.solid()
+                    sr.format.fill.fore_color.rgb = color
+            if ch["type"] == "bar":
+                plot.gap_width = 60
+            if len(ch["series"]) == 1 and len(ch["labels"]) <= 8:
+                plot.has_data_labels = True
+                plot.data_labels.font.color.rgb = rgb(t["title"])
+                plot.data_labels.font.bold = True
+                if ch["type"] == "bar":
+                    plot.data_labels.position = XL_LABEL_POSITION.OUTSIDE_END
+            for axis in (chart.category_axis, chart.value_axis):
+                axis.format.line.color.rgb = rgb(t["muted"])
+                axis.tick_labels.font.color.rgb = rgb(t["muted"])
+            chart.value_axis.has_major_gridlines = True
+            chart.value_axis.major_gridlines.format.line.color.rgb = rgb(t["surface"])
+
     def heading(s, value, y=64, w=W - 2 * PAD, x=PAD):
         text(s, x, y, w, 70, value, _fit(44, value, 40), t["title"], bold=True, heading=True, anchor="bottom")
         rect(s, x, y + 86, 64, 6, t["accent"], radius=3)
@@ -318,6 +426,18 @@ def build_deck_pptx(title: str, slides: List[dict], theme_id: str,
                 text(s, cx + 28, 336, cw - 56, 70, it["title"], _fit(24, it["title"], 26), t["title"], bold=True,
                      heading=True)
                 text(s, cx + 28, 410, cw - 56, ch - 200, it["text"], _fit(18, it["text"], 110), t["text"])
+        elif lay == "chart":
+            heading(s, sl["title"])
+            ch = sl["chart"]
+            cw = 780 if sl["body"] else W - 2 * PAD
+            if ch:
+                add_chart(s, ch, PAD, 205, cw, 450)
+            else:
+                text(s, PAD, 300, cw, 80, "Add numbers to show a chart here.", 22, t["muted"])
+            if sl["body"]:
+                rect(s, PAD + cw + 40, 225, 4, 300, t["accent"], radius=2)
+                text(s, PAD + cw + 64, 220, W - 2 * PAD - cw - 64, 400, sl["body"], _fit(22, sl["body"], 180), t["text"],
+                     spacing=1.3)
         elif lay == "stats":
             heading(s, sl["title"])
             stats = sl["stats"]

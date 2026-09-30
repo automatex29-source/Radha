@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Presentation, Sparkles, Trash2, Wand2, X, ImageIcon } from "lucide-react";
+import {
+  ArrowLeft, Check, FileText, Image as ImageIcon, ImageOff, Link2, Loader2, Plus, Presentation, Sparkles, Trash2, Upload,
+  Wand2, X, Youtube, Type, ClipboardList,
+} from "lucide-react";
 import { ScaledSlide, findTheme, useDeckThemes } from "@/components/deck/Slide";
 
 const EXAMPLES = [
@@ -21,6 +24,20 @@ const DENSITIES = [
   { id: "medium", label: "Medium" },
   { id: "detailed", label: "Detailed" },
 ];
+
+const SOURCES = [
+  { id: "topic", label: "Topic", Icon: Type },
+  { id: "text", label: "Paste text", Icon: ClipboardList },
+  { id: "file", label: "File", Icon: FileText },
+  { id: "link", label: "Web link", Icon: Link2 },
+  { id: "video", label: "YouTube", Icon: Youtube },
+];
+const PICTURES = [
+  { id: "ai", label: "AI-made (best match)", Icon: Sparkles },
+  { id: "stock", label: "Stock photos", Icon: ImageIcon },
+  { id: "none", label: "None", Icon: ImageOff },
+];
+const words = (t) => (t || "").split(/\s+/).filter(Boolean).length;
 
 const PREVIEW_SLIDE = (title) => ({ layout: "cover", title: title || "Your title", subtitle: "A short, catchy subtitle" });
 
@@ -42,7 +59,13 @@ export default function DecksPage() {
   const [prompt, setPrompt] = useState("");
   const [count, setCount] = useState(8);
   const [density, setDensity] = useState("medium");
-  const [images, setImages] = useState(true);
+  const [pictures, setPictures] = useState("ai");
+  const [mode, setMode] = useState("topic");
+  const [pasted, setPasted] = useState("");
+  const [link, setLink] = useState("");
+  const [source, setSource] = useState(null); // {kind, title, text, note}
+  const [reading, setReading] = useState(false);
+  const [improving, setImproving] = useState(false);
   const [title, setTitle] = useState("");
   const [outline, setOutline] = useState([]);
   const [theme, setTheme] = useState("aurora");
@@ -52,11 +75,58 @@ export default function DecksPage() {
     api.get("/decks").then(({ data }) => setDecks(data)).catch((e) => { toast.error(formatApiError(e)); setDecks([]); });
   }, []);
 
+  // What the deck is built from: pasted text counts as a source too.
+  const activeSource = mode === "text" ? (pasted.trim() ? { kind: "text", title: "Pasted text", text: pasted } : null)
+    : mode === "topic" ? null : source;
+  const ready = mode === "topic" ? prompt.trim().length >= 2 : !!activeSource;
+  const brief = () => prompt.trim() || (activeSource ? `Make a clear presentation from this ${activeSource.kind === "video" ? "video" : activeSource.kind === "link" ? "web page" : "material"}: ${activeSource.title}` : "");
+
+  const readFile = async (file) => {
+    setReading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { data } = await api.post("/decks/import/file", form);
+      setSource(data);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const readLink = async () => {
+    if (link.trim().length < 4) return;
+    setReading(true);
+    try {
+      const { data } = await api.post("/decks/import/url", { url: link.trim() });
+      setSource(data);
+      if (data.note) toast(data.note);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const improve = async () => {
+    setImproving(true);
+    try {
+      const { data } = await api.post("/decks/rephrase", { prompt });
+      setPrompt(data.prompt);
+      toast.success("Prompt improved. Change anything you like.");
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setImproving(false);
+    }
+  };
+
   const makeOutline = async () => {
-    if (prompt.trim().length < 2) return;
+    if (!ready) return;
     setBusy(true);
     try {
-      const { data } = await api.post("/decks/outline", { prompt, slides: count });
+      const { data } = await api.post("/decks/outline", { prompt: brief(), slides: count, source: activeSource?.text || "" });
       setTitle(data.title);
       setOutline(data.outline.map((s) => ({ title: s.title, points: s.points.join("\n") })));
       setStep("outline");
@@ -73,7 +143,7 @@ export default function DecksPage() {
     if (!clean.length) return toast.error("Add at least one slide");
     setBusy(true);
     try {
-      const { data } = await api.post("/decks", { prompt, title, outline: clean, theme, density, images });
+      const { data } = await api.post("/decks", { prompt: brief(), title, outline: clean, theme, density, pictures, source: activeSource?.text || "" });
       navigate(`/decks/${data.id}`);
     } catch (e) {
       toast.error(formatApiError(e));
@@ -105,11 +175,55 @@ export default function DecksPage() {
               </div>
               <h1 className="radha-heading-gradient mt-4 text-3xl font-extrabold tracking-tighter sm:text-4xl">Presentations</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                Type a topic. Krish AI writes the outline, designs the slides, and you download a real PowerPoint.
+                Start from a topic, your notes, a file, a web page or a YouTube video. Krish AI writes the outline, designs the slides, and you download a real PowerPoint.
               </p>
               <div className="mt-6 rounded-2xl border border-border bg-card p-3 text-left shadow-sm">
-                <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} data-testid="deck-prompt"
-                  placeholder="What is your presentation about? You can also paste notes or an article."
+                <div className="mb-2 flex flex-wrap gap-1" data-testid="deck-source-tabs">
+                  {SOURCES.map(({ id, label, Icon }) => (
+                    <button key={id} type="button" onClick={() => { setMode(id); setSource(null); }} data-testid={`deck-source-${id}`}
+                      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        mode === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-surface hover:text-foreground"}`}>
+                      <Icon className="h-3.5 w-3.5" /> {label}
+                    </button>
+                  ))}
+                </div>
+                {mode === "text" && (
+                  <Textarea value={pasted} onChange={(e) => setPasted(e.target.value)} rows={6} data-testid="deck-paste"
+                    placeholder="Paste your notes, an article, a report or a table of numbers here."
+                    className="mb-2 resize-y bg-background text-sm" />
+                )}
+                {mode === "file" && (
+                  <label className="mb-2 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground hover:border-primary/40">
+                    {reading ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Upload className="h-5 w-5" />}
+                    <span>{reading ? "Reading the file…" : "Choose a PDF, Word, PowerPoint, Excel, CSV or picture"}</span>
+                    <input type="file" className="hidden" data-testid="deck-file" disabled={reading}
+                      accept=".pdf,.docx,.pptx,.xlsx,.xlsm,.csv,.json,.txt,.md,.png,.jpg,.jpeg,.webp"
+                      onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) readFile(f); }} />
+                  </label>
+                )}
+                {(mode === "link" || mode === "video") && (
+                  <div className="mb-2 flex gap-2">
+                    <Input value={link} onChange={(e) => setLink(e.target.value)} data-testid="deck-link"
+                      placeholder={mode === "video" ? "Paste a YouTube link" : "Paste a web page link"}
+                      onKeyDown={(e) => { if (e.key === "Enter") readLink(); }} className="bg-background" />
+                    <Button variant="outline" onClick={readLink} disabled={reading || link.trim().length < 4} data-testid="deck-read-link">
+                      {reading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Read"}
+                    </Button>
+                  </div>
+                )}
+                {source && (
+                  <div className="mb-2 flex items-start gap-2 rounded-lg bg-primary/10 px-3 py-2 text-xs" data-testid="deck-source-chip">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{source.title}</p>
+                      <p className="text-muted-foreground">{words(source.text).toLocaleString()} words read{source.note ? `. ${source.note}` : ""}</p>
+                    </div>
+                    <button onClick={() => setSource(null)} title="Remove"><X className="h-3.5 w-3.5" /></button>
+                  </div>
+                )}
+                <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={mode === "topic" ? 3 : 2} data-testid="deck-prompt"
+                  placeholder={mode === "topic" ? "What is your presentation about? Add who it's for and what to cover."
+                    : "Optional: what should the deck focus on? (e.g. 'for investors, 5 key findings')"}
                   onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) makeOutline(); }}
                   className="resize-none border-0 bg-transparent text-base shadow-none focus-visible:ring-0" />
                 <div className="flex flex-wrap items-center gap-2 border-t border-border px-1 pt-3">
@@ -117,17 +231,28 @@ export default function DecksPage() {
                   {COUNTS.map((n) => <Chip key={n} active={count === n} onClick={() => setCount(n)} testid={`deck-count-${n}`}>{n}</Chip>)}
                   <span className="ml-2 text-xs text-muted-foreground">Text</span>
                   {DENSITIES.map((d) => <Chip key={d.id} active={density === d.id} onClick={() => setDensity(d.id)}>{d.label}</Chip>)}
-                  <Chip active={images} onClick={() => setImages((v) => !v)}>
-                    <span className="inline-flex items-center gap-1"><ImageIcon className="h-3 w-3" /> Pictures {images ? "on" : "off"}</span>
-                  </Chip>
-                  <Button onClick={makeOutline} disabled={busy || prompt.trim().length < 2} className="ml-auto gap-1.5" data-testid="deck-outline-button">
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Write outline
-                  </Button>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 px-1">
+                  <span className="text-xs text-muted-foreground">Pictures</span>
+                  {PICTURES.map((p) => (
+                    <Chip key={p.id} active={pictures === p.id} onClick={() => setPictures(p.id)} testid={`deck-pictures-${p.id}`}>
+                      <span className="inline-flex items-center gap-1"><p.Icon className="h-3 w-3" /> {p.label}</span>
+                    </Chip>
+                  ))}
+                  <div className="ml-auto flex gap-2">
+                    <Button variant="outline" onClick={improve} disabled={busy || improving || prompt.trim().length < 2} className="gap-1.5" data-testid="deck-improve-button"
+                      title="Turn a rough idea into a clear brief you can edit">
+                      {improving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Improve prompt
+                    </Button>
+                    <Button onClick={makeOutline} disabled={busy || !ready} className="gap-1.5" data-testid="deck-outline-button">
+                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Write outline
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 {EXAMPLES.map((ex) => (
-                  <button key={ex} onClick={() => setPrompt(ex)}
+                  <button key={ex} onClick={() => { setMode("topic"); setPrompt(ex); }}
                     className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground">
                     {ex}
                   </button>

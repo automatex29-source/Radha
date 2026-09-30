@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, mediaUrl } from "@/lib/api";
 
 // Slides are drawn on a fixed 1280x720 canvas and scaled to fit, so the preview,
 // thumbnails, present mode, PDF print and the .pptx (same coordinates) all match.
@@ -45,14 +45,25 @@ export const findTheme = (themes, id) => themes.find((t) => t.id === id) || them
 
 const c = (hex) => `#${hex}`;
 
-function Picture({ image, theme, style }) {
-  const [src, setSrc] = useState(image?.url);
+// AI-made and uploaded pictures live in Krish AI's own storage and need the sign-in token.
+export const pictureSrc = (url) => (url && url.startsWith("/api/") ? mediaUrl(url) : url);
+
+function Picture({ image, theme, style, pending }) {
+  const [src, setSrc] = useState(pictureSrc(image?.url));
   const [failed, setFailed] = useState(false);
-  useEffect(() => { setSrc(image?.url); setFailed(false); }, [image?.url]);
+  useEffect(() => { setSrc(pictureSrc(image?.url)); setFailed(false); }, [image?.url]);
   const panel = {
     ...style,
     background: `linear-gradient(135deg, ${c(theme.accent)}, ${c(theme.accent2)})`,
   };
+  if (!image && pending) {
+    return (
+      <div style={{ ...panel, display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.85 }}>
+        <div className="animate-pulse" style={{ color: "#fff", fontSize: 26, fontWeight: 600, fontFamily: "Inter, sans-serif",
+          textShadow: "0 2px 8px rgba(0,0,0,.35)" }}>Making picture…</div>
+      </div>
+    );
+  }
   if (!image || failed) return <div style={panel} />;
   return (
     <div style={{ ...style, overflow: "hidden", background: c(theme.surface) }}>
@@ -74,7 +85,116 @@ function shrink(size, text, soft) {
   return Math.max(size * 0.62, size * Math.sqrt(soft / n));
 }
 
-export default function Slide({ slide, theme, index = 0, total = 1 }) {
+function mix(a, b, k) {
+  const pa = [0, 2, 4].map((i) => parseInt(a.slice(i, i + 2), 16));
+  const pb = [0, 2, 4].map((i) => parseInt(b.slice(i, i + 2), 16));
+  return pa.map((x, i) => Math.round(x + (pb[i] - x) * k).toString(16).padStart(2, "0")).join("");
+}
+
+/** Same colours as deck_render.palette, so the .pptx chart matches. */
+export const chartPalette = (t) => [t.accent, t.accent2, mix(t.accent, t.title, 0.45), mix(t.accent2, t.bg, 0.35),
+  mix(t.accent, t.accent2, 0.5), t.muted, mix(t.accent, t.bg, 0.5), mix(t.accent2, t.title, 0.5)];
+
+const fmt = (v) => (Math.abs(v) >= 1000 ? v.toLocaleString("en", { maximumFractionDigits: 0 }) : String(Math.round(v * 10) / 10));
+
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = 10 ** Math.floor(Math.log10(v));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v);
+}
+
+function Chart({ chart, theme: t, width, height }) {
+  const colors = chartPalette(t).map(c);
+  const font = { fontFamily: `'${t.html_body}', sans-serif` };
+  const { labels, series, type } = chart;
+  const multi = series.length > 1;
+  if (type === "pie" || type === "doughnut") {
+    const vals = series[0].values.map((v) => Math.max(0, v));
+    const sum = vals.reduce((a, b) => a + b, 0) || 1;
+    const r = Math.min(height, width * 0.55) / 2 - 10;
+    const cx = r + 10, cy = height / 2;
+    let angle = -Math.PI / 2;
+    const arcs = vals.map((v, i) => {
+      const a0 = angle, a1 = angle + (v / sum) * Math.PI * 2;
+      angle = a1;
+      const large = a1 - a0 > Math.PI ? 1 : 0;
+      const p = (a) => `${cx + r * Math.cos(a)} ${cy + r * Math.sin(a)}`;
+      const mid = (a0 + a1) / 2;
+      const d = vals.filter((x) => x > 0).length === 1 && v > 0
+        ? `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
+        : `M ${cx} ${cy} L ${p(a0)} A ${r} ${r} 0 ${large} 1 ${p(a1)} Z`;
+      return { d, color: colors[i % colors.length], pct: Math.round((v / sum) * 100), lx: cx + r * 0.68 * Math.cos(mid), ly: cy + r * 0.68 * Math.sin(mid) };
+    });
+    return (
+      <svg width={width} height={height} style={font}>
+        {arcs.map((a, i) => <path key={i} d={a.d} fill={a.color} stroke={c(t.bg)} strokeWidth={3} />)}
+        {type === "doughnut" && <circle cx={cx} cy={cy} r={r * 0.55} fill={c(t.bg)} />}
+        {arcs.map((a, i) => a.pct >= 5 && (
+          <text key={i} x={type === "doughnut" ? cx + (a.lx - cx) * 1.15 : a.lx} y={(type === "doughnut" ? cy + (a.ly - cy) * 1.15 : a.ly) + 7}
+            textAnchor="middle" fontSize={20} fontWeight={700} fill="#fff">{a.pct}%</text>
+        ))}
+        {labels.map((l, i) => (
+          <g key={i} transform={`translate(${2 * r + 50}, ${cy - (labels.length * 38) / 2 + i * 38})`}>
+            <rect width={18} height={18} rx={4} fill={colors[i % colors.length]} y={2} />
+            <text x={30} y={17} fontSize={20} fill={c(t.text)}>{l}</text>
+          </g>
+        ))}
+      </svg>
+    );
+  }
+  const top = multi ? 44 : 20, left = 70, bottom = 50;
+  const w = width - left - 10, h = height - top - bottom;
+  const all = series.flatMap((sr) => sr.values);
+  const max = niceMax(Math.max(...all, 0));
+  const min = Math.min(0, ...all);
+  const y = (v) => top + h - ((v - min) / (max - min || 1)) * h;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((k) => min + (max - min) * k);
+  const band = w / labels.length;
+  return (
+    <svg width={width} height={height} style={font}>
+      {multi && series.map((sr, i) => (
+        <g key={i} transform={`translate(${left + i * 180}, 6)`}>
+          <rect width={16} height={16} rx={4} fill={colors[i % colors.length]} y={2} />
+          <text x={24} y={16} fontSize={17} fill={c(t.text)}>{sr.name}</text>
+        </g>
+      ))}
+      {ticks.map((v, i) => (
+        <g key={i}>
+          <line x1={left} x2={left + w} y1={y(v)} y2={y(v)} stroke={c(t.muted)} strokeOpacity={0.25} />
+          <text x={left - 12} y={y(v) + 6} textAnchor="end" fontSize={16} fill={c(t.muted)}>{fmt(v)}</text>
+        </g>
+      ))}
+      {labels.map((l, i) => (
+        <text key={i} x={left + band * (i + 0.5)} y={top + h + 32} textAnchor="middle" fontSize={17} fill={c(t.muted)}>{l}</text>
+      ))}
+      {type === "line" ? series.map((sr, si) => {
+        const pts = sr.values.map((v, i) => [left + band * (i + 0.5), y(v)]);
+        return (
+          <g key={si}>
+            <polyline points={pts.map((p) => p.join(",")).join(" ")} fill="none" stroke={colors[si % colors.length]} strokeWidth={5} strokeLinejoin="round" />
+            {pts.map(([px, py], i) => <circle key={i} cx={px} cy={py} r={7} fill={colors[si % colors.length]} stroke={c(t.bg)} strokeWidth={3} />)}
+            {!multi && pts.map(([px, py], i) => <text key={`t${i}`} x={px} y={py - 16} textAnchor="middle" fontSize={18} fontWeight={700} fill={c(t.title)}>{fmt(sr.values[i])}</text>)}
+          </g>
+        );
+      }) : labels.map((_, i) => {
+        const gw = band * 0.7, bw = gw / series.length;
+        return series.map((sr, si) => {
+          const v = sr.values[i];
+          const x = left + band * i + (band - gw) / 2 + si * bw;
+          const y0 = y(Math.max(0, v)), y1 = y(Math.min(0, v));
+          return (
+            <g key={`${i}-${si}`}>
+              <rect x={x + 3} y={y0} width={bw - 6} height={Math.max(1, y1 - y0)} rx={6} fill={colors[si % colors.length]} />
+              {!multi && <text x={x + bw / 2} y={y0 - 10} textAnchor="middle" fontSize={18} fontWeight={700} fill={c(t.title)}>{fmt(v)}</text>}
+            </g>
+          );
+        });
+      })}
+    </svg>
+  );
+}
+
+export default function Slide({ slide, theme, index = 0, total = 1, pending = false }) {
   if (!theme) return <div style={{ width: SLIDE_W, height: SLIDE_H, background: "#111" }} />;
   const t = theme;
   const H = (extra) => ({ fontFamily: `'${t.html_heading}', 'Plus Jakarta Sans', sans-serif`, color: c(t.title),
@@ -112,12 +232,12 @@ export default function Slide({ slide, theme, index = 0, total = 1 }) {
 
   let content = null;
   if (L === "cover" || L === "closing" || !L) {
-    const img = L === "cover" && s.image;
+    const img = L === "cover" && (s.image || (pending && s.image_query));
     const align = img ? "left" : "center";
     const tw = img ? 560 : SLIDE_W - 2 * PAD - 120;
     content = (
       <>
-        {img && <Picture image={s.image} theme={t} style={{ position: "absolute", left: 680, top: 0, width: 600, height: SLIDE_H }} />}
+        {img && <Picture image={s.image} theme={t} pending={pending} style={{ position: "absolute", left: 680, top: 0, width: 600, height: SLIDE_H }} />}
         <div style={{ position: "absolute", left: img ? PAD : (SLIDE_W - tw) / 2, top: 150, width: tw, height: 250,
           display: "flex", flexDirection: "column", justifyContent: "flex-end", textAlign: align }}>
           <h1 style={H({ fontSize: shrink(64, s.title, 36), lineHeight: 1.02 })}>{s.title}</h1>
@@ -150,7 +270,7 @@ export default function Slide({ slide, theme, index = 0, total = 1 }) {
     const tx = right ? PAD : 680;
     content = (
       <>
-        <Picture image={s.image} theme={t} style={{ position: "absolute", top: 0, left: right ? 680 : 0, width: 600, height: SLIDE_H }} />
+        <Picture image={s.image} theme={t} pending={pending} style={{ position: "absolute", top: 0, left: right ? 680 : 0, width: 600, height: SLIDE_H }} />
         <Heading x={tx} w={520} />
         <div style={{ position: "absolute", left: tx, top: 200, width: 520 }}>
           {s.body && <p style={{ ...muted, fontSize: shrink(22, s.body, 150), lineHeight: 1.45, margin: "0 0 26px" }}>{s.body}</p>}
@@ -173,6 +293,22 @@ export default function Slide({ slide, theme, index = 0, total = 1 }) {
             </div>
           ))}
         </div>
+      </>
+    );
+  } else if (L === "chart") {
+    const cw = s.body ? 780 : SLIDE_W - 2 * PAD;
+    content = (
+      <>
+        <Heading />
+        <div style={{ position: "absolute", left: PAD, top: 205, width: cw, height: 450 }}>
+          {s.chart ? <Chart chart={s.chart} theme={t} width={cw} height={450} />
+            : <p style={{ ...muted, fontSize: 22 }}>Add numbers to show a chart here.</p>}
+        </div>
+        {s.body && (
+          <div style={{ position: "absolute", left: PAD + cw + 40, top: 225, width: SLIDE_W - 2 * PAD - cw - 40, borderLeft: `4px solid ${c(t.accent)}`, paddingLeft: 20 }}>
+            <p style={{ ...body, fontSize: shrink(22, s.body, 180), lineHeight: 1.4, margin: 0 }}>{s.body}</p>
+          </div>
+        )}
       </>
     );
   } else if (L === "stats") {
