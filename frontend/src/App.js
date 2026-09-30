@@ -38,7 +38,8 @@ function Gate() {
   return (
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
-      <Route path="/" element={<Workspace />} />
+      <Route path="/" element={<Workspace key="chat" />} />
+      <Route path="/counsellor" element={<Workspace key="counsellor" mode="counsellor" />} />
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/projects/:id" element={<ProjectView />} />
       <Route path="/apps" element={<AppsPage />} />

@@ -11,7 +11,7 @@ import secrets
 import uuid
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File, Form, Header, Query
 from fastapi.responses import StreamingResponse, Response
@@ -40,6 +40,7 @@ import decks
 import appdata
 import automations
 import live_search
+import counsellor
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -111,6 +112,7 @@ class LoginIn(BaseModel):
 class ConversationIn(BaseModel):
     title: Optional[str] = None
     projectId: Optional[str] = None
+    mode: Optional[Literal["counsellor"]] = None
 
 
 class ConversationPatch(BaseModel):
@@ -167,6 +169,7 @@ def public_conversation(doc: dict) -> dict:
         "title": doc["title"],
         "model": doc.get("model"),
         "projectId": doc.get("projectId"),
+        "mode": doc.get("mode"),
         "shareId": doc.get("shareId"),
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
@@ -274,9 +277,9 @@ async def models(user_id: str = Depends(current_user_id)):
 
 # --------------------------------------------------------------- conversations
 @api.get("/conversations")
-async def list_conversations(user_id: str = Depends(current_user_id)):
-    # App-builder and automation chats live on their own pages.
-    docs = await db.conversations.find({"userId": user_id, "appId": None, "automationId": None}).sort("updatedAt", -1).to_list(500)
+async def list_conversations(mode: Optional[Literal["counsellor"]] = None, user_id: str = Depends(current_user_id)):
+    # App-builder, automation and Counsellor chats live on their own pages.
+    docs = await db.conversations.find({"userId": user_id, "appId": None, "automationId": None, "mode": mode}).sort("updatedAt", -1).to_list(500)
     return [public_conversation(d) for d in docs]
 
 
@@ -295,6 +298,7 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
         "title": (body.title or "New conversation").strip()[:200],
         "model": AI_MODEL,
         "projectId": project_id,
+        "mode": body.mode,
         "createdAt": ts,
         "updatedAt": ts,
     }
@@ -504,11 +508,12 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
     conv = await db.conversations.find_one({"id": conv_id})
     user_id = conv["userId"] if conv else None
     project_id = conv.get("projectId") if conv else None
+    counselling = (conv or {}).get("mode") == counsellor.MODE
 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs]
 
-    system_parts = [SYSTEM_PROMPT, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
+    system_parts = [counsellor.PROMPT if counselling else SYSTEM_PROMPT, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
     sources = []
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
@@ -524,8 +529,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
         if proj and proj.get("instructions"):
             system_parts.append(f"Project instructions:\n{proj['instructions']}")
 
+    if counselling:
+        agent = False  # a listening conversation: no tools, no web search
+        if counsellor.is_crisis(last_user or ""):
+            system_parts.append("The person's latest message may describe a crisis or danger. Follow the Safety "
+                                "instructions now: respond with care and give the helplines.")
+
     # Files attached to this chat, plus project documents (RAG).
-    if user_id and last_user:
+    if user_id and last_user and not counselling:
         lean = agent_llm.lean(model)
         if lean and agent and not (conv or {}).get("appId") and not _TOOL_ASK.search(last_user) and \
                 await db.files.count_documents({"conversationId": conv_id, "is_deleted": False}):
@@ -546,7 +557,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
     # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
-    if not app_id:
+    if not app_id and not counselling:
         live = await live_search.lookup([m["content"] for m in history_docs if m["role"] == "user"])
         if live:
             system_parts.append(live)
@@ -594,6 +605,13 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
     except Exception as exc:  # surface provider errors to the client
         logger.exception("AI stream failed")
         yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"
+    else:
+        # Crisis replies always carry the helplines, even if the model left them out.
+        note = counsellor.helpline_note("".join(full)) if counselling and counsellor.is_crisis(last_user or "") else ""
+        if note:
+            note = "\n\n" + note
+            full.append(note)
+            yield f"data: {_sse_json(note)}\n\n"
     finally:
         content = "".join(full).strip()
         if content or steps:
@@ -654,7 +672,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         await db.conversations.update_one({"id": conv_id}, {"$set": {"title": auto_title}})
 
     # Learn lasting facts about the user in the background (see memory.py).
-    if not conv.get("appId") and not conv.get("automationId"):
+    # Counselling chats are private: nothing said there is saved to memory.
+    if not conv.get("appId") and not conv.get("automationId") and conv.get("mode") != counsellor.MODE:
         _background(memory.learn(db, user_id, body.content, model))
 
     return _stream_response(conv_id, model, agent=body.agent)

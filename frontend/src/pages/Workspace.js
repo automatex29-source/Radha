@@ -15,7 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Sparkles, Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, FolderKanban, Link2 } from "lucide-react";
+import { Sparkles, Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, FolderKanban, Link2, HeartHandshake, CloudRain, Compass, HeartCrack, Flame } from "lucide-react";
 
 const STARTERS = [
   { icon: FileText, title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
@@ -26,7 +26,16 @@ const STARTERS = [
   { icon: ImageIcon, title: "Design a movie poster", prompt: "Design a cinematic movie poster for a sci-fi film called Last Signal." },
 ];
 
-export default function Workspace() {
+// The Counsellor tab: a listening companion guided by the Bhagavad Gita (see backend/counsellor.py).
+const COUNSEL_STARTERS = [
+  { icon: CloudRain, title: "I feel stressed and anxious", prompt: "I have been feeling very stressed and anxious lately and I don't know how to calm my mind." },
+  { icon: Compass, title: "I feel lost in life", prompt: "I feel lost and I don't know what I should do with my life." },
+  { icon: HeartCrack, title: "मेरा दिल टूट गया है", prompt: "मेरा दिल टूट गया है और मैं बहुत अकेला महसूस कर रहा हूँ।" },
+  { icon: Flame, title: "Help me stop overthinking results", prompt: "I keep worrying about results (exams, job, money). How can I stop overthinking?" },
+];
+
+export default function Workspace({ mode = null }) {
+  const counselling = mode === "counsellor";
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [projectId, setProjectId] = useState(searchParams.get("project") || null);
@@ -58,7 +67,7 @@ export default function Workspace() {
   const streamStepsRef = useRef([]);
 
   // Chat always uses Krish AI's tools (web search, code, files) whenever the model supports them; no mode switch.
-  const agentAvailable = !!(caps && model && caps.agent?.[model]);
+  const agentAvailable = !counselling && !!(caps && model && caps.agent?.[model]);
   const voiceEnabled = !!caps?.voice;
   const speechEnabled = !!caps?.serverSpeech || browserSpeechAvailable();
 
@@ -72,12 +81,12 @@ export default function Workspace() {
 
   const loadConversations = useCallback(async () => {
     try {
-      const { data } = await api.get("/conversations");
+      const { data } = await api.get("/conversations", mode ? { params: { mode } } : undefined);
       setConversations(data);
     } catch (e) {
       toast.error(formatApiError(e));
     }
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     loadConversations();
@@ -287,7 +296,7 @@ export default function Workspace() {
 
   const ensureConversation = async () => {
     if (activeId) return activeId;
-    const { data } = await api.post("/conversations", projectId ? { projectId } : {});
+    const { data } = await api.post("/conversations", counselling ? { mode } : projectId ? { projectId } : {});
     setActiveId(data.id);
     setConversations((c) => [data, ...c]);
     setSearchParams((sp) => {
@@ -410,7 +419,8 @@ export default function Workspace() {
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
-          onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation} onCollapse={() => {}} />
+          onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
+          newLabel={counselling ? "New session" : undefined} onCollapse={() => {}} />
       </div>
 
       {/* Mobile drawer */}
@@ -419,7 +429,8 @@ export default function Workspace() {
           <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 h-full">
             <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
-              onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation} onCollapse={() => setSidebarOpen(false)} />
+              onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
+          newLabel={counselling ? "New session" : undefined} onCollapse={() => setSidebarOpen(false)} />
           </div>
         </div>
       )}
@@ -433,7 +444,7 @@ export default function Workspace() {
               <PanelLeft className="h-5 w-5" />
             </button>
             <h1 data-testid="active-conversation-title" className="truncate text-sm font-semibold tracking-tight">
-              {activeConv ? activeConv.title : "New conversation"}
+              {activeConv ? activeConv.title : counselling ? "Counsellor" : "New conversation"}
             </h1>
             {project && (
               <button onClick={() => navigate(`/projects/${project.id}`)} data-testid="active-project-badge"
@@ -457,7 +468,7 @@ export default function Workspace() {
                 <span className="hidden text-xs sm:inline">Export</span>
               </Button>
             )}
-            <DropdownMenu>
+            {!counselling && <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" data-testid="model-selector-dropdown" className="gap-2 border-border bg-card">
                 <Cpu className="h-3.5 w-3.5 text-primary" />
@@ -473,7 +484,7 @@ export default function Workspace() {
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
           </div>
         </header>
 
@@ -484,7 +495,7 @@ export default function Workspace() {
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : messages.length === 0 && !streaming ? (
-            <EmptyState onPick={(p) => sendMessage(p)} />
+            counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
               {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem} />)}
@@ -505,14 +516,20 @@ export default function Workspace() {
         </div>
 
         {/* Composer */}
+        {counselling && (
+          <p data-testid="counsellor-care-note" className="mx-auto w-full max-w-3xl px-5 text-center text-[11px] leading-snug text-muted-foreground">
+            Spiritual guidance, not a replacement for a doctor or counsellor. In crisis, call Tele-MANAS 14416 or 112.
+          </p>
+        )}
         <ComposerInput value={input} onChange={setInput} onSend={() => sendMessage()} onStop={stopGeneration}
           streaming={streaming} disabled={loadingConv}
-          onAttach={attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
+          onAttach={counselling ? undefined : attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
           images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
           agentMode={agentAvailable} agentAvailable={agentAvailable}
           agentHint="Agent mode needs a provider API key for this model on the backend"
           voiceEnabled={voiceEnabled} voiceHint="Voice needs GROQ_API_KEY (free) on the backend"
-          onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }} />
+          onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
+          placeholder={counselling ? "Share what's on your mind… (Hindi or English)" : undefined} />
       </div>
       <ShareDialog open={shareOpen} onOpenChange={setShareOpen} conversation={activeConv}
         onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
@@ -539,6 +556,36 @@ function EmptyState({ onPick }) {
       <div className="radha-fade-up relative mt-9 grid w-full gap-3 sm:grid-cols-3" style={{ animationDelay: "0.1s" }}>
         {STARTERS.map((s, i) => (
           <button key={i} data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
+            className="radha-lift group rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50">
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-surface-strong text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+              <s.icon className="h-4.5 w-4.5" />
+            </div>
+            <p className="text-sm font-medium leading-snug text-foreground">{s.title}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CounselEmptyState({ onPick }) {
+  return (
+    <div data-testid="counsellor-welcome" className="relative mx-auto flex h-full max-w-3xl flex-col items-center justify-center overflow-hidden px-4">
+      <div className="radha-orb -top-10 left-1/4 h-56 w-56 bg-amber-500/20" />
+      <div className="radha-orb bottom-10 right-1/4 h-56 w-56 bg-sky-500/20" />
+      <div className="radha-fade-up relative flex flex-col items-center text-center">
+        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-[0_0_50px_rgba(99,102,241,0.6)]">
+          <HeartHandshake className="h-8 w-8 text-white" />
+        </div>
+        <h2 className="radha-heading-gradient text-3xl font-extrabold tracking-tighter sm:text-4xl">You are not alone</h2>
+        <p className="mt-3 max-w-md text-sm text-muted-foreground">
+          Share what's on your heart. Krish AI's Counsellor listens first, then guides you with Krishna's wisdom
+          from the Bhagavad Gita and a gentle next step. Hindi or English, whatever feels easy.
+        </p>
+      </div>
+      <div className="radha-fade-up relative mt-9 grid w-full gap-3 sm:grid-cols-2" style={{ animationDelay: "0.1s" }}>
+        {COUNSEL_STARTERS.map((s, i) => (
+          <button key={i} data-testid={`counsellor-starter-${i}`} onClick={() => onPick(s.prompt)}
             className="radha-lift group rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50">
             <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-surface-strong text-primary transition-colors group-hover:bg-primary group-hover:text-white">
               <s.icon className="h-4.5 w-4.5" />

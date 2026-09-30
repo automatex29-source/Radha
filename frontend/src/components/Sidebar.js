@@ -31,7 +31,7 @@ function groupByDate(convs) {
   return groups;
 }
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse }) {
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel = "New conversation" }) {
   const { user, logout } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
   const dark = resolvedTheme !== "light";
@@ -70,7 +70,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
 
       <div className="px-3">
         <Button onClick={onNew} data-testid="new-chat-button" className="w-full justify-start gap-2 font-semibold">
-          <Plus className="h-4 w-4" /> New conversation
+          <Plus className="h-4 w-4" /> {newLabel}
         </Button>
       </div>
 
