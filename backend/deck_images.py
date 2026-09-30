@@ -19,8 +19,9 @@ import httpx
 logger = logging.getLogger("radha.decks")
 UA = {"User-Agent": "KrishAI/1.0 (presentation builder)"}
 MEDIA_URL = re.compile(r"^/api/media/([\w-]{8,64})$")
-AI_STYLE = ("professional editorial photograph, natural light, sharp focus, rich color, high detail, "
-            "clean composition with space around the subject, 16:9")
+AI_STYLE = ("photorealistic professional editorial photograph, shot on a full-frame camera, natural light, "
+            "sharp focus, rich true-to-life color, high detail, clean uncluttered composition with space around "
+            "the subject, wide 16:9 frame. No text, no words, no letters, no logos, no watermark, no borders")
 _cache: dict = {}
 _STOP = {"a", "an", "the", "of", "and", "or", "for", "to", "in", "on", "with", "at", "by", "from", "is", "are",
          "how", "why", "what", "your", "our", "vs", "into"}
@@ -138,8 +139,13 @@ async def find_stock(slide: dict, used: set, topic: str = "") -> Optional[dict]:
 
 def ai_prompt(slide: dict, topic: str = "") -> str:
     base = (slide.get("image_prompt") or slide.get("image_query") or slide.get("title") or topic or "").strip()
-    context = f" Presentation about {topic}." if topic and topic.lower() not in base.lower() else ""
-    return f"{base}.{context} {AI_STYLE}"
+    title = (slide.get("title") or "").strip()
+    context = ""
+    if title and title.lower() not in base.lower():
+        context += f" It illustrates the idea: {title}."
+    if topic and topic.lower() not in base.lower():
+        context += f" Part of a presentation about {topic}."
+    return f"{base.rstrip('.')}.{context} {AI_STYLE}"
 
 
 async def make_ai(db, user_id: str, slide: dict, topic: str = "", prompt: Optional[str] = None) -> dict:
