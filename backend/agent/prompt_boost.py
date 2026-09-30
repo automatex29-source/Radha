@@ -63,6 +63,16 @@ async def _ask(system: str, user: str) -> str:
     return "".join(out).strip()
 
 
+def available() -> bool:
+    """True when some configured model can answer a quick rewrite request."""
+    return _model() is not None
+
+
+async def ask(system: str, user: str) -> str:
+    """One short, non-streamed answer from the rewrite model (used to draft automation tasks)."""
+    return await _ask(system, user)
+
+
 async def image_prompt(prompt: str, style: str = "") -> str:
     """The rewritten prompt with the style's words, or the original + style words on any failure."""
     fallback = styles.styled_image_prompt(prompt, style)

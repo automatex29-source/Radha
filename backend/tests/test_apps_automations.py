@@ -144,8 +144,8 @@ class TestScheduler:
         database = mongomock_motor.AsyncMongoMockClient()["s"]
         calls = []
 
-        async def fake_turn(conv_id, model, agent=False):
-            calls.append((conv_id, agent))
+        async def fake_turn(conv_id, model, agent=False, **kw):
+            calls.append((conv_id, agent, kw))
             await database.messages.insert_one({"id": "m", "conversationId": conv_id, "role": "assistant",
                                                 "content": "Report ready", "media": [], "steps": [{}], "createdAt": "z"})
             yield "data: \"Report ready\"\n\n"
@@ -165,6 +165,8 @@ class TestScheduler:
 
         runs, auto = run(scenario())
         assert len(calls) == 1 and calls[0][1] is True
+        assert calls[0][2]["max_steps"] == automations.STEPS_NORMAL
+        assert "autonomous agent" in calls[0][2]["extra_system"]
         assert len(runs) == 1 and runs[0]["status"] == "succeeded" and runs[0]["output"] == "Report ready"
         assert auto["lastStatus"] == "succeeded" and auto["lockedUntil"] is None
         assert auto["nextRunAt"] > datetime.now(timezone.utc).isoformat()
@@ -172,7 +174,7 @@ class TestScheduler:
     def test_failed_turn_is_recorded(self):
         database = mongomock_motor.AsyncMongoMockClient()["f"]
 
-        async def failing_turn(conv_id, model, agent=False):
+        async def failing_turn(conv_id, model, agent=False, **kw):
             yield 'event: error\ndata: "No API key"\n\n'
 
         automations.init(database, failing_turn, "m")
@@ -189,3 +191,79 @@ class TestScheduler:
         run_doc, first_msg = run(scenario())
         assert run_doc["status"] == "failed" and run_doc["error"] == "No API key" and run_doc["trigger"] == "webhook"
         assert '"event": "push"' in first_msg["content"]
+
+
+class TestAgentAutomations:
+    def test_memory_steps_and_webhook_delivery(self, monkeypatch):
+        database = mongomock_motor.AsyncMongoMockClient()["g"]
+        seen, posted = [], []
+
+        async def fake_turn(conv_id, model, agent=False, **kw):
+            seen.append(kw)
+            await database.messages.insert_one({
+                "id": conv_id, "conversationId": conv_id, "role": "assistant", "content": f"Result {len(seen)}",
+                "media": [{"id": "x", "name": "brief.pdf"}], "createdAt": "z",
+                "steps": [{"id": "1", "name": "web_search", "label": "Web search", "status": "done",
+                           "summary": "5 results", "output": "long" * 500}]})
+            yield "data: \"ok\"\n\n"
+
+        async def fake_check(url):
+            return url
+
+        class FakeClient:
+            def __init__(self, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, url, json):
+                posted.append((url, json))
+                return type("R", (), {"status_code": 204})()
+
+        monkeypatch.setattr(automations, "check_notify_url", fake_check)
+        monkeypatch.setattr(automations.httpx, "AsyncClient", FakeClient)
+        automations.init(database, fake_turn, "m")
+
+        async def scenario():
+            auto = {"id": "a3", "userId": "u", "name": "News", "prompt": "p", "schedule": {"type": "manual"},
+                    "thorough": True, "notifyUrl": "https://discord.example/hook"}
+            await database.automations.insert_one(dict(auto))
+            for _ in range(2):
+                await automations.start_run(auto, "manual")
+                await asyncio.gather(*list(automations._running))
+            return await database.automation_runs.find({}).sort("startedAt", 1).to_list(10)
+
+        runs = run(scenario())
+        assert seen[0]["max_steps"] == automations.STEPS_THOROUGH
+        assert "Memory:" not in seen[0]["extra_system"]
+        assert "Memory:" in seen[1]["extra_system"] and "Result 1" in seen[1]["extra_system"]
+        step = runs[0]["steps"][0]
+        assert step == {"label": "Web search", "name": "web_search", "status": "done", "summary": "5 results"}
+        assert runs[0]["delivery"] == [{"channel": "webhook", "ok": True, "error": None}]
+        assert posted[0][0] == "https://discord.example/hook"
+        assert "News: finished" in posted[0][1]["content"] and "brief.pdf" in posted[0][1]["content"]
+
+    def test_email_delivery_failure_is_recorded_not_raised(self, monkeypatch):
+        database = mongomock_motor.AsyncMongoMockClient()["e"]
+        automations.init(database, None, "m")
+        monkeypatch.setattr(automations.mailer, "configured", lambda: False)
+        out = run(automations._deliver({"name": "x", "userId": "u", "emailResult": True},
+                                       {"status": "succeeded", "output": "hi"}))
+        assert out[0]["channel"] == "email" and out[0]["ok"] is False and "BREVO_API_KEY" in out[0]["error"]
+
+    @pytest.mark.parametrize("url", ["http://example.com/hook", "https://127.0.0.1/x", "https://10.0.0.5/x",
+                                     "https://localhost/x", "notaurl"])
+    def test_notify_url_rejects_unsafe(self, url):
+        with pytest.raises(ValueError):
+            run(automations.check_notify_url(url))
+
+    def test_parse_plan_keeps_valid_values(self):
+        plan = automations.parse_plan({"name": "Price watch", "task": "1. Search...",
+                                       "schedule": {"type": "weekly", "time": "25:00", "weekday": 9}}, "goal")
+        assert plan == {"name": "Price watch", "prompt": "1. Search...",
+                        "schedule": {"type": "weekly", "time": "08:00", "weekday": 6, "minutes": 60}}
+        assert automations.parse_plan({"schedule": "bad"}, "Watch prices daily")["schedule"]["type"] == "manual"

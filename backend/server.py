@@ -46,6 +46,7 @@ import counsellor
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
+from agent.runtime import MAX_STEPS as MAX_AGENT_STEPS
 
 # ---------------------------------------------------------------- infra setup
 mongo_url = os.environ["MONGO_URL"]
@@ -581,11 +582,14 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
     return "\n\n".join(parts), sources
 
 
-async def run_turn(conv_id: str, model: str, agent: bool = False):
+async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: Optional[str] = None,
+                   max_steps: Optional[int] = None):
     """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
 
     If the conversation belongs to a project, relevant document chunks (RAG) and
     project/user memory are retrieved and injected as grounding context.
+
+    Automations pass `extra_system` (their agent instructions and memory) and a larger `max_steps`.
 
     Plain chat streams through the model router. Agent turns (tool use), any
     conversation containing images, and app-builder conversations stream through
@@ -651,6 +655,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
     focused = bool(app_id) and agent_llm.lean(model)
     if agent and not focused:
         system_parts.append(AGENT_PROMPT)
+    if extra_system:
+        system_parts.append(extra_system)
     system_prompt = "\n\n".join(system_parts)
 
     if sources:
@@ -665,7 +671,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
                                                see_images=agent_llm.supports_images(model))
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model)
-            async for ev in run_agent(agent_llm.stream_completion, tool_registry, ctx, model, llm_messages, use_tools=agent):
+            async for ev in run_agent(agent_llm.stream_completion, tool_registry, ctx, model, llm_messages, use_tools=agent,
+                                      max_steps=max_steps or MAX_AGENT_STEPS):
                 if ev["type"] == "text":
                     full.append(ev["text"])
                     yield f"data: {_sse_json(ev['text'])}\n\n"
