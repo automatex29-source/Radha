@@ -62,7 +62,7 @@ TEMPLATES = {
 </head>
 <body>
   <main class="card">
-    <h1>Hello from RADHA</h1>
+    <h1>Hello from Krish AI</h1>
     <p>Ask the builder to turn this into anything.</p>
     <button id="btn">Clicked 0 times</button>
   </main>
@@ -111,7 +111,7 @@ function App() {
     <main class="min-h-screen grid place-items-center">
       <div class="p-10 rounded-2xl border border-slate-800 bg-slate-900 text-center">
         <h1 class="text-3xl font-bold">React + Tailwind</h1>
-        <p class="mt-2 text-slate-400">Built with RADHA</p>
+        <p class="mt-2 text-slate-400">Built with Krish AI</p>
         <button class="mt-6 px-5 py-2 rounded-lg bg-indigo-500 font-semibold" onClick=${() => setCount(count + 1)}>
           Count: ${count}
         </button>
@@ -375,7 +375,7 @@ def _build_git_repo(workdir: str, commits: List[dict], contents: Dict[str, Dict[
         gc = Commit()
         gc.tree = build_tree(contents[c["id"]])
         gc.parents = [parent] if parent else []
-        who = f"{c.get('author') or 'RADHA'} <radha@automatex.ai>".encode()
+        who = f"{c.get('author') or 'Krish AI'} <krish@empirex.ai>".encode()
         gc.author = gc.committer = who
         ts = int(datetime.fromisoformat(c["createdAt"]).timestamp())
         gc.author_time = gc.commit_time = ts
@@ -402,7 +402,7 @@ async def app_prompt(database, app_id: str) -> str:
     files = await snapshot(app_id)
     changes = await changed_paths(app_id)
     return (
-        f"You are RADHA's app builder, working on the app “{app['name']}”"
+        f"You are Krish AI's app builder, working on the app “{app['name']}”"
         + (f" — {app['description']}" if app.get("description") else "") + ".\n"
         "The user sees the live preview, the files and the version history beside this chat.\n\n"
         f"Project files:\n{app_prompt_files(files)}\n"
@@ -590,7 +590,7 @@ async def _t_check(ctx, args):
 
 
 async def _t_commit(ctx, args):
-    result = await commit(ctx.app_id, args.get("message") or "Update", author="RADHA")
+    result = await commit(ctx.app_id, args.get("message") or "Update", author="Krish AI")
     if not result:
         return _tool_output("Nothing to commit — no changes since the last version.", "No changes")
     return _tool_output(f"Committed version {result['id']}: {result['message']}", f"Saved version {result['id']}")
@@ -700,7 +700,7 @@ async def create_app(body: AppIn, user_id: str = Depends(current_user_id)):
         await db.apps.delete_one({"id": app_id})
         await db.conversations.delete_one({"id": conv["id"]})
         raise HTTPException(status_code=400, detail=str(exc))
-    await commit(app_id, label, author="RADHA")
+    await commit(app_id, label, author="Krish AI")
     return public_app(doc)
 
 
@@ -827,7 +827,7 @@ async def export_app(app_id: str, request: Request, git: bool = Query(True), aut
 async def push_to_github(app_id: str, body: GitHubIn, user_id: str = Depends(current_user_id)):
     app = await owned_app(app_id, user_id)
     head = await head_commit(app_id)
-    message = f"{app['name']}: {head['message']}" if head else f"{app['name']} from RADHA"
+    message = f"{app['name']}: {head['message']}" if head else f"{app['name']} from Krish AI"
     try:
         result = await github_push.push(await snapshot(app_id), body.token, body.repo, message, private=body.private)
     except github_push.PushError as exc:

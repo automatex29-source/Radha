@@ -10,7 +10,7 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, Strea
 
 from .types import AIRequest
 
-_DEFAULT_SYSTEM = "You are RADHA, a premium AI assistant by A.utomateX."
+_DEFAULT_SYSTEM = "You are Krish AI, a premium AI assistant by EmpireX."
 
 
 async def stream_via_emergent(api_key: str, provider: str, request: AIRequest) -> AsyncIterator[str]:

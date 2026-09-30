@@ -180,7 +180,7 @@ function BuilderChat({ app, onFilesChanged }) {
         {messages.length === 0 && !streaming && (
           <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
             <p className="font-semibold text-foreground">What should we build?</p>
-            <p className="mt-1">Describe the app. RADHA writes the code, checks the preview for errors, runs tests and saves versions as it goes.</p>
+            <p className="mt-1">Describe the app. Krish AI writes the code, checks the preview for errors, runs tests and saves versions as it goes.</p>
             {app.description && (
               <button onClick={() => setInput(`Build this app: ${app.description}`)} className="mt-3 text-left text-xs text-brand hover:underline">
                 Start with: “{app.description}”

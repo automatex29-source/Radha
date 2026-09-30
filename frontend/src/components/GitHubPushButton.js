@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 
 const TOKEN_KEY = "radha_github_token";
-const NEW_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo&description=RADHA%20App%20Builder";
+const NEW_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo&description=Krish%20AI%20App%20Builder";
 
 const readToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
 
@@ -53,7 +53,7 @@ export default function GitHubPushButton({ app, onPushed }) {
         <DialogHeader>
           <DialogTitle>Push to GitHub</DialogTitle>
           <DialogDescription>
-            RADHA sends this app's files to a GitHub repository, and creates it if it doesn't exist yet.
+            Krish AI sends this app's files to a GitHub repository, and creates it if it doesn't exist yet.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

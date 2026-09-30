@@ -56,7 +56,7 @@ export default function ProjectsPage() {
             <div>
               <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter sm:text-3xl">Projects</h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                Group conversations, files and knowledge. RADHA grounds answers in a project's documents.
+                Group conversations, files and knowledge. Krish AI grounds answers in a project's documents.
               </p>
             </div>
             <Dialog open={open} onOpenChange={setOpen}>
@@ -66,7 +66,7 @@ export default function ProjectsPage() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Create project</DialogTitle>
-                  <DialogDescription>Group conversations and documents. RADHA grounds answers in this project's files.</DialogDescription>
+                  <DialogDescription>Group conversations and documents. Krish AI grounds answers in this project's files.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-2">
                   <div className="space-y-1.5">
@@ -79,7 +79,7 @@ export default function ProjectsPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="p-inst">Custom instructions (optional)</Label>
-                    <Textarea id="p-inst" data-testid="project-instructions-input" value={form.instructions} onChange={(e) => setForm((f) => ({ ...f, instructions: e.target.value }))} placeholder="How should RADHA behave inside this project?" className="min-h-[90px] bg-card" />
+                    <Textarea id="p-inst" data-testid="project-instructions-input" value={form.instructions} onChange={(e) => setForm((f) => ({ ...f, instructions: e.target.value }))} placeholder="How should Krish AI behave inside this project?" className="min-h-[90px] bg-card" />
                   </div>
                 </div>
                 <DialogFooter>
@@ -98,7 +98,7 @@ export default function ProjectsPage() {
               <div data-testid="projects-empty" className="rounded-2xl border border-dashed border-border py-20 text-center">
                 <FolderKanban className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
                 <p className="text-sm font-medium">No projects yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">Create a project and upload documents to ground RADHA.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Create a project and upload documents to ground Krish AI.</p>
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

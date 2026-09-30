@@ -78,7 +78,7 @@ class TestAppVersions:
         if log.returncode != 0:
             pytest.skip("git not installed")
         lines = log.stdout.splitlines()
-        assert lines[1:] == ["Second|You", "First|RADHA"]
+        assert lines[1:] == ["Second|You", "First|Krish AI"]
         assert lines[0].startswith("Restore version ") and lines[0].endswith(": First|You")
         status = subprocess.run(["git", "-C", root, "status", "--short"], capture_output=True, text=True).stdout
         assert status.strip() == "?? notes.md"

@@ -24,10 +24,10 @@ export default function AuthPage() {
     try {
       if (tab === "login") {
         await login(form.email, form.password);
-        toast.success("Welcome back to RADHA");
+        toast.success("Welcome back to Krish AI");
       } else {
         await register(form.name, form.email, form.password);
-        toast.success("Account created — welcome to RADHA");
+        toast.success("Account created — welcome to Krish AI");
       }
     } catch (err) {
       toast.error(formatApiError(err));
@@ -48,8 +48,8 @@ export default function AuthPage() {
               <Sparkles className="h-5 w-5 text-white" />
             </div>
             <div className="leading-none">
-              <p className="text-lg font-extrabold tracking-tight">RADHA</p>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by A.utomateX</p>
+              <p className="text-lg font-extrabold tracking-tight">Krish AI</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by EmpireX</p>
             </div>
           </div>
 
@@ -58,7 +58,7 @@ export default function AuthPage() {
               The intelligent workspace for serious work.
             </h1>
             <p className="mt-4 text-base text-muted-foreground">
-              Real conversations. Real reasoning. Persistent memory of everything you build. RADHA is the foundation of A.utomateX's AI platform.
+              Real conversations. Real reasoning. Persistent memory of everything you build. Krish AI is the foundation of EmpireX's AI platform.
             </p>
             <div className="mt-8 space-y-3 text-sm text-muted-foreground">
               <Feature icon={Cpu} text="Powered by a real frontier reasoning model" />
@@ -67,7 +67,7 @@ export default function AuthPage() {
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} A.utomateX — RADHA V1</p>
+          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} EmpireX · Krish AI</p>
         </div>
       </div>
 
@@ -79,14 +79,14 @@ export default function AuthPage() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
-            <p className="text-lg font-extrabold tracking-tight">RADHA</p>
+            <p className="text-lg font-extrabold tracking-tight">Krish AI</p>
           </div>
 
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            {tab === "login" ? "Sign in to RADHA" : "Create your workspace"}
+            {tab === "login" ? "Sign in to Krish AI" : "Create your workspace"}
           </h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {tab === "login" ? "Enter your credentials to continue." : "Start building with RADHA in seconds."}
+            {tab === "login" ? "Enter your credentials to continue." : "Start building with Krish AI in seconds."}
           </p>
 
           <div className="mt-6 flex rounded-lg border border-border bg-card p-1">

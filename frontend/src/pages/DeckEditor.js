@@ -496,7 +496,7 @@ export default function DeckEditor() {
                 <ScaledSlide fit className="h-full w-full" slide={shown} theme={theme} index={sel} total={slides.length} />
               ) : generating ? (
                 <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
-                  <Sparkles className="h-8 w-8 animate-pulse text-primary" /> RADHA is designing your slides…
+                  <Sparkles className="h-8 w-8 animate-pulse text-primary" /> Krish AI is designing your slides…
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">{deck.error || "No slides yet."}</p>
@@ -520,7 +520,7 @@ export default function DeckEditor() {
           {/* right panel */}
           <aside className="flex shrink-0 flex-col border-border max-lg:h-[60vh] max-lg:border-t lg:w-80 lg:border-l">
             <div className="flex gap-1 border-b border-border p-2">
-              {[["ai", Sparkles, "Ask RADHA"], ["edit", Pencil, "Edit slide"]].map(([key, Icon, label]) => (
+              {[["ai", Sparkles, "Ask Krish AI"], ["edit", Pencil, "Edit slide"]].map(([key, Icon, label]) => (
                 <button key={key} onClick={() => setTab(key)} data-testid={`deck-tab-${key}`}
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-sm font-medium ${tab === key ? "bg-surface-strong text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                   <Icon className="h-3.5 w-3.5" /> {label}
@@ -532,7 +532,7 @@ export default function DeckEditor() {
                 <div className="radha-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
                   {chat.length === 0 && (
                     <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Tell RADHA what to change. It edits slide {sel + 1} or the whole deck.</p>
+                      <p className="text-sm text-muted-foreground">Tell Krish AI what to change. It edits slide {sel + 1} or the whole deck.</p>
                       {SUGGESTIONS.map((s) => (
                         <button key={s} onClick={() => ask(s)} disabled={generating || thinking}
                           className="block w-full rounded-lg border border-border px-3 py-2 text-left text-xs hover:border-primary/40 disabled:opacity-50">{s}</button>

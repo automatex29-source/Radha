@@ -165,7 +165,7 @@ export default function ProjectView() {
           </div>
 
           {/* Files */}
-          <Section title="Knowledge files" hint="PDF, Word, PowerPoint, Excel, CSV, text and photos: RADHA reads them and answers from them.">
+          <Section title="Knowledge files" hint="PDF, Word, PowerPoint, Excel, CSV, text and photos: Krish AI reads them and answers from them.">
             <input ref={fileRef} type="file" onChange={onUpload} className="hidden" data-testid="file-input"
               accept=".pdf,.docx,.pptx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.log,.png,.jpg,.jpeg,.webp" />
             <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="upload-file-button" className="gap-2 border-border bg-card">
@@ -200,7 +200,7 @@ export default function ProjectView() {
           </Section>
 
           {/* Memory */}
-          <Section title="Project memory" hint="Facts RADHA should remember for this project. You are always in control.">
+          <Section title="Project memory" hint="Facts Krish AI should remember for this project. You are always in control.">
             <div className="flex gap-2">
               <Input value={memInput} onChange={(e) => setMemInput(e.target.value)} data-testid="memory-input"
                 onKeyDown={(e) => e.key === "Enter" && addMemory()} placeholder="e.g. Our fiscal year starts in April." className="bg-card" />

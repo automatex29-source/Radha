@@ -59,8 +59,8 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <Sparkles className="h-4 w-4 text-white" />
           </div>
           <div className="leading-none">
-            <p className="text-sm font-extrabold tracking-tight">RADHA</p>
-            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">A.utomateX</p>
+            <p className="text-sm font-extrabold tracking-tight">Krish AI</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">EmpireX</p>
           </div>
         </div>
         <button onClick={onCollapse} data-testid="sidebar-toggle-button" className="text-muted-foreground hover:text-foreground lg:hidden">

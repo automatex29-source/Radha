@@ -619,7 +619,7 @@ def build_pdf(markdown: str, title: str = "") -> bytes:
         markdown = (markdown or "").replace("•", "-").encode("latin-1", "replace").decode("latin-1")
     if title:
         pdf.set_title(title)
-    pdf.set_creator("RADHA by A.utomateX")
+    pdf.set_creator("Krish AI by EmpireX")
     pdf.add_page()
     renderer = _PdfRenderer(pdf, family, mono)
     renderer.render(_md().parse(markdown or ""))

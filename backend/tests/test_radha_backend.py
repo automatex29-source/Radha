@@ -42,7 +42,7 @@ def other_token():
 def test_root():
     r = requests.get(f"{API}/")
     assert r.status_code == 200
-    assert r.json().get("service") == "RADHA"
+    assert r.json().get("service") == "Krish AI"
 
 
 # ---------------- Auth
