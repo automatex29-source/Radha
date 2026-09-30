@@ -13,13 +13,14 @@ import {
 import { toast } from "sonner";
 import {
   ArrowDown, ArrowLeft, ArrowUp, Copy, Download, FileText, ImageIcon, Loader2, Palette, Pencil, Play, Plus,
-  Presentation, RefreshCw, Send, Sparkles, Trash2, Undo2, X, ChevronLeft, ChevronRight,
+  Presentation, Send, Sparkles, Trash2, Undo2, X, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import Slide, { SLIDE_H, SLIDE_W, ScaledSlide, findTheme, useDeckThemes } from "@/components/deck/Slide";
+import PicturePicker from "@/components/deck/PicturePicker";
 
 const LAYOUTS = [
   ["cover", "Cover"], ["section", "Section"], ["bullets", "Bullet points"], ["image_right", "Text + picture right"],
-  ["image_left", "Picture left + text"], ["cards", "Cards with icons"], ["stats", "Big numbers"],
+  ["image_left", "Picture left + text"], ["cards", "Cards with icons"], ["stats", "Big numbers"], ["chart", "Chart"],
   ["steps", "Steps / timeline"], ["quote", "Quote"], ["comparison", "Comparison"], ["closing", "Closing"],
 ];
 const IMAGE_LAYOUTS = ["cover", "image_right", "image_left"];
@@ -29,7 +30,48 @@ const SUGGESTIONS = [
   "Make all the text shorter",
   "Use a warmer theme",
   "Translate the whole deck to Hindi",
+  "Give this slide a better matching picture",
 ];
+
+const CHART_TYPES = [["bar", "Bars"], ["line", "Line"], ["pie", "Pie"], ["doughnut", "Doughnut"]];
+const chartRows = (ch) => (ch?.labels || []).map((l, i) => [l, ...(ch.series || []).map((sr) => sr.values[i] ?? "")].join(", ")).join("\n");
+function parseChart(type, names, rows) {
+  const lines_ = rows.split("\n").map((r) => r.split(",").map((x) => x.trim())).filter((r) => r[0]);
+  const n = Math.max(1, ...lines_.map((r) => r.length - 1));
+  const seriesNames = names.split(",").map((x) => x.trim());
+  return {
+    type,
+    labels: lines_.map((r) => r[0]),
+    series: Array.from({ length: n }, (_, i) => ({
+      name: seriesNames[i] || `Series ${i + 1}`,
+      values: lines_.map((r) => parseFloat(String(r[i + 1] ?? "").replace(/[^\d.-]/g, "")) || 0),
+    })),
+  };
+}
+
+function ChartEditor({ chart, onChange }) {
+  const ch = chart || { type: "bar", labels: [], series: [{ name: "Value", values: [] }] };
+  const [rows, setRows] = useState(chartRows(ch));
+  const [names, setNames] = useState((ch.series || []).map((sr) => sr.name).join(", "));
+  const update = (type, n, r) => onChange(parseChart(type, n, r));
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-2">
+      <div className="flex gap-1">
+        {CHART_TYPES.map(([id, label]) => (
+          <button key={id} onClick={() => update(id, names, rows)}
+            className={`flex-1 rounded-md py-1 text-xs ${ch.type === id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{label}</button>
+        ))}
+      </div>
+      <Field label="Series names (comma between)">
+        <Input className="bg-card text-sm" value={names} onChange={(e) => { setNames(e.target.value); update(ch.type, e.target.value, rows); }} placeholder="Sales, Profit" />
+      </Field>
+      <Field label="Data: one row per line, label then numbers">
+        <Textarea className="bg-card font-mono text-xs" rows={6} value={rows} placeholder={"2022, 120, 30\n2023, 150, 42"}
+          onChange={(e) => { setRows(e.target.value); update(ch.type, names, e.target.value); }} />
+      </Field>
+    </div>
+  );
+}
 
 const lines = (arr) => (arr || []).join("\n");
 const unlines = (s) => s.split("\n").map((x) => x.trim()).filter(Boolean);
@@ -111,6 +153,14 @@ function SlideForm({ draft, setDraft }) {
           )}
         </div>
       )}
+      {L === "chart" && (
+        <>
+          <ChartEditor key={draft.id} chart={draft.chart} onChange={(chart) => set({ chart })} />
+          <Field label="Takeaway (shown beside the chart)">
+            <Textarea className={inputCls} rows={2} value={draft.body} onChange={(e) => set({ body: e.target.value })} />
+          </Field>
+        </>
+      )}
       {L === "quote" && (
         <>
           <Field label="Quote"><Textarea className={inputCls} rows={3} value={draft.quote} onChange={(e) => set({ quote: e.target.value })} /></Field>
@@ -126,7 +176,7 @@ function SlideForm({ draft, setDraft }) {
         </div>
       ))}
       {IMAGE_LAYOUTS.includes(L) && (
-        <Field label="Picture search words">
+        <Field label="Picture search words (change and save for a new picture)">
           <Input className={inputCls} value={draft.image_query} placeholder="e.g. city skyline at night" onChange={(e) => set({ image_query: e.target.value })} />
         </Field>
       )}
@@ -154,6 +204,12 @@ function switchLayout(d, layout) {
     const half = Math.ceil(points.length / 2);
     next.left = { title: "Before", bullets: points.slice(0, half) };
     next.right = { title: "After", bullets: points.slice(half) };
+  }
+  if (layout === "chart" && !d.chart) {
+    const nums = (d.stats || []).map((st) => [st.label || st.value, parseFloat(String(st.value).replace(/[^\d.-]/g, ""))]).filter(([, v]) => !Number.isNaN(v));
+    next.chart = nums.length
+      ? { type: "bar", labels: nums.map(([l]) => l), series: [{ name: "Value", values: nums.map(([, v]) => v) }] }
+      : { type: "bar", labels: ["A", "B", "C"], series: [{ name: "Value", values: [3, 5, 4] }] };
   }
   if (layout === "quote" && !d.quote) next.quote = d.body || d.subtitle || d.title;
   if (["cover", "section", "closing"].includes(layout) && !d.subtitle) next.subtitle = d.body || points[0] || "";
@@ -249,6 +305,7 @@ export default function DeckEditor() {
   const [busy, setBusy] = useState("");
   const [presenting, setPresenting] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [picker, setPicker] = useState(false);
   const chatEnd = useRef(null);
 
   const load = useCallback(async () => {
@@ -267,10 +324,10 @@ export default function DeckEditor() {
 
   // While slides are being written, poll so they appear one batch at a time.
   useEffect(() => {
-    if (deck?.status !== "generating") return undefined;
+    if (deck?.status !== "generating" && !deck?.picturesPending) return undefined;
     const t = setInterval(load, 2500);
     return () => clearInterval(t);
-  }, [deck?.status, load]);
+  }, [deck?.status, deck?.picturesPending, load]);
 
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [chat, thinking]);
 
@@ -355,19 +412,6 @@ export default function DeckEditor() {
     setBusy("undo");
     try {
       const { data } = await api.post(`/decks/${id}/undo`);
-      setDeck(data);
-      setDraft(null);
-    } catch (e) {
-      toast.error(formatApiError(e));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const newPicture = async () => {
-    setBusy("image");
-    try {
-      const { data } = await api.post(`/decks/${id}/slides/${sel}/image`);
       setDeck(data);
       setDraft(null);
     } catch (e) {
@@ -468,7 +512,7 @@ export default function DeckEditor() {
               <div key={s.id} className="group relative">
                 <button onClick={() => selectSlide(i)} data-testid={`deck-thumb-${i}`}
                   className={`block w-full overflow-hidden rounded-md border-2 transition-colors ${i === sel ? "border-primary" : "border-transparent hover:border-border"}`}>
-                  <ScaledSlide slide={s} theme={theme} index={i} total={slides.length} />
+                  <ScaledSlide slide={s} theme={theme} index={i} total={slides.length} pending={deck.picturesPending} />
                 </button>
                 <span className="absolute left-1 top-1 rounded bg-black/50 px-1 text-[10px] text-white">{i + 1}</span>
                 {!generating && (
@@ -493,7 +537,7 @@ export default function DeckEditor() {
           <main className="flex min-w-0 flex-col bg-sunken/40 max-lg:h-[55vh] max-lg:shrink-0 lg:flex-1">
             <div className="flex min-h-0 flex-1 items-center justify-center p-4 sm:p-8">
               {current ? (
-                <ScaledSlide fit className="h-full w-full" slide={shown} theme={theme} index={sel} total={slides.length} />
+                <ScaledSlide fit className="h-full w-full" slide={shown} theme={theme} index={sel} total={slides.length} pending={deck.picturesPending} />
               ) : generating ? (
                 <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
                   <Sparkles className="h-8 w-8 animate-pulse text-primary" /> Krish AI is designing your slides…
@@ -506,10 +550,13 @@ export default function DeckEditor() {
               <Button variant="ghost" size="icon" onClick={() => selectSlide(Math.max(0, sel - 1))} disabled={sel === 0}><ChevronLeft className="h-4 w-4" /></Button>
               {slides.length ? `${sel + 1} / ${slides.length}` : ""}
               <Button variant="ghost" size="icon" onClick={() => selectSlide(Math.min(slides.length - 1, sel + 1))} disabled={sel >= slides.length - 1}><ChevronRight className="h-4 w-4" /></Button>
-              {current && IMAGE_LAYOUTS.includes(current.layout) && current.image_query && (
-                <Button variant="outline" size="sm" className="ml-2 gap-1.5" onClick={newPicture} disabled={!!busy || generating} data-testid="deck-new-image">
-                  {busy === "image" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} New picture
+              {current && [...IMAGE_LAYOUTS, "bullets", "section", "closing"].includes(current.layout) && (
+                <Button variant="outline" size="sm" className="ml-2 gap-1.5" onClick={() => setPicker(true)} disabled={!!busy || generating} data-testid="deck-change-picture">
+                  <ImageIcon className="h-3.5 w-3.5" /> {current.image ? "Change picture" : "Add picture"}
                 </Button>
+              )}
+              {deck.picturesPending && (
+                <span className="ml-2 flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> Making pictures…</span>
               )}
             </div>
             {deck.error && slides.length > 0 && !generating && (
@@ -582,6 +629,8 @@ export default function DeckEditor() {
         </div>
       </div>
       {presenting && slides.length > 0 && <PresentMode slides={slides} theme={theme} start={sel} onClose={closePresent} />}
+      <PicturePicker open={picker} onOpenChange={setPicker} deckId={id} index={sel} slide={current}
+        onDeck={(data) => { setDeck(data); setDraft(null); }} />
       {printing && <PrintDeck slides={slides} theme={theme} onDone={donePrinting} />}
     </div>
   );
