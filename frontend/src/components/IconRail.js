@@ -1,9 +1,10 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
-import { MessageSquare, FolderKanban, Sparkles, AppWindow, Workflow, Presentation } from "lucide-react";
+import { MessageSquare, FolderKanban, Sparkles, AppWindow, Workflow, Presentation, HeartHandshake } from "lucide-react";
 
 const ITEMS = [
   { icon: MessageSquare, label: "Chat", to: "/", match: (p) => p === "/" },
+  { icon: HeartHandshake, label: "Counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
   { icon: FolderKanban, label: "Projects", to: "/projects", match: (p) => p.startsWith("/projects") },
   { icon: AppWindow, label: "Apps", to: "/apps", match: (p) => p.startsWith("/apps") },
   { icon: Presentation, label: "Decks", to: "/decks", match: (p) => p.startsWith("/decks") },
