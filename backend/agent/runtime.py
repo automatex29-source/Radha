@@ -15,6 +15,7 @@ from .tools import ToolContext, ToolRegistry
 MAX_STEPS = 8
 HEARTBEAT_SECONDS = 10
 UI_OUTPUT_CHARS = 4000
+SEQUENTIAL_TOOLS = {"browser"}
 
 
 async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContext,
@@ -51,17 +52,44 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
                 args = {"_raw": call["arguments"]}
             yield {"type": "tool_start", "id": call["id"], "name": call["name"],
                    "label": labels.get(call["name"], call["name"]), "args": args}
-            task = asyncio.create_task(registry.run(call["name"], call["arguments"], ctx))
-            try:
-                # Slow tools (video, browsing) run for minutes: keep the stream alive meanwhile.
-                while not task.done():
-                    await asyncio.wait({task}, timeout=HEARTBEAT_SECONDS)
-                    if not task.done():
+        # Calls from one step run at the same time (several searches, an image and a file...), except
+        # calls to a tool that keeps state between calls (the browser), which run one after another.
+        tasks, last = [], {}
+        for call in calls:
+            task = asyncio.create_task(_after(last.get(call["name"]),
+                                              lambda c=call: registry.run(c["name"], c["arguments"], ctx)))
+            if call["name"] in SEQUENTIAL_TOOLS:
+                last[call["name"]] = task
+            tasks.append(task)
+        reported = set()
+        try:
+            while len(reported) < len(tasks):
+                for i, (call, task) in enumerate(zip(calls, tasks)):
+                    if task.done() and i not in reported:
+                        reported.add(i)
+                        out = task.result()
+                        yield {"type": "tool_end", "id": call["id"], "name": call["name"], "ok": out.ok,
+                               "summary": out.summary, "output": out.content[:UI_OUTPUT_CHARS], "media": out.media}
+                running = [t for t in tasks if not t.done()]
+                if running:
+                    # Slow tools (video, browsing) run for minutes: keep the stream alive meanwhile.
+                    done, _ = await asyncio.wait(running, timeout=HEARTBEAT_SECONDS,
+                                                 return_when=asyncio.FIRST_COMPLETED)
+                    if not done:
                         yield {"type": "heartbeat"}
-            finally:
-                if not task.done():
-                    task.cancel()
-            out = task.result()
-            yield {"type": "tool_end", "id": call["id"], "name": call["name"], "ok": out.ok,
-                   "summary": out.summary, "output": out.content[:UI_OUTPUT_CHARS], "media": out.media}
-            messages.append({"role": "tool", "tool_call_id": call["id"], "content": out.content})
+        finally:
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+        for call, task in zip(calls, tasks):
+            messages.append({"role": "tool", "tool_call_id": call["id"], "content": task.result().content})
+
+
+async def _after(prev, run):
+    """Run run() once prev (an earlier task, or None) has finished."""
+    if prev is not None:
+        try:
+            await asyncio.shield(prev)
+        except Exception:
+            pass
+    return await run()

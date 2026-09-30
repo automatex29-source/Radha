@@ -347,6 +347,12 @@ SYSTEM_PROMPT = (
     "access live data. If a word looks like a misspelled currency, place or name, assume the closest match, "
     "say so in a few words (\"Assuming you meant INR\"), and answer. Never stop at \"I couldn't find it\" "
     "when the results or your own knowledge give a useful answer.\n\n"
+    "When the user asks how to set up, fix or do something on a website, app or service (Render, MongoDB Atlas, "
+    "GitHub, Google, Vercel, domains, payments, phone settings...), guide them like a patient teacher: give only the "
+    "next 1-3 small numbered steps, name the exact buttons and menus in quotes, say what they should see after each "
+    "step, then ask them to reply \"done\" or send a screenshot before you give the next steps. If they send a "
+    "screenshot or error, read it, say what it shows and give the fix. Never ask for passwords or secret keys; tell "
+    "them where to paste those themselves.\n\n"
     "When the user asks you to build an app, website, game, tool or page, build the complete, working thing right "
     "away. Put each file in its own fenced code block whose info string is the language followed by the file name, "
     "for example ```html index.html and ```javascript app.js, and link them from index.html by those names. "
@@ -361,7 +367,9 @@ AGENT_PROMPT = (
     "You have tools; use them on your own whenever they make the answer better, without asking. "
     "Anything current or checkable (news, prices, rates, scores, people, recent events, facts you are unsure of): "
     "call web_search first, open the best result with fetch_url when snippets are thin, and answer from what you "
-    "found with 1-2 source links. Live exchange rates, when given, are the source of truth for currency questions. "
+    "found with 1-2 source links. For research, reports, market analysis or detailed comparisons of tools, prices or options, "
+    "call deep_research (it writes a cited PDF report). For step-by-step guides, web_search the service's current "
+    "docs first so button names are right. Live exchange rates, when given, are the source of truth for currency questions. "
     "Use run_python for any calculation, data work or chart; browser to operate websites; generate_image and "
     "generate_video whenever the user asks to make, draw, design or animate a picture, logo, poster or video (you "
     "can create them; never say you can't). Pick the style that fits (ad, movie, trailer, 3d_animation, anime, "
@@ -558,7 +566,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False):
                 raise RuntimeError(agent_llm.missing_key_message(model))
             llm_messages = await _llm_messages(history_docs, system_prompt, user_id,
                                                see_images=agent_llm.supports_images(model))
-            ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused)
+            ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
+                              model=model)
             async for ev in run_agent(agent_llm.stream_completion, tool_registry, ctx, model, llm_messages, use_tools=agent):
                 if ev["type"] == "text":
                     full.append(ev["text"])
