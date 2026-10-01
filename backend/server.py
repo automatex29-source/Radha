@@ -98,7 +98,8 @@ apps.init(db)
 appdata.init(db)
 apps.register_tools(tool_registry)
 
-app = FastAPI(title="Krish AI API")
+# The web app owns /docs (the Docs writing space), so FastAPI's API pages live under /api.
+app = FastAPI(title="Krish AI API", docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
