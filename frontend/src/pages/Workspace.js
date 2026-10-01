@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api, API, getToken, formatApiError } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
+import { useAuth } from "@/context/AuthContext";
 
 const STARTERS = [
   { icon: FileText, tone: "indigo", hint: "Turn ideas into clear, concise summaries.", title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
@@ -36,6 +37,39 @@ const COUNSEL_STARTERS = [
   { icon: MessageCircle, tone: "emerald", hint: "हिंदी में बात करते हैं।", title: "यार, मन नहीं लग रहा", prompt: "यार, आज मन नहीं लग रहा। थोड़ी बात करो ना।" },
   { icon: Lightbulb, tone: "indigo", hint: "Think it through together.", title: "Help me decide 🤔", prompt: "I have a big decision to make and I keep going back and forth. Help me think it through?" },
 ];
+
+// A fresh, positive greeting on every visit, matched to the time of day. {name} is the user's first name.
+const GREETINGS = {
+  morning: [
+    ["Good morning, {name}! ☀️", "Let's make today", "a good one"],
+    ["Rise and shine, {name} 🌅", "Fresh day,", "fresh start"],
+    ["Morning, {name}! ☕", "What's on your", "mind today?"],
+  ],
+  afternoon: [
+    ["Hey {name}, good afternoon! 🌤️", "How's your day", "going so far?"],
+    ["Hi {name}! 😊", "Take a breath,", "you're doing great"],
+    ["Namaste, {name} 🙏", "Kaisa chal raha hai", "aaj ka din?"],
+  ],
+  evening: [
+    ["Good evening, {name} 🌇", "How was", "your day?"],
+    ["Hey {name}! 🌸", "Let's unwind", "and talk"],
+    ["Evening, {name} ✨", "Tell me the best part", "of your day"],
+  ],
+  night: [
+    ["Hey night owl, {name} 🌙", "Can't sleep?", "Let's talk"],
+    ["Hi {name} ✨", "Before you rest,", "what's on your mind?"],
+    ["Late night thoughts, {name}? 🌌", "I'm all", "ears"],
+  ],
+};
+const TAGLINES = ["Let's talk!", "I'm here for you", "Smile please! 😄", "Good vibes only", "Aaj kya scene hai?"];
+
+function pickGreeting(name) {
+  const h = new Date().getHours();
+  const part = h >= 5 && h < 12 ? "morning" : h >= 12 && h < 17 ? "afternoon" : h >= 17 && h < 22 ? "evening" : "night";
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  const [hello, lead, highlight] = pick(GREETINGS[part]);
+  return { hello: name ? hello.replace("{name}", name) : hello.replace(/,? \{name\}/, ""), lead, highlight, tagline: pick(TAGLINES) };
+}
 
 export default function Workspace({ mode = null }) {
   const counselling = mode === "counsellor";
@@ -617,13 +651,17 @@ const Sparkle = ({ className }) => (
 );
 
 function CounselEmptyState({ onPick }) {
+  const { user } = useAuth();
+  const first = (user?.name || "").trim().split(/\s+/)[0];
+  const g = useMemo(() => pickGreeting(first), [first]);
   return (
     <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
       <div className="radha-fade-up relative flex items-center gap-4 max-md:flex-col-reverse md:gap-10">
         <div className="relative min-w-0 flex-1 max-md:text-center">
           <Sparkle className="absolute -left-7 top-6 h-6 w-6 text-amber-400 max-md:hidden" />
           <h2 className="text-[1.6rem] font-extrabold leading-[1.1] tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem]">
-            Hey bestie! 👋<br />What's the <span className="krish-gradient-text">vibe</span> today?
+            <span data-testid="counsellor-greeting" className="block text-lg font-bold text-muted-foreground sm:text-xl">{g.hello}</span>
+            {g.lead} <span className="krish-gradient-text">{g.highlight}</span>
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
             Talk about anything: your day, exams, crush, family, big dreams. No judgement, just good vibes,
@@ -632,7 +670,7 @@ function CounselEmptyState({ onPick }) {
         </div>
         <div className="relative shrink-0">
           <p className="krish-hand absolute -left-24 top-4 -rotate-12 text-2xl text-pink-500 max-lg:hidden dark:text-pink-300">
-            Let's talk!
+            {g.tagline}
             <svg viewBox="0 0 120 12" className="ml-2 mt-0.5 h-3 w-24" aria-hidden="true"><path d="M2 9 C 40 2, 80 2, 118 6" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" /></svg>
           </p>
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
