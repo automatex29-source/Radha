@@ -10,6 +10,7 @@ key is set and free providers (Pollinations, Hugging Face) otherwise. Media byte
 import base64
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -209,7 +210,48 @@ async def transcribe(data: bytes, filename: str, language: Optional[str] = None)
     return resp.text
 
 
-async def speak(text: str, voice: str = "nova") -> bytes:
+# Free natural voices (Microsoft Edge's online neural voices, no key) when there's no OpenAI key.
+EDGE_VOICES = {"hi": os.environ.get("EDGE_VOICE_HI", "hi-IN-SwaraNeural"),
+               "en": os.environ.get("EDGE_VOICE_EN", "en-IN-NeerjaNeural")}
+
+
+def edge_available() -> bool:
+    if os.environ.get("EDGE_TTS", "1") == "0":
+        return False
+    try:
+        import edge_tts  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def speech_available() -> bool:
+    return openai_configured() or edge_available()
+
+
+def edge_voice(text: str, lang: Optional[str] = None) -> str:
+    """Hindi voice for Hindi (or Devanagari text in auto mode), Indian English otherwise."""
+    if lang == "hi" or (lang != "en" and re.search(r"[\u0900-\u097F]", text)):
+        return EDGE_VOICES["hi"]
+    return EDGE_VOICES["en"]
+
+
+async def _edge_speak(text: str, lang: Optional[str]) -> bytes:
+    import edge_tts
+    audio = bytearray()
+    async for chunk in edge_tts.Communicate(text[:MAX_TTS_CHARS], edge_voice(text, lang)).stream():
+        if chunk["type"] == "audio":
+            audio += chunk["data"]
+    if not audio:
+        raise RuntimeError("The free voice service returned no audio")
+    return bytes(audio)
+
+
+async def speak(text: str, voice: str = "nova", lang: Optional[str] = None) -> bytes:
+    if not openai_configured():
+        if not edge_available():
+            raise MediaUnavailable("Set OPENAI_API_KEY on the backend for server voices.")
+        return await _edge_speak(text, lang)
     if voice not in TTS_VOICES:
         voice = "nova"
     resp = await _client().audio.speech.create(model=TTS_MODEL, voice=voice, input=text[:MAX_TTS_CHARS], response_format="mp3")

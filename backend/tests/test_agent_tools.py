@@ -216,3 +216,33 @@ class TestFileTools:
         data = documents.build_zip([{"path": "a.txt", "content": "x"}], folder="p")
         out = preview.build_preview("application/zip", data, "p.zip")
         assert "p/a.txt" in out["text"]
+
+
+class TestStudyAndThink:
+    def test_flashcards_page_escapes_and_caps(self):
+        from agent import flashcards
+        cards = flashcards.clean_cards([{"front": "2+2?", "back": "4"}, {"front": "", "back": "x"},
+                                        {"front": "</script><b>", "back": "safe"}] + [{"front": "q", "back": "a"}] * 80)
+        assert len(cards) == flashcards.MAX_CARDS
+        page = flashcards.build_page("<Maths>", cards)
+        assert "&lt;Maths&gt;" in page and "</script><b>" not in page
+
+    def test_flashcards_need_cards(self):
+        from agent import flashcards
+        with pytest.raises(ValueError):
+            flashcards.clean_cards([{"front": "only front"}])
+
+    def test_reasoning_effort(self, monkeypatch):
+        from agent import llm
+        monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+        assert llm.reasoning_effort("openai/gpt-oss-120b", False) == "low"
+        assert llm.reasoning_effort("openai/gpt-oss-120b", True) == "medium"
+        assert llm.reasoning_effort("claude-sonnet-4-6", True) == "high"
+        assert llm.reasoning_effort("claude-sonnet-4-6", False) is None
+
+    def test_matplotlib_chart_is_returned_without_cache_files(self):
+        pytest.importorskip("matplotlib")
+        result = run(sandbox.run_python(
+            "import matplotlib.pyplot as plt\nplt.plot([1, 2], [3, 4])\nplt.savefig('chart.png')\nprint('ok')"))
+        assert "ok" in result.stdout
+        assert [a.name for a in result.artifacts] == ["chart.png"]

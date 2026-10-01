@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck } from "lucide-react";
+import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck, Lightbulb, GraduationCap } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
@@ -18,6 +18,7 @@ export default function ComposerInput({
   onAttach, attachments = [], onRemoveAttachment, uploading,
   images = [], onRemoveImage,
   agentMode, onToggleAgent, agentAvailable, agentHint,
+  thinkMode, onToggleThink, studyMode, onToggleStudy,
   voiceEnabled, voiceHint, onVoiceMode, placeholder,
 }) {
   const ref = useRef(null);
@@ -132,6 +133,14 @@ export default function ComposerInput({
                 <Bot className="h-4 w-4" /> Agent
               </button>
             )}
+            {onToggleThink && (
+              <ModeChip on={thinkMode} onClick={onToggleThink} icon={Lightbulb} label="Think" testId="think-mode-toggle"
+                title={thinkMode ? "Think is on: slower, more careful answers" : "Think harder before answering"} />
+            )}
+            {onToggleStudy && (
+              <ModeChip on={studyMode} onClick={onToggleStudy} icon={GraduationCap} label="Study" testId="study-mode-toggle"
+                title={studyMode ? "Study mode is on: Krish teaches step by step and quizzes you" : "Study mode: learn step by step with quizzes and flashcards"} />
+            )}
             <button onClick={toggleMic} disabled={!voiceEnabled || transcribing || disabled} data-testid="composer-mic-button"
               title={voiceEnabled ? (rec.recording ? "Stop and transcribe" : "Dictate") : voiceHint}
               className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors sm:h-8 sm:w-8 disabled:opacity-40 ${
@@ -169,6 +178,16 @@ export default function ComposerInput({
       </div>
       <p className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground max-sm:hidden"><ShieldCheck className="h-3.5 w-3.5" /> Krish AI can make mistakes. Verify important information.</p>
     </div>
+  );
+}
+
+function ModeChip({ on, onClick, icon: Icon, label, title, testId }) {
+  return (
+    <button onClick={onClick} data-testid={testId} title={title} aria-pressed={!!on}
+      className={`flex h-10 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors sm:h-8 sm:px-2.5 ${
+        on ? "bg-primary/15 text-brand ring-1 ring-primary/50" : "text-muted-foreground hover:bg-surface hover:text-foreground"}`}>
+      <Icon className="h-4 w-4" /> <span className={on ? "" : "max-sm:hidden"}>{label}</span>
+    </button>
   );
 }
 

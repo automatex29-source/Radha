@@ -139,16 +139,18 @@ def _bad_tool_call(exc: Exception) -> bool:
     return "tool call validation failed" in text or "tool_use_failed" in text or "failed to call a function" in text
 
 
-async def stream_completion(model: str, messages: List[dict], tools: List[dict]) -> AsyncIterator[dict]:
+async def stream_completion(model: str, messages: List[dict], tools: List[dict],
+                            think: bool = False) -> AsyncIterator[dict]:
     """Yield {"type": "text", "text"} deltas, then one {"type": "tool_calls", "calls"} if the model called tools.
 
     While waiting out a rate limit it yields {"type": "heartbeat"} so the stream stays open. A rejected tool
     call is retried (up to _TOOL_CALL_RETRIES times) as long as nothing but heartbeats was sent yet.
+    `think` (the Think button) asks reasoning models to reason longer before answering.
     """
     for attempt in range(_TOOL_CALL_RETRIES + 1):
         sent = False
         try:
-            async for event in _stream_once(model, messages, tools):
+            async for event in _stream_once(model, messages, tools, think):
                 sent = sent or event["type"] != "heartbeat"
                 yield event
             return
@@ -158,7 +160,16 @@ async def stream_completion(model: str, messages: List[dict], tools: List[dict])
             logger.warning("model sent an invalid tool call, asking again: %s", str(exc)[:300])
 
 
-async def _stream_once(model: str, messages: List[dict], tools: List[dict]) -> AsyncIterator[dict]:
+def reasoning_effort(model: str, think: bool) -> Optional[str]:
+    """How hard a reasoning model should think. Groq's free budget counts reasoning, so Think there is "medium"."""
+    if lean(model):
+        if not model.startswith("openai/gpt-oss"):
+            return None
+        return "medium" if think else "low"
+    return "high" if think else None
+
+
+async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: bool = False) -> AsyncIterator[dict]:
     import litellm
 
     kwargs = {"model": f"{provider_for(model)}/{model}", "messages": messages, "stream": True, "max_tokens": _MAX_OUTPUT}
@@ -172,8 +183,9 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict]) -> A
         fitted = fit_messages(messages, tools, budget)
         room = budget - estimate_tokens(fitted) - estimate_tokens(tools)
         kwargs.update(messages=fitted, max_tokens=max(_MIN_OUTPUT // 2, min(_MAX_OUTPUT, room)))
-        if model.startswith("openai/gpt-oss"):
-            kwargs["reasoning_effort"] = "low"  # reasoning tokens count against the same budget
+    effort = reasoning_effort(model, think)
+    if effort:
+        kwargs.update(reasoning_effort=effort, drop_params=True)
 
     for attempt in range(_RATE_LIMIT_RETRIES + 1):
         try:

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import media
-from . import browser, documents, prompt_boost, research, sandbox, styles, video, web
+from . import browser, documents, flashcards, prompt_boost, research, sandbox, styles, video, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -243,6 +243,15 @@ async def _create_html(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Created {saved['name']}", media=[saved])
 
 
+async def _create_flashcards(ctx: ToolContext, args: dict) -> ToolOutput:
+    cards = flashcards.clean_cards(args.get("cards"))
+    page = flashcards.build_page(args.get("title") or "Flashcards", cards)
+    saved = await _save_file(ctx, page.encode("utf-8"), "html", args.get("title") or "flashcards")
+    return ToolOutput(content=f"Created {len(cards)} flashcards. The user can flip and practise them in the preview; "
+                              "don't list the cards again.",
+                      summary=f"Made {len(cards)} flashcards", media=[saved])
+
+
 async def _create_file(ctx: ToolContext, args: dict) -> ToolOutput:
     name, ctype = documents.text_file(_require(args, "filename"))
     content = args.get("content")
@@ -323,7 +332,7 @@ def default_registry() -> ToolRegistry:
             description="Execute Python 3 code in an isolated sandbox with no network access and a "
                         f"{sandbox.WALL_SECONDS}s limit. Print results to stdout. Files written to the "
                         "current directory (png, csv, json, txt, md, html, svg) are returned to the user, "
-                        "so save charts with plt.savefig('chart.png'). Only the standard library is guaranteed.",
+                        "so save charts with plt.savefig('chart.png'). matplotlib, pandas and numpy are installed.",
             parameters={"type": "object", "properties": {
                 "code": {"type": "string", "description": "Complete Python program"},
             }, "required": ["code"]},
@@ -443,6 +452,16 @@ def default_registry() -> ToolRegistry:
                 "html": {"type": "string", "description": "Complete HTML document"},
             }, "required": ["filename", "html"]},
             handler=_create_html))
+        .register(Tool(
+            name="create_flashcards", label="Make flashcards",
+            description="Make interactive revision flashcards (flip, Got it / Again) from a topic, notes or a file.",
+            parameters={"type": "object", "properties": {
+                "title": {"type": "string"},
+                "cards": {"type": "array", "description": "5-30 cards", "items": {"type": "object", "properties": {
+                    "front": {"type": "string", "description": "Question or term"},
+                    "back": {"type": "string", "description": "Short answer"}}}},
+            }, "required": ["title", "cards"]},
+            handler=_create_flashcards))
         .register(Tool(
             name="generate_video", label="Generate video",
             description="Generate a short video: ads, movie scenes, trailers, 3D animation, anime, cartoons, music "

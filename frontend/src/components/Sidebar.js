@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,7 +39,7 @@ const GroupIcon = ({ label }) => {
   return <Icon className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />;
 };
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel = "New conversation" }) {
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel = "New conversation", searchContent = false }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
@@ -49,7 +50,21 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [deleteId, setDeleteId] = useState(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
 
-  const filtered = conversations.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()));
+  // Search also looks inside messages (server side), with a short snippet of where the words appear.
+  const [hits, setHits] = useState(null); // { [conversationId]: snippet }
+  useEffect(() => {
+    const q = query.trim();
+    if (!searchContent || q.length < 2) { setHits(null); return undefined; }
+    let live = true;
+    const t = setTimeout(() => {
+      api.get("/conversations/search", { params: { q } })
+        .then(({ data }) => { if (live) setHits(Object.fromEntries(data.map((h) => [h.id, h.snippet]))); })
+        .catch(() => { if (live) setHits(null); });
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [query, searchContent]);
+
+  const filtered = conversations.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()) || (hits && c.id in hits));
   const groups = groupByDate(filtered);
 
   const startRename = (c) => { setEditingId(c.id); setEditValue(c.title); };
@@ -84,14 +99,14 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <div className="relative">
           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input data-testid="conversation-search-input" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search conversations" className="h-10 rounded-full border-white/80 bg-white/80 pl-11 text-sm shadow-sm dark:border-border dark:bg-card" />
+            placeholder={searchContent ? "Search chats and messages" : "Search conversations"} className="h-10 rounded-full border-white/80 bg-white/80 pl-11 text-sm shadow-sm dark:border-border dark:bg-card" />
         </div>
       </div>
 
       {/* List */}
       <div className="radha-scroll flex-1 overflow-y-auto px-3 pb-2">
         {filtered.length === 0 && (
-          <p className="px-2 py-8 text-center text-xs text-muted-foreground">No conversations yet.</p>
+          <p className="px-2 py-8 text-center text-xs text-muted-foreground">{query.trim() ? "No chats match your search." : "No conversations yet."}</p>
         )}
         {Object.entries(groups).map(([label, items]) =>
           items.length ? (
@@ -117,7 +132,10 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                     </div>
                   ) : (
                     <>
-                      <span className="flex-1 truncate">{c.title}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{c.title}</span>
+                        {hits?.[c.id] && <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground" data-testid={`search-snippet-${c.id}`}>{hits[c.id]}</span>}
+                      </span>
                       <div className="flex shrink-0 items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 lg:gap-1">
                         <button data-testid={`rename-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); startRename(c); }} className="hover:text-primary">
                           <Pencil className="h-3.5 w-3.5" />
