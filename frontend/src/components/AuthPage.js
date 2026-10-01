@@ -9,8 +9,8 @@ import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, MessageSquare
 import { api } from "@/lib/api";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
+import Mascot from "@/components/Mascot";
 
-const HERO = "https://images.unsplash.com/photo-1637946175559-22c4fe13fc54?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400";
 
 export default function AuthPage() {
   const { login, register, formatApiError } = useAuth();
@@ -47,8 +47,8 @@ export default function AuthPage() {
     <div className="grid min-h-dvh w-full lg:grid-cols-2">
       {/* Showcase panel */}
       <div className="relative hidden overflow-hidden border-r border-border lg:block">
-        <img src={HERO} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-tr from-background via-background/80 to-transparent" />
+        <div className="radha-orb -left-24 top-1/4 h-80 w-80 bg-indigo-500/20" />
+        <div className="radha-orb -right-16 bottom-10 h-72 w-72 bg-fuchsia-400/20" />
         <div className="relative z-10 flex h-full flex-col justify-between p-12">
           <div className="flex items-center gap-2.5">
             <BrandMark className="h-9 w-9" />
@@ -59,6 +59,7 @@ export default function AuthPage() {
           </div>
 
           <div className="max-w-md">
+            <Mascot className="krish-float mb-6 h-36 w-auto" />
             <h1 className="text-4xl font-extrabold leading-tight tracking-tighter text-foreground sm:text-5xl">
               Your AI for work, study and life.
             </h1>
