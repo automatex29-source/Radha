@@ -10,7 +10,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { FolderKanban, Plus, FileText, MessageSquare, Loader2 } from "lucide-react";
+import { FolderKanban, Plus, FileText, MessageSquare, Loader2, Sparkles } from "lucide-react";
+import { ASSISTANT_TEMPLATES } from "@/lib/assistantTemplates";
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
@@ -44,6 +45,19 @@ export default function ProjectsPage() {
       toast.error(formatApiError(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const [starting, setStarting] = useState(null);
+  const startTemplate = async (t) => {
+    setStarting(t.name);
+    try {
+      const { data } = await api.post("/projects", { name: t.name, description: t.description, instructions: t.instructions });
+      navigate(`/?project=${data.id}`);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setStarting(null);
     }
   };
 
@@ -91,7 +105,25 @@ export default function ProjectsPage() {
             </Dialog>
           </div>
 
-          <div className="mt-8">
+          <section className="mt-8" data-testid="assistant-templates">
+            <h2 className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> Ready-made assistants</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Each one is a project with its own instructions. Add files to teach it more, change how it behaves, or share it with a link.</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {ASSISTANT_TEMPLATES.map((t) => (
+                <button key={t.name} onClick={() => startTemplate(t)} disabled={!!starting} data-testid={`assistant-template-${t.name}`}
+                  className="radha-lift flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 text-left hover:border-primary/50 disabled:opacity-60">
+                  <span className="text-2xl leading-none" aria-hidden>{t.emoji}</span>
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5 text-sm font-semibold">{t.name}{starting === t.name && <Loader2 className="h-3.5 w-3.5 animate-spin" />}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{t.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <h2 className="mt-10 text-sm font-semibold">Your projects and assistants</h2>
+          <div className="mt-3">
             {projects === null ? (
               <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : projects.length === 0 ? (

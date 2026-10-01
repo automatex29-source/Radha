@@ -12,8 +12,11 @@ import {
 import { toast } from "sonner";
 import {
   ArrowLeft, Upload, FileText, Trash2, MessageSquare, Plus, Brain, Loader2, Save,
-  CheckCircle2, AlertCircle, Clock,
+  CheckCircle2, AlertCircle, Clock, Share2, Copy, Link2Off,
 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
 
 const STATUS = {
   ready: { icon: CheckCircle2, cls: "text-emerald-600 dark:text-emerald-400", label: "Ready" },
@@ -143,6 +146,7 @@ export default function ProjectView() {
               {project.description && <p className="mt-1.5 text-sm text-muted-foreground">{project.description}</p>}
             </div>
             <div className="flex shrink-0 gap-2">
+              <ShareAssistant project={project} onChange={(assistantCode) => setData((d) => ({ ...d, project: { ...d.project, assistantCode } }))} />
               <Button onClick={() => navigate(`/?project=${id}`)} data-testid="project-new-chat" className="gap-2 font-semibold">
                 <MessageSquare className="h-4 w-4" /> New chat
               </Button>
@@ -244,5 +248,64 @@ function Section({ title, hint, children }) {
       {hint && <p className="mb-4 mt-0.5 text-xs text-muted-foreground">{hint}</p>}
       {children}
     </div>
+  );
+}
+
+/** Share a project's instructions as an assistant link others can add to their own Krish. */
+function ShareAssistant({ project, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const link = project.assistantCode ? `${window.location.origin}/assistant/${project.assistantCode}` : "";
+
+  const turnOn = async () => {
+    setOpen(true);
+    if (project.assistantCode) return;
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/projects/${project.id}/assistant-link`);
+      onChange(data.code);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const turnOff = async () => {
+    try {
+      await api.delete(`/projects/${project.id}/assistant-link`);
+      onChange(null);
+      setOpen(false);
+      toast.success("Link turned off");
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(link); toast.success("Link copied"); } catch { toast.message(link); }
+  };
+
+  return (
+    <>
+      <Button variant="outline" onClick={turnOn} data-testid="share-assistant-button" className="gap-2 border-border bg-card">
+        <Share2 className="h-4 w-4" /> <span className="max-sm:hidden">Share as assistant</span>
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share “{project.name}” as an assistant</DialogTitle>
+            <DialogDescription>Anyone with the link can add this assistant to their own Krish AI. They get its name, description and instructions. Your files, chats and memory stay private.</DialogDescription>
+          </DialogHeader>
+          {busy || !link ? <Loader2 className="mx-auto my-4 h-5 w-5 animate-spin text-primary" /> : (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <Input readOnly value={link} onFocus={(e) => e.target.select()} data-testid="assistant-link-input" className="bg-card text-xs" />
+                <Button onClick={copy} className="gap-1.5"><Copy className="h-4 w-4" /> Copy</Button>
+              </div>
+              <Button variant="ghost" onClick={turnOff} className="gap-1.5 text-muted-foreground hover:text-destructive"><Link2Off className="h-4 w-4" /> Turn off link</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

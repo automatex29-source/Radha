@@ -45,6 +45,7 @@ import live_search
 import mailer
 import counsellor
 import help_center
+import writer
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -63,6 +64,7 @@ AVAILABLE_MODELS = [
     {"id": "gpt-5.4", "label": "Krish Vision", "provider": "openai", "description": "Versatile · OpenAI"},
     {"id": "gemini-2.5-flash", "label": "Krish Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
     {"id": "openai/gpt-oss-120b", "label": "Krish Open", "provider": "groq", "description": "Fast · Groq · free tier"},
+    {"id": "openai/gpt-oss-20b", "label": "Krish Open Fast", "provider": "groq", "description": "Quickest replies · free tier"},
 ]
 
 # Default model: AI_MODEL if set, otherwise the first model whose provider key is configured.
@@ -199,6 +201,7 @@ def public_project(doc: dict) -> dict:
     return {
         "id": doc["id"],
         "name": doc["name"],
+        "assistantCode": doc.get("assistantCode"),
         "description": doc.get("description"),
         "instructions": doc.get("instructions"),
         "createdAt": doc["createdAt"],
@@ -498,7 +501,8 @@ AGENT_PROMPT = (
     "found with 1-2 source links. For research, reports, market analysis or detailed comparisons of tools, prices or options, "
     "call deep_research (it writes a cited PDF report). For step-by-step guides, web_search the service's current "
     "docs first so button names are right. Live exchange rates, when given, are the source of truth for currency questions. "
-    "Use run_python for any calculation, data work or chart; browser to operate websites; generate_image and "
+    "Use run_python for any calculation, data work or chart; browser to operate websites; edit_image to change a "
+    "picture the user attached or you made (AI changes or quick fixes like crop, rotate, black and white); generate_image and "
     "generate_video whenever the user asks to make, draw, design or animate a picture, logo, poster or video (you "
     "can create them; never say you can't). Pick the style that fits (ad, movie, trailer, 3d_animation, anime, "
     "cartoon, music_video, social_reel...), write 3-6 vivid scenes, and add short captions for ads and reels. When the user asks for a file, create a real one that "
@@ -1004,6 +1008,46 @@ async def delete_project(pid: str, user_id: str = Depends(current_user_id)):
     return {"ok": True}
 
 
+# ----------------------------------------------------------------- assistants
+# A project's name, description and instructions can be shared as an "assistant" link (like a custom GPT).
+# Anyone signed in who opens it can add their own copy. Files, chats and memory are never shared.
+@api.post("/projects/{pid}/assistant-link")
+async def share_assistant(pid: str, user_id: str = Depends(current_user_id)):
+    proj = await _owned_project(pid, user_id)
+    code = proj.get("assistantCode") or secrets.token_urlsafe(9)
+    await db.projects.update_one({"id": pid}, {"$set": {"assistantCode": code}})
+    return {"code": code}
+
+
+@api.delete("/projects/{pid}/assistant-link")
+async def unshare_assistant(pid: str, user_id: str = Depends(current_user_id)):
+    await _owned_project(pid, user_id)
+    await db.projects.update_one({"id": pid}, {"$set": {"assistantCode": None}})
+    return {"ok": True}
+
+
+async def _shared_assistant(code: str) -> dict:
+    proj = await db.projects.find_one({"assistantCode": code}) if code else None
+    if not proj:
+        raise HTTPException(status_code=404, detail="This assistant link was turned off or doesn't exist")
+    return proj
+
+
+@api.get("/assistants/{code}")
+async def get_shared_assistant(code: str, user_id: str = Depends(current_user_id)):
+    proj = await _shared_assistant(code)
+    owner = await db.users.find_one({"id": proj["userId"]}, {"name": 1})
+    return {"name": proj["name"], "description": proj.get("description"), "instructions": proj.get("instructions"),
+            "by": (owner or {}).get("name"), "mine": proj["userId"] == user_id}
+
+
+@api.post("/assistants/{code}/copy")
+async def copy_shared_assistant(code: str, user_id: str = Depends(current_user_id)):
+    proj = await _shared_assistant(code)
+    return await create_project(ProjectIn(name=proj["name"], description=proj.get("description"),
+                                          instructions=proj.get("instructions")), user_id)
+
+
 # ---------------------------------------------------------------------- files
 async def _process_file(file_id: str, user_id: str, project_id, data: bytes, ext: str, filename: str, content_type: str, conversation_id=None):
     """Extract text, chunk, embed, and store chunks. Updates file status."""
@@ -1362,6 +1406,8 @@ app.include_router(apps.router)
 app.include_router(appdata.router)
 decks.init(db, AI_MODEL)
 app.include_router(decks.router)
+writer.init(db, AI_MODEL)
+app.include_router(writer.router)
 automations.init(db, run_turn, AI_MODEL)
 app.include_router(automations.router)
 help_center.init(db)
