@@ -28,7 +28,7 @@ const STARTERS = [
   { icon: ImageIcon, tone: "violet", hint: "Create stunning visuals for your next project.", title: "Design a poster", prompt: "Design a bold poster for a college tech fest called Spark 2026." },
 ];
 
-// The Counsellor tab (labelled "Talk it out"): a cheerful friend who shares Krishna's wisdom from the Gita when it helps (see backend/counsellor.py).
+// The Counsellor tab: a cheerful friend who shares Krishna's wisdom from the Gita when it helps (see backend/counsellor.py).
 const COUNSEL_STARTERS = [
   { icon: Coffee, tone: "amber", hint: "No agenda, just vibes.", title: "Just wanna chat ☕", prompt: "Hey! Just wanna chat for a bit. How's it going?" },
   { icon: BookOpen, tone: "sky", hint: "Exams, deadlines, all of it.", title: "Study stress is real 📚", prompt: "Bro exams are coming and I'm lowkey stressed. Help me chill and make a plan?" },
@@ -484,7 +484,7 @@ export default function Workspace({ mode = null }) {
               <PanelLeft className="h-5 w-5" />
             </button>
             <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight">
-              {activeConv ? activeConv.title : counselling ? "Talk it out" : "New conversation"}
+              {activeConv ? activeConv.title : counselling ? "Counsellor" : "New conversation"}
             </h1>
             {project && (
               <button onClick={() => navigate(`/projects/${project.id}`)} data-testid="active-project-badge"
@@ -665,7 +665,7 @@ function CounselEmptyState({ onPick }) {
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
             Talk about anything: your day, exams, crush, family, big dreams. No judgement, just good vibes,
-            real advice and a little Bhagavad Gita wisdom when you need it ✨ Hindi, English or Hinglish, all chill.
+            real advice and a little Krishna wisdom when you need it ✨ Hindi, English or Hinglish, all chill.
           </p>
         </div>
         <div className="relative shrink-0">
