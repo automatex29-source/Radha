@@ -86,7 +86,7 @@ def parse_queries(text: str, question: str) -> List[str]:
 async def default_ask(model: str, prompt: str, max_tokens: int) -> str:
     import litellm
 
-    kwargs = {"model": f"{llm.provider_for(model)}/{model}", "messages": [{"role": "user", "content": prompt}],
+    kwargs = {"model": llm.litellm_model(model), "messages": [{"role": "user", "content": prompt}],
               "max_tokens": max_tokens, "timeout": 120}
     gw = llm.gateway()
     if gw:

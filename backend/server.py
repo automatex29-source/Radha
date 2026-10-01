@@ -61,17 +61,24 @@ db = client[os.environ.get("DB_NAME") or "radha"]
 # Emergent Universal Key (only used on Emergent). Elsewhere, set provider keys instead.
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
 AVAILABLE_MODELS = [
-    {"id": "claude-sonnet-4-6", "label": "Krish Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
+    {"id": "claude-sonnet-5-5", "label": "Krish Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
     {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "provider": "anthropic", "description": "Fast · lightweight"},
     {"id": "gpt-5.4", "label": "Krish Vision", "provider": "openai", "description": "Versatile · OpenAI"},
     {"id": "gemini-2.5-flash", "label": "Krish Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
     {"id": "openai/gpt-oss-120b", "label": "Krish Open", "provider": "groq", "description": "Fast · Groq · free tier"},
     {"id": "openai/gpt-oss-20b", "label": "Krish Open Fast", "provider": "groq", "description": "Quickest replies · free tier"},
+    {"id": "cerebras/gpt-oss-120b", "label": "Krish Open Max", "provider": "cerebras", "description": "Bigger memory · Cerebras · free tier"},
 ]
+# The App Builder's models: BUILDER_MODEL (any model above, the owner's choice for every user) wins;
+# otherwise free-tier builds move to Cerebras when its key is set, since it fits about 4x more per request.
+FREE_BUILDER = "cerebras/gpt-oss-120b"
+BUILDER_STEPS = 14  # tool steps per builder turn for models with room for them (Groq's free tier keeps the default)
 
-# Default model: AI_MODEL if set, otherwise the first model whose provider key is configured.
+# Default model: AI_MODEL if set, otherwise the first configured model, free ones first, so adding a
+# paid key doesn't make every chat paid.
 AI_MODEL = (os.environ.get("AI_MODEL")
-            or next((m["id"] for m in AVAILABLE_MODELS if agent_llm.configured(m["id"])), "claude-sonnet-4-6"))
+            or next((m["id"] for m in sorted(AVAILABLE_MODELS, key=lambda m: agent_llm.paid(m["id"]))
+                     if agent_llm.configured(m["id"])), "claude-sonnet-5-5"))
 
 # AI Runtime: RADHA -> Router -> Provider -> LLM
 # Providers use the Emergent Universal Key on Emergent, or LiteLLM with your own
@@ -661,6 +668,42 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
     return "\n\n".join(parts), sources
 
 
+_FILE_TOOLS = ("write_file", "edit_file", "delete_file")
+REPAIR_STEPS = 5
+
+
+async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: list, use_tools: bool, max_steps: int):
+    """The agent's events. In the App Builder, when the turn changed files and the app is left with
+    problems that crash or blank the page (see apps.app_problems), the model gets one more round to fix
+    them, and anything still wrong is told to the user instead of ending silently."""
+    said, changed = [], False
+    async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=use_tools,
+                              max_steps=max_steps):
+        if ev["type"] == "text":
+            said.append(ev["text"])
+        elif ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
+            changed = True
+        yield ev
+    if not (ctx.app_id and use_tools and changed):
+        return
+    problems = apps.app_problems(await apps.snapshot(ctx.app_id))
+    if not problems:
+        return
+    yield {"type": "text", "text": "\n\nChecking the app… I found a problem and I'm fixing it.\n\n"}
+    llm_messages.append({"role": "assistant", "content": "".join(said).strip() or "I wrote the files."})
+    llm_messages.append({"role": "user", "content": (
+        "Automatic check of the app found these problems:\n- " + "\n- ".join(problems)
+        + "\nFix every one now (read the files, then edit_file or write_file the missing parts so the whole app "
+        "works), then say in one short line what you fixed.")})
+    async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
+                              max_steps=REPAIR_STEPS):
+        yield ev
+    left = apps.app_problems(await apps.snapshot(ctx.app_id))
+    if left:
+        yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + left[0]
+               + " Tap “Fix errors with AI” under the preview, or reply “fix it”."}
+
+
 def _builder_summary(steps: list) -> str:
     """A plain account of an App Builder turn the model ended without a reply."""
     changed = sorted({(s.get("args") or {}).get("path", "") for s in steps
@@ -752,6 +795,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             system_parts.append(live)
     # Free models (Groq) get only the app tools inside an app, to stay within their token budget.
     focused = bool(app_id) and agent_llm.lean(model)
+    if app_id and not max_steps and (not agent_llm.lean(model) or agent_llm.token_budget(model) > 16000):
+        max_steps = BUILDER_STEPS
     if agent and not focused:
         system_parts.append(AGENT_PROMPT)
     if study and not app_id and not counselling:
@@ -775,8 +820,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model)
             stream_fn = functools.partial(agent_llm.stream_completion, think=think)
-            async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=agent,
-                                      max_steps=max_steps or MAX_AGENT_STEPS):
+            async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS):
                 if ev["type"] == "text":
                     full.append(ev["text"])
                     yield f"data: {_sse_json(ev['text'])}\n\n"
@@ -848,7 +892,7 @@ def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool 
 @api.post("/conversations/{conv_id}/stream")
 async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
-    model = body.model or AI_MODEL
+    model = await _pick_model(user_id, conv, body.model or AI_MODEL)
 
     image_ids = []
     for mid in body.images:
@@ -897,6 +941,22 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study)
 
 
+async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
+    """The model that answers: the App Builder's stronger model inside an app, and no paid
+    model (Claude, GPT) for free-plan users unless the owner sets PAID_MODELS=all."""
+    model = requested
+    if conv.get("appId"):
+        override = os.environ.get("BUILDER_MODEL", "").strip()
+        if override and agent_llm.configured(override):
+            return override
+        if agent_llm.lean(model) and agent_llm.configured(FREE_BUILDER):
+            model = FREE_BUILDER
+    if agent_llm.paid(model) and not agent_llm.paid(AI_MODEL) and os.environ.get("PAID_MODELS") != "all" \
+            and not await limits.is_pro(db, user_id):
+        model = AI_MODEL
+    return model
+
+
 async def _canned_turn(conv_id: str, text: str):
     """A fixed assistant reply, streamed and saved like a model's (no AI call needed)."""
     msg = {"id": str(uuid.uuid4()), "conversationId": conv_id, "role": "assistant", "content": text,
@@ -920,7 +980,7 @@ def _background(coro):
 @api.post("/conversations/{conv_id}/regenerate")
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
-    model = body.model or conv.get("model") or AI_MODEL
+    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL)
     if conv.get("mode") != counsellor.MODE:
         await limits.require(db, user_id, "chat")
 

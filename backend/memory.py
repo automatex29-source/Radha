@@ -83,7 +83,7 @@ def _parse(text: str) -> dict:
 
 async def _ask(model: str, prompt: str) -> str:
     import litellm
-    kwargs = {"model": f"{agent_llm.provider_for(model)}/{model}",
+    kwargs = {"model": agent_llm.litellm_model(model),
               "messages": [{"role": "user", "content": prompt}], "max_tokens": 700, "timeout": 45}
     gw = agent_llm.gateway()
     if gw:

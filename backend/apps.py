@@ -414,8 +414,21 @@ async def app_prompt(database, app_id: str) -> str:
         "package works as an ES module from esm.sh, e.g. import confetti from \"https://esm.sh/canvas-confetti\" in a "
         "<script type=\"module\">. For React, import react and react-dom/client from esm.sh and write components "
         "with htm (import htm from \"https://esm.sh/htm\") instead of JSX, since there is no build step.\n"
-        "- When asked for a new app, build the whole working app right away and write each file with write_file "
-        "(index.html, app.js, more modules if needed). Replace the starter files instead of building around them.\n"
+        "- When asked for a new app or a big change, first write a short plan in your reply (3 to 6 bullets: the "
+        "screens, the features, the files), then build the whole working app right away with write_file. Replace the "
+        "starter files instead of building around them. Don't stop at a skeleton or placeholders: every button, form "
+        "and link must work, with sample content so the app looks alive on first open.\n"
+        "- A short request like \"make a cake shop website\" still means a complete, polished, multi-section site: "
+        "for a website, a nav bar, a hero with a call to action, the main content with real sample items (products with "
+        "names, prices and images), about, reviews, contact and a footer; for an app, every screen it needs. Never "
+        "ask questions first; pick sensible details yourself.\n"
+        "- Write index.html first with all the markup and ids, then the CSS, then the JS, which may only use ids that "
+        "index.html has.\n"
+        "- Split the app into small files, each under about 250 lines, so each one is written in a single step and "
+        "edited easily: index.html (markup), styles.css (or Tailwind classes), and JS modules such as app.js, ui.js, "
+        "data.js loaded with <script type=\"module\">. Write the files one by one, and never cut a file short.\n"
+        "- Before you finish, read back the files you wrote and check that every id, class, import and function "
+        "they use exists, and that the layout works on a phone. Fix what you find.\n"
         "- When the user gives you their own code (pasted HTML is saved for you unchanged as index.html), it is "
         "theirs: keep its structure, CSS, colors, layout and wording exactly, change only what they ask, and never "
         "rewrite or restyle it (the quality bar below is for apps you design yourself). Make each change with "
@@ -560,6 +573,66 @@ async def check_preview(files: Dict[str, str], path: str = "index.html", app_id:
 
 
 # ------------------------------------------------------------- agent tools
+_ID_DEF_RE = re.compile(r"""\bid\s*=\s*["'`]([\w\-:.]+)["'`]|\.id\s*=\s*["'`]([\w\-:.]+)["'`]|setAttribute\(\s*["']id["']\s*,\s*["'`]([\w\-:.]+)""")
+_ID_USE_RE = re.compile(r"""getElementById\(\s*["'`]([\w\-:.]+)["'`]\s*\)|querySelector(?:All)?\(\s*["'`]#([\w\-]+)["'`]\s*\)|\$\(\s*["'`]#([\w\-]+)["'`]\s*\)""")
+_LOCAL_REF_RE = re.compile(r"""<(?:script|link|img)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"'#?]+)""", re.IGNORECASE)
+_IMPORT_RE = re.compile(r"""(?:\bimport\b[^'"]*?|\bimport\(\s*)["'](\.{1,2}/[^"']+)["']""")
+
+
+def _resolve(base: str, ref: str) -> Optional[str]:
+    """The app path a relative reference points to, or None for an outside URL."""
+    if re.match(r"^(?:[a-z][a-z0-9+.-]*:|//)", ref, re.IGNORECASE):
+        return None
+    parts = ([] if ref.startswith("/") else base.split("/")[:-1]) + ref.split("/")
+    out = []
+    for part in parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if out:
+                out.pop()
+        else:
+            out.append(part)
+    return "/".join(out) or None
+
+
+def app_problems(files: Dict[str, str]) -> List[str]:
+    """Mistakes that leave a page blank or crash it, found without running it: elements the code looks up
+    by id that no file creates, and local files that are loaded but don't exist."""
+    problems = []
+    if "index.html" not in files:
+        problems.append("There is no index.html, so the preview is empty.")
+    web = {p: c for p, c in files.items() if p.endswith((".html", ".htm", ".js", ".mjs", ".jsx"))}
+    defined = {next(g for g in m.groups() if g) for c in web.values() for m in _ID_DEF_RE.finditer(c)}
+    missing_ids = {}
+    for path, content in web.items():
+        for m in _ID_USE_RE.finditer(content):
+            ident = next(g for g in m.groups() if g)
+            if ident not in defined and "${" not in ident:
+                missing_ids.setdefault(ident, path)
+    for ident, path in list(missing_ids.items())[:8]:
+        problems.append(f'{path} looks up the element #{ident}, but no HTML has id="{ident}" '
+                        "(this crashes the page with \"Cannot read/set properties of null\").")
+    missing_files = {}
+    for path, content in web.items():
+        refs = _LOCAL_REF_RE.findall(content) if path.endswith((".html", ".htm")) else []
+        refs += _IMPORT_RE.findall(content)
+        for ref in refs:
+            target = _resolve(path, ref.strip())
+            if target and target not in files and target.rsplit(".", 1)[-1].lower() in ("js", "mjs", "css", "jsx"):
+                missing_files.setdefault(target, path)
+    for target, path in list(missing_files.items())[:8]:
+        problems.append(f"{path} loads {target}, which doesn't exist yet.")
+    return problems
+
+
+async def _with_problems(app_id: str, text: str) -> str:
+    problems = app_problems(await snapshot(app_id))
+    if not problems:
+        return text
+    return text + "\nProblems in the app right now (fix them before you finish):\n- " + "\n- ".join(problems)
+
+
 def _tool_output(content: str, summary: str, ok: bool = True, media=None) -> ToolOutput:
     return ToolOutput(content=content, summary=summary[:160], ok=ok, media=media or [])
 
@@ -604,7 +677,7 @@ async def _t_write(ctx, args):
     if not isinstance(content, str):
         raise ValueError("'content' is required")
     path = await write_file(ctx.app_id, args.get("path", ""), content)
-    return _tool_output(f"Wrote {path} ({len(content)} chars).", f"Wrote {path}")
+    return _tool_output(await _with_problems(ctx.app_id, f"Wrote {path} ({len(content)} chars)."), f"Wrote {path}")
 
 
 _LINE_NO_RE = re.compile(r"(?m)^ *\d+  ")
@@ -668,7 +741,7 @@ async def _t_edit(ctx, args):
     if _strip_line_numbers(new) != new and _strip_line_numbers(old) != old:
         new = _strip_line_numbers(new)
     await write_file(ctx.app_id, path, doc["content"][:start] + new + doc["content"][end:])
-    return _tool_output(f"Edited {path}.", f"Edited {path}")
+    return _tool_output(await _with_problems(ctx.app_id, f"Edited {path}."), f"Edited {path}")
 
 
 async def _t_delete(ctx, args):

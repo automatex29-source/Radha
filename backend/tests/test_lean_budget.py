@@ -93,7 +93,7 @@ def test_other_providers_are_not_trimmed(monkeypatch):
     seen = fake_completion(monkeypatch)
     msgs = big_history()
     run(collect(llm.stream_completion("gpt-4o", msgs, [])))
-    assert seen[0]["messages"] is msgs and seen[0]["max_tokens"] == 8192
+    assert seen[0]["messages"] is msgs and seen[0]["max_tokens"] == llm._BIG_OUTPUT
 
 
 def test_rate_limit_is_retried(monkeypatch):

@@ -47,6 +47,12 @@ async def _unlimited(db, user_id: str) -> bool:
     return bool(user and user.get("plan") == "pro")
 
 
+async def is_pro(db, user_id: str) -> bool:
+    """True for Pro accounts (paid models are theirs)."""
+    user = await db.users.find_one({"id": user_id}, {"plan": 1})
+    return bool(user and user.get("plan") == "pro")
+
+
 async def use(db, user_id: str, kind: str) -> None:
     """Count one chat, picture or deck for today. Raises LimitReached if the day's allowance is used up."""
     if await _unlimited(db, user_id):
