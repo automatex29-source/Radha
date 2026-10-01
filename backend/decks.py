@@ -208,39 +208,58 @@ def needs_picture(slide: dict) -> bool:
     return slide["layout"] in IMAGE_LAYOUTS and not slide.get("image")
 
 
+# Pictures are fetched a few at a time. The keyless free picture service serves one at a time per server,
+# so AI pictures only overlap when a picture key is set.
+STOCK_AT_ONCE = 4
+
+
+def _ai_at_once() -> int:
+    import media
+
+    return 2 if media.image_key_configured() else 1
+
+
 async def fill_pictures(deck_id: str, only_ids: Optional[set] = None):
-    """Give every picture slide an image, one at a time, saving each as soon as it is ready."""
+    """Give every picture slide an image, a few at a time, saving each as soon as it is ready."""
     deck = await db.decks.find_one({"id": deck_id})
     if not deck:
         return
-    mode = picture_mode(deck)
+    state = {"mode": picture_mode(deck), "ai_failures": 0}
     topic = deck.get("title") or deck.get("prompt") or ""
     used = {s["image"]["url"] for s in deck["slides"] if s.get("image")}
-    ai_failures = 0  # after two failures (e.g. out of credit) the rest use photos instead of waiting again
-    try:
-        for slide in deck["slides"]:
-            if mode == "none" or not deck_images.enabled():
-                break
-            if not needs_picture(slide) and not (only_ids and slide["id"] in only_ids and slide["layout"] in IMAGE_LAYOUTS):
-                continue
-            img = None
-            if mode == "ai" and ai_failures < 2:
-                try:
-                    await limits.use(db, deck["userId"], "picture")
-                except limits.LimitReached:
-                    mode = "stock"  # out of free AI pictures today: the rest of the slides get photos
-                else:
+    # after two failures (e.g. out of credit) the rest use photos instead of waiting again
+    ai_slots, stock_slots = asyncio.Semaphore(_ai_at_once()), asyncio.Semaphore(STOCK_AT_ONCE)
+
+    async def one(slide):
+        img = None
+        if state["mode"] == "ai":
+            async with ai_slots:
+                if state["mode"] == "ai" and state["ai_failures"] < 2:
                     try:
-                        img = await deck_images.make_ai(db, deck["userId"], slide, topic)
-                        ai_failures = 0
-                    except Exception as exc:
-                        await limits.refund(db, deck["userId"], "picture")
-                        ai_failures += 1
-                        logger.info("AI picture failed, using a photo instead: %s", exc)
-            if img is None:
+                        await limits.use(db, deck["userId"], "picture")
+                    except limits.LimitReached:
+                        state["mode"] = "stock"  # out of free AI pictures today: the rest of the slides get photos
+                    else:
+                        try:
+                            img = await deck_images.make_ai(db, deck["userId"], slide, topic)
+                            state["ai_failures"] = 0
+                        except Exception as exc:
+                            await limits.refund(db, deck["userId"], "picture")
+                            state["ai_failures"] += 1
+                            logger.info("AI picture failed, using a photo instead: %s", exc)
+        if img is None:
+            async with stock_slots:
                 img = await deck_images.find_stock(slide, used, topic)
-            if img:
-                await db.decks.update_one({"id": deck_id, "slides.id": slide["id"]}, {"$set": {"slides.$.image": img}})
+        if img:
+            await db.decks.update_one({"id": deck_id, "slides.id": slide["id"]}, {"$set": {"slides.$.image": img}})
+
+    try:
+        if state["mode"] != "none" and deck_images.enabled():
+            todo = [s for s in deck["slides"] if needs_picture(s) or
+                    (only_ids and s["id"] in only_ids and s["layout"] in IMAGE_LAYOUTS)]
+            for err in await asyncio.gather(*(one(s) for s in todo), return_exceptions=True):
+                if isinstance(err, Exception):
+                    logger.warning("slide picture failed: %s", err)
     finally:
         await db.decks.update_one({"id": deck_id}, {"$set": {"picturesPending": False, "updatedAt": _now()}})
 

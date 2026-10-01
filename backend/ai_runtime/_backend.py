@@ -28,7 +28,7 @@ async def stream_via_litellm(request: AIRequest) -> AsyncIterator[str]:
 
     messages = [{"role": "system", "content": request.system or _DEFAULT_SYSTEM}]
     messages += [{"role": m.role, "content": m.content} for m in request.messages]
-    async for event in llm.stream_completion(request.model, messages, []):
+    async for event in llm.stream_completion(request.model, messages, [], max_output=llm.PLAIN_OUTPUT):
         if event["type"] == "text":
             yield event["text"]
 
