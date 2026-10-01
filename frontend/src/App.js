@@ -11,6 +11,7 @@ import AppBuilder from "@/pages/AppBuilder";
 import AutomationsPage from "@/pages/AutomationsPage";
 import DecksPage from "@/pages/DecksPage";
 import DeckEditor from "@/pages/DeckEditor";
+import HelpPage from "@/pages/HelpPage";
 import SharedChat from "@/pages/SharedChat";
 import ResetPassword from "@/pages/ResetPassword";
 import { Loader2 } from "lucide-react";
@@ -48,6 +49,7 @@ function Gate() {
       <Route path="/decks" element={<DecksPage />} />
       <Route path="/decks/:id" element={<DeckEditor />} />
       <Route path="/automations" element={<AutomationsPage />} />
+      <Route path="/help" element={<HelpPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

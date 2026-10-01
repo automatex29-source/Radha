@@ -43,6 +43,7 @@ import automations
 import live_search
 import mailer
 import counsellor
+import help_center
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -1306,6 +1307,8 @@ decks.init(db, AI_MODEL)
 app.include_router(decks.router)
 automations.init(db, run_turn, AI_MODEL)
 app.include_router(automations.router)
+help_center.init(db)
+app.include_router(help_center.router)
 
 # Serve the built frontend (frontend/build) from the same origin, so a single
 # process runs all of RADHA. In development the Vite dev server is used instead.

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
@@ -11,7 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import MemoryDialog from "@/components/MemoryDialog";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain,
+  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 
@@ -39,6 +40,7 @@ const GroupIcon = ({ label }) => {
 
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel = "New conversation" }) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
   const dark = resolvedTheme !== "light";
   const [query, setQuery] = useState("");
@@ -153,6 +155,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <DropdownMenuSeparator />
             <DropdownMenuItem data-testid="menu-memory" onClick={() => setMemoryOpen(true)}>
               <Brain className="mr-2 h-4 w-4" /> Memory
+            </DropdownMenuItem>
+            <DropdownMenuItem data-testid="menu-help" onClick={() => navigate("/help")}>
+              <LifeBuoy className="mr-2 h-4 w-4" /> Help & feedback
             </DropdownMenuItem>
             <DropdownMenuItem data-testid="menu-theme-toggle" onClick={() => setTheme(dark ? "light" : "dark")}>
               {dark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />} {dark ? "Light theme" : "Dark theme"}
