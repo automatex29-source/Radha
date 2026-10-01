@@ -31,6 +31,9 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      # Optional: where Help Center bug reports and feedback are emailed (defaults to MAIL_FROM).
+      - key: SUPPORT_EMAIL
+        sync: false
       # The free plan has 512 MB of memory; a headless Chrome would exceed it.
       - key: BROWSER_TOOL
         value: "0"

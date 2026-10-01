@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
-import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake } from "lucide-react";
+import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
 
 const ITEMS = [
@@ -37,7 +37,14 @@ export default function IconRail({ mobileBar = true }) {
             );
           })}
         </nav>
-        <ThemeToggle className="mt-auto" />
+        <button onClick={() => navigate("/help")} data-testid="nav-help" title="Help Center" aria-label="Help Center"
+          className={`mt-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
+            pathname.startsWith("/help") ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
+              : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
+          }`}>
+          <LifeBuoy className="h-5 w-5" />
+        </button>
+        <ThemeToggle />
       </div>
 
       {mobileBar && (
