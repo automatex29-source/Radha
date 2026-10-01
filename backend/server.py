@@ -812,11 +812,21 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
     if conv.get("mode") != counsellor.MODE:  # the Counsellor is always free
         await limits.require(db, user_id, "chat")
 
+    content, ready_reply = body.content, None
+    if conv.get("appId"):
+        # Code pasted into the App Builder is saved verbatim, so the AI edits it instead of rebuilding it.
+        try:
+            pasted = await apps.absorb_pasted_code(conv["appId"], body.content)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if pasted:
+            content, ready_reply = pasted
+
     user_msg = {
         "id": str(uuid.uuid4()),
         "conversationId": conv_id,
         "role": "user",
-        "content": body.content,
+        "content": content,
         "images": image_ids or None,
         "model": None,
         "createdAt": now_iso(),
@@ -834,7 +844,20 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
     if not conv.get("appId") and not conv.get("automationId") and conv.get("mode") != counsellor.MODE:
         _background(memory.learn(db, user_id, body.content, model))
 
+    if ready_reply:
+        return StreamingResponse(_canned_turn(conv_id, ready_reply), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study)
+
+
+async def _canned_turn(conv_id: str, text: str):
+    """A fixed assistant reply, streamed and saved like a model's (no AI call needed)."""
+    msg = {"id": str(uuid.uuid4()), "conversationId": conv_id, "role": "assistant", "content": text,
+           "model": None, "createdAt": now_iso()}
+    yield f"data: {_sse_json(text)}\n\n"
+    await db.messages.insert_one(msg)
+    await db.conversations.update_one({"id": conv_id}, {"$set": {"updatedAt": now_iso()}})
+    yield f"event: done\ndata: {_sse_json({'messageId': msg['id']})}\n\n"
 
 
 _BACKGROUND_TASKS = set()

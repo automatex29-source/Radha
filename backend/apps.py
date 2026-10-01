@@ -44,6 +44,7 @@ db = None  # set by init()
 
 MAX_FILE_BYTES = 1024 * 1024
 MAX_FILES = 400
+READ_CHARS = 12_000  # per read_file call, so a big file can't flood a small model's context
 MAX_TOTAL_BYTES = 20 * 1024 * 1024
 PREVIEW_TOKEN_HOURS = 12
 _PATH_RE = re.compile(r"^[A-Za-z0-9_\-. ][A-Za-z0-9_\-./ ]*$")
@@ -142,7 +143,7 @@ _load_templates()
 
 # Shared by plain chat and the app builder so every generated app meets the same bar.
 DESIGN_GUIDE = (
-    "Quality bar for apps you build (work like a senior product designer and engineer):\n"
+    "Quality bar for new apps you design yourself (work like a senior product designer and engineer):\n"
     "- Style with Tailwind CSS (<script src=\"https://cdn.tailwindcss.com\"></script>), the Inter font from Google "
     "Fonts, and Lucide icons (<script src=\"https://unpkg.com/lucide@latest\"></script>, <i data-lucide=\"plus\"></i>, "
     "and call lucide.createIcons() after every render). Keep style.css only for what Tailwind can't do.\n"
@@ -415,6 +416,10 @@ async def app_prompt(database, app_id: str) -> str:
         "with htm (import htm from \"https://esm.sh/htm\") instead of JSX, since there is no build step.\n"
         "- When asked for a new app, build the whole working app right away and write each file with write_file "
         "(index.html, app.js, more modules if needed). Replace the starter files instead of building around them.\n"
+        "- When the user gives you their own code (pasted HTML is saved for you unchanged as index.html), it is "
+        "theirs: keep its structure, CSS, colors, layout and wording exactly, change only what they ask, and never "
+        "rewrite or restyle it (the quality bar below is for apps you design yourself). Make each change with "
+        "edit_file; use search_files and read_file with line ranges to find the spot in a large file.\n"
         "- Read files before editing them. Prefer edit_file for small changes and write_file for new or rewritten files.\n"
         + ("- After changing the UI, call check_preview to see a screenshot and any console errors, and fix them.\n"
            if agent_browser.available() else "")
@@ -431,6 +436,53 @@ async def app_prompt(database, app_id: str) -> str:
         "- Keep your chat replies short: say what you built or changed.\n\n"
         + DESIGN_GUIDE
     )
+
+
+_HTML_BODY = r"((?:<!doctype html[^>]*>\s*)?<html[\s>].*</html>)"
+_HTML_FENCED_RE = re.compile(r"```[ \t]*html?[^\n]*\n\s*" + _HTML_BODY + r"\s*?\n[ \t]*```", re.IGNORECASE | re.DOTALL)
+_HTML_DOC_RE = re.compile(_HTML_BODY, re.IGNORECASE | re.DOTALL)
+_NAMED_BLOCK_RE = re.compile(r"```[ \t]*\w*[ \t:]+([\w\-./]+\.(?:html?|css|m?js|json|svg|txt|md))[ \t]*\n(.*?)\n[ \t]*```", re.DOTALL)
+
+
+def split_pasted_code(content: str):
+    """Pull a whole pasted HTML page, and fenced blocks that name a file, out of a chat message.
+
+    Returns ({path: code}, the rest of the message).
+    """
+    files, rest = {}, content or ""
+    m = _HTML_FENCED_RE.search(rest) or _HTML_DOC_RE.search(rest)
+    if m:
+        files["index.html"] = m.group(1).strip() + "\n"
+        rest = rest[:m.start()] + rest[m.end():]
+    for m in list(_NAMED_BLOCK_RE.finditer(rest)):
+        try:
+            files[clean_path(m.group(1))] = m.group(2) + "\n"
+        except ValueError:
+            continue
+        rest = rest.replace(m.group(0), "", 1)
+    return files, rest.strip()
+
+
+async def absorb_pasted_code(app_id: str, content: str):
+    """Save code the user pasted into the builder chat exactly as given, before any AI sees it.
+
+    Free models can't hold a large page in their context and would rebuild it from what they
+    remember, losing the user's design. Returns None when nothing was pasted, else
+    (the message to store and show the AI, a ready reply when the user gave no instructions).
+    """
+    files, rest = split_pasted_code(content)
+    if not files:
+        return None
+    for path, code in files.items():
+        await write_file(app_id, path, code)
+    await commit(app_id, "Add your code: " + ", ".join(files), author="You")
+    listing = ", ".join(f"{p} ({max(1, len(c.encode('utf-8')) // 1024)} KB)" for p, c in files.items())
+    note = (f"[Pasted code saved exactly as given: {listing}. It is the user's own design: keep it as it is "
+            "and change only what they ask, with small edit_file changes.]")
+    stored = f"{rest}\n\n{note}" if rest else note
+    reply = None if rest else (f"Saved your code exactly as you gave it ({listing}). It's in the preview now. "
+                               "Tell me what you'd like to change and I'll change only that.")
+    return stored, reply
 
 
 def preview_token(app_id: str, user_id: str) -> str:
@@ -522,8 +574,29 @@ async def _t_read(ctx, args):
     doc = await db.app_files.find_one({"appId": ctx.app_id, "path": path})
     if not doc:
         return _tool_output(f"{path} does not exist.", f"{path} not found", ok=False)
-    numbered = "\n".join(f"{i + 1:4d}  {line}" for i, line in enumerate(doc["content"].split("\n")))
-    return _tool_output(numbered, f"Read {path}")
+    lines = doc["content"].split("\n")
+    start = max(1, int(args.get("start_line") or 1))
+    end = min(len(lines), int(args.get("end_line") or len(lines)))
+    numbered = "\n".join(f"{i:4d}  {lines[i - 1]}" for i in range(start, end + 1))
+    if len(numbered) > READ_CHARS:
+        cut = numbered[:READ_CHARS].rsplit("\n", 1)[0]
+        last = start + cut.count("\n")
+        numbered = cut + f"\n… (file has {len(lines)} lines; read more with start_line={last + 1})"
+    return _tool_output(numbered, f"Read {path}" + (f" lines {start}-{end}" if (start, end) != (1, len(lines)) else ""))
+
+
+async def _t_search(ctx, args):
+    query = (args.get("query") or "").strip()
+    if not query:
+        raise ValueError("'query' is required")
+    hits = []
+    async for f in db.app_files.find({"appId": ctx.app_id}).sort("path", 1):
+        for i, line in enumerate(f["content"].split("\n"), 1):
+            if query.lower() in line.lower():
+                hits.append(f"{f['path']}:{i}: {line.strip()[:200]}")
+    shown = hits[:60]
+    body = "\n".join(shown) + (f"\n… and {len(hits) - 60} more" if len(hits) > 60 else "")
+    return _tool_output(body or f"No line contains “{query}”.", f"{len(hits)} match(es) for “{query[:40]}”")
 
 
 async def _t_write(ctx, args):
@@ -600,7 +673,11 @@ def register_tools(registry):
     path_param = {"type": "string", "description": "File path relative to the app root, e.g. index.html or src/app.js"}
     specs = [
         ("list_files", "List files", "List the app's files with sizes.", {}, [], _t_list),
-        ("read_file", "Read file", "Read a file from the app (with line numbers).", {"path": path_param}, ["path"], _t_read),
+        ("read_file", "Read file", "Read a file from the app with line numbers; for a large file pass start_line and "
+         "end_line to read part of it.", {"path": path_param, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}},
+         ["path"], _t_read),
+        ("search_files", "Search files", "Find every line containing some text (case-insensitive) across the app's "
+         "files, with file names and line numbers.", {"query": {"type": "string"}}, ["query"], _t_search),
         ("write_file", "Write file", "Create or overwrite a file in the app with the full new content.",
          {"path": path_param, "content": {"type": "string"}}, ["path", "content"], _t_write),
         ("edit_file", "Edit file", "Replace one exact, unique snippet of text in a file.",
