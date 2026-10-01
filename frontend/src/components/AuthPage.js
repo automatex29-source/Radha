@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import ThemeToggle from "@/components/ThemeToggle";
-import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, Database, Cpu, MailCheck } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, MessageSquare, Presentation, Workflow, MailCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
@@ -60,15 +60,16 @@ export default function AuthPage() {
 
           <div className="max-w-md">
             <h1 className="text-4xl font-extrabold leading-tight tracking-tighter text-foreground sm:text-5xl">
-              The intelligent workspace for serious work.
+              Your AI for work, study and life.
             </h1>
             <p className="mt-4 text-base text-muted-foreground">
-              Real conversations. Real reasoning. Persistent memory of everything you build. Krish AI is the foundation of EmpireX's AI platform.
+              Ask anything, research the web, make decks and pictures, build small apps and let automations do tasks for you. All in one place.
             </p>
             <div className="mt-8 space-y-3 text-sm text-muted-foreground">
-              <Feature icon={Cpu} text="Powered by a real frontier reasoning model" />
-              <Feature icon={Database} text="Every conversation saved and reloadable" />
-              <Feature icon={ShieldCheck} text="Private — your workspace is yours alone" />
+              <Feature icon={MessageSquare} text="Chat, write and research with live web search" />
+              <Feature icon={Presentation} text="Make presentations, pictures and videos" />
+              <Feature icon={Workflow} text="Build apps and automate everyday tasks" />
+              <Feature icon={ShieldCheck} text="Private: your workspace is yours alone" />
             </div>
           </div>
 
@@ -98,7 +99,7 @@ export default function AuthPage() {
             {tab === "login" ? "Sign in to Krish AI" : "Create your workspace"}
           </h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {tab === "login" ? "Enter your credentials to continue." : "Start building with Krish AI in seconds."}
+            {tab === "login" ? "Enter your credentials to continue." : "Your AI for work, study and life. Free to start."}
           </p>
 
           <div className="mt-6 flex rounded-lg border border-border bg-card p-1">

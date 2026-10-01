@@ -1,7 +1,7 @@
 {
   "name": "Krish AI by EmpireX",
   "short_name": "Krish AI",
-  "description": "Krish AI, the AI workspace by EmpireX",
+  "description": "Krish AI by EmpireX: your AI for work, study and life",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -15,20 +15,20 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
+import { Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, Mail, GraduationCap, Rocket, Globe, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import { useAuth } from "@/context/AuthContext";
 
 const STARTERS = [
-  { icon: FileText, tone: "indigo", hint: "Turn ideas into clear, concise summaries.", title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
-  { icon: Braces, tone: "sky", hint: "Clean, optimize and modernize your code.", title: "Refactor an async Python service", prompt: "Show me how to structure a clean, testable async Python service that calls an external API with retries." },
-  { icon: Network, tone: "emerald", hint: "Build fast, scalable search solutions.", title: "Design a vector search pipeline", prompt: "Design a distributed vector search pipeline for semantic document retrieval. Cover ingestion, embedding, storage and querying." },
+  { icon: Mail, tone: "indigo", hint: "Clear, polite and ready to send.", title: "Write a professional email", prompt: "Write a short, professional email asking my manager for two days of leave next week." },
+  { icon: GraduationCap, tone: "sky", hint: "A day-by-day plan you can stick to.", title: "Make a study plan", prompt: "Make a 2-week study plan for my board exams in Maths, Physics and Chemistry, 4 hours a day." },
+  { icon: Rocket, tone: "emerald", hint: "Name, audience and first steps.", title: "Plan my business idea", prompt: "Help me plan a small online business selling homemade snacks. Cover the target customers, pricing and the first 5 steps." },
   { icon: Megaphone, tone: "pink", hint: "Turn your idea into a short, punchy video.", title: "Make a video ad", prompt: "Make a 15-second video ad for a coffee shop called Bean There, with a catchy headline and a call to action." },
-  { icon: Clapperboard, tone: "amber", hint: "Bring your story to life with animation.", title: "Create an animated short", prompt: "Create a short 3D animation video about a little robot who finds a flower in a city." },
-  { icon: ImageIcon, tone: "violet", hint: "Create stunning visuals for your next project.", title: "Design a movie poster", prompt: "Design a cinematic movie poster for a sci-fi film called Last Signal." },
+  { icon: Globe, tone: "amber", hint: "Fresh answers from the web.", title: "Research a topic", prompt: "Search the web and give me a simple summary of the latest news in electric cars in India, with sources." },
+  { icon: ImageIcon, tone: "violet", hint: "Create stunning visuals for your next project.", title: "Design a poster", prompt: "Design a bold poster for a college tech fest called Spark 2026." },
 ];
 
-// The Counsellor tab: a cheerful friend who shares Krishna's wisdom from the Gita when it helps (see backend/counsellor.py).
+// The Counsellor tab (labelled "Talk it out"): a cheerful friend who shares Krishna's wisdom from the Gita when it helps (see backend/counsellor.py).
 const COUNSEL_STARTERS = [
   { icon: Coffee, tone: "amber", hint: "No agenda, just vibes.", title: "Just wanna chat ☕", prompt: "Hey! Just wanna chat for a bit. How's it going?" },
   { icon: BookOpen, tone: "sky", hint: "Exams, deadlines, all of it.", title: "Study stress is real 📚", prompt: "Bro exams are coming and I'm lowkey stressed. Help me chill and make a plan?" },
@@ -484,7 +484,7 @@ export default function Workspace({ mode = null }) {
               <PanelLeft className="h-5 w-5" />
             </button>
             <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight">
-              {activeConv ? activeConv.title : counselling ? "Counsellor" : "New conversation"}
+              {activeConv ? activeConv.title : counselling ? "Talk it out" : "New conversation"}
             </h1>
             {project && (
               <button onClick={() => navigate(`/projects/${project.id}`)} data-testid="active-project-badge"
@@ -624,7 +624,7 @@ function EmptyState({ onPick }) {
             How can<br className="max-md:hidden" /> <span className="krish-gradient-text">Krish AI</span> help today?
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground max-sm:hidden">
-            A premium AI workspace by EmpireX. Ask anything, attach a document, or open a project. Everything is saved and reloadable.
+            Your AI for work, study and life. Ask anything, write and research, make decks and pictures, build apps and automate tasks.
           </p>
         </div>
         <div className="relative shrink-0">
@@ -665,7 +665,7 @@ function CounselEmptyState({ onPick }) {
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
             Talk about anything: your day, exams, crush, family, big dreams. No judgement, just good vibes,
-            real advice and a little Krishna wisdom when you need it ✨ Hindi, English or Hinglish, all chill.
+            real advice and a little Bhagavad Gita wisdom when you need it ✨ Hindi, English or Hinglish, all chill.
           </p>
         </div>
         <div className="relative shrink-0">
