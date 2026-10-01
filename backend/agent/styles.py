@@ -11,7 +11,7 @@ IMAGE_STYLES: Dict[str, str] = {
     "cinematic": "cinematic movie still, anamorphic lens, dramatic lighting, film grain, color graded, "
                  "epic composition",
     "ad": "premium commercial advertising photo, studio lighting, clean composition, vibrant, glossy, "
-          "space for headline text, magazine quality",
+          "generous clean empty space around the subject, magazine quality",
     "product": "studio product photography, soft box lighting, seamless background, crisp reflections, 8k detail",
     "poster": "bold graphic poster design, striking composition, strong color contrast, dramatic, print quality",
     "logo": "minimal modern flat vector logo, simple iconic shape, centered, plain white background, no mockup",
@@ -42,10 +42,10 @@ VIDEO_STYLES: Dict[str, dict] = {
                         "dynamic action shot", "dramatic climax", "final wide shot at sunset"]},
     "trailer": {"image": "cinematic", "transitions": ["fadeblack"], "pace": 2.6, "zoom": 0.18, "letterbox": True,
                 "shots": ["mysterious wide shot", "hero close-up", "explosive action moment", "villain silhouette",
-                          "epic confrontation", "title card style final shot"]},
+                          "epic confrontation", "dramatic final silhouette against a glowing sky"]},
     "ad": {"image": "ad", "transitions": ["slideleft", "smoothleft", "wipeleft"], "pace": 2.4, "zoom": 0.16,
            "shots": ["hero shot of the product", "person happily using the product", "close-up of key detail",
-                     "product in a stylish lifestyle setting", "final hero shot with clean space for text"]},
+                     "product in a stylish lifestyle setting", "final hero shot with generous empty space"]},
     "product": {"image": "product", "transitions": ["fade", "smoothleft"], "pace": 3.0, "zoom": 0.14,
                 "shots": ["front hero view", "three quarter angle", "macro detail of materials",
                           "product in use", "final hero view"]},
@@ -81,9 +81,9 @@ VIDEO_STYLES: Dict[str, dict] = {
     "social_reel": {"image": "social_post", "transitions": ["slideup", "zoomin", "slideleft"], "pace": 2.0,
                     "zoom": 0.2, "portrait": True,
                     "shots": ["eye-catching opening", "main subject", "fun detail", "reaction moment",
-                              "final call to action"]},
+                              "final hero moment"]},
     "explainer": {"image": "illustration", "transitions": ["slideleft"], "pace": 3.5, "zoom": 0.08,
-                  "suffix": "clean flat infographic style, simple shapes, clear",
+                  "suffix": "clean flat vector illustration style, simple shapes, clear",
                   "shots": ["the problem", "the idea", "how it works", "the benefit", "summary"]},
 }
 VIDEO_STYLES["cinematic"] = VIDEO_STYLES["movie"]

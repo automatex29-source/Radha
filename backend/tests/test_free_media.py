@@ -270,6 +270,58 @@ class TestPromptBoost:
         assert run(prompt_boost.video_scenes("x", None, "", 3)) is None
 
 
+class TestTextFree:
+    """Free image models can't spell, so pictures are steered away from any writing."""
+
+    def test_strips_quoted_words_and_negatives(self):
+        import media
+
+        out = media.text_free('woman holding a smartphone showing "JON2Video", no text, no logos. photo')
+        assert "JON2Video" not in out and "no text" not in out.lower() and "no logos" not in out.lower()
+        assert "abstract color" in out
+
+    def test_blank_signs(self):
+        import media
+
+        assert "plain, smooth and blank" in media.text_free("a shop with a big sign")
+        assert "abstract color" not in media.text_free("a tiger in the rain")
+
+    def test_asks_for_text(self):
+        import media
+
+        assert media.asks_for_text('poster with the title "Diwali Sale"')
+        assert media.asks_for_text("a mug with the word love on it")
+        assert not media.asks_for_text("a dog named Max on a beach")
+
+    def test_free_boost_is_text_free(self, monkeypatch):
+        for k in ("FAL_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(k, raising=False)
+        pb = TestPromptBoost().fake_llm(monkeypatch, 'A founder holds a phone showing the "JON2Video" app at a '
+                                                     "sunny desk, 50mm lens, soft window light, warm tones")
+        out = run(pb.image_prompt("social media automation app", "photo"))
+        assert "JON2Video" not in out and "abstract color" in out
+
+    def test_text_kept_when_asked(self, monkeypatch):
+        for k in ("FAL_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(k, raising=False)
+        pb = TestPromptBoost().fake_llm(monkeypatch, 'A bold festive poster with the title "Diwali Sale" in gold '
+                                                     "letters over glowing diyas, rich colors, centered layout")
+        assert '"Diwali Sale"' in run(pb.image_prompt('poster with the title "Diwali Sale"', "poster"))
+
+    def test_premium_model_may_write(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "k")
+        pb = TestPromptBoost().fake_llm(monkeypatch, 'A founder holds a phone showing the "Krish" app at a sunny '
+                                                     "desk, 50mm lens, soft window light, warm tones")
+        assert '"Krish"' in run(pb.image_prompt("phone with our Krish app", "photo"))
+
+    def test_deck_prompt_is_text_free(self):
+        import deck_images
+
+        out = deck_images.ai_prompt({"title": "Use Case: Social Media Automation",
+                                     "image_prompt": 'Marketer scheduling posts on a phone app called "JON2Video"'})
+        assert "JON2Video" not in out and "abstract color" in out
+
+
 class TestFal:
     def handler(self, seen, result, final_bytes):
         def handle(req):

@@ -164,7 +164,8 @@ SLIDE_SCHEMA = (
     "Pictures must match the slide exactly. image_query is 2-4 concrete English words for a photo search that "
     "names something you can see (\"farmer checking wheat field\", not \"growth\" or \"strategy\"). image_prompt "
     "is one English sentence (15-35 words) describing a realistic photo for this exact slide: subject, action, "
-    "setting, and the country/culture when the topic has one."
+    "setting, and the country/culture when the topic has one. AI pictures cannot spell, so image_prompt shows no "
+    "writing: people, objects and places, with any phone or laptop screen glowing with abstract colors."
 )
 
 SLIDES_SYSTEM = (

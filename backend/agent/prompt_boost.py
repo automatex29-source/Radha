@@ -13,6 +13,8 @@ import os
 import re
 from typing import List, Optional
 
+import media
+
 from . import llm, styles
 
 logger = logging.getLogger("radha.agent")
@@ -24,9 +26,16 @@ IMAGE_SYSTEM = (
     "You are an award-winning art director writing prompts for an AI image model. Rewrite the user's request as "
     "ONE vivid English prompt of 60-110 words. Keep every detail the user gave (names, text to show, colors, "
     "brand, subject). Add: precise subject description, action, setting, composition and camera angle, lens, "
-    "lighting, color palette, textures, mood, and the style notes given. If words must appear in the picture, "
-    "put them in double quotes and keep them short. Describe only what should be visible; never write negatives "
-    "like 'no text'. Output only the prompt, no preamble."
+    "lighting, color palette, textures, mood, and the style notes given. {text_rule} Describe only what should "
+    "be visible; never write negatives. Output only the prompt, no preamble."
+)
+TEXT_RULE_PREMIUM = "If words must appear in the picture, put them in double quotes and keep them short."
+# Free image models can't spell: any writing they draw comes out as gibberish.
+TEXT_RULE_FREE = (
+    "The image model cannot spell, so the picture must tell its story without any writing: show people, "
+    "objects, places and actions. Any phone, laptop or screen glows with abstract colors and simple shapes, "
+    "and signs, pages, packaging and clothing are plain. Only if the request itself asks for words, keep them "
+    "to at most four short words in double quotes."
 )
 
 VIDEO_SYSTEM = (
@@ -42,7 +51,8 @@ SCENES_SYSTEM = (
     '{{"character": "...", "scenes": ["...", ...]}}. "character" fixes how the main subject looks (age, face, '
     "hair, clothes, colors, product design) so every shot matches. Each scene is 40-70 English words: what "
     "happens, camera angle and lens, lighting, setting, and the style notes, and it repeats the key look of the "
-    "main subject. The shots must tell the story in order with a strong opening and ending. Output only JSON."
+    "main subject. Shots show no writing at all (captions are added later): screens glow with abstract colors, "
+    "signs and labels are plain. The shots must tell the story in order with a strong opening and ending. Output only JSON."
 )
 
 
@@ -82,21 +92,30 @@ async def ask(system: str, user: str) -> str:
 
 
 async def image_prompt(prompt: str, style: str = "") -> str:
-    """The rewritten prompt with the style's words, or the original + style words on any failure."""
+    """The rewritten prompt with the style's words, or the original + style words on any failure.
+
+    Unless a premium model that can spell is set up, the result is kept free of writing (see media.text_free)
+    when the person did not ask for words.
+    """
+    premium = media.spells_well()
+    plain = not premium and not media.asks_for_text(prompt)
     fallback = styles.styled_image_prompt(prompt, style)
+    fallback = media.text_free(fallback) if plain else fallback
     if not enabled():
         return fallback
     key = styles.normalize(style, styles.IMAGE_STYLES)
     notes = styles.IMAGE_STYLES.get(key, "")
+    system = IMAGE_SYSTEM.format(text_rule=TEXT_RULE_PREMIUM if premium else TEXT_RULE_FREE)
     try:
-        text = await _ask(IMAGE_SYSTEM, f"Request: {prompt}\nStyle notes: {notes or 'choose the best fitting look'}")
+        text = await _ask(system, f"Request: {prompt}\nStyle notes: {notes or 'choose the best fitting look'}")
     except Exception as exc:
         logger.info("prompt boost failed, using the original prompt: %s", exc)
         return fallback
     text = text.strip().strip('"').strip()
     if len(text) < 40:
         return fallback
-    return f"{text[:1400]}. {notes}" if notes and notes.split(",")[0] not in text else text[:1500]
+    text = f"{text[:1400]}. {notes}" if notes and notes.split(",")[0] not in text else text[:1500]
+    return media.text_free(text) if plain else text
 
 
 async def video_scenes(prompt: str, scenes: Optional[List[str]], style: str, count: int) -> Optional[List[str]]:

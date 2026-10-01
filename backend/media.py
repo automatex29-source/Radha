@@ -72,6 +72,47 @@ def image_key_configured() -> bool:
     return any(os.environ.get(k) for k in ("FAL_KEY", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN"))
 
 
+def spells_well() -> bool:
+    """True when a premium image model (fal Nano Banana Pro or OpenAI) is set up; those can write real words."""
+    return fal_api.configured() or openai_configured()
+
+
+_ASKS_TEXT = re.compile(r'["\u201c]|\b(text|texts|word|words|wording|title|titled|headline|caption|captions|saying|'
+                        r'says|written|write|writing|letters?|lettering|typography|font|quote|slogan|tagline|'
+                        r'label(?:ed|led)?|name on)\b', re.I)
+_SCREENS = re.compile(r"\b(phones?|smartphones?|mobiles?|screens?|laptops?|monitors?|tablets?|computers?|"
+                      r"dashboards?|apps?|websites?|tvs?|televisions?|displays?|devices?)\b", re.I)
+_SURFACES = re.compile(r"\b(signs?|signboards?|billboards?|banners?|posters?|books?|newspapers?|documents?|"
+                       r"papers?|whiteboards?|charts?|graphs?|labels?|menus?|packaging|packages?|boxes?|bottles?|"
+                       r"cans?|storefronts?|shops?|t-shirts?|shirts?|cards?|notebooks?)\b", re.I)
+_NEGATIVES = re.compile(r"[,.]?\s*\b(no|without)\s+(text|words|letters|logos?|watermarks?|writing|captions?|"
+                        r"borders?)\b", re.I)
+
+
+def asks_for_text(prompt: str) -> bool:
+    """Did the person ask for words in the picture (a title, a slogan, something in quotes)?"""
+    return bool(_ASKS_TEXT.search(prompt or ""))
+
+
+def text_free(prompt: str) -> str:
+    """Steer a free image model to a picture with no writing at all.
+
+    Free models can't spell, so any text they draw comes out as gibberish (a phone showing "JON2Video").
+    Diffusion models also tend to draw whatever words the prompt names, so instead of "no text" this
+    drops quoted words and says what screens, signs and labels should show: abstract color and blank space.
+    """
+    p = re.sub(r'["\u201c][^"\u201d]{0,120}["\u201d]', "", prompt or "")
+    p = _NEGATIVES.sub("", p)
+    p = re.sub(r"\s{2,}", " ", p).strip(" .,;")
+    extra = []
+    if _SCREENS.search(p):
+        extra.append("every screen glows with soft abstract color gradients and simple rounded shapes only")
+    if _SURFACES.search(p):
+        extra.append("signs, pages, packaging and labels are plain, smooth and blank")
+    extra.append("pure visual storytelling with clean unmarked surfaces")
+    return f"{p}. {', '.join(extra)}"
+
+
 def image_type(data: bytes) -> str:
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return "image/png"

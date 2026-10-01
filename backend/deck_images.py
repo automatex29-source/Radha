@@ -21,7 +21,7 @@ UA = {"User-Agent": "KrishAI/1.0 (presentation builder)"}
 MEDIA_URL = re.compile(r"^/api/media/([\w-]{8,64})$")
 AI_STYLE = ("photorealistic professional editorial photograph, shot on a full-frame camera, natural light, "
             "sharp focus, rich true-to-life color, high detail, clean uncluttered composition with space around "
-            "the subject, wide 16:9 frame. No text, no words, no letters, no logos, no watermark, no borders")
+            "the subject, wide 16:9 frame")
 _cache: dict = {}
 _STOP = {"a", "an", "the", "of", "and", "or", "for", "to", "in", "on", "with", "at", "by", "from", "is", "are",
          "how", "why", "what", "your", "our", "vs", "into"}
@@ -145,15 +145,21 @@ def ai_prompt(slide: dict, topic: str = "") -> str:
         context += f" It illustrates the idea: {title}."
     if topic and topic.lower() not in base.lower():
         context += f" Part of a presentation about {topic}."
-    return f"{base.rstrip('.')}.{context} {AI_STYLE}"
+    # The slide carries its own words; AI-drawn writing comes out as gibberish (see media.text_free).
+    import media
+
+    return media.text_free(f"{base.rstrip('.')}.{context} {AI_STYLE}")
 
 
 async def make_ai(db, user_id: str, slide: dict, topic: str = "", prompt: Optional[str] = None) -> dict:
     """Generate a 16:9 picture for the slide and store it. Raises on failure."""
     import media
 
-    data = await media.generate_image(f"{prompt.strip()}. {AI_STYLE}" if prompt else ai_prompt(slide, topic),
-                                      "1536x1024")
+    if prompt:
+        prompt = f"{prompt.strip()}. {AI_STYLE}"
+        if not (media.spells_well() and media.asks_for_text(prompt)):
+            prompt = media.text_free(prompt)
+    data = await media.generate_image(prompt or ai_prompt(slide, topic), "1536x1024")
     data = shrink(data) or data
     saved = await media.save_media(db, user_id, data, media.image_type(data) or "image/jpeg", "generated",
                                    name="slide-picture.jpg")
