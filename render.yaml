@@ -24,6 +24,9 @@ services:
       # Optional, free: raises the image/video limits (https://enter.pollinations.ai, sign in with GitHub).
       - key: POLLINATIONS_API_KEY
         sync: false
+      # Optional, paid: Flow-level quality (Veo 3.1 video, Nano Banana Pro images) via https://fal.ai
+      - key: FAL_KEY
+        sync: false
       # Optional, free: lets "Forgot password?" email reset links. Get a key at
       # https://www.brevo.com (SMTP & API > API keys) and set MAIL_FROM to the sender
       # email you verified there. RESEND_API_KEY (https://resend.com) works too.

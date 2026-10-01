@@ -169,6 +169,7 @@ async def make_slideshow(prompt: str, seconds: int = 12, portrait: bool = False,
     if boosted:
         look = styles.video_scene_words(style)
         prompts = [f"{s}. {look}" for s in boosted]
+    prompts = [media.text_free(p) for p in prompts]  # captions are drawn on top, so scenes carry no writing
     size = "1024x1536" if portrait else "1536x1024"
     seed = random.randint(1, 2_000_000_000)  # one seed for every scene keeps the look consistent
     # Keyless image services allow about one request at a time per server, so only go parallel with a key.

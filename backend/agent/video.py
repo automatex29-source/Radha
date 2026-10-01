@@ -15,9 +15,10 @@ from typing import Optional, Tuple
 
 import httpx
 
+import fal_api
 import media
 
-from . import slideshow, styles
+from . import prompt_boost, slideshow, styles
 
 # "high" (default): Sora 2 Pro at 1792x1024 / Veo 3 at 1080p. "standard": faster, cheaper, 720p.
 DEFAULT_QUALITY = os.environ.get("VIDEO_QUALITY", "high")
@@ -37,7 +38,10 @@ logger = logging.getLogger("radha.agent")
 
 POLLINATIONS_VIDEO_MODEL = os.environ.get("POLLINATIONS_VIDEO_MODEL", "alibaba/wan-2.2-fast")
 POLLINATIONS_VIDEO_SECONDS = int(os.environ.get("POLLINATIONS_VIDEO_SECONDS", "5"))
-PROVIDERS = ("openai", "gemini", "pollinations", "slideshow")
+PROVIDERS = ("fal", "openai", "gemini", "pollinations", "slideshow")
+FAL_VIDEO_MODEL = os.environ.get("FAL_VIDEO_MODEL", "fal-ai/veo3.1/fast")
+FAL_VIDEO_RESOLUTION = os.environ.get("FAL_VIDEO_RESOLUTION", "1080p")
+FAL_SECONDS = (4, 6, 8)
 
 
 class VideoError(Exception):
@@ -50,6 +54,8 @@ def provider() -> Optional[str]:
         return explicit
     if explicit in ("off", "0", "none"):
         return None
+    if fal_api.configured():
+        return "fal"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
     if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
@@ -144,6 +150,17 @@ async def _pollinations(prompt: str, seconds: int, portrait: bool) -> bytes:
     return resp.content
 
 
+async def _fal(prompt: str, seconds: int, portrait: bool) -> bytes:
+    duration = min(FAL_SECONDS, key=lambda s: abs(s - (seconds or 8)))
+    result = await fal_api.run(FAL_VIDEO_MODEL, {
+        "prompt": prompt, "aspect_ratio": "9:16" if portrait else "16:9", "duration": f"{duration}s",
+        "resolution": FAL_VIDEO_RESOLUTION, "generate_audio": True})
+    url = (result.get("video") or {}).get("url")
+    if not url:
+        raise VideoError(f"fal returned no video: {str(result)[:200]}")
+    return await fal_api.download(url)
+
+
 async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality: Optional[str] = None,
                    scenes: Optional[list] = None, style: str = "", captions: Optional[list] = None) -> dict:
     """{"data", "contentType", "method": "ai_video" | "slideshow", "note"}."""
@@ -152,6 +169,16 @@ async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality
     ai_prompt = f"{prompt}. {styles.video_scene_words(style)}" if style else prompt
     quality = quality if quality in ("high", "standard") else (DEFAULT_QUALITY if DEFAULT_QUALITY in ("high", "standard") else "high")
     note = ""
+    if which == "fal":
+        try:
+            cinematic = await prompt_boost.video_prompt(prompt, styles.video_scene_words(style) if style else "",
+                                                        min(8, seconds or 8))
+            return {"data": await _fal(cinematic, seconds, portrait), "contentType": "video/mp4",
+                    "method": "ai_video"}
+        except Exception as exc:
+            logger.warning("fal video failed, falling back to the free method: %s", exc)
+            note = "The premium video service failed (its credit may be used up), so a free method was used. "
+            which = "pollinations" if os.environ.get("POLLINATIONS_API_KEY") else "slideshow"
     if which == "openai":
         return {"data": await _sora(ai_prompt, seconds, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
     if which == "gemini":
@@ -162,7 +189,7 @@ async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality
                     "method": "ai_video"}
         except Exception as exc:
             logger.warning("pollinations video failed, making a slideshow instead: %s", exc)
-            note = "The AI video service was unavailable (its free daily allowance may be used up). "
+            note += "The AI video service was unavailable (its free daily allowance may be used up). "
     if which in ("pollinations", "slideshow"):
         try:
             data = await slideshow.make_slideshow(prompt, seconds or 12, portrait, scenes, style, captions)

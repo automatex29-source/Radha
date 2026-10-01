@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import media  # noqa: E402
 from agent import slideshow, styles, video  # noqa: E402
 
-KEYS = ("IMAGE_PROVIDER", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN", "VIDEO_PROVIDER",
+KEYS = ("FAL_KEY", "IMAGE_PROVIDER", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN", "VIDEO_PROVIDER",
         "GEMINI_API_KEY", "GOOGLE_API_KEY")
 
 
@@ -268,3 +268,103 @@ class TestPromptBoost:
 
         monkeypatch.setattr(llm, "configured", lambda m: False)
         assert run(prompt_boost.video_scenes("x", None, "", 3)) is None
+
+
+class TestTextFree:
+    """Free image models can't spell, so pictures are steered away from any writing."""
+
+    def test_strips_quoted_words_and_negatives(self):
+        import media
+
+        out = media.text_free('woman holding a smartphone showing "JON2Video", no text, no logos. photo')
+        assert "JON2Video" not in out and "no text" not in out.lower() and "no logos" not in out.lower()
+        assert "abstract color" in out
+
+    def test_blank_signs(self):
+        import media
+
+        assert "plain, smooth and blank" in media.text_free("a shop with a big sign")
+        assert "abstract color" not in media.text_free("a tiger in the rain")
+
+    def test_asks_for_text(self):
+        import media
+
+        assert media.asks_for_text('poster with the title "Diwali Sale"')
+        assert media.asks_for_text("a mug with the word love on it")
+        assert not media.asks_for_text("a dog named Max on a beach")
+
+    def test_free_boost_is_text_free(self, monkeypatch):
+        for k in ("FAL_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(k, raising=False)
+        pb = TestPromptBoost().fake_llm(monkeypatch, 'A founder holds a phone showing the "JON2Video" app at a '
+                                                     "sunny desk, 50mm lens, soft window light, warm tones")
+        out = run(pb.image_prompt("social media automation app", "photo"))
+        assert "JON2Video" not in out and "abstract color" in out
+
+    def test_text_kept_when_asked(self, monkeypatch):
+        for k in ("FAL_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(k, raising=False)
+        pb = TestPromptBoost().fake_llm(monkeypatch, 'A bold festive poster with the title "Diwali Sale" in gold '
+                                                     "letters over glowing diyas, rich colors, centered layout")
+        assert '"Diwali Sale"' in run(pb.image_prompt('poster with the title "Diwali Sale"', "poster"))
+
+    def test_premium_model_may_write(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "k")
+        pb = TestPromptBoost().fake_llm(monkeypatch, 'A founder holds a phone showing the "Krish" app at a sunny '
+                                                     "desk, 50mm lens, soft window light, warm tones")
+        assert '"Krish"' in run(pb.image_prompt("phone with our Krish app", "photo"))
+
+    def test_deck_prompt_is_text_free(self):
+        import deck_images
+
+        out = deck_images.ai_prompt({"title": "Use Case: Social Media Automation",
+                                     "image_prompt": 'Marketer scheduling posts on a phone app called "JON2Video"'})
+        assert "JON2Video" not in out and "abstract color" in out
+
+
+class TestFal:
+    def handler(self, seen, result, final_bytes):
+        def handle(req):
+            seen.append((req.method, str(req.url)))
+            if req.method == "POST":
+                assert req.headers["authorization"] == "Key fk"
+                return httpx.Response(200, json={"request_id": "r1",
+                                                 "status_url": "https://queue.fal.run/m/requests/r1/status",
+                                                 "response_url": "https://queue.fal.run/m/requests/r1"})
+            if req.url.path.endswith("/status"):
+                return httpx.Response(200, json={"status": "COMPLETED"})
+            if req.url.host == "queue.fal.run":
+                return httpx.Response(200, json=result)
+            return httpx.Response(200, content=final_bytes)
+        return handle
+
+    def test_image_uses_fal_first(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fk")
+        monkeypatch.setattr(__import__("fal_api"), "POLL_SECONDS", 0)
+        seen = []
+        fake_http(monkeypatch, self.handler(seen, {"images": [{"url": "https://cdn.fal/x.png"}]},
+                                            png(size=(300, 200))))
+        assert media._image_providers()[0] == "fal"
+        assert media.image_type(run(media.generate_image("a castle", "1536x1024"))) == "image/png"
+        assert seen[0][1].startswith("https://queue.fal.run/fal-ai/nano-banana-pro")
+
+    def test_video_uses_veo_and_falls_back(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fk")
+        monkeypatch.setattr(__import__("fal_api"), "POLL_SECONDS", 0)
+        seen, broke = [], []
+        ok = self.handler(seen, {"video": {"url": "https://cdn.fal/v.mp4"}}, b"MP4")
+        fake_http(monkeypatch, lambda req: httpx.Response(403, json={"detail": "Exhausted balance"}) if broke
+                  else ok(req))
+        assert video.provider() == "fal"
+        out = run(video.generate("a dragon over mountains", 12, "portrait"))
+        assert out == {"data": b"MP4", "contentType": "video/mp4", "method": "ai_video"}
+        assert "veo3.1/fast" in seen[0][1]
+
+        broke.append(True)
+
+        async def fake_slideshow(prompt, seconds, portrait, scenes, style, captions):
+            return b"SLIDES"
+
+        monkeypatch.setattr(slideshow, "make_slideshow", fake_slideshow)
+        out = run(video.generate("waves"))
+        assert out["method"] == "slideshow" and "premium" in out["note"]

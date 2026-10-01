@@ -15,6 +15,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+import fal_api
+
 logger = logging.getLogger("radha.media")
 
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
@@ -67,7 +69,48 @@ def image_available() -> bool:
 
 
 def image_key_configured() -> bool:
-    return any(os.environ.get(k) for k in ("OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN"))
+    return any(os.environ.get(k) for k in ("FAL_KEY", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN"))
+
+
+def spells_well() -> bool:
+    """True when a premium image model (fal Nano Banana Pro or OpenAI) is set up; those can write real words."""
+    return fal_api.configured() or openai_configured()
+
+
+_ASKS_TEXT = re.compile(r'["\u201c]|\b(text|texts|word|words|wording|title|titled|headline|caption|captions|saying|'
+                        r'says|written|write|writing|letters?|lettering|typography|font|quote|slogan|tagline|'
+                        r'label(?:ed|led)?|name on)\b', re.I)
+_SCREENS = re.compile(r"\b(phones?|smartphones?|mobiles?|screens?|laptops?|monitors?|tablets?|computers?|"
+                      r"dashboards?|apps?|websites?|tvs?|televisions?|displays?|devices?)\b", re.I)
+_SURFACES = re.compile(r"\b(signs?|signboards?|billboards?|banners?|posters?|books?|newspapers?|documents?|"
+                       r"papers?|whiteboards?|charts?|graphs?|labels?|menus?|packaging|packages?|boxes?|bottles?|"
+                       r"cans?|storefronts?|shops?|t-shirts?|shirts?|cards?|notebooks?)\b", re.I)
+_NEGATIVES = re.compile(r"[,.]?\s*\b(no|without)\s+(text|words|letters|logos?|watermarks?|writing|captions?|"
+                        r"borders?)\b", re.I)
+
+
+def asks_for_text(prompt: str) -> bool:
+    """Did the person ask for words in the picture (a title, a slogan, something in quotes)?"""
+    return bool(_ASKS_TEXT.search(prompt or ""))
+
+
+def text_free(prompt: str) -> str:
+    """Steer a free image model to a picture with no writing at all.
+
+    Free models can't spell, so any text they draw comes out as gibberish (a phone showing "JON2Video").
+    Diffusion models also tend to draw whatever words the prompt names, so instead of "no text" this
+    drops quoted words and says what screens, signs and labels should show: abstract color and blank space.
+    """
+    p = re.sub(r'["\u201c][^"\u201d]{0,120}["\u201d]', "", prompt or "")
+    p = _NEGATIVES.sub("", p)
+    p = re.sub(r"\s{2,}", " ", p).strip(" .,;")
+    extra = []
+    if _SCREENS.search(p):
+        extra.append("every screen glows with soft abstract color gradients and simple rounded shapes only")
+    if _SURFACES.search(p):
+        extra.append("signs, pages, packaging and labels are plain, smooth and blank")
+    extra.append("pure visual storytelling with clean unmarked surfaces")
+    return f"{p}. {', '.join(extra)}"
 
 
 def image_type(data: bytes) -> str:
@@ -82,10 +125,12 @@ def image_type(data: bytes) -> str:
 
 def _image_providers() -> list:
     explicit = os.environ.get("IMAGE_PROVIDER", "").lower()
-    if explicit in ("openai", "pollinations", "huggingface"):
+    if explicit in ("fal", "openai", "pollinations", "huggingface"):
         order = [explicit]
     else:
         order = []
+        if fal_api.configured():  # premium: Nano Banana Pro via fal.ai
+            order.append("fal")
         if openai_configured():
             order.append("openai")
         if os.environ.get("POLLINATIONS_API_KEY"):
@@ -161,6 +206,8 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
     errors = []
     for which in _image_providers():
         try:
+            if which == "fal":
+                return await _fal_image(prompt, size, seed)
             if which == "openai":
                 return await _openai_image(prompt, size, quality)
             if which == "huggingface":
@@ -172,6 +219,26 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
     hint = "" if image_key_configured() else (" Add a free POLLINATIONS_API_KEY (from enter.pollinations.ai) "
                                               "on the server to turn on images.")
     raise ImageError("Image generation failed. " + "; ".join(errors) + hint)
+
+
+FAL_IMAGE_MODEL = os.environ.get("FAL_IMAGE_MODEL", "fal-ai/nano-banana-pro")
+FAL_IMAGE_RESOLUTION = os.environ.get("FAL_IMAGE_RESOLUTION", "1K")
+
+
+async def _fal_image(prompt: str, size: str, seed: Optional[int] = None) -> bytes:
+    w, h = _dims(size)
+    ratio = "1:1" if w == h else ("3:2" if w > h else "2:3")
+    payload = {"prompt": prompt, "num_images": 1, "aspect_ratio": ratio, "resolution": FAL_IMAGE_RESOLUTION}
+    if seed:
+        payload["seed"] = seed
+    result = await fal_api.run(FAL_IMAGE_MODEL, payload, timeout=180)
+    images = result.get("images") or []
+    if not images or not images[0].get("url"):
+        raise ImageError(f"fal returned no image: {str(result)[:200]}")
+    data = await fal_api.download(images[0]["url"])
+    if not image_type(data):
+        raise ImageError("fal returned something that is not an image")
+    return data
 
 
 async def _openai_image(prompt: str, size: str = "1024x1024", quality: Optional[str] = None) -> bytes:
