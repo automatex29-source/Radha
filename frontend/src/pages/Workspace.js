@@ -15,7 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, HeartHandshake, CloudRain, Compass, HeartCrack, Flame } from "lucide-react";
+import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
 
 const STARTERS = [
@@ -27,12 +27,14 @@ const STARTERS = [
   { icon: ImageIcon, tone: "violet", hint: "Create stunning visuals for your next project.", title: "Design a movie poster", prompt: "Design a cinematic movie poster for a sci-fi film called Last Signal." },
 ];
 
-// The Counsellor tab: a listening companion guided by the Bhagavad Gita (see backend/counsellor.py).
+// The Counsellor tab: a cheerful friend who shares Krishna's wisdom from the Gita when it helps (see backend/counsellor.py).
 const COUNSEL_STARTERS = [
-  { icon: CloudRain, tone: "sky", hint: "Calm the mind, one breath at a time.", title: "I feel stressed and anxious", prompt: "I have been feeling very stressed and anxious lately and I don't know how to calm my mind." },
-  { icon: Compass, tone: "emerald", hint: "Find your direction again.", title: "I feel lost in life", prompt: "I feel lost and I don't know what I should do with my life." },
-  { icon: HeartCrack, tone: "pink", hint: "बात करें, हम सुन रहे हैं।", title: "मेरा दिल टूट गया है", prompt: "मेरा दिल टूट गया है और मैं बहुत अकेला महसूस कर रहा हूँ।" },
-  { icon: Flame, tone: "amber", hint: "Focus on the action, not the fruit.", title: "Help me stop overthinking results", prompt: "I keep worrying about results (exams, job, money). How can I stop overthinking?" },
+  { icon: Coffee, tone: "amber", hint: "No agenda, just vibes.", title: "Just wanna chat ☕", prompt: "Hey! Just wanna chat for a bit. How's it going?" },
+  { icon: BookOpen, tone: "sky", hint: "Exams, deadlines, all of it.", title: "Study stress is real 📚", prompt: "Bro exams are coming and I'm lowkey stressed. Help me chill and make a plan?" },
+  { icon: Zap, tone: "violet", hint: "A little push for today.", title: "Motivate me, I'm lazy 😴", prompt: "I'm feeling super lazy today and can't start anything. Motivate me!" },
+  { icon: Heart, tone: "pink", hint: "Crush, friends, family drama.", title: "Relationship tea 💌", prompt: "Need some advice about a relationship thing. Can I tell you about it?" },
+  { icon: MessageCircle, tone: "emerald", hint: "हिंदी में बात करते हैं।", title: "यार, मन नहीं लग रहा", prompt: "यार, आज मन नहीं लग रहा। थोड़ी बात करो ना।" },
+  { icon: Lightbulb, tone: "indigo", hint: "Think it through together.", title: "Help me decide 🤔", prompt: "I have a big decision to make and I keep going back and forth. Help me think it through?" },
 ];
 
 export default function Workspace({ mode = null }) {
@@ -526,7 +528,7 @@ export default function Workspace({ mode = null }) {
         {/* Composer */}
         {counselling && (
           <p data-testid="counsellor-care-note" className="mx-auto w-full max-w-3xl px-5 text-center text-[11px] leading-snug text-muted-foreground">
-            Spiritual guidance, not a replacement for a doctor or counsellor. In crisis, call Tele-MANAS 14416 or 112.
+            Need urgent help? Tele-MANAS 14416, free 24x7 💛
           </p>
         )}
         <ComposerInput value={input} onChange={setInput} onSend={() => sendMessage()} onStop={stopGeneration}
@@ -537,7 +539,7 @@ export default function Workspace({ mode = null }) {
           agentHint="Agent mode needs a provider API key for this model on the backend"
           voiceEnabled={voiceEnabled} voiceHint="Voice needs GROQ_API_KEY (free) on the backend"
           onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
-          placeholder={counselling ? "Share what's on your mind… (Hindi or English)" : undefined} />
+          placeholder={counselling ? "Type anything… how's your day going? 😊" : undefined} />
       </div>
       <ShareDialog open={shareOpen} onOpenChange={setShareOpen} conversation={activeConv}
         onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
@@ -616,22 +618,29 @@ const Sparkle = ({ className }) => (
 
 function CounselEmptyState({ onPick }) {
   return (
-    <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center px-4 py-6 sm:py-8">
-      <div className="radha-fade-up relative flex flex-col items-center text-center">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-pink-400 shadow-[0_10px_40px_rgba(244,114,182,0.35)] sm:mb-5 sm:h-16 sm:w-16">
-          <HeartHandshake className="h-8 w-8 text-white" />
+    <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
+      <div className="radha-fade-up relative flex items-center gap-4 max-md:flex-col-reverse md:gap-10">
+        <div className="relative min-w-0 flex-1 max-md:text-center">
+          <Sparkle className="absolute -left-7 top-6 h-6 w-6 text-amber-400 max-md:hidden" />
+          <h2 className="text-[1.6rem] font-extrabold leading-[1.1] tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem]">
+            Hey bestie! 👋<br />What's the <span className="krish-gradient-text">vibe</span> today?
+          </h2>
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
+            Talk about anything: your day, exams, crush, family, big dreams. No judgement, just good vibes,
+            real advice and a little Krishna wisdom when you need it ✨ Hindi, English or Hinglish, all chill.
+          </p>
         </div>
-        <h2 className="text-[1.6rem] font-extrabold leading-tight tracking-tight text-foreground sm:text-4xl">
-          You are <span className="krish-gradient-text">not alone</span>
-        </h2>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-          Share what's on your heart. Krish AI's Counsellor is a caring friend who listens, lifts you up and helps
-          you find a good next step, with Krishna's wisdom from the Gita when it helps. Hindi or English, whatever feels easy.
-        </p>
+        <div className="relative shrink-0">
+          <p className="krish-hand absolute -left-24 top-4 -rotate-12 text-2xl text-pink-500 max-lg:hidden dark:text-pink-300">
+            Let's talk!
+            <svg viewBox="0 0 120 12" className="ml-2 mt-0.5 h-3 w-24" aria-hidden="true"><path d="M2 9 C 40 2, 80 2, 118 6" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" /></svg>
+          </p>
+          <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
+        </div>
       </div>
-      <div className="relative mt-6 grid w-full gap-2.5 sm:mt-9 sm:grid-cols-2 sm:gap-4">
+      <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
         {COUNSEL_STARTERS.map((s, i) => (
-          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} />
+          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} hideOnPhone={i >= 4} />
         ))}
       </div>
     </div>
