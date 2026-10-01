@@ -668,6 +668,42 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
     return "\n\n".join(parts), sources
 
 
+_FILE_TOOLS = ("write_file", "edit_file", "delete_file")
+REPAIR_STEPS = 5
+
+
+async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: list, use_tools: bool, max_steps: int):
+    """The agent's events. In the App Builder, when the turn changed files and the app is left with
+    problems that crash or blank the page (see apps.app_problems), the model gets one more round to fix
+    them, and anything still wrong is told to the user instead of ending silently."""
+    said, changed = [], False
+    async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=use_tools,
+                              max_steps=max_steps):
+        if ev["type"] == "text":
+            said.append(ev["text"])
+        elif ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
+            changed = True
+        yield ev
+    if not (ctx.app_id and use_tools and changed):
+        return
+    problems = apps.app_problems(await apps.snapshot(ctx.app_id))
+    if not problems:
+        return
+    yield {"type": "text", "text": "\n\nChecking the app… I found a problem and I'm fixing it.\n\n"}
+    llm_messages.append({"role": "assistant", "content": "".join(said).strip() or "I wrote the files."})
+    llm_messages.append({"role": "user", "content": (
+        "Automatic check of the app found these problems:\n- " + "\n- ".join(problems)
+        + "\nFix every one now (read the files, then edit_file or write_file the missing parts so the whole app "
+        "works), then say in one short line what you fixed.")})
+    async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
+                              max_steps=REPAIR_STEPS):
+        yield ev
+    left = apps.app_problems(await apps.snapshot(ctx.app_id))
+    if left:
+        yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + left[0]
+               + " Tap “Fix errors with AI” under the preview, or reply “fix it”."}
+
+
 def _builder_summary(steps: list) -> str:
     """A plain account of an App Builder turn the model ended without a reply."""
     changed = sorted({(s.get("args") or {}).get("path", "") for s in steps
@@ -784,8 +820,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model)
             stream_fn = functools.partial(agent_llm.stream_completion, think=think)
-            async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=agent,
-                                      max_steps=max_steps or MAX_AGENT_STEPS):
+            async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS):
                 if ev["type"] == "text":
                     full.append(ev["text"])
                     yield f"data: {_sse_json(ev['text'])}\n\n"
