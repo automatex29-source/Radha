@@ -121,6 +121,11 @@ export default function Workspace({ mode = null }) {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
+  // Think (careful answers) and Study (tutor) stay on for this browser until turned off.
+  const [think, setThink] = useState(() => readFlag("krish.think"));
+  const [study, setStudy] = useState(() => readFlag("krish.study"));
+  const toggleThink = () => setThink((v) => { saveFlag("krish.think", !v); return !v; });
+  const toggleStudy = () => setStudy((v) => { saveFlag("krish.study", !v); return !v; });
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
@@ -459,7 +464,7 @@ export default function Workspace({ mode = null }) {
     const imageIds = images.map((i) => i.id);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (text === undefined) { setInput(""); setPendingImages([]); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable }, convId);
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling }, convId);
   };
 
   // Voice mode keeps its first callback for the whole session; route through a ref
@@ -474,7 +479,7 @@ export default function Workspace({ mode = null }) {
       if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
       return copy;
     });
-    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable }, activeId);
+    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling }, activeId);
   };
 
   return (
@@ -484,7 +489,7 @@ export default function Workspace({ mode = null }) {
       <div className="hidden lg:block">
         <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
           onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
-          newLabel={counselling ? "New session" : undefined} onCollapse={() => {}} />
+          newLabel={counselling ? "New session" : undefined} onCollapse={() => {}} searchContent={!counselling} />
       </div>
 
       {/* Mobile drawer */}
@@ -494,7 +499,7 @@ export default function Workspace({ mode = null }) {
           <div className="krish-drawer-in krish-canvas absolute left-0 top-0 h-full max-w-[85vw] shadow-2xl">
             <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
               onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
-          newLabel={counselling ? "New session" : undefined} onCollapse={() => setSidebarOpen(false)} />
+          newLabel={counselling ? "New session" : undefined} onCollapse={() => setSidebarOpen(false)} searchContent={!counselling} />
           </div>
         </div>
       )}
@@ -596,6 +601,8 @@ export default function Workspace({ mode = null }) {
           images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
           agentMode={agentAvailable} agentAvailable={agentAvailable}
           agentHint="Agent mode needs a provider API key for this model on the backend"
+          thinkMode={think} onToggleThink={counselling ? undefined : toggleThink}
+          studyMode={study} onToggleStudy={counselling ? undefined : toggleStudy}
           voiceEnabled={voiceEnabled} voiceHint="Voice needs GROQ_API_KEY (free) on the backend"
           onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
           placeholder={counselling ? "Type anything… how's your day going? 😊" : undefined} />
@@ -709,4 +716,12 @@ function CounselEmptyState({ onPick }) {
       </div>
     </div>
   );
+}
+
+function readFlag(key) {
+  try { return localStorage.getItem(key) === "1"; } catch { return false; }
+}
+
+function saveFlag(key, on) {
+  try { localStorage.setItem(key, on ? "1" : "0"); } catch { /* optional */ }
 }

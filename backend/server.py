@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import asyncio
+import functools
 import hashlib
 import os
 import re
@@ -44,6 +45,7 @@ import live_search
 import mailer
 import counsellor
 import help_center
+import writer
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -62,6 +64,7 @@ AVAILABLE_MODELS = [
     {"id": "gpt-5.4", "label": "Krish Vision", "provider": "openai", "description": "Versatile · OpenAI"},
     {"id": "gemini-2.5-flash", "label": "Krish Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
     {"id": "openai/gpt-oss-120b", "label": "Krish Open", "provider": "groq", "description": "Fast · Groq · free tier"},
+    {"id": "openai/gpt-oss-20b", "label": "Krish Open Fast", "provider": "groq", "description": "Quickest replies · free tier"},
 ]
 
 # Default model: AI_MODEL if set, otherwise the first model whose provider key is configured.
@@ -154,16 +157,21 @@ class MessageIn(BaseModel):
     model: Optional[str] = None
     images: List[str] = Field(default_factory=list, max_length=8)
     agent: bool = False
+    think: bool = False  # the Think button: reason longer and check the answer
+    study: bool = False  # Study mode: teach step by step and quiz instead of just answering
 
 
 class RegenerateIn(BaseModel):
     model: Optional[str] = None
     agent: bool = False
+    think: bool = False
+    study: bool = False
 
 
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     voice: Optional[str] = None
+    lang: Optional[Literal["auto", "hi", "en"]] = None
 
 
 def public_user(doc: dict) -> dict:
@@ -193,6 +201,7 @@ def public_project(doc: dict) -> dict:
     return {
         "id": doc["id"],
         "name": doc["name"],
+        "assistantCode": doc.get("assistantCode"),
         "description": doc.get("description"),
         "instructions": doc.get("instructions"),
         "createdAt": doc["createdAt"],
@@ -394,6 +403,36 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
     return public_conversation(doc)
 
 
+@api.get("/conversations/search")
+async def search_conversations(q: str = Query(min_length=2, max_length=100), user_id: str = Depends(current_user_id)):
+    """Find chats whose title or messages contain the words, with a short snippet around the first match."""
+    convs = await db.conversations.find(
+        {"userId": user_id, "appId": None, "automationId": None, "mode": None},
+        {"id": 1, "title": 1, "updatedAt": 1}).sort("updatedAt", -1).to_list(500)
+    by_id = {c["id"]: c for c in convs}
+    pattern = {"$regex": re.escape(q.strip()), "$options": "i"}
+    hits = {}
+    for c in convs:
+        if re.search(re.escape(q.strip()), c.get("title") or "", re.IGNORECASE):
+            hits[c["id"]] = None
+    msgs = await db.messages.find({"conversationId": {"$in": list(by_id)}, "content": pattern},
+                                  {"conversationId": 1, "content": 1}).sort("createdAt", -1).to_list(400)
+    for m in msgs:
+        if hits.get(m["conversationId"]) is None:
+            hits[m["conversationId"]] = _snippet(m["content"], q.strip())
+    ordered = [c for c in convs if c["id"] in hits][:30]
+    return [{"id": c["id"], "title": c["title"], "updatedAt": c["updatedAt"], "snippet": hits[c["id"]]} for c in ordered]
+
+
+def _snippet(text: str, q: str, width: int = 70) -> str:
+    m = re.search(re.escape(q), text, re.IGNORECASE)
+    if not m:
+        return text[:width * 2]
+    start, end = max(0, m.start() - width), min(len(text), m.end() + width)
+    out = re.sub(r"\s+", " ", text[start:end]).strip()
+    return ("…" if start else "") + out + ("…" if end < len(text) else "")
+
+
 async def _owned_conversation(conv_id: str, user_id: str) -> dict:
     doc = await db.conversations.find_one({"id": conv_id, "userId": user_id})
     if not doc:
@@ -462,7 +501,8 @@ AGENT_PROMPT = (
     "found with 1-2 source links. For research, reports, market analysis or detailed comparisons of tools, prices or options, "
     "call deep_research (it writes a cited PDF report). For step-by-step guides, web_search the service's current "
     "docs first so button names are right. Live exchange rates, when given, are the source of truth for currency questions. "
-    "Use run_python for any calculation, data work or chart; browser to operate websites; generate_image and "
+    "Use run_python for any calculation, data work or chart; browser to operate websites; edit_image to change a "
+    "picture the user attached or you made (AI changes or quick fixes like crop, rotate, black and white); generate_image and "
     "generate_video whenever the user asks to make, draw, design or animate a picture, logo, poster or video (you "
     "can create them; never say you can't). Pick the style that fits (ad, movie, trailer, 3d_animation, anime, "
     "cartoon, music_video, social_reel...), write 3-6 vivid scenes, and add short captions for ads and reels. When the user asks for a file, create a real one that "
@@ -475,6 +515,21 @@ AGENT_PROMPT = (
     "video frames come from a video the user attached; treat them as that video."
 )
 
+
+THINK_PROMPT = (
+    "Think mode is on: the user wants your most careful answer. Work through the problem step by step before "
+    "answering, check facts with web_search when they matter, double-check any numbers or code, and point out "
+    "anything you are unsure of. Still lead with the answer, then the key reasoning."
+)
+
+STUDY_PROMPT = (
+    "Study mode is on: act as a patient, encouraging tutor for a student in India. Don't just hand over the final "
+    "answer. First ask what level they are at if it isn't clear (class, exam such as CBSE, JEE, NEET, UPSC, or "
+    "college). Explain one idea at a time in simple words with a small everyday example, then ask one short "
+    "question to check they understood before moving on. For homework, give hints and let them try each step; "
+    "show the full solution only after they try or ask for it. When a topic is done, offer a quick quiz or "
+    "flashcards (use create_flashcards) for revision."
+)
 
 MAX_CONTEXT_IMAGES = 6
 
@@ -584,7 +639,7 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
 
 
 async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: Optional[str] = None,
-                   max_steps: Optional[int] = None):
+                   max_steps: Optional[int] = None, think: bool = False, study: bool = False):
     """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
 
     If the conversation belongs to a project, relevant document chunks (RAG) and
@@ -656,6 +711,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     focused = bool(app_id) and agent_llm.lean(model)
     if agent and not focused:
         system_parts.append(AGENT_PROMPT)
+    if study and not app_id and not counselling:
+        system_parts.append(STUDY_PROMPT)
+    if think and not counselling:
+        system_parts.append(THINK_PROMPT)
     if extra_system:
         system_parts.append(extra_system)
     system_prompt = "\n\n".join(system_parts)
@@ -672,7 +731,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                                                see_images=agent_llm.supports_images(model))
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model)
-            async for ev in run_agent(agent_llm.stream_completion, tool_registry, ctx, model, llm_messages, use_tools=agent,
+            stream_fn = functools.partial(agent_llm.stream_completion, think=think)
+            async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=agent,
                                       max_steps=max_steps or MAX_AGENT_STEPS):
                 if ev["type"] == "text":
                     full.append(ev["text"])
@@ -728,9 +788,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
 
 
-def _stream_response(conv_id: str, model: str, agent: bool = False) -> StreamingResponse:
+def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False,
+                     study: bool = False) -> StreamingResponse:
     return StreamingResponse(
-        run_turn(conv_id, model, agent),
+        run_turn(conv_id, model, agent, think=think, study=study),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
@@ -770,7 +831,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
     if not conv.get("appId") and not conv.get("automationId") and conv.get("mode") != counsellor.MODE:
         _background(memory.learn(db, user_id, body.content, model))
 
-    return _stream_response(conv_id, model, agent=body.agent)
+    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study)
 
 
 _BACKGROUND_TASKS = set()
@@ -800,7 +861,7 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
     if remaining == 0:
         raise HTTPException(status_code=400, detail="Nothing to regenerate")
 
-    return _stream_response(conv_id, model, agent=body.agent)
+    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study)
 
 
 # -------------------------------------------------------------------- sharing
@@ -945,6 +1006,46 @@ async def delete_project(pid: str, user_id: str = Depends(current_user_id)):
     await db.conversations.update_many({"projectId": pid}, {"$set": {"projectId": None}})
     await db.projects.delete_one({"id": pid})
     return {"ok": True}
+
+
+# ----------------------------------------------------------------- assistants
+# A project's name, description and instructions can be shared as an "assistant" link (like a custom GPT).
+# Anyone signed in who opens it can add their own copy. Files, chats and memory are never shared.
+@api.post("/projects/{pid}/assistant-link")
+async def share_assistant(pid: str, user_id: str = Depends(current_user_id)):
+    proj = await _owned_project(pid, user_id)
+    code = proj.get("assistantCode") or secrets.token_urlsafe(9)
+    await db.projects.update_one({"id": pid}, {"$set": {"assistantCode": code}})
+    return {"code": code}
+
+
+@api.delete("/projects/{pid}/assistant-link")
+async def unshare_assistant(pid: str, user_id: str = Depends(current_user_id)):
+    await _owned_project(pid, user_id)
+    await db.projects.update_one({"id": pid}, {"$set": {"assistantCode": None}})
+    return {"ok": True}
+
+
+async def _shared_assistant(code: str) -> dict:
+    proj = await db.projects.find_one({"assistantCode": code}) if code else None
+    if not proj:
+        raise HTTPException(status_code=404, detail="This assistant link was turned off or doesn't exist")
+    return proj
+
+
+@api.get("/assistants/{code}")
+async def get_shared_assistant(code: str, user_id: str = Depends(current_user_id)):
+    proj = await _shared_assistant(code)
+    owner = await db.users.find_one({"id": proj["userId"]}, {"name": 1})
+    return {"name": proj["name"], "description": proj.get("description"), "instructions": proj.get("instructions"),
+            "by": (owner or {}).get("name"), "mine": proj["userId"] == user_id}
+
+
+@api.post("/assistants/{code}/copy")
+async def copy_shared_assistant(code: str, user_id: str = Depends(current_user_id)):
+    proj = await _shared_assistant(code)
+    return await create_project(ProjectIn(name=proj["name"], description=proj.get("description"),
+                                          instructions=proj.get("instructions")), user_id)
 
 
 # ---------------------------------------------------------------------- files
@@ -1115,7 +1216,7 @@ async def capabilities(user_id: str = Depends(current_user_id)):
         "agent": {m["id"]: agent_llm.configured(m["id"]) for m in AVAILABLE_MODELS},
         "tools": tool_registry.describe(),
         "voice": media.transcription_available(),
-        "serverSpeech": media.openai_configured(),
+        "serverSpeech": media.speech_available(),
         "video": any(t["name"] == "generate_video" and t["available"] for t in tool_registry.describe()),
         "imageGeneration": media.image_available(),
         "voices": media.TTS_VOICES,
@@ -1221,7 +1322,7 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
 @api.post("/audio/speech")
 async def text_to_speech(body: SpeechIn, user_id: str = Depends(current_user_id)):
     try:
-        audio = await media.speak(body.text, body.voice or "nova")
+        audio = await media.speak(body.text, body.voice or "nova", body.lang)
     except media.MediaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
@@ -1305,6 +1406,8 @@ app.include_router(apps.router)
 app.include_router(appdata.router)
 decks.init(db, AI_MODEL)
 app.include_router(decks.router)
+writer.init(db, AI_MODEL)
+app.include_router(writer.router)
 automations.init(db, run_turn, AI_MODEL)
 app.include_router(automations.router)
 help_center.init(db)

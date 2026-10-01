@@ -10,8 +10,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+import image_edit
 import media
-from . import browser, documents, prompt_boost, research, sandbox, styles, video, web
+from . import browser, documents, flashcards, prompt_boost, research, sandbox, styles, video, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -179,6 +180,28 @@ async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Generated “{prompt[:80]}”", media=[saved])
 
 
+async def _edit_image(ctx: ToolContext, args: dict) -> ToolOutput:
+    instruction = (args.get("instruction") or "").strip()
+    quick = [q for q in (args.get("quick_edits") or []) if isinstance(q, str)]
+    if not instruction and not quick:
+        raise ValueError("Give an 'instruction' or some 'quick_edits'")
+    src = await image_edit.latest_image(ctx.db, ctx.user_id, ctx.conversation_id, args.get("image_name"))
+    if not src:
+        raise ValueError("There's no picture in this chat to edit. Ask the user to attach one.")
+    data = await media.read_bytes(ctx.db, src)
+    if quick:
+        data = image_edit.quick_edit(data, quick)
+    if instruction:
+        data = await image_edit.ai_edit(data, instruction)
+    ctype = media.image_type(data) or "image/png"
+    ext = {"image/jpeg": "jpg", "image/webp": "webp"}.get(ctype, "png")
+    base = (src.get("name") or "picture").rsplit(".", 1)[0]
+    saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated",
+                                   name=documents.safe_filename(f"{base}-edited", ext), conversation_id=ctx.conversation_id)
+    return ToolOutput(content="Edited picture shown to the user with a download button. Describe the change in one "
+                              "short sentence.", summary=f"Edited {src.get('name') or 'the picture'}", media=[saved])
+
+
 async def _save_file(ctx: ToolContext, data: bytes, ext: str, filename: str) -> dict:
     name = documents.safe_filename(filename, ext)
     return await media.save_media(ctx.db, ctx.user_id, data, documents.CONTENT_TYPES[ext], "document",
@@ -241,6 +264,15 @@ async def _create_html(ctx: ToolContext, args: dict) -> ToolOutput:
     saved = await _save_file(ctx, page.encode("utf-8"), "html", args.get("filename") or "page")
     return ToolOutput(content=f"Created {saved['name']}. The user sees a live preview of it.",
                       summary=f"Created {saved['name']}", media=[saved])
+
+
+async def _create_flashcards(ctx: ToolContext, args: dict) -> ToolOutput:
+    cards = flashcards.clean_cards(args.get("cards"))
+    page = flashcards.build_page(args.get("title") or "Flashcards", cards)
+    saved = await _save_file(ctx, page.encode("utf-8"), "html", args.get("title") or "flashcards")
+    return ToolOutput(content=f"Created {len(cards)} flashcards. The user can flip and practise them in the preview; "
+                              "don't list the cards again.",
+                      summary=f"Made {len(cards)} flashcards", media=[saved])
 
 
 async def _create_file(ctx: ToolContext, args: dict) -> ToolOutput:
@@ -323,7 +355,7 @@ def default_registry() -> ToolRegistry:
             description="Execute Python 3 code in an isolated sandbox with no network access and a "
                         f"{sandbox.WALL_SECONDS}s limit. Print results to stdout. Files written to the "
                         "current directory (png, csv, json, txt, md, html, svg) are returned to the user, "
-                        "so save charts with plt.savefig('chart.png'). Only the standard library is guaranteed.",
+                        "so save charts with plt.savefig('chart.png'). matplotlib, pandas and numpy are installed.",
             parameters={"type": "object", "properties": {
                 "code": {"type": "string", "description": "Complete Python program"},
             }, "required": ["code"]},
@@ -343,6 +375,17 @@ def default_registry() -> ToolRegistry:
                 "quality": {"type": "string", "description": "high (default), medium or low"},
             }, "required": ["prompt"]},
             handler=_generate_image, available=media.image_available))
+        .register(Tool(
+            name="edit_image", label="Edit picture",
+            description="Edit the newest picture in this chat (one the user attached or you made). 'instruction' "
+                        "for AI changes (\"make the sky a sunset\", \"remove the person on the left\"); 'quick_edits' "
+                        "for simple free fixes, applied first, from: " + ", ".join(image_edit.QUICK_EDITS) + ".",
+            parameters={"type": "object", "properties": {
+                "instruction": {"type": "string", "description": "What to change, in plain words"},
+                "quick_edits": {"type": "array", "items": {"type": "string"}},
+                "image_name": {"type": "string", "description": "Optional file name of an earlier picture"},
+            }},
+            handler=_edit_image))
         .register(Tool(
             name="create_spreadsheet", label="Create Excel file",
             description="Create an Excel .xlsx workbook with styled headers, optional number formats, formulas and a "
@@ -443,6 +486,16 @@ def default_registry() -> ToolRegistry:
                 "html": {"type": "string", "description": "Complete HTML document"},
             }, "required": ["filename", "html"]},
             handler=_create_html))
+        .register(Tool(
+            name="create_flashcards", label="Make flashcards",
+            description="Make interactive revision flashcards (flip, Got it / Again) from a topic, notes or a file.",
+            parameters={"type": "object", "properties": {
+                "title": {"type": "string"},
+                "cards": {"type": "array", "description": "5-30 cards", "items": {"type": "object", "properties": {
+                    "front": {"type": "string", "description": "Question or term"},
+                    "back": {"type": "string", "description": "Short answer"}}}},
+            }, "required": ["title", "cards"]},
+            handler=_create_flashcards))
         .register(Tool(
             name="generate_video", label="Generate video",
             description="Generate a short video: ads, movie scenes, trailers, 3D animation, anime, cartoons, music "

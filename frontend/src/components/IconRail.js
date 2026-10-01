@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
-import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy } from "lucide-react";
+import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy, FileText } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
 
 const ITEMS = [
@@ -8,6 +8,7 @@ const ITEMS = [
   { icon: HeartHandshake, label: "Counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
   { icon: FolderKanban, label: "Projects", to: "/projects", match: (p) => p.startsWith("/projects") },
   { icon: AppWindow, label: "Apps", to: "/apps", match: (p) => p.startsWith("/apps") },
+  { icon: FileText, label: "Docs", to: "/docs", match: (p) => p.startsWith("/docs") },
   { icon: Presentation, label: "Decks", to: "/decks", match: (p) => p.startsWith("/decks") },
   { icon: Workflow, label: "Automations", short: "Automate", to: "/automations", match: (p) => p.startsWith("/automations") },
 ];

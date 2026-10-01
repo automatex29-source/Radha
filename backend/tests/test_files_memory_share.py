@@ -165,3 +165,25 @@ def test_share_link(client):
         client.headers["Authorization"] = auth
     client.delete(f"/api/conversations/{cid}/share")
     assert client.get(f"/api/share/{share['shareId']}").status_code == 404
+
+
+def test_search_finds_words_inside_chats(client):
+    cid = _conv(client)
+    _send(client, cid, "What is the GST rate on handloom sarees?")
+    other = _conv(client)
+    _send(client, other, "hello there")
+    hits = client.get("/api/conversations/search", params={"q": "handloom"}).json()
+    assert [h["id"] for h in hits] == [cid]
+    assert "handloom" in hits[0]["snippet"].lower()
+    assert client.get("/api/conversations/search", params={"q": "zzzz-nothing"}).json() == []
+
+
+def test_think_and_study_shape_the_prompt(client):
+    cid = _conv(client)
+    call = _send(client, cid, "explain photosynthesis", think=True, study=True)
+    system = call["messages"][0]["content"]
+    assert "Think mode is on" in system and "Study mode is on" in system
+    assert call["reasoning_effort"] == "medium"
+    plain = _send(client, cid, "thanks")
+    assert "Study mode is on" not in plain["messages"][0]["content"]
+    assert plain["reasoning_effort"] == "low"

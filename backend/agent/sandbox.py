@@ -31,7 +31,7 @@ ARTIFACT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".csv", ".txt
                  ".xlsx", ".docx", ".pptx", ".pdf", ".mp4"}
 NOBODY = 65534
 
-# Makes matplotlib (if installed) render headless and write its cache inside the sandbox.
+# Makes matplotlib render headless. Its font cache goes in a hidden folder, which isn't returned as a file.
 _PRELUDE = "import os as _o\n_o.environ.setdefault('MPLBACKEND', 'Agg')\ndel _o\n"
 
 
@@ -174,7 +174,7 @@ async def _run(build_cmd, files: Dict[str, Union[str, bytes]], collect_artifacts
         if isolated:
             cmd = ["unshare", "-rn"] + cmd
         env = {"PATH": _search_path(), "HOME": str(workdir), "TMPDIR": str(workdir),
-               "MPLCONFIGDIR": str(workdir), "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8",
+               "MPLCONFIGDIR": str(workdir / ".cache" / "matplotlib"), "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8",
                "NODE_OPTIONS": "--max-old-space-size=512", "CI": "1"}
 
         proc = await asyncio.create_subprocess_exec(
@@ -194,7 +194,8 @@ async def _run(build_cmd, files: Dict[str, Union[str, bytes]], collect_artifacts
 
         artifacts = []
         for path in sorted(workdir.rglob("*")) if collect_artifacts else []:
-            if path.is_file() and path.name not in skip and path.suffix.lower() in ARTIFACT_EXTS:
+            hidden = any(part.startswith(".") for part in path.relative_to(workdir).parts)
+            if path.is_file() and not hidden and path.name not in skip and path.suffix.lower() in ARTIFACT_EXTS:
                 if path.stat().st_size <= MAX_ARTIFACT_BYTES and len(artifacts) < 10:
                     artifacts.append(Artifact(path.name, _content_type(path.suffix.lower()), path.read_bytes()))
 

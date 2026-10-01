@@ -203,7 +203,7 @@ class TestToolCallRetry:
 
         calls = []
 
-        async def once(model, messages, tools):
+        async def once(model, messages, tools, think=False):
             calls.append(1)
             if len(calls) == 1:
                 yield {"type": "heartbeat"}
@@ -220,7 +220,7 @@ class TestToolCallRetry:
     def test_other_errors_are_not_retried(self, monkeypatch):
         from agent import llm
 
-        async def once(model, messages, tools):
+        async def once(model, messages, tools, think=False):
             raise RuntimeError("boom")
             yield
 

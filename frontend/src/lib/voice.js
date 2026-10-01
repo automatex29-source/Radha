@@ -18,7 +18,8 @@ export function setVoiceLang(lang) {
   try { localStorage.setItem(LANG_KEY, lang); } catch { /* optional */ }
 }
 
-// Server speech needs a paid key; otherwise the browser reads replies aloud for free.
+// The server speaks with natural voices (free Microsoft neural voices, or OpenAI with a key);
+// if that fails, the browser reads replies aloud.
 let serverSpeech = false;
 export function setServerSpeech(on) { serverSpeech = !!on; }
 
@@ -150,7 +151,7 @@ async function speakOnServer(text, voice, { onStart } = {}) {
   const res = await fetch(`${API}/audio/speech`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-    body: JSON.stringify({ text, voice }),
+    body: JSON.stringify({ text, voice, lang: getVoiceLang() }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
