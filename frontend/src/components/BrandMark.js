@@ -1,6 +1,6 @@
-import krishIcon from "@/assets/krish-icon.svg";
+import empirexLogo from "@/assets/empirex-logo.svg";
 
-/** The Krish AI app icon (a "K" on the brand gradient). The EmpireX gear logo stays in assets/empirex-logo.svg for the company. */
+/** The EmpireX gear logo, used as Krish AI's app icon and avatar. */
 export default function BrandMark({ className = "" }) {
-  return <img src={krishIcon} alt="" draggable="false" className={`select-none ${className}`} />;
+  return <img src={empirexLogo} alt="" draggable="false" className={`select-none ${className}`} />;
 }
