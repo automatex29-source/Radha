@@ -70,9 +70,9 @@ _RATE_LIMIT_RETRIES = 3
 _TOOL_CALL_RETRIES = 2
 logger = logging.getLogger("radha.agent")
 _HEARTBEAT_SECONDS = 10
-# Groq counts max_tokens against the per-minute budget, so a plain answer (no tools) asks for less room
-# and the next message isn't kept waiting.
-_PLAIN_OUTPUT = 3000
+# Groq counts max_tokens against the per-minute budget, so a plain chat answer asks for less room
+# and the next message isn't kept waiting (see ai_runtime/_backend.py).
+PLAIN_OUTPUT = 3000
 # Groq's limits are per model: when the big model is rate limited, its smaller sibling answers right away
 # instead of the user waiting up to a minute.
 _FALLBACK = {"openai/gpt-oss-120b": "openai/gpt-oss-20b", "cerebras/gpt-oss-120b": "openai/gpt-oss-120b"}
@@ -98,7 +98,7 @@ def litellm_model(model: str) -> str:
     return model if model.startswith(provider + "/") else f"{provider}/{model}"
 
 
-def max_output(model: str) -> int:
+def output_room(model: str) -> int:
     """Room for the reply. Strong builders get more, so a whole file fits in one write_file call."""
     return _MAX_OUTPUT if provider_for(model) == "groq" else _BIG_OUTPUT
 
@@ -171,17 +171,19 @@ def _bad_tool_call(exc: Exception) -> bool:
 
 
 async def stream_completion(model: str, messages: List[dict], tools: List[dict],
-                            think: bool = False) -> AsyncIterator[dict]:
+                            think: bool = False, max_output: Optional[int] = None) -> AsyncIterator[dict]:
     """Yield {"type": "text", "text"} deltas, then one {"type": "tool_calls", "calls"} if the model called tools.
 
     While waiting out a rate limit it yields {"type": "heartbeat"} so the stream stays open. A rejected tool
     call is retried (up to _TOOL_CALL_RETRIES times) as long as nothing but heartbeats was sent yet.
     `think` (the Think button) asks reasoning models to reason longer before answering.
+    `max_output` caps the reply on Groq's free tier, which counts the room asked for against the minute's budget.
     """
     for attempt in range(_TOOL_CALL_RETRIES + 1):
         sent = False
         try:
-            async for event in _stream_once(model, messages, tools, think):
+            extra = {"max_output": max_output} if max_output else {}
+            async for event in _stream_once(model, messages, tools, think, **extra):
                 sent = sent or event["type"] != "heartbeat"
                 yield event
             return
@@ -211,9 +213,10 @@ def _cached_system(messages: List[dict]) -> List[dict]:
     return [first] + messages[1:]
 
 
-def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: bool = False) -> dict:
+def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: bool = False,
+                   max_output: Optional[int] = None) -> dict:
     """LiteLLM arguments for one request, trimmed to the model's token budget when it has one."""
-    kwargs = {"model": litellm_model(model), "messages": messages, "stream": True, "max_tokens": max_output(model)}
+    kwargs = {"model": litellm_model(model), "messages": messages, "stream": True, "max_tokens": output_room(model)}
     gw = gateway()
     if gw:
         kwargs.update(model=f"openai/{model}", **gw)
@@ -225,18 +228,18 @@ def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: b
         budget = token_budget(model)
         fitted = fit_messages(messages, tools, budget)
         room = budget - estimate_tokens(fitted) - estimate_tokens(tools)
-        cap = max_output(model) if tools else _PLAIN_OUTPUT
-        kwargs.update(messages=fitted, max_tokens=max(_MIN_OUTPUT // 2, min(cap, room)))
+        kwargs.update(messages=fitted, max_tokens=max(_MIN_OUTPUT // 2, min(max_output or output_room(model), room)))
     effort = reasoning_effort(model, think)
     if effort:
         kwargs.update(reasoning_effort=effort, drop_params=True)
     return kwargs
 
 
-async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: bool = False) -> AsyncIterator[dict]:
+async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: bool = False,
+                       max_output: Optional[int] = None) -> AsyncIterator[dict]:
     import litellm
 
-    kwargs = request_kwargs(model, messages, tools, think)
+    kwargs = request_kwargs(model, messages, tools, think, max_output)
     fallback = _FALLBACK.get(model) if lean(model) else None
     attempt = 0
     while True:
@@ -246,7 +249,7 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
         except litellm.RateLimitError as exc:
             if fallback and (provider_for(fallback) == provider_for(model) or configured(fallback)):
                 logger.info("%s is rate limited, answering with %s", model, fallback)
-                kwargs = request_kwargs(fallback, messages, tools, think)
+                kwargs = request_kwargs(fallback, messages, tools, think, max_output)
                 fallback = None
                 continue
             if attempt == _RATE_LIMIT_RETRIES or "per day" in str(exc).lower():

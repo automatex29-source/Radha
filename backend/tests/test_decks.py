@@ -303,3 +303,33 @@ def test_ai_pictures_stop_after_repeated_failures(monkeypatch):
         assert len(tries) == 2
 
     asyncio.run(scenario())
+
+
+def test_stock_pictures_are_fetched_together(monkeypatch):
+    mongomock_motor = pytest.importorskip("mongomock_motor")
+    import deck_images
+
+    db = mongomock_motor.AsyncMongoMockClient()["t"]
+    decks.init(db, "test-model")
+    monkeypatch.setattr(deck_images, "enabled", lambda: True)
+    running, peak = [0], [0]
+
+    async def slow_stock(slide, used, topic=""):
+        running[0] += 1
+        peak[0] = max(peak[0], running[0])
+        await asyncio.sleep(0.05)
+        running[0] -= 1
+        return {"url": f"https://img.test/{slide['id']}.jpg", "thumb": "", "credit": "Photo", "link": ""}
+
+    monkeypatch.setattr(deck_images, "find_stock", slow_stock)
+    slides = [deck_render.normalize_slide({"layout": "image_right", "title": f"S{i}", "image_query": "sun"}) for i in range(6)]
+
+    async def scenario():
+        await db.decks.insert_one({"id": "d", "userId": "u", "title": "T", "theme": "aurora", "pictures": "stock",
+                                   "slides": slides, "status": "ready", "picturesPending": True, "updatedAt": decks._now()})
+        await decks.fill_pictures("d")
+        doc = await db.decks.find_one({"id": "d"})
+        assert all(s["image"]["url"].startswith("https://img.test/") for s in doc["slides"])
+        assert peak[0] == decks.STOCK_AT_ONCE and doc["picturesPending"] is False
+
+    asyncio.run(scenario())
