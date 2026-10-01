@@ -639,6 +639,22 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
     return "\n\n".join(parts), sources
 
 
+def _builder_summary(steps: list) -> str:
+    """A plain account of an App Builder turn the model ended without a reply."""
+    changed = sorted({(s.get("args") or {}).get("path", "") for s in steps
+                      if s.get("name") in ("write_file", "edit_file", "delete_file") and s.get("status") == "done"} - {""})
+    failed = [s for s in steps if s.get("status") == "error"]
+    if changed:
+        text = f"I changed {', '.join(changed)}. Check the preview, and tell me what else to adjust."
+        if failed:
+            text += f" ({len(failed)} of my edits didn't apply, so some of what you asked may be missing.)"
+        return text
+    if failed:
+        return ("I couldn't make that change: my edits didn't match the file, so nothing was changed. "
+                "Try asking for one specific change, like \"make the Search button green\".")
+    return "I looked at the files but didn't change anything. Tell me exactly what you'd like changed."
+
+
 async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: Optional[str] = None,
                    max_steps: Optional[int] = None, think: bool = False, study: bool = False):
     """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
@@ -761,6 +777,11 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         logger.exception("AI stream failed")
         yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"
     else:
+        if app_id and steps and not "".join(full).strip():
+            # Free models sometimes stop after their tools without a word: always say what happened.
+            summary = _builder_summary(steps)
+            full.append(summary)
+            yield f"data: {_sse_json(summary)}\n\n"
         # Crisis replies always carry the helplines, even if the model left them out.
         note = counsellor.helpline_note("".join(full)) if counselling and counsellor.is_crisis(last_user or "") else ""
         if note:

@@ -607,6 +607,53 @@ async def _t_write(ctx, args):
     return _tool_output(f"Wrote {path} ({len(content)} chars).", f"Wrote {path}")
 
 
+_LINE_NO_RE = re.compile(r"(?m)^ *\d+  ")
+
+
+def _strip_line_numbers(text: str) -> str:
+    """Undo read_file's "  12  " prefixes when the model copies them into an edit."""
+    lines = [l for l in text.split("\n") if l.strip()]
+    return _LINE_NO_RE.sub("", text) if lines and all(_LINE_NO_RE.match(l) for l in lines) else text
+
+
+def locate_snippet(content: str, old: str):
+    """Find `old` in `content`: exactly, then without copied line numbers, then ignoring whitespace.
+
+    Returns (start, end, None) for a unique match, else (None, None, a message for the model).
+    """
+    candidates = [old]
+    stripped = _strip_line_numbers(old)
+    if stripped != old:
+        candidates.append(stripped)
+    for cand in candidates:
+        count = content.count(cand)
+        if count == 1:
+            i = content.index(cand)
+            return i, i + len(cand), None
+        if count > 1:
+            lines = sorted({content.count("\n", 0, m.start()) + 1 for m in re.finditer(re.escape(cand), content)})
+            return None, None, (f"old_text matches {count} places (lines {', '.join(map(str, lines[:10]))}). "
+                                "Include a few more surrounding lines so it matches exactly one.")
+    tokens = stripped.split()
+    if tokens:
+        matches = list(re.finditer(r"\s+".join(map(re.escape, tokens)), content))
+        if len(matches) == 1:
+            return matches[0].start(), matches[0].end(), None
+        if len(matches) > 1:
+            return None, None, f"old_text matches {len(matches)} places. Include more surrounding lines."
+    # Point the model at the closest text so its next try can succeed.
+    file_lines, want = content.split("\n"), [l.strip() for l in stripped.strip().split("\n")]
+    n, best, best_at = max(1, len(want)), 0.0, 0
+    for i in range(0, max(1, len(file_lines) - n + 1)):
+        score = difflib.SequenceMatcher(None, "\n".join(l.strip() for l in file_lines[i:i + n]), "\n".join(want)).quick_ratio()
+        if score > best:
+            best, best_at = score, i
+    lo, hi = max(0, best_at - 2), min(len(file_lines), best_at + n + 2)
+    near = "\n".join(f"{i + 1:4d}  {file_lines[i]}" for i in range(lo, hi))
+    return None, None, ("old_text was not found in the file. The closest text is below; copy old_text exactly "
+                        f"from it (without the line numbers), or use write_file for a bigger change.\n{near}")
+
+
 async def _t_edit(ctx, args):
     path = clean_path(args.get("path", ""))
     doc = await db.app_files.find_one({"appId": ctx.app_id, "path": path})
@@ -615,11 +662,12 @@ async def _t_edit(ctx, args):
     old, new = args.get("old_text"), args.get("new_text", "")
     if not old:
         raise ValueError("'old_text' is required")
-    count = doc["content"].count(old)
-    if count != 1:
-        return _tool_output(f"old_text must match exactly once in {path}; it matched {count} times. "
-                            "Read the file and include more surrounding context.", f"Edit failed ({count} matches)", ok=False)
-    await write_file(ctx.app_id, path, doc["content"].replace(old, new, 1))
+    start, end, problem = locate_snippet(doc["content"], old)
+    if problem:
+        return _tool_output(problem, "Edit didn't match; retrying", ok=False)
+    if _strip_line_numbers(new) != new and _strip_line_numbers(old) != old:
+        new = _strip_line_numbers(new)
+    await write_file(ctx.app_id, path, doc["content"][:start] + new + doc["content"][end:])
     return _tool_output(f"Edited {path}.", f"Edited {path}")
 
 
