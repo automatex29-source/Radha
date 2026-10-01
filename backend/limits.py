@@ -1,7 +1,7 @@
 """Free plan limits.
 
-Chats and pictures are counted per user per day (the day resets at midnight
-India time). Decks and automations are counted as totals the user has now, so
+Chats, pictures and new decks are counted per user per day (the day resets at
+midnight India time). Automations are counted as the total the user has now, so
 deleting one frees a slot. Counsellor chats are never counted.
 
 A user whose account has plan "pro" has no limits. Set FREE_LIMITS=off to
@@ -12,8 +12,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
-DAILY = {"chat": 30, "picture": 3}
-TOTAL = {"deck": 2, "automation": 1}
+DAILY = {"chat": 30, "picture": 3, "deck": 4}
+TOTAL = {"automation": 1}
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -21,7 +21,7 @@ MESSAGES = {
     "chat": "You've used your 30 free chats for today. They refill at midnight, see you then! "
             "The Counsellor is always free.",
     "picture": "You've made your 3 free pictures for today. You can make more after midnight.",
-    "deck": "The free plan keeps 2 decks. Delete an old deck to make a new one.",
+    "deck": "You've made your 4 free decks for today. You can make more after midnight.",
     "automation": "The free plan has 1 automation. Delete your current one to make a new one.",
 }
 
@@ -48,7 +48,7 @@ async def _unlimited(db, user_id: str) -> bool:
 
 
 async def use(db, user_id: str, kind: str) -> None:
-    """Count one chat or picture for today. Raises LimitReached if the day's allowance is used up."""
+    """Count one chat, picture or deck for today. Raises LimitReached if the day's allowance is used up."""
     if await _unlimited(db, user_id):
         return
     doc = await db.usage.find_one_and_update(
@@ -61,6 +61,15 @@ async def use(db, user_id: str, kind: str) -> None:
         raise LimitReached(kind)
 
 
+async def check_daily(db, user_id: str, kind: str) -> None:
+    """Raise LimitReached if today's allowance is already used up, without counting a use."""
+    if await _unlimited(db, user_id):
+        return
+    doc = await db.usage.find_one({"_id": f"{user_id}:{today()}"}) or {}
+    if doc.get(kind, 0) >= DAILY[kind]:
+        raise LimitReached(kind)
+
+
 async def refund(db, user_id: str, kind: str) -> None:
     """Give back one use, e.g. when a picture failed to be made."""
     if not enabled():
@@ -69,10 +78,10 @@ async def refund(db, user_id: str, kind: str) -> None:
 
 
 async def check_total(db, user_id: str, kind: str) -> None:
-    """Raise LimitReached if the user already has as many decks or automations as the free plan keeps."""
+    """Raise LimitReached if the user already has as many automations as the free plan keeps."""
     if await _unlimited(db, user_id):
         return
-    collection = {"deck": db.decks, "automation": db.automations}[kind]
+    collection = {"automation": db.automations}[kind]
     if await collection.count_documents({"userId": user_id}) >= TOTAL[kind]:
         raise LimitReached(kind)
 
@@ -81,10 +90,14 @@ def http_error(exc: LimitReached) -> HTTPException:
     return HTTPException(status_code=429, detail=str(exc))
 
 
-async def require(db, user_id: str, kind: str) -> None:
-    """use() or check_total() for an endpoint: turns a reached limit into a friendly 429."""
+async def require(db, user_id: str, kind: str, peek: bool = False) -> None:
+    """use() or check_total() for an endpoint: turns a reached limit into a friendly 429.
+
+    With peek=True a daily allowance is only checked, not used."""
     try:
-        if kind in DAILY:
+        if kind in DAILY and peek:
+            await check_daily(db, user_id, kind)
+        elif kind in DAILY:
             await use(db, user_id, kind)
         else:
             await check_total(db, user_id, kind)
@@ -101,6 +114,6 @@ async def summary(db, user_id: str) -> dict:
         "plan": "free",
         "chats": {"used": doc.get("chat", 0), "limit": DAILY["chat"]},
         "pictures": {"used": doc.get("picture", 0), "limit": DAILY["picture"]},
-        "decks": {"used": await db.decks.count_documents({"userId": user_id}), "limit": TOTAL["deck"]},
+        "decks": {"used": doc.get("deck", 0), "limit": DAILY["deck"]},
         "automations": {"used": await db.automations.count_documents({"userId": user_id}), "limit": TOTAL["automation"]},
     }

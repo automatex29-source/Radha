@@ -67,18 +67,22 @@ def test_refund_gives_a_picture_back(db):
     run(scenario())
 
 
-def test_decks_and_automations_are_totals(db):
+def test_decks_are_four_a_day_and_automations_a_total(db):
     async def scenario():
-        await db.decks.insert_many([{"id": "d1", "userId": "u"}, {"id": "d2", "userId": "u"}])
-        with pytest.raises(limits.LimitReached):
-            await limits.check_total(db, "u", "deck")
-        await db.decks.delete_one({"id": "d1"})
-        await limits.check_total(db, "u", "deck")  # deleting one frees a slot
+        for _ in range(4):
+            await limits.require(db, "u", "deck", peek=True)  # writing an outline doesn't use one up
+            await limits.use(db, "u", "deck")
+        with pytest.raises(HTTPException) as err:
+            await limits.require(db, "u", "deck", peek=True)
+        assert "4 free decks" in err.value.detail
+        assert (await limits.summary(db, "u"))["decks"] == {"used": 4, "limit": 4}
 
         await limits.check_total(db, "u", "automation")
         await db.automations.insert_one({"id": "a1", "userId": "u"})
         with pytest.raises(limits.LimitReached):
             await limits.check_total(db, "u", "automation")
+        await db.automations.delete_one({"id": "a1"})
+        await limits.check_total(db, "u", "automation")  # deleting one frees a slot
 
     run(scenario())
 

@@ -588,7 +588,7 @@ async def search_images(q: str = Query(..., min_length=1, max_length=100), user_
 
 @router.post("/decks/outline")
 async def make_outline(body: OutlineIn, user_id: str = Depends(current_user_id)):
-    await limits.require(db, user_id, "deck")  # say so before the user writes a deck they can't keep
+    await limits.require(db, user_id, "deck", peek=True)  # say so before the user writes a deck they can't make
     model = body.model or DEFAULT_MODEL
     data = await _ask_model(model, OUTLINE_SYSTEM,
                             f"Brief:\n{body.prompt}\n\nNumber of slides: {body.slides}"
@@ -601,10 +601,10 @@ async def make_outline(body: OutlineIn, user_id: str = Depends(current_user_id))
 
 @router.post("/decks")
 async def create_deck(body: DeckIn, user_id: str = Depends(current_user_id)):
-    await limits.require(db, user_id, "deck")
     outline = clean_outline(body.outline)
     if not outline:
         raise HTTPException(status_code=400, detail="Add at least one slide to the outline")
+    await limits.require(db, user_id, "deck")
     pictures = body.pictures if body.pictures in PICTURE_MODES else ("stock" if body.images else "none")
     ts = _now()
     doc = {
