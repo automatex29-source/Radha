@@ -385,45 +385,22 @@ FILE_EXTS = {"pdf", "docx", "pptx", "xlsx", "xlsm", "csv", "json", "txt", "md", 
              "png", "jpg", "jpeg", "webp"}
 
 
-def _youtube_transcript(video_id: str) -> str:
-    from youtube_transcript_api import YouTubeTranscriptApi
-
-    api = YouTubeTranscriptApi()
-    try:
-        listing = api.list(video_id)
-        codes = [t.language_code for t in listing]
-        fetched = api.fetch(video_id, languages=(["en", "hi"] + codes) or ["en"])
-    except Exception:
-        fetched = api.fetch(video_id)
-    return " ".join(getattr(x, "text", "") or (x.get("text", "") if isinstance(x, dict) else "") for x in fetched)
-
-
 async def read_video(url: str, video_id: str) -> dict:
-    """Transcript of a YouTube video; falls back to its title and description when captions are off."""
-    from agent import web
+    """Transcript of a YouTube video; falls back to its title, channel and description."""
+    import youtube_source
 
-    title, description, note = "", "", ""
-    try:
-        page = await web._get(f"https://www.youtube.com/watch?v={video_id}")
-        html = page.content.decode("utf-8", "replace")
-        m = re.search(r'<meta name="title" content="([^"]*)"', html) or re.search(r"<title>([^<]*)</title>", html)
-        title = (m.group(1) if m else "").replace(" - YouTube", "").strip()
-        m = re.search(r'"shortDescription":"((?:[^"\\]|\\.)*)"', html)
-        if m:
-            description = json.loads(f'"{m.group(1)}"')
-    except Exception as exc:
-        logger.info("youtube page failed: %s", exc)
-    try:
-        transcript = await asyncio.get_running_loop().run_in_executor(None, _youtube_transcript, video_id)
-    except Exception as exc:
-        logger.info("youtube transcript failed: %s", exc)
-        transcript = ""
+    got = await youtube_source.read(video_id)
+    title, transcript = got["title"], got["transcript"]
+    note = ""
     if not transcript:
-        note = "This video has no captions I could read, so the deck uses its title and description."
-    text = "\n\n".join(x for x in (f"Video: {title}" if title else "", description, transcript) if x)
-    if len(text) < 40:
-        raise HTTPException(status_code=422, detail="I couldn't read this video. Try another link, or paste its "
-                                                    "text or notes instead.")
+        note = ("I couldn't get this video's captions, so the deck uses its title and description. "
+                "For a fuller deck, open the video on YouTube, click \"Show transcript\", copy it and use Paste text.")
+    head = f"Video: {title}" + (f" (by {got['channel']})" if got["channel"] else "") if title else ""
+    text = "\n\n".join(x for x in (head, got["description"], transcript) if x)
+    if len(text) < 20:
+        raise HTTPException(status_code=422, detail=(
+            "YouTube didn't let me read this video. Open it on YouTube, click \"Show transcript\" under the "
+            "description, copy the text, and use the Paste text tab."))
     return {"kind": "video", "title": title or "YouTube video", "text": text[:MAX_SOURCE], "note": note, "url": url}
 
 

@@ -173,6 +173,41 @@ def test_youtube_links_are_recognised():
     assert decks.YOUTUBE_ID.search("https://example.com/watch?v=dQw4w9WgXcQ") is None
 
 
+def test_youtube_watch_page_and_captions_are_parsed():
+    import youtube_source
+
+    html = ('<meta name="title" content="How solar works">'
+            '"shortDescription":"Panels turn light into power.\\nMore below","captionTracks":['
+            '{"baseUrl":"https://www.youtube.com/api/timedtext?v=x&lang=fr","languageCode":"fr"},'
+            '{"baseUrl":"https://www.youtube.com/api/timedtext?v=x&lang=en&kind=asr","languageCode":"en","kind":"asr"},'
+            '{"baseUrl":"https://www.youtube.com/api/timedtext?v=x&lang=en","languageCode":"en"}],"x":1')
+    page = youtube_source.parse_watch_page(html)
+    assert page["title"] == "How solar works"
+    assert page["description"] == "Panels turn light into power.\nMore below"
+    assert youtube_source.pick_track(page["tracks"]).endswith("lang=en")
+    assert youtube_source.parse_json3({"events": [{"segs": [{"utf8": "Hello"}, {"utf8": " there"}]}, {}]}) == "Hello there"
+    assert youtube_source.parse_xml_captions('<text start="0">Tom &amp; Jerry</text><text>run</text>') == "Tom & Jerry run"
+
+
+def test_video_without_captions_still_makes_a_source(monkeypatch):
+    import youtube_source
+
+    async def title_only(video_id):
+        return {"title": "Future of electric cars", "channel": "Tech Talks", "description": "", "transcript": ""}
+
+    monkeypatch.setattr(youtube_source, "read", title_only)
+    got = asyncio.run(decks.read_video("https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"))
+    assert "Future of electric cars" in got["text"] and "Show transcript" in got["note"]
+
+    async def nothing(video_id):
+        return {"title": "", "channel": "", "description": "", "transcript": ""}
+
+    monkeypatch.setattr(youtube_source, "read", nothing)
+    with pytest.raises(decks.HTTPException) as err:
+        asyncio.run(decks.read_video("https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"))
+    assert "Paste text" in err.value.detail
+
+
 def test_stock_photos_are_ranked_by_matching_words():
     import deck_images
 
