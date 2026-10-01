@@ -1,4 +1,4 @@
-"""Groq provider (LiteLLM with GROQ_API_KEY; free tier at console.groq.com).
+"""Groq and Cerebras provider (LiteLLM with GROQ_API_KEY or CEREBRAS_API_KEY; both have free tiers).
 
 The Emergent integration doesn't serve Groq, so this always goes through LiteLLM.
 """
@@ -8,7 +8,7 @@ from .base import ModelProvider
 from .types import AIRequest
 from ._backend import stream_via_litellm
 
-_MODELS = {"openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"}
+_MODELS = {"openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b", "cerebras/gpt-oss-120b"}
 
 
 class GroqProvider(ModelProvider):

@@ -26,6 +26,7 @@ export default function AppBuilder() {
   // Phones show one pane at a time, starting with the chat.
   const [tab, setTab] = useState(() => (window.matchMedia?.("(max-width: 767px)").matches ? "chat" : "preview"));
   const [previewKey, setPreviewKey] = useState(0);
+  const [fixAsk, setFixAsk] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -99,7 +100,7 @@ export default function AppBuilder() {
         ))}
       </nav>
       <div className="flex min-h-0 flex-1">
-        <BuilderChat app={app} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} />
+        <BuilderChat app={app} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk} />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
             {PANES.map(([t, Icon, label]) => (
@@ -110,7 +111,8 @@ export default function AppBuilder() {
             ))}
           </nav>
           <div className="min-h-0 flex-1">
-            {(tab === "preview" || tab === "chat") && <PreviewTab appId={id} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)} />}
+            {(tab === "preview" || tab === "chat") && <PreviewTab appId={id} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)}
+              onFix={(content) => { setFixAsk({ content, at: Date.now() }); if (window.matchMedia?.("(max-width: 767px)").matches) setTab("chat"); }} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
             {tab === "terminal" && <TerminalTab appId={id} />}
             {tab === "history" && <HistoryTab appId={id} commits={commits} pending={pending} onRestored={onFilesChanged} />}
@@ -122,7 +124,7 @@ export default function AppBuilder() {
 }
 
 /* ------------------------------------------------------------------ chat */
-function BuilderChat({ app, onFilesChanged, hiddenOnPhone }) {
+function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -151,10 +153,11 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone }) {
     requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; });
   }, [messages, text, steps]);
 
-  const send = async () => {
-    const content = input.trim();
+  // `typed` is a message from outside the text box (the preview's "Fix errors" button).
+  const send = async (typed) => {
+    const content = (typeof typed === "string" ? typed : input).trim();
     if (!content || streaming) return;
-    setInput("");
+    if (typeof typed !== "string") setInput("");
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content }]);
     setStreaming(true);
     setText("");
@@ -185,6 +188,11 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone }) {
       onFilesChanged();
     }
   };
+
+  useEffect(() => {
+    if (ask) send(ask.content);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ask]);
 
   return (
     <aside className={`flex w-[400px] shrink-0 flex-col max-md:w-full ${hiddenOnPhone ? "max-md:hidden" : ""}`} data-testid="builder-chat">
@@ -224,7 +232,7 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone }) {
 }
 
 /* --------------------------------------------------------------- preview */
-function PreviewTab({ appId, reloadKey, onReload }) {
+function PreviewTab({ appId, reloadKey, onReload, onFix }) {
   const [url, setUrl] = useState(null);
   const [logs, setLogs] = useState([]);
   const frameRef = useRef(null);
@@ -245,6 +253,11 @@ function PreviewTab({ appId, reloadKey, onReload }) {
   }, []);
 
   const errors = logs.filter((l) => l.level === "error").length;
+  const fixErrors = (e) => {
+    e.preventDefault();
+    const found = [...new Set(logs.filter((l) => l.level === "error").map((l) => l.message.slice(0, 500)))].slice(0, 5);
+    onFix(`The preview shows ${found.length === 1 ? "this error" : "these errors"}. Find the cause in the code and fix it:\n${found.join("\n")}`);
+  };
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
@@ -261,6 +274,12 @@ function PreviewTab({ appId, reloadKey, onReload }) {
       <details className="max-h-48 overflow-auto border-t border-border bg-sunken" open={errors > 0} data-testid="preview-console">
         <summary className="cursor-pointer px-3 py-1.5 text-xs text-muted-foreground">
           Console {logs.length ? `(${logs.length})` : ""} {errors > 0 && <span className="ml-1 text-destructive">{errors} error{errors === 1 ? "" : "s"}</span>}
+          {errors > 0 && onFix && (
+            <button onClick={fixErrors} data-testid="preview-fix-errors"
+              className="ml-3 rounded-md bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:opacity-90">
+              Fix errors with AI
+            </button>
+          )}
         </summary>
         <div className="space-y-0.5 px-3 pb-2 font-mono text-[11px]">
           {logs.map((l, i) => (
