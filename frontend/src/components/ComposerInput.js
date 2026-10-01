@@ -6,9 +6,6 @@ import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
 import { transcribe } from "@/lib/voice";
 
-const DOC_TYPES = ".pdf,.docx,.pptx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.log";
-const IMAGE_TYPES = ".png,.jpg,.jpeg,.webp,.gif";
-const VIDEO_TYPES = ".mp4,.webm,.mov,.m4v";
 
 const narrowScreen = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 639px)").matches;
 const phoneKeyboard = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
@@ -116,9 +113,8 @@ export default function ComposerInput({
             {onAttach && (
               <>
                 <input ref={fileRef} type="file" className="hidden" data-testid="composer-file-input"
-                  accept={`${DOC_TYPES},${IMAGE_TYPES},${VIDEO_TYPES}`}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); if (fileRef.current) fileRef.current.value = ""; }} />
-                <button onClick={() => fileRef.current?.click()} disabled={uploading || disabled} data-testid="composer-attach-button" title="Attach a document, image or video"
+                <button onClick={() => fileRef.current?.click()} disabled={uploading || disabled} data-testid="composer-attach-button" title="Attach any file: documents, web pages, code, ZIP, images or video"
                   className="flex h-10 w-10 items-center justify-center rounded-lg sm:h-8 sm:w-8 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50">
                   {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 </button>

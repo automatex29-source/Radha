@@ -418,8 +418,9 @@ export default function Workspace({ mode = null }) {
   };
 
   const attachFile = async (file) => {
-    if (file.type?.startsWith("image/")) return attachImage(file);
-    if (file.type?.startsWith("video/")) return attachVideo(file);
+    // Photos the AI can look at directly; every other file (HEIC, SVG, HTML, code, ZIP...) is read on the server.
+    if (/^image\/(png|jpe?g|webp|gif)$/.test(file.type || "")) return attachImage(file);
+    if (/^video\/(mp4|webm|quicktime|x-m4v)$/.test(file.type || "")) return attachVideo(file);
     setUploading(true);
     try {
       const convId = await ensureConversation();
@@ -428,7 +429,8 @@ export default function Workspace({ mode = null }) {
       const { data } = await api.post(`/conversations/${convId}/files`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       setAttachments((a) => [...a, data]);
       if (data.status === "failed") toast.error(`Could not read ${data.filename}`);
-      else toast.success(`${data.filename} attached (${data.chunkCount} chunks)`);
+      else if (!data.chunkCount) toast.message(`${data.filename} attached. It has no text to read, but you can still ask about it.`);
+      else toast.success(`${data.filename} attached`);
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {

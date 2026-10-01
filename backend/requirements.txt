@@ -143,3 +143,4 @@ python-pptx==1.0.2
 dulwich==1.2.15
 pytesseract==0.3.13
 youtube-transcript-api==1.2.4
+py7zr==1.1.3
