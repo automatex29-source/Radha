@@ -10,11 +10,11 @@ import { toast } from "sonner";
 import { Bug, CheckCircle2, LifeBuoy, Loader2, MessageSquareHeart, Search, Send, Star, CircleHelp } from "lucide-react";
 
 const FAQS = [
-  { q: "What is Krish AI?", a: "Krish AI by EmpireX is your AI helper. Chat to ask anything, talk to the Counsellor when you feel low, make presentations in Decks, build small apps in Apps, and let Automations do tasks for you on a schedule." },
+  { q: "What is Krish AI?", a: "Krish AI by EmpireX is your AI helper. Chat to ask anything, make presentations in Decks, build small apps in Apps, let Automations do tasks for you on a schedule, and use Talk it out when you just need someone to talk to." },
   { q: "Is Krish AI free?", a: "Yes. Krish AI is free to use right now. Some premium AI models need a paid plan, which we will add later." },
   { q: "I forgot my password. What do I do?", a: "On the sign-in page, tap \"Forgot password?\" and enter your email. We'll send you a link to choose a new password. The link works once and expires soon, so use it right away. Check your spam folder if you don't see it." },
   { q: "Why is the AI slow, or why did it stop answering?", a: "The free AI models are shared, so they can be busy for a moment. Wait a few seconds and send your message again, or pick another model from the model menu above the chat box. If it keeps happening, report a bug here." },
-  { q: "What is the Counsellor?", a: "The Counsellor is a warm friend to talk to when you're stressed, sad or confused. It listens, helps you feel better and shares wisdom from the Bhagavad Gita when it helps. It is not a doctor. In an emergency in India, call Tele-MANAS 14416 (free, 24x7) or 112." },
+  { q: "What is Talk it out?", a: "Talk it out is a warm friend to talk to when you're stressed, sad or confused. It listens, helps you feel better and shares wisdom from the Bhagavad Gita when it helps. It is not a doctor. In an emergency in India, call Tele-MANAS 14416 (free, 24x7) or 112." },
   { q: "How do I make a presentation?", a: "Open Decks, type your topic (or add notes, a file, a web page or a YouTube link), check the outline, pick a style and tap Create. You can edit slides and download a real PowerPoint file." },
   { q: "What are Automations?", a: "An automation is a task Krish AI does for you on its own, for example a news brief every morning or a weekly price check. Open Automations, describe the task, choose when it should run, and it can email you the result." },
   { q: "Does Krish AI remember things about me?", a: "Krish AI can remember useful facts you share, like your name or your business, so answers fit you better. Open the menu with your name and choose Memory to see or delete what it remembers." },
@@ -23,7 +23,7 @@ const FAQS = [
   { q: "How do I delete my account or my data?", a: "You can delete any chat from the chat list. To delete your whole account, send us a message from \"Send feedback\" below and we'll do it for you." },
 ];
 
-const AREAS = ["Chat", "Counsellor", "Projects", "Apps", "Decks", "Automations", "Sign in", "Other"];
+const AREAS = ["Chat", "Projects", "Apps", "Decks", "Automations", "Talk it out", "Sign in", "Other"];
 const SECTIONS = [
   { id: "faq", label: "FAQs", Icon: CircleHelp },
   { id: "bug", label: "Report a bug", short: "Report bug", Icon: Bug },
