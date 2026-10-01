@@ -21,7 +21,7 @@ function argPreview(step) {
   if (step.name === "run_python") return (a.code || "").split("\n").find((l) => l.trim()) || "";
   if (step.name === "generate_video") return a.prompt;
   if (step.name.startsWith("create_")) return a.filename;
-  if (["write_file", "edit_file", "read_file", "delete_file"].includes(step.name)) return a.path;
+  if (["write_file", "append_file", "edit_file", "read_file", "delete_file"].includes(step.name)) return a.path;
   if (step.name === "run_command") return a.command;
   if (step.name === "commit") return a.message;
   if (step.name === "check_preview") return a.path || "index.html";

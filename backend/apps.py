@@ -11,6 +11,7 @@ Preview and published sites are served from RADHA's API origin, so every respons
 carries a CSP `sandbox` header: the page runs in an opaque origin and can never
 read RADHA's storage or call its API with the user's session.
 """
+import asyncio
 import difflib
 import hashlib
 import io
@@ -424,6 +425,8 @@ async def app_prompt(database, app_id: str) -> str:
         "ask questions first; pick sensible details yourself.\n"
         "- Write index.html first with all the markup and ids, then the CSS, then the JS, which may only use ids that "
         "index.html has.\n"
+        "- Each of your steps has limited room. Write a long file in parts: write_file with the first part (about "
+        "120 lines), then append_file with each next part, until the file is complete.\n"
         "- Split the app into small files, each under about 250 lines, so each one is written in a single step and "
         "edited easily: index.html (markup), styles.css (or Tailwind classes), and JS modules such as app.js, ui.js, "
         "data.js loaded with <script type=\"module\">. Write the files one by one, and never cut a file short.\n"
@@ -626,8 +629,52 @@ def app_problems(files: Dict[str, str]) -> List[str]:
     return problems
 
 
+def _is_module(path: str, files: Dict[str, str]) -> bool:
+    if path.endswith(".mjs"):
+        return True
+    name = path.rsplit("/", 1)[-1]
+    tagged = any(re.search(r"<script[^>]*type=[\"']module[\"'][^>]*" + re.escape(name), c, re.IGNORECASE)
+                 for p, c in files.items() if p.endswith((".html", ".htm")))
+    return tagged or bool(re.search(r"^\s*(?:import\s|export\s)", files[path], re.MULTILINE))
+
+
+async def _syntax_errors(files: Dict[str, str]) -> List[str]:
+    """JavaScript files that don't parse (usually a file cut off mid-way), checked with `node --check`."""
+    scripts = [p for p in files if p.endswith((".js", ".mjs"))]
+    node = shutil.which("node")
+    if not scripts or not node:
+        return []
+    problems = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for path in scripts[:12]:
+            target = os.path.join(tmp, re.sub(r"[^\w.-]", "_", path) + (".mjs" if _is_module(path, files) else ".cjs"))
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write(files[path])
+            try:
+                proc = await asyncio.create_subprocess_exec(node, "--check", target, stdout=asyncio.subprocess.DEVNULL,
+                                                            stderr=asyncio.subprocess.PIPE)
+                _, err = await asyncio.wait_for(proc.communicate(), timeout=10)
+            except (asyncio.TimeoutError, OSError):
+                continue
+            if proc.returncode:
+                lines = [l for l in err.decode("utf-8", "replace").splitlines() if l.strip()]
+                where = next((l.rsplit(":", 1)[-1] for l in lines if target in l and ":" in l), "")
+                error = next((l for l in lines if "Error" in l), "a syntax error")
+                at_end = where.isdigit() and int(where) >= len(files[path].rstrip().splitlines()) - 1
+                cut = " The file looks cut off: add the missing rest with append_file." \
+                    if at_end or "end of input" in error or "Unterminated" in error else ""
+                problems.append(f"{path} has a syntax error{f' near line {where}' if where.isdigit() else ''} "
+                                f"({error.strip()[:160]}), so none of it runs.{cut}")
+    return problems
+
+
+async def check_app(files: Dict[str, str]) -> List[str]:
+    """Everything that would crash or blank the page: app_problems plus JavaScript syntax errors."""
+    return app_problems(files) + await _syntax_errors(files)
+
+
 async def _with_problems(app_id: str, text: str) -> str:
-    problems = app_problems(await snapshot(app_id))
+    problems = await check_app(await snapshot(app_id))
     if not problems:
         return text
     return text + "\nProblems in the app right now (fix them before you finish):\n- " + "\n- ".join(problems)
@@ -678,6 +725,19 @@ async def _t_write(ctx, args):
         raise ValueError("'content' is required")
     path = await write_file(ctx.app_id, args.get("path", ""), content)
     return _tool_output(await _with_problems(ctx.app_id, f"Wrote {path} ({len(content)} chars)."), f"Wrote {path}")
+
+
+async def _t_append(ctx, args):
+    content = args.get("content")
+    if not isinstance(content, str):
+        raise ValueError("'content' is required")
+    path = clean_path(args.get("path", ""))
+    doc = await db.app_files.find_one({"appId": ctx.app_id, "path": path}, {"content": 1})
+    before = (doc or {}).get("content", "")
+    joiner = "" if not before or before.endswith("\n") or content.startswith("\n") else "\n"
+    await write_file(ctx.app_id, path, before + joiner + content)
+    return _tool_output(await _with_problems(ctx.app_id, f"Added {len(content)} chars to {path} "
+                                             f"(now {len(before) + len(joiner) + len(content)} chars)."), f"Wrote {path}")
 
 
 _LINE_NO_RE = re.compile(r"(?m)^ *\d+  ")
@@ -801,6 +861,9 @@ def register_tools(registry):
          "files, with file names and line numbers.", {"query": {"type": "string"}}, ["query"], _t_search),
         ("write_file", "Write file", "Create or overwrite a file in the app with the full new content.",
          {"path": path_param, "content": {"type": "string"}}, ["path", "content"], _t_write),
+        ("append_file", "Write file", "Add content to the end of a file (creates it if missing). Use it to write a long "
+         "file in parts: write_file with the first part, then append_file with each next part.",
+         {"path": path_param, "content": {"type": "string"}}, ["path", "content"], _t_append),
         ("edit_file", "Edit file", "Replace one exact, unique snippet of text in a file.",
          {"path": path_param, "old_text": {"type": "string"}, "new_text": {"type": "string"}},
          ["path", "old_text", "new_text"], _t_edit),

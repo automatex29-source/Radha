@@ -91,7 +91,10 @@ class ToolRegistry:
             if not isinstance(args, dict):
                 raise ValueError("arguments must be a JSON object")
         except (ValueError, json.JSONDecodeError) as exc:
-            return ToolOutput(content=f"Error: invalid JSON arguments ({exc}).", summary="Invalid arguments", ok=False)
+            return ToolOutput(content=f"Error: invalid JSON arguments ({exc}). Nothing was done. If the call was long, "
+                              "it was probably cut off for being too big: send it in smaller parts (for a file, "
+                              "write_file with the first part, then append_file with the rest).",
+                              summary="Too long, retrying in parts", ok=False)
         try:
             out = await tool.handler(ctx, args)
         except Exception as exc:
