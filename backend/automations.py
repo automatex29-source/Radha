@@ -25,6 +25,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+import limits
 import mailer
 from agent import prompt_boost
 from auth import get_user_id_from_request
@@ -422,6 +423,7 @@ async def automation_options(user_id: str = Depends(current_user_id)):
 @router.post("/automations/plan")
 async def plan_automation(body: PlanIn, user_id: str = Depends(current_user_id)):
     """Draft a name, detailed agent task and schedule from a plain-language goal."""
+    await limits.require(db, user_id, "automation")
     if not prompt_boost.available():
         raise HTTPException(status_code=503, detail="No AI model is set up to write the plan")
     try:
@@ -456,6 +458,7 @@ def parse_plan(data: dict, goal: str) -> dict:
 
 @router.post("/automations")
 async def create_automation(body: AutomationIn, user_id: str = Depends(current_user_id)):
+    await limits.require(db, user_id, "automation")
     schedule = validate_schedule(body.schedule).model_dump()
     now = _now()
     doc = {"id": str(uuid.uuid4()), "userId": user_id, "name": body.name.strip(), "prompt": body.prompt.strip(),

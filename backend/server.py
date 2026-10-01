@@ -46,6 +46,7 @@ import mailer
 import counsellor
 import help_center
 import writer
+import limits
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -808,6 +809,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         if not doc or not (doc.get("contentType") or "").startswith("image/"):
             raise HTTPException(status_code=400, detail="Unknown image attachment")
         image_ids.append(mid)
+    if conv.get("mode") != counsellor.MODE:  # the Counsellor is always free
+        await limits.require(db, user_id, "chat")
 
     user_msg = {
         "id": str(uuid.uuid4()),
@@ -848,6 +851,8 @@ def _background(coro):
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
     model = body.model or conv.get("model") or AI_MODEL
+    if conv.get("mode") != counsellor.MODE:
+        await limits.require(db, user_id, "chat")
 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     if not history_docs:
@@ -1208,6 +1213,11 @@ def _user_from_header_or_query(authorization: Optional[str], auth: Optional[str]
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return decode_token(token)["sub"]
+
+
+@api.get("/usage")
+async def usage(user_id: str = Depends(current_user_id)):
+    return await limits.summary(db, user_id)
 
 
 @api.get("/capabilities")
