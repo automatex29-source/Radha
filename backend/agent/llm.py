@@ -58,6 +58,12 @@ _RATE_LIMIT_RETRIES = 3
 _TOOL_CALL_RETRIES = 2
 logger = logging.getLogger("radha.agent")
 _HEARTBEAT_SECONDS = 10
+# Groq counts max_tokens against the per-minute budget, so a plain answer (no tools) asks for less room
+# and the next message isn't kept waiting.
+_PLAIN_OUTPUT = 3000
+# Groq's limits are per model: when the big model is rate limited, its smaller sibling answers right away
+# instead of the user waiting up to a minute.
+_FALLBACK = {"openai/gpt-oss-120b": "openai/gpt-oss-20b"}
 
 
 def lean(model: str) -> bool:
@@ -182,18 +188,27 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
         budget = token_budget()
         fitted = fit_messages(messages, tools, budget)
         room = budget - estimate_tokens(fitted) - estimate_tokens(tools)
-        kwargs.update(messages=fitted, max_tokens=max(_MIN_OUTPUT // 2, min(_MAX_OUTPUT, room)))
+        cap = _MAX_OUTPUT if tools else _PLAIN_OUTPUT
+        kwargs.update(messages=fitted, max_tokens=max(_MIN_OUTPUT // 2, min(cap, room)))
     effort = reasoning_effort(model, think)
     if effort:
         kwargs.update(reasoning_effort=effort, drop_params=True)
 
-    for attempt in range(_RATE_LIMIT_RETRIES + 1):
+    fallback = _FALLBACK.get(model) if lean(model) else None
+    attempt = 0
+    while True:
         try:
             resp = await litellm.acompletion(**kwargs)
             break
         except litellm.RateLimitError as exc:
+            if fallback:
+                logger.info("%s is rate limited, answering with %s", model, fallback)
+                kwargs["model"] = f"{provider_for(fallback)}/{fallback}"
+                fallback = None
+                continue
             if attempt == _RATE_LIMIT_RETRIES or "per day" in str(exc).lower():
                 raise
+            attempt += 1
             wait = _retry_after(exc)
             while wait > 0:
                 await asyncio.sleep(min(wait, _HEARTBEAT_SECONDS))

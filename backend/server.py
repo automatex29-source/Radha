@@ -12,6 +12,7 @@ import re
 import secrets
 import uuid
 import logging
+import mimetypes
 from datetime import datetime, timezone, timedelta
 from typing import List, Literal, Optional
 
@@ -585,6 +586,27 @@ _TOOL_ASK = re.compile(
     r"export|convert|download|build|design|python|calculate)\b", re.IGNORECASE)
 
 
+# Words that mean a chat turn may need tools. Without any, Groq's free models answer without the tool list,
+# which is about 4,000 tokens: the reply starts sooner and the next message isn't held up by the
+# per-minute token limit. Current facts (news, rates, prices) are still looked up by live_search.
+_NEEDS_TOOLS = re.compile(
+    _TOOL_ASK.pattern + r"|\b(file|files|pdf|excel|xlsx|csv|word|docx|ppt|pptx|powerpoint|presentation|slides?|deck|"
+    r"spreadsheet|sheet|zip|image|images|picture|pic|photo|logo|poster|video|animate|edit|crop|resize|research|"
+    r"report|code|run|script|app|website|site|game|page|browser|open|visit|fetch|url|link|flashcards?|quiz|"
+    r"remind|schedule|email|send|save|translate|time|date|price|rate|weather|news|today|current|latest)\b|https?://|www\.",
+    re.IGNORECASE)
+
+
+def _quick_chat(history_docs: list) -> bool:
+    """True when the latest message is plain conversation that needs no tools (see _NEEDS_TOOLS)."""
+    last_user = [m for m in history_docs if m["role"] == "user"][-2:]
+    if not last_user or any(m.get("images") for m in last_user):
+        return False
+    if any(m.get("steps") for m in history_docs[-4:] if m["role"] == "assistant"):
+        return False  # a follow-up to a turn that used tools ("now make it blue") keeps them
+    return not any(_NEEDS_TOOLS.search(m["content"] or "") for m in last_user)
+
+
 async def _file_context(conv_id: str, user_id: str, project_id, question: str, limit: int):
     """(system-prompt text, sources) for the files attached to this chat and the project's documents.
 
@@ -658,7 +680,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     counselling = (conv or {}).get("mode") == counsellor.MODE
 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
-    messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs]
+    messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs if m["content"]]
 
     system_parts = [counsellor.PROMPT if counselling else SYSTEM_PROMPT, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
     sources = []
@@ -699,6 +721,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             logger.exception("RAG retrieval failed")
 
     app_id = conv.get("appId") if conv else None
+    if agent and not app_id and not extra_system and not think and not study and agent_llm.lean(model) \
+            and _quick_chat(history_docs) and not await db.files.count_documents(
+                {"conversationId": conv_id, "is_deleted": False}):
+        agent = False
     if app_id:
         agent = True  # the app builder always works with its tools
         system_parts.append(await apps.app_prompt(db, app_id))
@@ -1430,13 +1456,19 @@ if (FRONTEND_DIST / "index.html").is_file():
     from fastapi.responses import FileResponse
 
     @app.get("/{full_path:path}", include_in_schema=False)
-    async def frontend(full_path: str):
+    async def frontend(full_path: str, request: Request):
         if full_path.startswith("api/") or full_path == "api":
             raise HTTPException(status_code=404, detail="Not found")
         candidate = (FRONTEND_DIST / full_path).resolve()
         if full_path and candidate.is_file() and FRONTEND_DIST in candidate.parents:
             cache = "public, max-age=31536000, immutable" if full_path.startswith("assets/") else "no-cache"
-            return FileResponse(candidate, headers={"Cache-Control": cache})
+            headers = {"Cache-Control": cache, "Vary": "Accept-Encoding"}
+            # The Docker build gzips the scripts and styles; a gzipped bundle is about a third of the size.
+            packed = candidate.with_name(candidate.name + ".gz")
+            if "gzip" in (request.headers.get("accept-encoding") or "") and packed.is_file():
+                media_type = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+                return FileResponse(packed, media_type=media_type, headers={**headers, "Content-Encoding": "gzip"})
+            return FileResponse(candidate, headers=headers)
         return FileResponse(FRONTEND_DIST / "index.html", headers={"Cache-Control": "no-cache"})
 
 app.add_middleware(
