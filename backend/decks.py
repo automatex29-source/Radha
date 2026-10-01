@@ -23,6 +23,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 import deck_images
+import limits
 from auth import decode_token, get_user_id_from_request
 from deck_render import (DEFAULT_THEME, IMAGE_LAYOUTS, LAYOUTS, MAX_SLIDES, THEME_IDS, build_deck_pptx,
                          normalize_slide, public_themes)
@@ -224,11 +225,17 @@ async def fill_pictures(deck_id: str, only_ids: Optional[set] = None):
             img = None
             if mode == "ai" and ai_failures < 2:
                 try:
-                    img = await deck_images.make_ai(db, deck["userId"], slide, topic)
-                    ai_failures = 0
-                except Exception as exc:
-                    ai_failures += 1
-                    logger.info("AI picture failed, using a photo instead: %s", exc)
+                    await limits.use(db, deck["userId"], "picture")
+                except limits.LimitReached:
+                    mode = "stock"  # out of free AI pictures today: the rest of the slides get photos
+                else:
+                    try:
+                        img = await deck_images.make_ai(db, deck["userId"], slide, topic)
+                        ai_failures = 0
+                    except Exception as exc:
+                        await limits.refund(db, deck["userId"], "picture")
+                        ai_failures += 1
+                        logger.info("AI picture failed, using a photo instead: %s", exc)
             if img is None:
                 img = await deck_images.find_stock(slide, used, topic)
             if img:
@@ -604,6 +611,7 @@ async def search_images(q: str = Query(..., min_length=1, max_length=100), user_
 
 @router.post("/decks/outline")
 async def make_outline(body: OutlineIn, user_id: str = Depends(current_user_id)):
+    await limits.require(db, user_id, "deck")  # say so before the user writes a deck they can't keep
     model = body.model or DEFAULT_MODEL
     data = await _ask_model(model, OUTLINE_SYSTEM,
                             f"Brief:\n{body.prompt}\n\nNumber of slides: {body.slides}"
@@ -616,6 +624,7 @@ async def make_outline(body: OutlineIn, user_id: str = Depends(current_user_id))
 
 @router.post("/decks")
 async def create_deck(body: DeckIn, user_id: str = Depends(current_user_id)):
+    await limits.require(db, user_id, "deck")
     outline = clean_outline(body.outline)
     if not outline:
         raise HTTPException(status_code=400, detail="Add at least one slide to the outline")
@@ -775,9 +784,11 @@ async def ai_image(deck_id: str, index: int, body: AiImageIn, user_id: str = Dep
     deck = await owned_deck(deck_id, user_id)
     _slide_at(deck, index)
     slide = deck["slides"][index]
+    await limits.require(db, user_id, "picture")
     try:
         img = await deck_images.make_ai(db, user_id, slide, deck["title"], prompt=body.prompt or None)
     except Exception as exc:
+        await limits.refund(db, user_id, "picture")
         logger.info("AI slide picture failed: %s", exc)
         raise HTTPException(status_code=502, detail="The picture maker is busy or unavailable. Try again in a "
                                                     "minute, or pick a photo instead.")

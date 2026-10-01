@@ -5,12 +5,14 @@ handler. The registry exposes OpenAI-style function schemas to the model and
 runs calls safely (bad arguments or handler errors come back to the model as
 tool errors instead of crashing the turn). Adding a tool = one `register()`.
 """
+import contextlib
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import image_edit
+import limits
 import media
 from . import browser, documents, flashcards, prompt_boost, research, sandbox, styles, video, web
 
@@ -166,10 +168,25 @@ async def _run_python(ctx: ToolContext, args: dict) -> ToolOutput:
     return ToolOutput(content="\n\n".join(parts), summary=summary, media=saved, ok=ok)
 
 
+@contextlib.asynccontextmanager
+async def _picture_allowance(ctx: ToolContext):
+    """Count one free-plan picture, given back if making it fails."""
+    try:
+        await limits.use(ctx.db, ctx.user_id, "picture")
+    except limits.LimitReached as exc:
+        raise ValueError(f"{exc} Tell the user this kindly, in one sentence.")
+    try:
+        yield
+    except BaseException:
+        await limits.refund(ctx.db, ctx.user_id, "picture")
+        raise
+
+
 async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
-    final = await prompt_boost.image_prompt(prompt, args.get("style") or "")
-    data = await media.generate_image(final, args.get("size") or "1024x1024", args.get("quality"))
+    async with _picture_allowance(ctx):
+        final = await prompt_boost.image_prompt(prompt, args.get("style") or "")
+        data = await media.generate_image(final, args.get("size") or "1024x1024", args.get("quality"))
     ctype = media.image_type(data) or "image/png"
     ext = {"image/jpeg": "jpg", "image/webp": "webp"}.get(ctype, "png")
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "image", ext)
@@ -191,8 +208,9 @@ async def _edit_image(ctx: ToolContext, args: dict) -> ToolOutput:
     data = await media.read_bytes(ctx.db, src)
     if quick:
         data = image_edit.quick_edit(data, quick)
-    if instruction:
-        data = await image_edit.ai_edit(data, instruction)
+    if instruction:  # quick fixes (crop, rotate...) are free; AI changes count as a picture
+        async with _picture_allowance(ctx):
+            data = await image_edit.ai_edit(data, instruction)
     ctype = media.image_type(data) or "image/png"
     ext = {"image/jpeg": "jpg", "image/webp": "webp"}.get(ctype, "png")
     base = (src.get("name") or "picture").rsplit(".", 1)[0]
