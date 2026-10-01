@@ -29,6 +29,14 @@ IMAGE_SYSTEM = (
     "like 'no text'. Output only the prompt, no preamble."
 )
 
+VIDEO_SYSTEM = (
+    "You are a film director writing a prompt for an AI video model (like Veo) that makes one {seconds}-second "
+    "shot with sound. Rewrite the user's request as ONE English prompt of 70-120 words: subject and look, the "
+    "action as it unfolds, camera movement (dolly, pan, tracking, drone), lens, lighting, setting, mood, the "
+    "style notes, and the sounds (ambience, music feel, short spoken lines in quotes if fitting). Keep every "
+    "detail the user gave. Output only the prompt."
+)
+
 SCENES_SYSTEM = (
     "You are a film director planning a short video made of {n} still shots. Write the shots as JSON: "
     '{{"character": "...", "scenes": ["...", ...]}}. "character" fixes how the main subject looks (age, face, '
@@ -110,3 +118,18 @@ async def video_scenes(prompt: str, scenes: Optional[List[str]], style: str, cou
     if not out:
         return None
     return [f"{s} {character}".strip() for s in out[:6]]
+
+
+async def video_prompt(prompt: str, style_words: str = "", seconds: int = 8) -> str:
+    """A cinematic prompt for a true AI video model, or the original on any failure."""
+    fallback = f"{prompt}. {style_words}" if style_words else prompt
+    if not enabled():
+        return fallback
+    try:
+        text = await _ask(VIDEO_SYSTEM.format(seconds=seconds),
+                          f"Request: {prompt}\nStyle notes: {style_words or 'choose the best fitting look'}")
+    except Exception as exc:
+        logger.info("video prompt boost failed, using the original prompt: %s", exc)
+        return fallback
+    text = text.strip().strip('"').strip()
+    return text[:1800] if len(text) >= 40 else fallback

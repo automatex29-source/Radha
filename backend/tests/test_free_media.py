@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import media  # noqa: E402
 from agent import slideshow, styles, video  # noqa: E402
 
-KEYS = ("IMAGE_PROVIDER", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN", "VIDEO_PROVIDER",
+KEYS = ("FAL_KEY", "IMAGE_PROVIDER", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN", "VIDEO_PROVIDER",
         "GEMINI_API_KEY", "GOOGLE_API_KEY")
 
 
@@ -268,3 +268,51 @@ class TestPromptBoost:
 
         monkeypatch.setattr(llm, "configured", lambda m: False)
         assert run(prompt_boost.video_scenes("x", None, "", 3)) is None
+
+
+class TestFal:
+    def handler(self, seen, result, final_bytes):
+        def handle(req):
+            seen.append((req.method, str(req.url)))
+            if req.method == "POST":
+                assert req.headers["authorization"] == "Key fk"
+                return httpx.Response(200, json={"request_id": "r1",
+                                                 "status_url": "https://queue.fal.run/m/requests/r1/status",
+                                                 "response_url": "https://queue.fal.run/m/requests/r1"})
+            if req.url.path.endswith("/status"):
+                return httpx.Response(200, json={"status": "COMPLETED"})
+            if req.url.host == "queue.fal.run":
+                return httpx.Response(200, json=result)
+            return httpx.Response(200, content=final_bytes)
+        return handle
+
+    def test_image_uses_fal_first(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fk")
+        monkeypatch.setattr(__import__("fal_api"), "POLL_SECONDS", 0)
+        seen = []
+        fake_http(monkeypatch, self.handler(seen, {"images": [{"url": "https://cdn.fal/x.png"}]},
+                                            png(size=(300, 200))))
+        assert media._image_providers()[0] == "fal"
+        assert media.image_type(run(media.generate_image("a castle", "1536x1024"))) == "image/png"
+        assert seen[0][1].startswith("https://queue.fal.run/fal-ai/nano-banana-pro")
+
+    def test_video_uses_veo_and_falls_back(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fk")
+        monkeypatch.setattr(__import__("fal_api"), "POLL_SECONDS", 0)
+        seen, broke = [], []
+        ok = self.handler(seen, {"video": {"url": "https://cdn.fal/v.mp4"}}, b"MP4")
+        fake_http(monkeypatch, lambda req: httpx.Response(403, json={"detail": "Exhausted balance"}) if broke
+                  else ok(req))
+        assert video.provider() == "fal"
+        out = run(video.generate("a dragon over mountains", 12, "portrait"))
+        assert out == {"data": b"MP4", "contentType": "video/mp4", "method": "ai_video"}
+        assert "veo3.1/fast" in seen[0][1]
+
+        broke.append(True)
+
+        async def fake_slideshow(prompt, seconds, portrait, scenes, style, captions):
+            return b"SLIDES"
+
+        monkeypatch.setattr(slideshow, "make_slideshow", fake_slideshow)
+        out = run(video.generate("waves"))
+        assert out["method"] == "slideshow" and "premium" in out["note"]
