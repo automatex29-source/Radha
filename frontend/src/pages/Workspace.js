@@ -15,18 +15,43 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import { useAuth } from "@/context/AuthContext";
 
+// A big pool of everyday tasks; the home page shows 3 different ones on every visit.
 const STARTERS = [
-  { icon: FileText, tone: "indigo", hint: "Turn ideas into clear, concise summaries.", title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
-  { icon: Braces, tone: "sky", hint: "Clean, optimize and modernize your code.", title: "Refactor an async Python service", prompt: "Show me how to structure a clean, testable async Python service that calls an external API with retries." },
-  { icon: Network, tone: "emerald", hint: "Build fast, scalable search solutions.", title: "Design a vector search pipeline", prompt: "Design a distributed vector search pipeline for semantic document retrieval. Cover ingestion, embedding, storage and querying." },
-  { icon: Megaphone, tone: "pink", hint: "Turn your idea into a short, punchy video.", title: "Make a video ad", prompt: "Make a 15-second video ad for a coffee shop called Bean There, with a catchy headline and a call to action." },
-  { icon: Clapperboard, tone: "amber", hint: "Bring your story to life with animation.", title: "Create an animated short", prompt: "Create a short 3D animation video about a little robot who finds a flower in a city." },
-  { icon: ImageIcon, tone: "violet", hint: "Create stunning visuals for your next project.", title: "Design a movie poster", prompt: "Design a cinematic movie poster for a sci-fi film called Last Signal." },
+  { icon: FileText, hint: "Turn ideas into clear, concise summaries.", title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
+  { icon: Braces, hint: "Clean, optimize and modernize your code.", title: "Refactor an async Python service", prompt: "Show me how to structure a clean, testable async Python service that calls an external API with retries." },
+  { icon: Network, hint: "Build fast, scalable search solutions.", title: "Design a vector search pipeline", prompt: "Design a distributed vector search pipeline for semantic document retrieval. Cover ingestion, embedding, storage and querying." },
+  { icon: Mail, hint: "Polite, clear and ready to send.", title: "Write a professional email", prompt: "Write a short, professional email asking my manager for a day off next Friday." },
+  { icon: Plane, hint: "Day-by-day plan with budget tips.", title: "Plan a 3-day trip", prompt: "Plan a 3-day budget trip to Goa with a day-by-day itinerary, food spots and rough costs." },
+  { icon: Dumbbell, hint: "Simple routine, no gym needed.", title: "Make a home workout plan", prompt: "Make a 4-week beginner home workout plan, 30 minutes a day, no equipment." },
+  { icon: ChefHat, hint: "Quick, healthy and tasty.", title: "Suggest a dinner recipe", prompt: "Suggest a quick, healthy vegetarian dinner recipe I can make in 20 minutes with simple ingredients." },
+  { icon: GraduationCap, hint: "Learn anything, step by step.", title: "Explain a topic simply", prompt: "Explain how the internet works, simply, like I'm 15 years old." },
+  { icon: Briefcase, hint: "Practice the questions that matter.", title: "Prepare for an interview", prompt: "Help me prepare for a software developer job interview: common questions and strong sample answers." },
+  { icon: TrendingUp, hint: "Ideas, audience and first steps.", title: "Brainstorm a business idea", prompt: "Give me 5 small online business ideas I can start with low money, with first steps for each." },
+  { icon: Languages, hint: "Natural, not word-for-word.", title: "Translate and polish text", prompt: "Translate this into natural Hindi and English: 'Thank you for your support, we will reach out soon.'" },
+  { icon: PenLine, hint: "Catchy lines for any platform.", title: "Write a social media post", prompt: "Write a catchy LinkedIn post announcing the launch of my new startup, with 3 hashtags." },
+  { icon: Bug, hint: "Find and fix the problem fast.", title: "Debug my code", prompt: "My JavaScript fetch call returns 'undefined'. Explain the common causes and how to fix them with async/await." },
+  { icon: Database, hint: "Clear tables and queries.", title: "Write an SQL query", prompt: "Write an SQL query to find the top 5 customers by total spend last month, and explain it." },
+  { icon: ListChecks, hint: "Get your day under control.", title: "Make a to-do plan", prompt: "Help me turn my busy week into a simple, prioritised to-do plan. Ask me what I have on." },
+  { icon: Calculator, hint: "Budget, savings and EMIs.", title: "Plan my monthly budget", prompt: "Help me make a monthly budget for a ₹40,000 salary, with savings and an emergency fund." },
+  { icon: Globe, hint: "Latest facts from the web.", title: "Research a topic", prompt: "Research the latest news on electric cars in India and summarise the key points with sources." },
+  { icon: Sparkles, hint: "Fresh names that stand out.", title: "Name my brand", prompt: "Suggest 10 short, catchy brand names for a modern tea cafe, with a one-line reason for each." },
 ];
+const TONE_ORDER = ["indigo", "sky", "emerald", "violet", "amber", "pink"];
+
+// Three different starters (with different colours) each time the home page opens.
+function pickStarters() {
+  const pool = [...STARTERS];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const t = Math.floor(Math.random() * TONE_ORDER.length);
+  return pool.slice(0, 3).map((s, i) => ({ ...s, tone: TONE_ORDER[(t + i * 2) % TONE_ORDER.length] }));
+}
 
 // The Counsellor tab: a cheerful friend who shares Krishna's wisdom from the Gita when it helps (see backend/counsellor.py).
 const COUNSEL_STARTERS = [
@@ -533,7 +558,7 @@ export default function Workspace({ mode = null }) {
         </header>
 
         {/* Messages */}
-        <div ref={scrollRef} className="radha-scroll flex-1 overflow-y-auto">
+        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
           {loadingConv ? (
             <div className="flex h-full items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -615,6 +640,7 @@ function StarterCard({ s, i, onPick, testid, hideOnPhone }) {
 }
 
 function EmptyState({ onPick }) {
+  const starters = useMemo(pickStarters, []);
   return (
     <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
       <div className="radha-fade-up relative flex items-center gap-4 max-md:flex-col-reverse md:gap-10">
@@ -635,9 +661,9 @@ function EmptyState({ onPick }) {
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-        {STARTERS.map((s, i) => (
-          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`prompt-starter-card-${i}`} hideOnPhone={i >= 4} />
+      <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-3 sm:gap-4">
+        {starters.map((s, i) => (
+          <StarterCard key={s.title} s={s} i={i} onPick={onPick} testid={`prompt-starter-card-${i}`} />
         ))}
       </div>
     </div>
