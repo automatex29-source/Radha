@@ -115,8 +115,10 @@ def test_rate_limited_big_model_falls_back_at_once(monkeypatch):
 def test_plain_answer_asks_for_less_output(monkeypatch):
     monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
     seen = fake_completion(monkeypatch)
+    run(collect(llm.stream_completion(GROQ, [{"role": "user", "content": "hi"}], [], max_output=llm.PLAIN_OUTPUT)))
+    assert seen[0]["max_tokens"] == llm.PLAIN_OUTPUT
     run(collect(llm.stream_completion(GROQ, [{"role": "user", "content": "hi"}], [])))
-    assert seen[0]["max_tokens"] == llm._PLAIN_OUTPUT
+    assert seen[1]["max_tokens"] > llm.PLAIN_OUTPUT  # decks and other JSON answers keep the full room
 
 
 def test_retry_after_parsing():

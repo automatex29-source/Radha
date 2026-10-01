@@ -178,7 +178,8 @@ async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Opti
     headers = {"User-Agent": "KrishAI/1.0"}
     if legacy:
         url = f"{LEGACY_POLLINATIONS}/{quote(prompt[:1500], safe='')}"
-        params.update({"model": "flux", "enhance": "true", "private": "true"})
+        # No "enhance": it has a model rewrite the prompt first, which adds seconds; our prompts are already full.
+        params.update({"model": "flux", "private": "true"})
     else:
         url = f"{POLLINATIONS_BASE}/image/{quote(prompt[:1500], safe='')}"
         params["model"] = POLLINATIONS_IMAGE_MODEL

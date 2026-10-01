@@ -58,9 +58,9 @@ _RATE_LIMIT_RETRIES = 3
 _TOOL_CALL_RETRIES = 2
 logger = logging.getLogger("radha.agent")
 _HEARTBEAT_SECONDS = 10
-# Groq counts max_tokens against the per-minute budget, so a plain answer (no tools) asks for less room
-# and the next message isn't kept waiting.
-_PLAIN_OUTPUT = 3000
+# Groq counts max_tokens against the per-minute budget, so a plain chat answer asks for less room
+# and the next message isn't kept waiting (see ai_runtime/_backend.py).
+PLAIN_OUTPUT = 3000
 # Groq's limits are per model: when the big model is rate limited, its smaller sibling answers right away
 # instead of the user waiting up to a minute.
 _FALLBACK = {"openai/gpt-oss-120b": "openai/gpt-oss-20b"}
@@ -146,17 +146,19 @@ def _bad_tool_call(exc: Exception) -> bool:
 
 
 async def stream_completion(model: str, messages: List[dict], tools: List[dict],
-                            think: bool = False) -> AsyncIterator[dict]:
+                            think: bool = False, max_output: Optional[int] = None) -> AsyncIterator[dict]:
     """Yield {"type": "text", "text"} deltas, then one {"type": "tool_calls", "calls"} if the model called tools.
 
     While waiting out a rate limit it yields {"type": "heartbeat"} so the stream stays open. A rejected tool
     call is retried (up to _TOOL_CALL_RETRIES times) as long as nothing but heartbeats was sent yet.
     `think` (the Think button) asks reasoning models to reason longer before answering.
+    `max_output` caps the reply on Groq's free tier, which counts the room asked for against the minute's budget.
     """
     for attempt in range(_TOOL_CALL_RETRIES + 1):
         sent = False
         try:
-            async for event in _stream_once(model, messages, tools, think):
+            extra = {"max_output": max_output} if max_output else {}
+            async for event in _stream_once(model, messages, tools, think, **extra):
                 sent = sent or event["type"] != "heartbeat"
                 yield event
             return
@@ -175,7 +177,8 @@ def reasoning_effort(model: str, think: bool) -> Optional[str]:
     return "high" if think else None
 
 
-async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: bool = False) -> AsyncIterator[dict]:
+async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: bool = False,
+                       max_output: Optional[int] = None) -> AsyncIterator[dict]:
     import litellm
 
     kwargs = {"model": f"{provider_for(model)}/{model}", "messages": messages, "stream": True, "max_tokens": _MAX_OUTPUT}
@@ -188,8 +191,7 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
         budget = token_budget()
         fitted = fit_messages(messages, tools, budget)
         room = budget - estimate_tokens(fitted) - estimate_tokens(tools)
-        cap = _MAX_OUTPUT if tools else _PLAIN_OUTPUT
-        kwargs.update(messages=fitted, max_tokens=max(_MIN_OUTPUT // 2, min(cap, room)))
+        kwargs.update(messages=fitted, max_tokens=max(_MIN_OUTPUT // 2, min(max_output or _MAX_OUTPUT, room)))
     effort = reasoning_effort(model, think)
     if effort:
         kwargs.update(reasoning_effort=effort, drop_params=True)
