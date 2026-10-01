@@ -1,16 +1,15 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
-import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, MessageCircleHeart, LifeBuoy } from "lucide-react";
+import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
 
 const ITEMS = [
   { icon: MessageSquare, label: "Chat", to: "/", match: (p) => p === "/" },
+  { icon: HeartHandshake, label: "Counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
   { icon: FolderKanban, label: "Projects", to: "/projects", match: (p) => p.startsWith("/projects") },
   { icon: AppWindow, label: "Apps", to: "/apps", match: (p) => p.startsWith("/apps") },
   { icon: Presentation, label: "Decks", to: "/decks", match: (p) => p.startsWith("/decks") },
   { icon: Workflow, label: "Automations", short: "Automate", to: "/automations", match: (p) => p.startsWith("/automations") },
-  // The Counsellor (Gita-guided wellbeing chat) lives here as one tab, shown as "Talk it out".
-  { id: "counsellor", icon: MessageCircleHeart, label: "Talk it out", short: "Talk", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
 ];
 
 /** Side rail on tablets and desktops; a bottom tab bar on phones (unless mobileBar is false).
@@ -27,7 +26,7 @@ export default function IconRail({ mobileBar = true }) {
           {ITEMS.map((it) => {
             const active = it.match(pathname);
             return (
-              <button key={it.to} onClick={() => navigate(it.to)} data-testid={`nav-${it.id || it.label.toLowerCase()}`}
+              <button key={it.to} onClick={() => navigate(it.to)} data-testid={`nav-${it.label.toLowerCase()}`}
                 title={it.label}
                 className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
                   active ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
@@ -54,7 +53,7 @@ export default function IconRail({ mobileBar = true }) {
           {ITEMS.map((it) => {
             const active = it.match(pathname);
             return (
-              <button key={it.to} onClick={() => navigate(it.to)} data-testid={`tab-${it.id || it.label.toLowerCase()}`}
+              <button key={it.to} onClick={() => navigate(it.to)} data-testid={`tab-${it.label.toLowerCase()}`}
                 aria-current={active ? "page" : undefined}
                 className={`flex min-w-0 flex-1 flex-col items-center gap-1 pb-1.5 pt-2 text-[10px] font-semibold transition-colors ${
                   active ? "text-primary" : "text-muted-foreground active:text-foreground"
