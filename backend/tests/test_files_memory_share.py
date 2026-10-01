@@ -187,3 +187,30 @@ def test_think_and_study_shape_the_prompt(client):
     plain = _send(client, cid, "thanks")
     assert "Study mode is on" not in plain["messages"][0]["content"]
     assert plain["reasoning_effort"] == "low"
+
+
+def test_any_file_type_is_accepted(client):
+    import zipfile
+    cid = _conv(client)
+    page = b"<html><head><title>Menu</title><script>x()</script></head><body><p>Chocolate cake 450</p></body></html>"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("site/index.html", page)
+        z.writestr("app.py", "print('hello from zip')")
+    files = {
+        "menu.html": page,
+        "feed.xml": b"<?xml version='1.0'?><order><item>Cake</item></order>",
+        "script.py": b"def total():\n    return 42\n",
+        "site.zip": buf.getvalue(),
+        "program.exe": bytes(range(256)) * 8,
+    }
+    got = {}
+    for name, data in files.items():
+        f = client.post(f"/api/conversations/{cid}/files", files={"file": (name, data, "application/octet-stream")}).json()
+        got[name] = (f["status"], f["chunkCount"])
+    assert all(status == "ready" for status, _ in got.values()), got
+    assert got["program.exe"][1] == 0 and all(n for name, (_, n) in got.items() if name != "program.exe")
+    call = _send(client, cid, "what's in these files?")
+    system = call["messages"][0]["content"]
+    assert "Chocolate cake 450" in system and "x()" not in system
+    assert "hello from zip" in system and "program.exe: attached, but no readable text" in system

@@ -627,7 +627,7 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
         status = []
         for f in files:
             note = "read" if f.get("chunk_count") else ("could not be read" if f.get("status") == "failed"
-                                                          else "no readable text found (it may be a blank or photo-only file)")
+                                                          else "attached, but no readable text in it (an empty, encrypted, audio or program file). Tell the user what you can and cannot do with it")
             status.append(f"- {f['original_filename']}: {note}")
         parts.append("Files the user attached to this chat:\n" + "\n".join(status))
     if chosen:

@@ -169,9 +169,8 @@ export default function ProjectView() {
           </div>
 
           {/* Files */}
-          <Section title="Knowledge files" hint="PDF, Word, PowerPoint, Excel, CSV, text and photos: Krish AI reads them and answers from them.">
-            <input ref={fileRef} type="file" onChange={onUpload} className="hidden" data-testid="file-input"
-              accept=".pdf,.docx,.pptx,.xlsx,.xlsm,.csv,.txt,.md,.markdown,.json,.log,.png,.jpg,.jpeg,.webp" />
+          <Section title="Knowledge files" hint="Any file: PDF, Word, Excel, PowerPoint, web pages, code, ZIP and photos. Krish AI reads them and answers from them.">
+            <input ref={fileRef} type="file" onChange={onUpload} className="hidden" data-testid="file-input" />
             <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="upload-file-button" className="gap-2 border-border bg-card">
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload document
             </Button>
