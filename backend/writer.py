@@ -45,6 +45,22 @@ SYSTEM = (
     "Keep the user's language unless asked to translate, and keep formatting that still makes sense."
 )
 
+# Typed requests in the Ask Krish box can be anything, not just edits, so the model says which kind it is.
+ASK_SYSTEM = SYSTEM + (
+    "\n\nThe user may also ask something that is not an edit. Decide which kind of request it is:\n"
+    "1. A change to the text (rewrite, add, remove, translate, write it): reply with only the new text, as above.\n"
+    "2. A question, feedback or anything you can answer in words without changing the text: start with "
+    "\"ANSWER:\" and then answer helpfully and briefly, in the user's language.\n"
+    "3. Something that needs more than text, like making a video, picture, slides, audio or music from it, "
+    "searching the web, or sending an email: reply with \"MAKE:\" and then one short, friendly sentence saying "
+    "what you'll make. Don't make it here."
+)
+ANSWER_RE = re.compile(r"^\W{0,3}ANSWER\W{0,3}:\W{0,3}", re.I)
+MAKE_RE = re.compile(r"^\W{0,3}MAKE\W{0,3}:\W{0,3}", re.I)
+# Kept small enough for Groq's free tier along with the chat's own instructions and tools.
+HANDOFF_CHARS_LEAN = 6_000
+HANDOFF_CHARS = 40_000
+
 
 def init(database, default_model: str):
     global db, DEFAULT_MODEL
@@ -177,9 +193,21 @@ async def delete_doc(doc_id: str, user_id: str = Depends(current_user_id)):
     return {"ok": True}
 
 
+def handoff_prompt(doc: dict, request: str, model: str) -> str:
+    """The chat message that carries a doc request over to chat, where Krish's tools (video, images...) run."""
+    from agent import llm
+
+    content = doc.get("content") or ""
+    cap = HANDOFF_CHARS_LEAN if llm.lean(model) else HANDOFF_CHARS
+    if len(content) > cap:
+        content = content[:cap] + "\n\n[…the rest of the document is cut off]"
+    return f"{request}\n\nThis is my document “{doc['title']}”:\n\n{content}"
+
+
 @router.post("/docs/{doc_id}/ai")
 async def ai_edit(doc_id: str, body: AiEditIn, user_id: str = Depends(current_user_id)):
     doc = await owned_doc(doc_id, user_id)
+    typed = not QUICK_ACTIONS.get(body.action or "")
     instruction = QUICK_ACTIONS.get(body.action or "") or (body.instruction or "").strip()
     if not instruction:
         raise HTTPException(status_code=400, detail="Say what to change")
@@ -189,6 +217,10 @@ async def ai_edit(doc_id: str, body: AiEditIn, user_id: str = Depends(current_us
         raise HTTPException(status_code=409, detail="The selected text changed. Select it again.")
     model = body.model or DEFAULT_MODEL
     target = selection or content
+    if typed and len(target) > _limit(model):
+        # Too long to send for an edit, but questions and video/picture requests can still go to chat.
+        return {**public_doc(doc), "kind": "handoff", "reply": "This document is long, so let's do that in chat.",
+                "handoff": handoff_prompt(doc, instruction, model)}
     if not target.strip():
         prompt = f"The document is empty. {instruction}\nStart with a # title."
     else:
@@ -204,16 +236,21 @@ async def ai_edit(doc_id: str, body: AiEditIn, user_id: str = Depends(current_us
         else:
             prompt = f"Document:\n<<<\n{content}\n>>>\n\nInstruction: {instruction}\n\nReply with the whole new document."
     try:
-        answer = clean_answer(await _complete(model, SYSTEM, prompt))
+        answer = clean_answer(await _complete(model, ASK_SYSTEM if typed else SYSTEM, prompt))
     except Exception as exc:
         logger.exception("Doc edit failed")
         raise HTTPException(status_code=502, detail=f"Krish couldn't make that change: {str(exc)[:200]}")
     if not answer:
         raise HTTPException(status_code=502, detail="Krish returned nothing. Try again.")
+    if typed and MAKE_RE.match(answer):
+        note = MAKE_RE.sub("", answer, count=1).strip() or "I'll make that in chat."
+        return {**public_doc(doc), "kind": "handoff", "reply": note, "handoff": handoff_prompt(doc, instruction, model)}
+    if typed and ANSWER_RE.match(answer):
+        return {**public_doc(doc), "kind": "reply", "reply": ANSWER_RE.sub("", answer, count=1).strip()}
     new = content.replace(selection, answer, 1) if selection else answer
     history = ([content] + (doc.get("history") or []))[:HISTORY]
     await db.docs.update_one({"id": doc_id}, {"$set": {"content": new, "history": history, "updatedAt": _now()}})
-    return public_doc(await owned_doc(doc_id, user_id))
+    return {**public_doc(await owned_doc(doc_id, user_id)), "kind": "edit"}
 
 
 @router.post("/docs/{doc_id}/undo")

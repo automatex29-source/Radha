@@ -6,7 +6,7 @@ import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Undo2, Download, Eye, PencilLine, Sparkles, ArrowUp, Check } from "lucide-react";
+import { ArrowLeft, Loader2, Undo2, Download, Eye, PencilLine, Sparkles, ArrowUp, Check, MessageSquare } from "lucide-react";
 
 const ACTIONS = [
   { id: "shorter", label: "Shorter" }, { id: "longer", label: "Longer" }, { id: "grammar", label: "Fix grammar" },
@@ -25,6 +25,7 @@ export default function DocEditor() {
   const [selection, setSelection] = useState("");
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState("");
+  const [chat, setChat] = useState([]); // what was asked in the panel and Krish's answers
   const editorRef = useRef(null);
   const saveTimer = useRef(null);
 
@@ -72,13 +73,28 @@ export default function DocEditor() {
     try {
       if (!saved) { pending.current = {}; await api.patch(`/docs/${id}`, { content, ...(title.trim() ? { title } : {}) }); }
       const { data } = await api.post(`/docs/${id}/ai`, { ...payload, selection: selection || undefined });
-      setDoc(data); setContent(data.content); setSaved(true); setSelection(""); setInstruction("");
+      const asked = payload.instruction || ACTIONS.find((a) => a.id === payload.action)?.label || "";
+      setInstruction("");
+      if (data.kind === "reply" || data.kind === "handoff") {
+        setChat((c) => [...c, { asked, reply: data.reply, handoff: data.handoff }]);
+        return;
+      }
+      setDoc(data); setContent(data.content); setSaved(true); setSelection("");
+      const done = selection ? "Changed the selected part." : "Updated the document.";
+      setChat((c) => [...c, { asked, reply: `${done} Use Undo to go back.` }]);
       toast.success(selection ? "Changed the selected part" : "Document updated");
     } catch (e) {
+      const asked = payload.instruction || ACTIONS.find((a) => a.id === payload.action)?.label || "";
+      setChat((c) => [...c, { asked, reply: formatApiError(e), error: true }]);
       toast.error(formatApiError(e));
     } finally {
       setBusy("");
     }
+  };
+
+  const openInChat = (text) => {
+    try { sessionStorage.setItem("krish.handoff", text); } catch { /* ignore */ }
+    navigate("/");
   };
 
   const undo = async () => {
@@ -161,10 +177,10 @@ export default function DocEditor() {
         </div>
 
         {/* Krish panel */}
-        <aside className="shrink-0 border-t border-border bg-card/70 p-3 backdrop-blur lg:w-[320px] lg:border-l lg:border-t-0 lg:p-4" data-testid="doc-ai-panel">
+        <aside className="flex shrink-0 flex-col border-t border-border bg-card/70 p-3 backdrop-blur lg:w-[320px] lg:border-l lg:border-t-0 lg:p-4" data-testid="doc-ai-panel">
           <p className="flex items-center gap-1.5 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> Ask Krish</p>
           <p className="mt-1 text-xs text-muted-foreground" data-testid="doc-ai-target">
-            {selection ? `Changes only the ${selection.length}-character part you selected.` : "Changes the whole document. Select text first to change just that part."}
+            {selection ? `Changes only the ${selection.length}-character part you selected.` : "Ask anything about this document, or tell Krish what to change. Select text first to change just that part."}
           </p>
           <div className="mt-2.5 flex flex-wrap gap-1.5 max-lg:max-h-[68px] max-lg:overflow-y-auto">
             {ACTIONS.map((a) => (
@@ -174,10 +190,27 @@ export default function DocEditor() {
               </button>
             ))}
           </div>
+          {chat.length > 0 && (
+            <div className="radha-scroll mt-3 min-h-0 space-y-3 overflow-y-auto max-lg:max-h-[30vh] lg:flex-1" data-testid="doc-ai-chat">
+              {chat.map((m, i) => (
+                <div key={i} className="space-y-1.5">
+                  {m.asked && <p className="ml-6 rounded-2xl rounded-br-sm bg-primary/10 px-3 py-2 text-sm">{m.asked}</p>}
+                  <div className={`rounded-2xl rounded-bl-sm border border-border bg-background px-3 py-2 text-sm ${m.error ? "text-destructive" : ""}`}>
+                    <div className="radha-prose text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.reply || ""}</ReactMarkdown></div>
+                    {m.handoff && (
+                      <Button size="sm" onClick={() => openInChat(m.handoff)} className="mt-2 gap-1.5" data-testid="doc-ai-open-chat">
+                        <MessageSquare className="h-4 w-4" /> Make it in chat
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <form className="mt-3 flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (instruction.trim()) runAi({ instruction }, "custom"); }}>
             <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} rows={2} data-testid="doc-ai-input"
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (instruction.trim() && !busy) runAi({ instruction }, "custom"); } }}
-              placeholder={content.trim() ? "e.g. Add a short conclusion" : "e.g. Write a thank-you note to my team"}
+              placeholder={content.trim() ? "e.g. Add a short conclusion, or make a video of it" : "e.g. Write a thank-you note to my team"}
               className="min-h-[44px] flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             <Button type="submit" size="icon" disabled={!instruction.trim() || !!busy} className="h-11 w-11 shrink-0 rounded-full" aria-label="Send">
               {busy === "custom" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}

@@ -467,6 +467,17 @@ export default function Workspace({ mode = null }) {
     return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling }, convId);
   };
 
+  // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
+  const handoffDone = useRef(false);
+  useEffect(() => {
+    if (handoffDone.current || counselling || !model || !caps) return;
+    let text = "";
+    try { text = sessionStorage.getItem("krish.handoff") || ""; sessionStorage.removeItem("krish.handoff"); } catch { /* ignore */ }
+    handoffDone.current = true;
+    if (text) sendMessage(text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, caps]);
+
   // Voice mode keeps its first callback for the whole session; route through a ref
   // so each utterance uses the current conversation, model and agent setting.
   const sendRef = useRef(sendMessage);

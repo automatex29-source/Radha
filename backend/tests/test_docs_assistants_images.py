@@ -21,6 +21,10 @@ async def _fake_complete(model, system, user):
         return "```markdown\n# Leave letter\n\nDear Sir, I need leave.\n```"
     if "Change only this part" in user:
         return "I kindly request leave"
+    if "make a video" in user:
+        return "MAKE: I'll turn your script into a short video."
+    if "Who is this for" in user:
+        return "**ANSWER:** It's written for your manager."
     return "# Leave letter\n\nShort version."
 
 
@@ -62,6 +66,21 @@ def test_doc_draft_edit_selection_undo_and_export(client):
     assert pdf.content[:4] == b"%PDF"
     client.patch(f"/api/docs/{doc['id']}", json={"title": "Mine"})
     assert [d["title"] for d in client.get("/api/docs").json()] == ["Mine"]
+
+
+def test_ask_krish_answers_and_hands_off_without_changing_the_doc(client):
+    doc = client.post("/api/docs", json={"content": "# Script\n\nHost: Hello kids!"}).json()
+    answer = client.post(f"/api/docs/{doc['id']}/ai", json={"instruction": "Who is this for?"}).json()
+    assert answer["kind"] == "reply" and answer["reply"] == "It's written for your manager."
+    assert answer["content"] == doc["content"] and not answer["canUndo"]
+    video = client.post(f"/api/docs/{doc['id']}/ai", json={"instruction": "make a video of this script"}).json()
+    assert video["kind"] == "handoff" and "short video" in video["reply"]
+    assert video["handoff"].startswith("make a video of this script") and "Host: Hello kids!" in video["handoff"]
+    assert video["content"] == doc["content"] and not video["canUndo"]
+    long = client.post("/api/docs", json={"content": "word " * 3000}).json()
+    big = client.post(f"/api/docs/{long['id']}/ai", json={"instruction": "Who is this for?"}).json()
+    assert big["kind"] == "handoff" and len(big["handoff"]) < 6200
+    assert client.post(f"/api/docs/{long['id']}/ai", json={"action": "shorter"}).status_code == 413
 
 
 def test_docs_are_private(client):
