@@ -12,7 +12,7 @@ import {
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare,
 } from "lucide-react";
 
-const FILE_TOOLS = new Set(["write_file", "edit_file", "delete_file", "commit"]);
+const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit"]);
 
 const PANES = [["preview", Eye, "Preview"], ["code", Code2, "Code"], ["terminal", SquareTerminal, "Terminal"], ["history", History, "History"]];
 

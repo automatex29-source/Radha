@@ -478,6 +478,11 @@ async def delete_conversation(conv_id: str, user_id: str = Depends(current_user_
 
 
 # ------------------------------------------------------------------- streaming
+# The App Builder's base prompt. It replaces SYSTEM_PROMPT there: the chat prompt's "put code in fenced blocks"
+# would fight the file tools, and its design guide is already in apps.app_prompt (Groq's free budget is tight).
+BUILDER_PROMPT = ("You are Krish AI, the AI app builder made by EmpireX. You build by calling your file tools; never "
+                  "paste code into the chat. Reply in the user's language, in a line or two.")
+
 SYSTEM_PROMPT = (
     "You are Krish AI, the flagship AI assistant built by EmpireX. "
     "Answer first: put the direct answer in the first sentence, then add only what the user needs. "
@@ -669,7 +674,7 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
     return "\n\n".join(parts), sources
 
 
-_FILE_TOOLS = ("write_file", "edit_file", "delete_file")
+_FILE_TOOLS = ("write_file", "append_file", "edit_file", "delete_file")
 REPAIR_STEPS = 5
 
 
@@ -687,7 +692,7 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
         yield ev
     if not (ctx.app_id and use_tools and changed):
         return
-    problems = apps.app_problems(await apps.snapshot(ctx.app_id))
+    problems = await apps.check_app(await apps.snapshot(ctx.app_id))
     if not problems:
         return
     yield {"type": "text", "text": "\n\nChecking the app… I found a problem and I'm fixing it.\n\n"}
@@ -699,16 +704,16 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
     async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
                               max_steps=REPAIR_STEPS):
         yield ev
-    left = apps.app_problems(await apps.snapshot(ctx.app_id))
+    left = await apps.check_app(await apps.snapshot(ctx.app_id))
     if left:
-        yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + left[0]
+        yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + left[0].split(" The file looks cut off")[0]
                + " Tap “Fix errors with AI” under the preview, or reply “fix it”."}
 
 
 def _builder_summary(steps: list) -> str:
     """A plain account of an App Builder turn the model ended without a reply."""
     changed = sorted({(s.get("args") or {}).get("path", "") for s in steps
-                      if s.get("name") in ("write_file", "edit_file", "delete_file") and s.get("status") == "done"} - {""})
+                      if s.get("name") in _FILE_TOOLS and s.get("status") == "done"} - {""})
     failed = [s for s in steps if s.get("status") == "error"]
     if changed:
         text = f"I changed {', '.join(changed)}. Check the preview, and tell me what else to adjust."
@@ -742,7 +747,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs if m["content"]]
 
-    system_parts = [counsellor.PROMPT if counselling else SYSTEM_PROMPT, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
+    base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
+    system_parts = [base, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
     sources = []
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 

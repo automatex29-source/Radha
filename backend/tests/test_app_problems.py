@@ -100,3 +100,48 @@ def test_no_repair_when_nothing_changed_or_no_app(monkeypatch):
     calls = _fake_agent(monkeypatch, server, files, [(None, "Here is how it works.")])
     _texts(server, server.ToolContext(None, "u", app_id="a1"))
     assert len(calls) == 1
+
+
+def test_cut_off_javascript_is_found():
+    files = {"index.html": '<main id="menu"></main><script type="module" src="app.js"></script>',
+             "app.js": 'const cakes = [{name: "Red Velvet"}];\ndocument.getElementById("menu").innerHTML = cakes.map((c) => `<h2>${c.na'}
+    problems = asyncio.run(apps.check_app(files))
+    assert len(problems) == 1 and "app.js has a syntax error" in problems[0] and "append_file" in problems[0]
+    files["app.js"] += 'me}</h2>`).join("");\n'
+    assert asyncio.run(apps.check_app(files)) == []
+    # A classic script (no type=module, no import) is checked as one, so top-level `return`-free code passes too.
+    assert asyncio.run(apps.check_app({"index.html": '<script src="a.js"></script>', "a.js": "var x = 1;"})) == []
+
+
+def test_append_file_builds_a_long_file_in_parts(monkeypatch):
+    store = {}
+
+    async def write_file(app_id, path, content):
+        store[path] = content
+        return path
+
+    class Files:
+        async def find_one(self, query, *_a):
+            return {"content": store[query["path"]]} if query["path"] in store else None
+
+    async def snapshot(app_id):
+        return dict(store)
+
+    monkeypatch.setattr(apps, "write_file", write_file)
+    monkeypatch.setattr(apps, "snapshot", snapshot)
+    monkeypatch.setattr(apps, "db", type("DB", (), {"app_files": Files()})())
+    ctx = type("Ctx", (), {"app_id": "a1"})()
+    asyncio.run(apps._t_append(ctx, {"path": "app.js", "content": "const a = 1;"}))
+    out = asyncio.run(apps._t_append(ctx, {"path": "app.js", "content": "const b = 2;\n"}))
+    assert store["app.js"] == "const a = 1;\nconst b = 2;\n" and "Added" in out.content
+
+
+def test_cut_off_tool_call_says_to_write_in_parts():
+    from agent import Tool, ToolContext, ToolRegistry, ToolOutput
+
+    async def h(ctx, args):
+        return ToolOutput(content="")
+
+    reg = ToolRegistry().register(Tool("write_file", "Write", {"type": "object"}, h, scope="app"))
+    out = asyncio.run(reg.run("write_file", '{"path": "index.html", "content": "<html><body><h1>Cake', ToolContext(None, "u", app_id="a")))
+    assert not out.ok and "append_file" in out.content
