@@ -156,6 +156,9 @@
 .radha-scroll::-webkit-scrollbar-thumb { background: hsl(var(--scrollbar)); border-radius: 9999px; }
 .radha-scroll::-webkit-scrollbar-thumb:hover { background: hsl(var(--scrollbar-hover)); }
 .radha-scroll { scrollbar-width: thin; scrollbar-color: hsl(var(--scrollbar)) transparent; }
+/* Home view: fits the screen, so no scrollbar shows (it can still scroll on very short screens). */
+.krish-no-scrollbar { scrollbar-width: none; }
+.krish-no-scrollbar::-webkit-scrollbar { display: none; }
 
 .radha-grid {
   background-image:

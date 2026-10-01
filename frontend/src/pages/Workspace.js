@@ -15,7 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Clapperboard, Megaphone, Image as ImageIcon, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
+import { PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import { useAuth } from "@/context/AuthContext";
 
@@ -23,9 +23,6 @@ const STARTERS = [
   { icon: FileText, tone: "indigo", hint: "Turn ideas into clear, concise summaries.", title: "Synthesize an executive summary", prompt: "Write a concise executive summary of the key trends shaping AI agents in 2026." },
   { icon: Braces, tone: "sky", hint: "Clean, optimize and modernize your code.", title: "Refactor an async Python service", prompt: "Show me how to structure a clean, testable async Python service that calls an external API with retries." },
   { icon: Network, tone: "emerald", hint: "Build fast, scalable search solutions.", title: "Design a vector search pipeline", prompt: "Design a distributed vector search pipeline for semantic document retrieval. Cover ingestion, embedding, storage and querying." },
-  { icon: Megaphone, tone: "pink", hint: "Turn your idea into a short, punchy video.", title: "Make a video ad", prompt: "Make a 15-second video ad for a coffee shop called Bean There, with a catchy headline and a call to action." },
-  { icon: Clapperboard, tone: "amber", hint: "Bring your story to life with animation.", title: "Create an animated short", prompt: "Create a short 3D animation video about a little robot who finds a flower in a city." },
-  { icon: ImageIcon, tone: "violet", hint: "Create stunning visuals for your next project.", title: "Design a movie poster", prompt: "Design a cinematic movie poster for a sci-fi film called Last Signal." },
 ];
 
 // The Counsellor tab: a cheerful friend who shares Krishna's wisdom from the Gita when it helps (see backend/counsellor.py).
@@ -533,7 +530,7 @@ export default function Workspace({ mode = null }) {
         </header>
 
         {/* Messages */}
-        <div ref={scrollRef} className="radha-scroll flex-1 overflow-y-auto">
+        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
           {loadingConv ? (
             <div className="flex h-full items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -635,9 +632,9 @@ function EmptyState({ onPick }) {
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+      <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-3 sm:gap-4">
         {STARTERS.map((s, i) => (
-          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`prompt-starter-card-${i}`} hideOnPhone={i >= 4} />
+          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`prompt-starter-card-${i}`} />
         ))}
       </div>
     </div>
