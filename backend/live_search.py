@@ -15,7 +15,7 @@ from agent import web
 
 logger = logging.getLogger(__name__)
 
-LOOKUP_TIMEOUT = 10.0
+LOOKUP_TIMEOUT = 6.0
 
 _CURRENT = re.compile(
     r"\b(today|todays|tonight|right now|current(ly)?|latest|recent(ly)?|this (week|month|year)|yesterday|"

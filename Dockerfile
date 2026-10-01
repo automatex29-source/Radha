@@ -7,7 +7,8 @@ WORKDIR /frontend
 COPY frontend/package.json frontend/.npmrc ./
 RUN npm install --no-audit --no-fund
 COPY frontend/ ./
-RUN npm run build
+RUN npm run build \
+    && find build -type f \( -name '*.js' -o -name '*.css' -o -name '*.svg' -o -name '*.html' \) -exec gzip -k -9 {} +
 
 # ---- 2. API server (also serves the built web app) -------------------------
 FROM python:3.11-slim
@@ -32,7 +33,9 @@ RUN pip install -r requirements.txt \
 
 COPY backend/ ./
 COPY --from=frontend /frontend/build /app/frontend/build
-RUN mkdir -p /app/cache/fastembed
+# Download the document-search model now, not on the first file someone uploads after each restart.
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5')" \
+    || mkdir -p /app/cache/fastembed
 
 EXPOSE 8001
 # Hosting platforms (Railway, Render, Fly…) pass the port to listen on in $PORT.

@@ -99,9 +99,24 @@ def test_other_providers_are_not_trimmed(monkeypatch):
 def test_rate_limit_is_retried(monkeypatch):
     monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
     seen = fake_completion(monkeypatch, failures=2)
-    events = run(collect(llm.stream_completion(GROQ, [{"role": "user", "content": "hi"}], [])))
+    events = run(collect(llm.stream_completion("openai/gpt-oss-20b", [{"role": "user", "content": "hi"}], [])))
     assert len(seen) == 3
     assert [e["type"] for e in events] == ["heartbeat", "heartbeat"]
+
+
+def test_rate_limited_big_model_falls_back_at_once(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    seen = fake_completion(monkeypatch, failures=1)
+    events = run(collect(llm.stream_completion(GROQ, [{"role": "user", "content": "hi"}], [])))
+    assert [kw["model"] for kw in seen] == ["groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-20b"]
+    assert events == []  # no waiting
+
+
+def test_plain_answer_asks_for_less_output(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    seen = fake_completion(monkeypatch)
+    run(collect(llm.stream_completion(GROQ, [{"role": "user", "content": "hi"}], [])))
+    assert seen[0]["max_tokens"] == llm._PLAIN_OUTPUT
 
 
 def test_retry_after_parsing():

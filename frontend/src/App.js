@@ -1,22 +1,23 @@
 import "@/App.css";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import AuthPage from "@/components/AuthPage";
 import Workspace from "@/pages/Workspace";
-import ProjectsPage from "@/pages/ProjectsPage";
-import ProjectView from "@/pages/ProjectView";
-import AppsPage from "@/pages/AppsPage";
-import AppBuilder from "@/pages/AppBuilder";
-import AutomationsPage from "@/pages/AutomationsPage";
-import DecksPage from "@/pages/DecksPage";
-import DeckEditor from "@/pages/DeckEditor";
-import HelpPage from "@/pages/HelpPage";
-import AssistantInvite from "@/pages/AssistantInvite";
-import DocsPage from "@/pages/DocsPage";
-import DocEditor from "@/pages/DocEditor";
-import SharedChat from "@/pages/SharedChat";
-import ResetPassword from "@/pages/ResetPassword";
+const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
+const ProjectView = lazy(() => import("@/pages/ProjectView"));
+const AppsPage = lazy(() => import("@/pages/AppsPage"));
+const AppBuilder = lazy(() => import("@/pages/AppBuilder"));
+const AutomationsPage = lazy(() => import("@/pages/AutomationsPage"));
+const DecksPage = lazy(() => import("@/pages/DecksPage"));
+const DeckEditor = lazy(() => import("@/pages/DeckEditor"));
+const HelpPage = lazy(() => import("@/pages/HelpPage"));
+const AssistantInvite = lazy(() => import("@/pages/AssistantInvite"));
+const DocsPage = lazy(() => import("@/pages/DocsPage"));
+const DocEditor = lazy(() => import("@/pages/DocEditor"));
+const SharedChat = lazy(() => import("@/pages/SharedChat"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 
@@ -36,6 +37,14 @@ function takeRememberedPath() {
     if (path && path.startsWith("/assistant/")) return path;
   } catch { /* optional */ }
   return "/";
+}
+
+function PageLoading() {
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-background">
+      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+    </div>
+  );
 }
 
 function Gate() {
@@ -86,12 +95,15 @@ export default function App() {
       <div className="App">
         <AuthProvider>
           <BrowserRouter>
-            <Routes>
-              {/* Shared chats open for anyone, signed in or not. */}
-              <Route path="/share/:shareId" element={<SharedChat />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="*" element={<Gate />} />
-            </Routes>
+            {/* Pages other than chat load when first opened, so the app itself starts faster. */}
+            <Suspense fallback={<PageLoading />}>
+              <Routes>
+                {/* Shared chats open for anyone, signed in or not. */}
+                <Route path="/share/:shareId" element={<SharedChat />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="*" element={<Gate />} />
+              </Routes>
+            </Suspense>
           </BrowserRouter>
           <Toaster position="top-center" />
         </AuthProvider>
