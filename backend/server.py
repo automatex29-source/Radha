@@ -40,6 +40,7 @@ import vision
 import media
 import preview as previewer
 import apps
+import site_images
 import decks
 import appdata
 import automations
@@ -49,6 +50,7 @@ import counsellor
 import help_center
 import writer
 import limits
+import languages
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -97,6 +99,7 @@ tool_registry = default_registry()
 storage.init(db)
 apps.init(db)
 appdata.init(db)
+site_images.init(db)
 apps.register_tools(tool_registry)
 
 # The web app owns /docs (the Docs writing space), so FastAPI's API pages live under /api.
@@ -170,6 +173,8 @@ class MessageIn(BaseModel):
     agent: bool = False
     think: bool = False  # the Think button: reason longer and check the answer
     study: bool = False  # Study mode: teach step by step and quiz instead of just answering
+    voice: bool = False  # sent from voice mode: the reply is spoken aloud
+    voiceLang: Optional[str] = Field(default=None, max_length=8)
 
 
 class RegenerateIn(BaseModel):
@@ -182,7 +187,7 @@ class RegenerateIn(BaseModel):
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     voice: Optional[str] = None
-    lang: Optional[Literal["auto", "hi", "en"]] = None
+    lang: Optional[str] = Field(default=None, max_length=8)
 
 
 def public_user(doc: dict) -> dict:
@@ -190,6 +195,7 @@ def public_user(doc: dict) -> dict:
         "id": doc["id"],
         "email": doc["email"],
         "name": doc["name"],
+        "language": languages.normalize(doc.get("language")),
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
     }
@@ -379,6 +385,21 @@ async def me(user_id: str = Depends(current_user_id)):
     return public_user(doc)
 
 
+class LanguageIn(BaseModel):
+    language: str
+
+
+@api.put("/auth/language")
+async def set_language(body: LanguageIn, user_id: str = Depends(current_user_id)):
+    if body.language not in languages.LANGUAGES:
+        raise HTTPException(status_code=400, detail="That language isn't available.")
+    await db.users.update_one({"id": user_id}, {"$set": {"language": body.language, "updatedAt": now_iso()}})
+    doc = await db.users.find_one({"id": user_id})
+    if not doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    return public_user(doc)
+
+
 @api.get("/models")
 async def models(user_id: str = Depends(current_user_id)):
     return {"models": AVAILABLE_MODELS, "default": AI_MODEL}
@@ -538,6 +559,24 @@ THINK_PROMPT = (
     "answering, check facts with web_search when they matter, double-check any numbers or code, and point out "
     "anything you are unsure of. Still lead with the answer, then the key reasoning."
 )
+
+VOICE_LANG_NAMES = {"hi": "Hindi", "en": "English", "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati",
+                    "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "ur": "Urdu",
+                    "es": "Spanish", "fr": "French", "de": "German", "ar": "Arabic"}
+
+
+def voice_prompt(lang: Optional[str]) -> str:
+    language = VOICE_LANG_NAMES.get(lang or "")
+    reply_in = (f"Always reply in {language}, written in its own script." if language else
+                "Reply in the language the user just spoke, in its own script (Hindi in Devanagari); "
+                "if they mix Hindi and English, mix the same way.")
+    return (
+        "Voice mode is on: the user is talking to you out loud and your reply will be read aloud by a voice. "
+        "Answer like a warm, natural person on a phone call: usually one to three short sentences, the most useful "
+        "part first. Offer to say more instead of giving long lists. Never use markdown, bullet points, tables, "
+        "emoji, links, URLs or code; write numbers and symbols the way they are spoken. " + reply_in
+    )
+
 
 STUDY_PROMPT = (
     "Study mode is on: act as a patient, encouraging tutor for a student in India. Don't just hand over the final "
@@ -729,7 +768,8 @@ def _builder_summary(steps: list) -> str:
 
 
 async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: Optional[str] = None,
-                   max_steps: Optional[int] = None, think: bool = False, study: bool = False):
+                   max_steps: Optional[int] = None, think: bool = False, study: bool = False,
+                   voice: bool = False, voice_lang: Optional[str] = None):
     """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
 
     If the conversation belongs to a project, relevant document chunks (RAG) and
@@ -759,6 +799,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         remembered = await memory.prompt_section(db, user_id, project_id)
         if remembered:
             system_parts.append(remembered)
+        owner = await db.users.find_one({"id": user_id}, {"language": 1})
+        lang_line = languages.prompt_line((owner or {}).get("language"))
+        if lang_line:
+            system_parts.append(lang_line)
 
     # Project instructions.
     if project_id:
@@ -814,6 +858,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(THINK_PROMPT)
     if extra_system:
         system_parts.append(extra_system)
+    if voice and not app_id:
+        system_parts.append(voice_prompt(voice_lang))
     system_prompt = "\n\n".join(system_parts)
 
     if sources:
@@ -918,9 +964,9 @@ class _TurnResponse(StreamingResponse):
 
 
 def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False,
-                     study: bool = False) -> StreamingResponse:
+                     study: bool = False, voice: bool = False, voice_lang: Optional[str] = None) -> StreamingResponse:
     return _TurnResponse(
-        run_turn(conv_id, model, agent, think=think, study=study),
+        run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
@@ -975,7 +1021,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
     if ready_reply:
         return StreamingResponse(_canned_turn(conv_id, ready_reply), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study)
+    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study,
+                            voice=body.voice, voice_lang=body.voiceLang)
 
 
 async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
@@ -1486,8 +1533,8 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
     try:
-        lang = language if language in ("en", "hi") else None
-        text = await media.transcribe(data, file.filename or "audio.webm", lang)
+        lang = language if language in media.VOICE_LANGUAGES else None
+        text = media.clean_transcript(await media.transcribe(data, file.filename or "audio.webm", lang))
     except media.MediaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
@@ -1581,6 +1628,7 @@ async def root():
 app.include_router(api)
 app.include_router(apps.router)
 app.include_router(appdata.router)
+app.include_router(site_images.router)
 decks.init(db, AI_MODEL)
 app.include_router(decks.router)
 writer.init(db, AI_MODEL)
@@ -1654,6 +1702,7 @@ async def startup():
     await apps.ensure_indexes()
     await decks.ensure_indexes()
     await appdata.ensure_indexes()
+    await site_images.ensure_indexes()
     await automations.ensure_indexes()
     if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":
         automations.start_scheduler()

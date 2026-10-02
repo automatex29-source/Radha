@@ -25,6 +25,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from urllib.parse import unquote, urlparse
@@ -38,6 +39,7 @@ from auth import JWT_ALGORITHM, _secret, decode_token, get_user_id_from_request
 from agent import Tool, ToolOutput, sandbox
 from agent import browser as agent_browser
 import appdata
+import site_images
 import github_push
 
 router = APIRouter(prefix="/api")
@@ -145,9 +147,31 @@ _load_templates()
 # Shared by plain chat and the app builder so every generated app meets the same bar.
 DESIGN_GUIDE = (
     "Quality bar for new apps you design yourself (work like a senior product designer and engineer):\n"
-    "- Style with Tailwind CSS (<script src=\"https://cdn.tailwindcss.com\"></script>), the Inter font from Google "
-    "Fonts, and Lucide icons (<script src=\"https://unpkg.com/lucide@latest\"></script>, <i data-lucide=\"plus\"></i>, "
-    "and call lucide.createIcons() after every render). Keep style.css only for what Tailwind can't do.\n"
+    "- Style it with Krish UI, the built-in design kit: put <link rel=\"stylesheet\" href=\"krish-ui.css\"> in the "
+    "head (Krish AI adds that file itself: never write or edit it) and set the brand colours once with "
+    "<style>:root{--accent:#db2777;--accent-2:#f97316}</style>. It makes plain HTML look premium, so write little CSS. "
+    "Its classes: nav (sticky header) > container with brand, nav-links and a btn; hero (eyebrow, h1, p, actions; "
+    "grid-2 to put a photo beside the text; hero-dark or hero-image for colour); section > container with section-title "
+    "(eyebrow, h2, p); section-alt for a tinted band; grid-2, grid-3, grid-4; card (an img first in it becomes its "
+    "cover photo; h3, p, row with price and a button; badge, stars, icon); btn, btn-outline, btn-light, btn-sm, btn-lg "
+    "(a plain <button> is already styled); cta (gradient call-to-action box); footer; form, chip, toast (add class "
+    "show), gradient-text, lead, muted, center, fade-up. Pick the layout for what is being built: a website, shop "
+    "or portfolio uses nav + hero + sections; a tool or small app (to-do, notes, calculator, converter, quiz) uses a "
+    "page (or page-wide) with panel, panel-title, toolbar, list > list-item (grow, done), empty, tabs > tab.active, "
+    "keypad + display, progress > span, input.switch; a dashboard or admin uses app > sidebar (brand, side-link.active) "
+    "+ main > topbar, then grid-4 of stat-card (stat-label, stat, trend up/down), panels with tables and charts "
+    "(Chart.js from cdn.jsdelivr.net/npm/chart.js), badge green/red/amber/blue; a game uses stage > score + board of "
+    "tile buttons; dialogs use modal.open > modal-box. Add body class dark for a dark theme. Add Tailwind (<script src=\"https://cdn.tailwindcss.com\">"
+    "</script>) classes only for extra tweaks, and Lucide icons if wanted (<script src=\"https://unpkg.com/lucide@latest\">"
+    "</script>, <i data-lucide=\"cake\"></i>, then lucide.createIcons()).\n"
+    "- Graphics: use pictures made for this site, never empty boxes or grey placeholders: "
+    "<img src=\"https://krish-image.invalid/chocolate-truffle-cake-on-marble-table-soft-light.jpg?w=800&h=600\" "
+    "alt=\"...\"> (describe exactly what the picture shows, words joined by dashes, in English; w and h are the size "
+    "it is shown at). Krish AI makes each picture. They work in CSS too, e.g. a hero-image background. Faces for "
+    "reviews and teams: https://i.pravatar.cc/120?img=12 (img 1 to 70). Icons: Lucide, or an emoji in an icon tile. "
+    "Add depth: blob top-right / blob bottom-left shapes (inside a relative or hero element), bg-mesh, bg-dots or "
+    "bg-grid backgrounds, glass cards over photos, glow, float, shine, zoom on hover, and reveal on sections so they "
+    "animate in on scroll.\n"
     "- Make it look like a modern, premium product: a clear hierarchy with a proper header, generous spacing, one "
     "accent color over a cohesive palette, soft gradients, rounded-2xl cards with subtle borders and shadows, "
     "hover, focus and active states, smooth transitions, friendly empty states and toasts instead of alert().\n"
@@ -226,8 +250,26 @@ async def write_file(app_id: str, path: str, content: str):
         raise ValueError("App is too large")
     await db.app_files.update_one({"appId": app_id, "path": path},
                                   {"$set": {"content": content, "updatedAt": _now()}}, upsert=True)
+    await _add_kit(app_id, path, content)
     await db.apps.update_one({"id": app_id}, {"$set": {"updatedAt": _now()}})
     return path
+
+
+KIT_NAME = "krish-ui.css"
+KIT_CSS = (Path(__file__).parent / "app_kit" / KIT_NAME).read_text(encoding="utf-8")
+_KIT_REF_RE = re.compile(r"""href\s*=\s*["']([^"']*krish-ui\.css)["']""", re.IGNORECASE)
+
+
+async def _add_kit(app_id: str, path: str, content: str) -> None:
+    """A page that links the built-in design kit (krish-ui.css) gets the file next to it, so the preview,
+    the published site, the ZIP and GitHub all have it."""
+    if not path.endswith((".html", ".htm")):
+        return
+    for ref in _KIT_REF_RE.findall(content):
+        target = _resolve(path, ref)
+        if target and not await db.app_files.find_one({"appId": app_id, "path": target}, {"_id": 1}):
+            await db.app_files.update_one({"appId": app_id, "path": target},
+                                          {"$set": {"content": KIT_CSS, "updatedAt": _now()}}, upsert=True)
 
 
 async def delete_file(app_id: str, path: str) -> bool:
@@ -316,8 +358,19 @@ async def restore(app_id: str, commit_id: str, author: str = "You") -> Optional[
     return await commit(app_id, f"Restore version {commit_id}: {target['message']}"[:200], author)
 
 
+def public_origin() -> str:
+    """This server's public address (Render sets RENDER_EXTERNAL_URL), for links in files that leave it."""
+    return (os.environ.get("PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+
+
+def portable(files: Dict[str, str]) -> Dict[str, str]:
+    """Files as they should leave Krish AI (ZIP, GitHub): AI picture links point at this server."""
+    origin = public_origin()
+    return {p: site_images.rewrite(c, origin) if origin else c for p, c in files.items()}
+
+
 async def export_zip(app: dict, include_git: bool = True) -> bytes:
-    working = await snapshot(app["id"])
+    working = portable(await snapshot(app["id"]))
     workdir = tempfile.mkdtemp(prefix="radha-export-")
     try:
         if include_git:
@@ -531,6 +584,8 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
     ctype = mimetypes.guess_type(path)[0] or "text/plain"
     if path.endswith((".js", ".mjs")):
         ctype = "text/javascript"
+    if ctype in ("text/html", "text/css", "text/javascript"):
+        content = site_images.rewrite(content)  # AI pictures (krish-image.invalid links) come from this server
     if ctype == "text/html":
         inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
         idx = content.lower().find("<head>")
@@ -1090,7 +1145,7 @@ async def push_to_github(app_id: str, body: GitHubIn, user_id: str = Depends(cur
     head = await head_commit(app_id)
     message = f"{app['name']}: {head['message']}" if head else f"{app['name']} from Krish AI"
     try:
-        result = await github_push.push(await snapshot(app_id), body.token, body.repo, message, private=body.private)
+        result = await github_push.push(portable(await snapshot(app_id)), body.token, body.repo, message, private=body.private)
     except github_push.PushError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     await db.apps.update_one({"id": app_id}, {"$set": {"github": {"repo": result["repo"], "url": result["url"], "pushedAt": _now()}}})

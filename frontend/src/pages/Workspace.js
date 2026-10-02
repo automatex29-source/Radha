@@ -6,7 +6,7 @@ import IconRail from "@/components/IconRail";
 import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
-import { setServerSpeech, browserSpeechAvailable, unlockSpeech } from "@/lib/voice";
+import { setServerSpeech, browserSpeechAvailable, unlockSpeech, getVoiceLang } from "@/lib/voice";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel from "@/components/CodePanel";
 import { extractFiles } from "@/lib/codeFiles";
@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import { useAuth } from "@/context/AuthContext";
+import { useT } from "@/lib/i18n";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
 const STARTERS = [
@@ -100,6 +101,7 @@ function pickGreeting(name) {
 
 export default function Workspace({ mode = null }) {
   const counselling = mode === "counsellor";
+  const t = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [projectId, setProjectId] = useState(searchParams.get("project") || null);
@@ -300,7 +302,7 @@ export default function Workspace({ mode = null }) {
     toast.success("Conversation exported");
   };
 
-  const runStream = async (url, body, convId) => {
+  const runStream = async (url, body, convId, onText) => {
     setStreaming(true);
     setStreamText("");
     setStreamSources([]);
@@ -363,6 +365,7 @@ export default function Workspace({ mode = null }) {
           if (dataStr) {
             streamTextRef.current += JSON.parse(dataStr);
             setStreamText(streamTextRef.current);
+            onText?.(streamTextRef.current);
           }
         }
       }
@@ -480,7 +483,7 @@ export default function Workspace({ mode = null }) {
     setAttachments((a) => a.filter((x) => x.id !== fid));
   };
 
-  const sendMessage = async (text) => {
+  const sendMessage = async (text, { voice = false, voiceLang, onText } = {}) => {
     const images = text === undefined ? pendingImages : [];
     const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
     const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
@@ -503,7 +506,7 @@ export default function Workspace({ mode = null }) {
     const imageIds = images.map((i) => i.id);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (text === undefined) { setInput(""); setPendingImages([]); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling }, convId);
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, voice, voiceLang }, convId, onText);
   };
 
   // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
@@ -539,7 +542,7 @@ export default function Workspace({ mode = null }) {
       <div className="hidden lg:block">
         <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
           onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
-          newLabel={counselling ? "New session" : undefined} onCollapse={() => {}} searchContent={!counselling} />
+          newLabel={counselling ? t("newSession") : undefined} onCollapse={() => {}} searchContent={!counselling} />
       </div>
 
       {/* Mobile drawer */}
@@ -549,7 +552,7 @@ export default function Workspace({ mode = null }) {
           <div className="krish-drawer-in krish-canvas absolute left-0 top-0 h-full max-w-[85vw] shadow-2xl">
             <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
               onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
-          newLabel={counselling ? "New session" : undefined} onCollapse={() => setSidebarOpen(false)} searchContent={!counselling} />
+          newLabel={counselling ? t("newSession") : undefined} onCollapse={() => setSidebarOpen(false)} searchContent={!counselling} />
           </div>
         </div>
       )}
@@ -564,7 +567,7 @@ export default function Workspace({ mode = null }) {
               <PanelLeft className="h-5 w-5" />
             </button>
             <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight">
-              {activeConv ? activeConv.title : counselling ? "Counsellor" : "New conversation"}
+              {activeConv ? activeConv.title : t(counselling ? "counsellor" : "newConversation")}
             </h1>
             {project && (
               <button onClick={() => navigate(`/projects/${project.id}`)} data-testid="active-project-badge"
@@ -579,20 +582,20 @@ export default function Workspace({ mode = null }) {
               <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} data-testid="share-conversation-button"
                 className={`gap-1.5 hover:text-foreground ${activeConv.shareId ? "text-brand" : "text-muted-foreground"}`}>
                 <Link2 className="h-3.5 w-3.5" />
-                <span className="hidden text-xs sm:inline">{activeConv.shareId ? "Shared" : "Share"}</span>
+                <span className="hidden text-xs sm:inline">{t(activeConv.shareId ? "shared" : "share")}</span>
               </Button>
             )}
             {activeId && messages.length > 0 && (
               <Button variant="ghost" size="sm" onClick={exportConversation} data-testid="export-conversation-button" className="gap-1.5 text-muted-foreground hover:text-foreground max-sm:hidden">
                 <Download className="h-3.5 w-3.5" />
-                <span className="hidden text-xs sm:inline">Export</span>
+                <span className="hidden text-xs sm:inline">{t("export")}</span>
               </Button>
             )}
             {!counselling && <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" data-testid="model-selector-dropdown" className="h-9 gap-2 rounded-full border-white/80 bg-white/80 px-3.5 shadow-sm backdrop-blur dark:border-border dark:bg-card sm:h-10">
                 <Cpu className="h-3.5 w-3.5 text-primary" />
-                <span className="max-w-[92px] truncate text-xs font-medium sm:max-w-none">{models.find((m) => m.id === model)?.label || "Model"}</span>
+                <span className="max-w-[92px] truncate text-xs font-medium sm:max-w-none">{models.find((m) => m.id === model)?.label || t("model")}</span>
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
@@ -605,7 +608,7 @@ export default function Workspace({ mode = null }) {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>}
-            <button onClick={newConversation} data-testid="mobile-new-chat-button" aria-label={counselling ? "New session" : "New chat"}
+            <button onClick={newConversation} data-testid="mobile-new-chat-button" aria-label={t(counselling ? "newSession" : "newChat")}
               className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <SquarePen className="h-5 w-5" />
             </button>
@@ -666,7 +669,8 @@ export default function Workspace({ mode = null }) {
       <ShareDialog open={shareOpen} onOpenChange={setShareOpen} conversation={activeConv}
         onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
       {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
-      {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onUtterance={(t) => sendRef.current(t)} />}
+      {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onCancelReply={stopGeneration}
+        onUtterance={(t, opts) => sendRef.current(t, { ...opts, voice: true, voiceLang: getVoiceLang() })} />}
     </div>
   );
 }
@@ -703,6 +707,7 @@ function StarterCard({ s, i, onPick, testid, hideOnPhone }) {
 }
 
 function EmptyState({ onPick }) {
+  const t = useT();
   const starters = useMemo(pickStarters, []);
   return (
     <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
@@ -710,7 +715,8 @@ function EmptyState({ onPick }) {
         <div className="relative min-w-0 flex-1 max-md:text-center">
           <Sparkle className="absolute -left-7 top-10 h-6 w-6 text-violet-500 max-md:hidden" />
           <h2 className="text-[1.6rem] font-extrabold leading-[1.1] tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem]">
-            How can<br className="max-md:hidden" /> <span className="krish-gradient-text">Krish AI</span> help today?
+            {t.lang === "en" ? <>How can<br className="max-md:hidden" /> <span className="krish-gradient-text">Krish AI</span> help today?</>
+              : t.parts("helpToday", { krish: <span key="k" className="krish-gradient-text">Krish AI</span> })}
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground max-sm:hidden">
             A premium AI workspace by EmpireX. Ask anything, attach a document, or open a project. Everything is saved and reloadable.

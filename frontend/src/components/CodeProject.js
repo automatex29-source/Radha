@@ -3,17 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Download, Eye, EyeOff, FileCode2, Loader2, Maximize2, Minimize2, AppWindow, RefreshCw } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
-import { buildPreview, extractFiles, makeZip, projectName } from "@/lib/codeFiles";
+import { buildPreview, extractFiles, makeZip, projectName, withImages, withKit } from "@/lib/codeFiles";
 
 /** Download ZIP and Open in App Builder for a set of code files. */
-export function useProjectActions(files, content) {
+export function useProjectActions(replyFiles, content) {
   const [creating, setCreating] = useState(false);
+  const files = withKit(replyFiles);
   const navigate = useNavigate();
   const name = projectName(files, content);
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "my-app";
 
   const download = () => {
-    const blob = new Blob([makeZip(files, slug)], { type: "application/zip" });
+    const blob = new Blob([makeZip(withImages(files), slug)], { type: "application/zip" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
