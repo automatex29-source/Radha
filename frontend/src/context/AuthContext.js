@@ -27,6 +27,9 @@ export function AuthProvider({ children }) {
     bootstrap();
   }, [bootstrap]);
 
+  const language = (user && user.language) || "en";
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
+
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     setToken(data.token);
@@ -45,6 +48,12 @@ export function AuthProvider({ children }) {
     setUser(data.user);
   };
 
+  // The app language (Settings): saved on the account so Krish replies in it everywhere.
+  const setLanguage = async (language) => {
+    const { data } = await api.put("/auth/language", { language });
+    setUser(data);
+  };
+
   const logout = async () => {
     try {
       await api.post("/auth/logout");
@@ -56,7 +65,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, startSession, formatApiError }}>
+    <AuthContext.Provider value={{ user, login, register, logout, startSession, setLanguage, formatApiError }}>
       {children}
     </AuthContext.Provider>
   );

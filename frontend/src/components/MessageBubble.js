@@ -81,7 +81,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
               ))}
             </div>
           )}
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          <p dir="auto" className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
         <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border-strong bg-surface-strong">
           <User className="h-4 w-4 text-brand" />
@@ -103,7 +103,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           )}
         </div>
         <ToolSteps steps={message.steps} />
-        <div className="radha-prose min-w-0">
+        <div dir="auto" className="radha-prose min-w-0">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
             {shown}
           </ReactMarkdown>

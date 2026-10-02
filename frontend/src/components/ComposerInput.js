@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
 import { transcribe } from "@/lib/voice";
+import { useT } from "@/lib/i18n";
 
 
 const narrowScreen = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 639px)").matches;
@@ -21,6 +22,7 @@ export default function ComposerInput({
   const ref = useRef(null);
   const fileRef = useRef(null);
   const rec = useRecorder();
+  const t = useT();
   const [transcribing, setTranscribing] = useState(false);
   const canSend = (value.trim() || images.length > 0) && !disabled;
 
@@ -105,7 +107,7 @@ export default function ComposerInput({
           onKeyDown={onKeyDown}
           disabled={disabled}
           rows={1}
-          placeholder={rec.recording ? "Listening… tap the mic to finish" : placeholder || (agentMode && !narrowScreen() ? "Ask Krish AI anything: it can search the web, run code and make files…" : "Message Krish AI…")}
+          placeholder={rec.recording ? t("listening") : placeholder || t(agentMode && !narrowScreen() ? "askAnything" : "message")}
           className="radha-scroll max-h-[200px] w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
         <div className="flex items-center justify-between px-1 pt-1">
@@ -130,11 +132,11 @@ export default function ComposerInput({
               </button>
             )}
             {onToggleThink && (
-              <ModeChip on={thinkMode} onClick={onToggleThink} icon={Lightbulb} label="Think" testId="think-mode-toggle"
+              <ModeChip on={thinkMode} onClick={onToggleThink} icon={Lightbulb} label={t("think")} testId="think-mode-toggle"
                 title={thinkMode ? "Think is on: slower, more careful answers" : "Think harder before answering"} />
             )}
             {onToggleStudy && (
-              <ModeChip on={studyMode} onClick={onToggleStudy} icon={GraduationCap} label="Study" testId="study-mode-toggle"
+              <ModeChip on={studyMode} onClick={onToggleStudy} icon={GraduationCap} label={t("study")} testId="study-mode-toggle"
                 title={studyMode ? "Study mode is on: Krish teaches step by step and quizzes you" : "Study mode: learn step by step with quizzes and flashcards"} />
             )}
             <button onClick={toggleMic} disabled={!voiceEnabled || transcribing || disabled} data-testid="composer-mic-button"
@@ -157,7 +159,7 @@ export default function ComposerInput({
               </button>
             )}
             <span className="ml-1 hidden text-[11px] text-muted-foreground md:inline">
-              <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-primary/15 dark:text-brand">Enter</span> to send
+              {t.parts("toSend", { enter: <span key="k" className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-primary/15 dark:text-brand">Enter</span> })}
             </span>
           </div>
           {streaming ? (

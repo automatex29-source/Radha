@@ -11,9 +11,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/context/AuthContext";
 import MemoryDialog from "@/components/MemoryDialog";
+import SettingsDialog from "@/components/SettingsDialog";
+import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy,
+  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 
@@ -33,14 +35,16 @@ function groupByDate(convs) {
   return groups;
 }
 
+const GROUP_KEYS = { Today: "today", Yesterday: "yesterday", "Previous 7 Days": "previous7", Older: "older" };
 const GROUP_ICONS = { Today: Sun, Yesterday: Moon, "Previous 7 Days": CalendarDays, Older: Archive };
 const GroupIcon = ({ label }) => {
   const Icon = GROUP_ICONS[label] || CalendarDays;
   return <Icon className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />;
 };
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel = "New conversation", searchContent = false }) {
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel, searchContent = false }) {
   const { user, logout } = useAuth();
+  const t = useT();
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
   const dark = resolvedTheme !== "light";
@@ -49,6 +53,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [editValue, setEditValue] = useState("");
   const [deleteId, setDeleteId] = useState(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Search also looks inside messages (server side), with a short snippet of where the words appear.
   const [hits, setHits] = useState(null); // { [conversationId]: snippet }
@@ -91,7 +96,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       <div className="px-4">
         <button onClick={onNew} data-testid="new-chat-button"
           className="flex h-11 w-full items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-indigo-500 to-violet-500 px-5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(99,102,241,0.35)] transition-all hover:shadow-[0_14px_36px_rgba(99,102,241,0.45)] active:scale-[0.99]">
-          <Plus className="h-4 w-4" /> {newLabel}
+          <Plus className="h-4 w-4" /> {newLabel || t("newConversation")}
         </button>
       </div>
 
@@ -99,20 +104,20 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <div className="relative">
           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input data-testid="conversation-search-input" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder={searchContent ? "Search chats and messages" : "Search conversations"} className="h-10 rounded-full border-white/80 bg-white/80 pl-11 text-sm shadow-sm dark:border-border dark:bg-card" />
+            placeholder={t(searchContent ? "searchChats" : "searchConversations")} className="h-10 rounded-full border-white/80 bg-white/80 pl-11 text-sm shadow-sm dark:border-border dark:bg-card" />
         </div>
       </div>
 
       {/* List */}
       <div className="radha-scroll flex-1 overflow-y-auto px-3 pb-2">
         {filtered.length === 0 && (
-          <p className="px-2 py-8 text-center text-xs text-muted-foreground">{query.trim() ? "No chats match your search." : "No conversations yet."}</p>
+          <p className="px-2 py-8 text-center text-xs text-muted-foreground">{t(query.trim() ? "noMatch" : "noConversations")}</p>
         )}
         {Object.entries(groups).map(([label, items]) =>
           items.length ? (
             <div key={label} className="mb-4">
               <p className="flex items-center gap-2 px-3 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/70">
-                <GroupIcon label={label} /> {label}
+                <GroupIcon label={label} /> {t(GROUP_KEYS[label])}
               </p>
               {items.map((c) => (
                 <div key={c.id} data-testid={`conversation-item-${c.id}`}
@@ -169,36 +174,40 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">Signed in as <span className="font-medium text-foreground">{user?.email}</span></div>
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">{t.parts("signedInAs", { email: <span key="e" className="font-medium text-foreground">{user?.email}</span> })}</div>
             <DropdownMenuSeparator />
             <DropdownMenuItem data-testid="menu-memory" onClick={() => setMemoryOpen(true)}>
-              <Brain className="mr-2 h-4 w-4" /> Memory
+              <Brain className="mr-2 h-4 w-4" /> {t("memory")}
             </DropdownMenuItem>
             <DropdownMenuItem data-testid="menu-help" onClick={() => navigate("/help")}>
-              <LifeBuoy className="mr-2 h-4 w-4" /> Help & feedback
+              <LifeBuoy className="mr-2 h-4 w-4" /> {t("helpFeedback")}
+            </DropdownMenuItem>
+            <DropdownMenuItem data-testid="menu-settings" onClick={() => setSettingsOpen(true)}>
+              <Settings className="mr-2 h-4 w-4" /> {t("settings")}
             </DropdownMenuItem>
             <DropdownMenuItem data-testid="menu-theme-toggle" onClick={() => setTheme(dark ? "light" : "dark")}>
-              {dark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />} {dark ? "Light theme" : "Dark theme"}
+              {dark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />} {t(dark ? "lightTheme" : "darkTheme")}
             </DropdownMenuItem>
             <DropdownMenuItem data-testid="user-logout-button" onClick={logout} className="text-destructive focus:text-destructive">
-              <LogOut className="mr-2 h-4 w-4" /> Log out
+              <LogOut className="mr-2 h-4 w-4" /> {t("logout")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       <MemoryDialog open={memoryOpen} onOpenChange={setMemoryOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete conversation?</AlertDialogTitle>
-            <AlertDialogDescription>This permanently removes the conversation and all of its messages. This cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle>{t("deleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteBody")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction data-testid="confirm-delete-conversation-button" onClick={() => { onDelete(deleteId); setDeleteId(null); }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{t("delete")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
