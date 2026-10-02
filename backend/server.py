@@ -48,6 +48,7 @@ import counsellor
 import help_center
 import writer
 import limits
+import languages
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -189,6 +190,7 @@ def public_user(doc: dict) -> dict:
         "id": doc["id"],
         "email": doc["email"],
         "name": doc["name"],
+        "language": languages.normalize(doc.get("language")),
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
     }
@@ -371,6 +373,21 @@ async def logout():
 
 @api.get("/auth/me")
 async def me(user_id: str = Depends(current_user_id)):
+    doc = await db.users.find_one({"id": user_id})
+    if not doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    return public_user(doc)
+
+
+class LanguageIn(BaseModel):
+    language: str
+
+
+@api.put("/auth/language")
+async def set_language(body: LanguageIn, user_id: str = Depends(current_user_id)):
+    if body.language not in languages.LANGUAGES:
+        raise HTTPException(status_code=400, detail="That language isn't available.")
+    await db.users.update_one({"id": user_id}, {"$set": {"language": body.language, "updatedAt": now_iso()}})
     doc = await db.users.find_one({"id": user_id})
     if not doc:
         raise HTTPException(status_code=401, detail="User not found")
@@ -757,6 +774,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         remembered = await memory.prompt_section(db, user_id, project_id)
         if remembered:
             system_parts.append(remembered)
+        owner = await db.users.find_one({"id": user_id}, {"language": 1})
+        lang_line = languages.prompt_line((owner or {}).get("language"))
+        if lang_line:
+            system_parts.append(lang_line)
 
     # Project instructions.
     if project_id:

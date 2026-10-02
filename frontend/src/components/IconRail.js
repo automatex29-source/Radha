@@ -2,15 +2,16 @@ import { useNavigate, useLocation } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
 import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy, FileText } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
+import { useT } from "@/lib/i18n";
 
 const ITEMS = [
-  { icon: MessageSquare, label: "Chat", to: "/", match: (p) => p === "/" },
-  { icon: HeartHandshake, label: "Counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
-  { icon: FolderKanban, label: "Projects", to: "/projects", match: (p) => p.startsWith("/projects") },
-  { icon: AppWindow, label: "Apps", to: "/apps", match: (p) => p.startsWith("/apps") },
-  { icon: FileText, label: "Docs", to: "/docs", match: (p) => p.startsWith("/docs") },
-  { icon: Presentation, label: "Decks", to: "/decks", match: (p) => p.startsWith("/decks") },
-  { icon: Workflow, label: "Automations", short: "Automate", to: "/automations", match: (p) => p.startsWith("/automations") },
+  { icon: MessageSquare, label: "Chat", key: "chat", to: "/", match: (p) => p === "/" },
+  { icon: HeartHandshake, label: "Counsellor", key: "counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
+  { icon: FolderKanban, label: "Projects", key: "projects", to: "/projects", match: (p) => p.startsWith("/projects") },
+  { icon: AppWindow, label: "Apps", key: "apps", to: "/apps", match: (p) => p.startsWith("/apps") },
+  { icon: FileText, label: "Docs", key: "docs", to: "/docs", match: (p) => p.startsWith("/docs") },
+  { icon: Presentation, label: "Decks", key: "decks", to: "/decks", match: (p) => p.startsWith("/decks") },
+  { icon: Workflow, label: "Automations", key: "automations", short: "automate", to: "/automations", match: (p) => p.startsWith("/automations") },
 ];
 
 /** Side rail on tablets and desktops; a bottom tab bar on phones (unless mobileBar is false).
@@ -18,6 +19,7 @@ const ITEMS = [
 export default function IconRail({ mobileBar = true }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const t = useT();
 
   return (
     <>
@@ -28,7 +30,7 @@ export default function IconRail({ mobileBar = true }) {
             const active = it.match(pathname);
             return (
               <button key={it.to} onClick={() => navigate(it.to)} data-testid={`nav-${it.label.toLowerCase()}`}
-                title={it.label}
+                title={t(it.key)}
                 className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
                   active ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
                     : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
@@ -38,7 +40,7 @@ export default function IconRail({ mobileBar = true }) {
             );
           })}
         </nav>
-        <button onClick={() => navigate("/help")} data-testid="nav-help" title="Help Center" aria-label="Help Center"
+        <button onClick={() => navigate("/help")} data-testid="nav-help" title={t("helpCenter")} aria-label={t("helpCenter")}
           className={`mt-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
             pathname.startsWith("/help") ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
               : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
@@ -62,7 +64,7 @@ export default function IconRail({ mobileBar = true }) {
                 <span className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${active ? "bg-surface-strong" : ""}`}>
                   <it.icon className="h-5 w-5" />
                 </span>
-                <span className="max-w-full truncate px-0.5">{it.short || it.label}</span>
+                <span className="max-w-full truncate px-0.5">{t(it.short || it.key)}</span>
               </button>
             );
           })}
