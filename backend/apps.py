@@ -39,6 +39,7 @@ from auth import JWT_ALGORITHM, _secret, decode_token, get_user_id_from_request
 from agent import Tool, ToolOutput, sandbox
 from agent import browser as agent_browser
 import appdata
+import site_images
 import github_push
 
 router = APIRouter(prefix="/api")
@@ -163,8 +164,14 @@ DESIGN_GUIDE = (
     "tile buttons; dialogs use modal.open > modal-box. Add body class dark for a dark theme. Add Tailwind (<script src=\"https://cdn.tailwindcss.com\">"
     "</script>) classes only for extra tweaks, and Lucide icons if wanted (<script src=\"https://unpkg.com/lucide@latest\">"
     "</script>, <i data-lucide=\"cake\"></i>, then lucide.createIcons()).\n"
-    "- Use real photos, never empty boxes: https://loremflickr.com/800/600/cake,chocolate?lock=1 (one or two English "
-    "keywords for what the picture shows, a different lock number for each picture).\n"
+    "- Graphics: use pictures made for this site, never empty boxes or grey placeholders: "
+    "<img src=\"https://krish-image.invalid/chocolate-truffle-cake-on-marble-table-soft-light.jpg?w=800&h=600\" "
+    "alt=\"...\"> (describe exactly what the picture shows, words joined by dashes, in English; w and h are the size "
+    "it is shown at). Krish AI makes each picture. They work in CSS too, e.g. a hero-image background. Faces for "
+    "reviews and teams: https://i.pravatar.cc/120?img=12 (img 1 to 70). Icons: Lucide, or an emoji in an icon tile. "
+    "Add depth: blob top-right / blob bottom-left shapes (inside a relative or hero element), bg-mesh, bg-dots or "
+    "bg-grid backgrounds, glass cards over photos, glow, float, shine, zoom on hover, and reveal on sections so they "
+    "animate in on scroll.\n"
     "- Make it look like a modern, premium product: a clear hierarchy with a proper header, generous spacing, one "
     "accent color over a cohesive palette, soft gradients, rounded-2xl cards with subtle borders and shadows, "
     "hover, focus and active states, smooth transitions, friendly empty states and toasts instead of alert().\n"
@@ -351,8 +358,19 @@ async def restore(app_id: str, commit_id: str, author: str = "You") -> Optional[
     return await commit(app_id, f"Restore version {commit_id}: {target['message']}"[:200], author)
 
 
+def public_origin() -> str:
+    """This server's public address (Render sets RENDER_EXTERNAL_URL), for links in files that leave it."""
+    return (os.environ.get("PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+
+
+def portable(files: Dict[str, str]) -> Dict[str, str]:
+    """Files as they should leave Krish AI (ZIP, GitHub): AI picture links point at this server."""
+    origin = public_origin()
+    return {p: site_images.rewrite(c, origin) if origin else c for p, c in files.items()}
+
+
 async def export_zip(app: dict, include_git: bool = True) -> bytes:
-    working = await snapshot(app["id"])
+    working = portable(await snapshot(app["id"]))
     workdir = tempfile.mkdtemp(prefix="radha-export-")
     try:
         if include_git:
@@ -566,6 +584,8 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
     ctype = mimetypes.guess_type(path)[0] or "text/plain"
     if path.endswith((".js", ".mjs")):
         ctype = "text/javascript"
+    if ctype in ("text/html", "text/css", "text/javascript"):
+        content = site_images.rewrite(content)  # AI pictures (krish-image.invalid links) come from this server
     if ctype == "text/html":
         inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
         idx = content.lower().find("<head>")
@@ -1125,7 +1145,7 @@ async def push_to_github(app_id: str, body: GitHubIn, user_id: str = Depends(cur
     head = await head_commit(app_id)
     message = f"{app['name']}: {head['message']}" if head else f"{app['name']} from Krish AI"
     try:
-        result = await github_push.push(await snapshot(app_id), body.token, body.repo, message, private=body.private)
+        result = await github_push.push(portable(await snapshot(app_id)), body.token, body.repo, message, private=body.private)
     except github_push.PushError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     await db.apps.update_one({"id": app_id}, {"$set": {"github": {"repo": result["repo"], "url": result["url"], "pushedAt": _now()}}})

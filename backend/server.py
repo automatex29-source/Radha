@@ -39,6 +39,7 @@ import vision
 import media
 import preview as previewer
 import apps
+import site_images
 import decks
 import appdata
 import automations
@@ -97,6 +98,7 @@ tool_registry = default_registry()
 storage.init(db)
 apps.init(db)
 appdata.init(db)
+site_images.init(db)
 apps.register_tools(tool_registry)
 
 # The web app owns /docs (the Docs writing space), so FastAPI's API pages live under /api.
@@ -1596,6 +1598,7 @@ async def root():
 app.include_router(api)
 app.include_router(apps.router)
 app.include_router(appdata.router)
+app.include_router(site_images.router)
 decks.init(db, AI_MODEL)
 app.include_router(decks.router)
 writer.init(db, AI_MODEL)
@@ -1669,6 +1672,7 @@ async def startup():
     await apps.ensure_indexes()
     await decks.ensure_indexes()
     await appdata.ensure_indexes()
+    await site_images.ensure_indexes()
     await automations.ensure_indexes()
     if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":
         automations.start_scheduler()
