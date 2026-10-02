@@ -24,7 +24,7 @@ export default function ComposerInput({
   const rec = useRecorder();
   const t = useT();
   const [transcribing, setTranscribing] = useState(false);
-  const canSend = (value.trim() || images.length > 0) && !disabled;
+  const canSend = (value.trim() || images.length > 0 || attachments.some((a) => a.code !== undefined)) && !disabled;
 
   const toggleMic = async () => {
     if (rec.recording) { rec.stop(); return; }

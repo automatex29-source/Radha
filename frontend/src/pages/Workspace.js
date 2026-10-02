@@ -99,6 +99,8 @@ function pickGreeting(name) {
   return { hello: name ? hello.replace("{name}", name) : hello.replace(/,? \{name\}/, ""), lead, highlight, tagline: pick(TAGLINES) };
 }
 
+const CODE_FILE_RE = /\.(html?|css|m?js|jsx)$/i;
+
 export default function Workspace({ mode = null }) {
   const counselling = mode === "counsellor";
   const t = useT();
@@ -175,7 +177,7 @@ export default function Workspace({ mode = null }) {
   useEffect(() => { scrollToBottom(); }, [messages, streamText, scrollToBottom]);
 
   // A reply that builds something opens the side panel on its own: on a computer as soon as the first
-  // file is written, on a phone (where the panel is full screen) once the reply is finished.
+  // file is written, on a phone (where the panel is full screen) or for a ready reply (your own code) once it is finished.
   const streamHasCode = useMemo(() => streaming && extractFiles(streamText, true).length > 0, [streaming, streamText]);
   const phone = () => window.matchMedia?.("(max-width: 767px)").matches;
   const autoOpened = useRef(false);
@@ -187,7 +189,7 @@ export default function Workspace({ mode = null }) {
     () => [...messages].reverse().find((m) => m.role === "assistant" && extractFiles(m.content).length),
     [messages]);
   useEffect(() => {
-    if (!streaming && autoOpened.current === false && latestCode && phone() && latestCode.id.startsWith("ai-")) {
+    if (!streaming && autoOpened.current === false && latestCode && latestCode.id.startsWith("ai-")) {
       autoOpened.current = true;
       setCodePanel("live");
     }
@@ -461,6 +463,13 @@ export default function Workspace({ mode = null }) {
     // Photos the AI can look at directly; every other file (HEIC, SVG, HTML, code, ZIP...) is read on the server.
     if (/^image\/(png|jpe?g|webp|gif)$/.test(file.type || "")) return attachImage(file);
     if (/^video\/(mp4|webm|quicktime|x-m4v)$/.test(file.type || "")) return attachVideo(file);
+    // Web code files (HTML, CSS, JS) go with the message as they are, so Krish shows them exactly as given.
+    if (CODE_FILE_RE.test(file.name || "") && file.size < 400000) {
+      const code = await file.text();
+      setAttachments((a) => [...a.filter((x) => x.filename !== file.name), { id: `code-${Date.now()}-${file.name}`, filename: file.name, status: "ready", code }]);
+      toast.success(`${file.name} attached`);
+      return;
+    }
     setUploading(true);
     try {
       const convId = await ensureConversation();
@@ -479,7 +488,9 @@ export default function Workspace({ mode = null }) {
   };
 
   const removeAttachment = async (fid) => {
-    try { await api.delete(`/files/${fid}`); } catch { /* ignore */ }
+    if (!String(fid).startsWith("code-")) {
+      try { await api.delete(`/files/${fid}`); } catch { /* ignore */ }
+    }
     setAttachments((a) => a.filter((x) => x.id !== fid));
   };
 
@@ -493,7 +504,12 @@ export default function Workspace({ mode = null }) {
       const times = images.filter((i) => i.videoGroup?.id === g.id).map((i) => `${i.time.toFixed(1)}s`);
       return `[Video attached: “${g.name}” (${g.duration.toFixed(1)}s). Its ${times.length} frames below were sampled at ${times.join(", ")}.]`;
     });
-    const content = [...videoNotes, typed].join("\n\n").trim();
+    const codeFiles = composer ? attachments.filter((a) => a.code !== undefined) : [];
+    const codeBlocks = codeFiles.map((f) => {
+      const fence = f.code.includes("```") ? "````" : "```";
+      return `${fence}${f.filename.split(".").pop().toLowerCase()} ${f.filename}\n${f.code.replace(/\s+$/, "")}\n${fence}`;
+    });
+    const content = [...videoNotes, typed, ...codeBlocks].join("\n\n").trim();
     if (!content || streaming) return "";
 
     let convId;
@@ -506,7 +522,7 @@ export default function Workspace({ mode = null }) {
 
     const imageIds = images.map((i) => i.id);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
-    if (composer) { setInput(""); setPendingImages([]); }
+    if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
     return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, voice, voiceLang }, convId, onText);
   };
 

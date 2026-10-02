@@ -41,6 +41,7 @@ import media
 import preview as previewer
 import apps
 import site_images
+import appcloud
 import decks
 import appdata
 import automations
@@ -100,6 +101,7 @@ storage.init(db)
 apps.init(db)
 appdata.init(db)
 site_images.init(db)
+appcloud.init(db)
 apps.register_tools(tool_registry)
 
 # The web app owns /docs (the Docs writing space), so FastAPI's API pages live under /api.
@@ -528,7 +530,10 @@ SYSTEM_PROMPT = (
     "Say in one line what you built before "
     "the files. Krish AI shows the user a live preview, a Download ZIP button and an Open in App Builder button for "
     "those files automatically. Never output base64, never pretend to attach or encode a ZIP or any other archive, "
-    "and never tell the user to decode anything.\n\n" + apps.DESIGN_GUIDE
+    "and never tell the user to decode anything. When the user gives you their own code or file and asks for a "
+    "change, keep everything else exactly as they wrote it (structure, styles, colors, wording) and change only "
+    "what they asked; return each changed file in full. The design guide below is only for things you design "
+    "yourself.\n\n" + apps.DESIGN_GUIDE
 )
 
 
@@ -995,6 +1000,10 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
             raise HTTPException(status_code=400, detail=str(exc))
         if pasted:
             content, ready_reply = pasted
+    elif conv.get("mode") != counsellor.MODE and not body.images:
+        # Code pasted or attached in the chat is shown exactly as given: no AI rewrite when the user only
+        # wants to see it. With instructions ("make the button red"), the AI works on it as usual.
+        ready_reply = show_as_is(body.content)
 
     user_msg = {
         "id": str(uuid.uuid4()),
@@ -1011,6 +1020,9 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
     existing_count = await db.messages.count_documents({"conversationId": conv_id})
     if existing_count == 1 and (conv["title"] in ("New conversation", "", None)):
         auto_title = body.content.strip().split("\n")[0][:60]
+        if auto_title.startswith(("<", "```")):  # pasted code: the page's own title, else a plain name
+            found = re.search(r"<title>([^<]{1,60})</title>", body.content, re.IGNORECASE)
+            auto_title = found.group(1).strip() if found and found.group(1).strip() else "My code"
         await db.conversations.update_one({"id": conv_id}, {"$set": {"title": auto_title}})
 
     # Learn lasting facts about the user in the background (see memory.py).
@@ -1039,6 +1051,36 @@ async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
             and not await limits.is_pro(db, user_id):
         model = AI_MODEL
     return model
+
+
+_SHOW_WORDS = set("""show preview run display open render view see test check this it my our the a an of in
+code html css js page file files website site app please pls plz just simply only same exactly as is it's its here
+me give output result how looks look like kindly can you do what i want to with without changes change any no
+""".split())
+_LANGS = {"htm": "html", "mjs": "js", "cjs": "js", "jsx": "jsx", "tsx": "tsx", "md": "markdown"}
+
+
+def show_as_is(content: str) -> Optional[str]:
+    """A ready reply that shows the user's own code unchanged, or None when the AI should answer.
+
+    Used when the message is pasted code (a whole HTML page, an HTML snippet, or fenced blocks that name
+    their files) with no instructions beyond "show this". The reply repeats the files verbatim as named
+    code blocks, so the chat's side panel previews them exactly as given.
+    """
+    files, rest = apps.split_pasted_code(content)
+    text = (content or "").strip()
+    if not files and text.startswith("<") and re.search(r"</[A-Za-z][\w-]*>\s*$", text):
+        files, rest = {"index.html": text}, ""
+    if not files or any(w not in _SHOW_WORDS for w in re.findall(r"[a-z']+", (rest or "").lower())):
+        return None
+    blocks = []
+    for path, code in files.items():
+        ext = path.rsplit(".", 1)[-1].lower()
+        fence = "````" if "```" in code else "```"
+        blocks.append(f"{fence}{_LANGS.get(ext, ext)} {path}\n{code.rstrip()}\n{fence}")
+    names = ", ".join(files)
+    return (f"Here is your {names}, shown exactly as you gave it, with nothing changed. "
+            "Tell me if you want any changes.\n\n" + "\n\n".join(blocks))
 
 
 async def _canned_turn(conv_id: str, text: str):
@@ -1629,6 +1671,8 @@ app.include_router(api)
 app.include_router(apps.router)
 app.include_router(appdata.router)
 app.include_router(site_images.router)
+app.include_router(appcloud.router)
+app.include_router(appcloud.owner_router)
 decks.init(db, AI_MODEL)
 app.include_router(decks.router)
 writer.init(db, AI_MODEL)
@@ -1703,6 +1747,7 @@ async def startup():
     await decks.ensure_indexes()
     await appdata.ensure_indexes()
     await site_images.ensure_indexes()
+    await appcloud.ensure_indexes()
     await automations.ensure_indexes()
     if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":
         automations.start_scheduler()
