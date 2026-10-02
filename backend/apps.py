@@ -25,6 +25,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from urllib.parse import unquote, urlparse
@@ -145,9 +146,19 @@ _load_templates()
 # Shared by plain chat and the app builder so every generated app meets the same bar.
 DESIGN_GUIDE = (
     "Quality bar for new apps you design yourself (work like a senior product designer and engineer):\n"
-    "- Style with Tailwind CSS (<script src=\"https://cdn.tailwindcss.com\"></script>), the Inter font from Google "
-    "Fonts, and Lucide icons (<script src=\"https://unpkg.com/lucide@latest\"></script>, <i data-lucide=\"plus\"></i>, "
-    "and call lucide.createIcons() after every render). Keep style.css only for what Tailwind can't do.\n"
+    "- Style it with Krish UI, the built-in design kit: put <link rel=\"stylesheet\" href=\"krish-ui.css\"> in the "
+    "head (Krish AI adds that file itself: never write or edit it) and set the brand colours once with "
+    "<style>:root{--accent:#db2777;--accent-2:#f97316}</style>. It makes plain HTML look premium, so write little CSS. "
+    "Its classes: nav (sticky header) > container with brand, nav-links and a btn; hero (eyebrow, h1, p, actions; "
+    "grid-2 to put a photo beside the text; hero-dark or hero-image for colour); section > container with section-title "
+    "(eyebrow, h2, p); section-alt for a tinted band; grid-2, grid-3, grid-4; card (an img first in it becomes its "
+    "cover photo; h3, p, row with price and a button; badge, stars, icon); btn, btn-outline, btn-light, btn-sm, btn-lg "
+    "(a plain <button> is already styled); cta (gradient call-to-action box); footer; form, chip, toast (add class "
+    "show), gradient-text, lead, muted, center, fade-up. Add Tailwind (<script src=\"https://cdn.tailwindcss.com\">"
+    "</script>) classes only for extra tweaks, and Lucide icons if wanted (<script src=\"https://unpkg.com/lucide@latest\">"
+    "</script>, <i data-lucide=\"cake\"></i>, then lucide.createIcons()).\n"
+    "- Use real photos, never empty boxes: https://loremflickr.com/800/600/cake,chocolate?lock=1 (one or two English "
+    "keywords for what the picture shows, a different lock number for each picture).\n"
     "- Make it look like a modern, premium product: a clear hierarchy with a proper header, generous spacing, one "
     "accent color over a cohesive palette, soft gradients, rounded-2xl cards with subtle borders and shadows, "
     "hover, focus and active states, smooth transitions, friendly empty states and toasts instead of alert().\n"
@@ -226,8 +237,26 @@ async def write_file(app_id: str, path: str, content: str):
         raise ValueError("App is too large")
     await db.app_files.update_one({"appId": app_id, "path": path},
                                   {"$set": {"content": content, "updatedAt": _now()}}, upsert=True)
+    await _add_kit(app_id, path, content)
     await db.apps.update_one({"id": app_id}, {"$set": {"updatedAt": _now()}})
     return path
+
+
+KIT_NAME = "krish-ui.css"
+KIT_CSS = (Path(__file__).parent / "app_kit" / KIT_NAME).read_text(encoding="utf-8")
+_KIT_REF_RE = re.compile(r"""href\s*=\s*["']([^"']*krish-ui\.css)["']""", re.IGNORECASE)
+
+
+async def _add_kit(app_id: str, path: str, content: str) -> None:
+    """A page that links the built-in design kit (krish-ui.css) gets the file next to it, so the preview,
+    the published site, the ZIP and GitHub all have it."""
+    if not path.endswith((".html", ".htm")):
+        return
+    for ref in _KIT_REF_RE.findall(content):
+        target = _resolve(path, ref)
+        if target and not await db.app_files.find_one({"appId": app_id, "path": target}, {"_id": 1}):
+            await db.app_files.update_one({"appId": app_id, "path": target},
+                                          {"$set": {"content": KIT_CSS, "updatedAt": _now()}}, upsert=True)
 
 
 async def delete_file(app_id: str, path: str) -> bool:

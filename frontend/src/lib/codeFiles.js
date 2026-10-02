@@ -1,3 +1,5 @@
+import KIT_CSS from "./krish-ui.css?raw";
+
 // Turns the code blocks in an AI reply into project files, a previewable page and a ZIP.
 
 const FILE_RE = /([\w\-./]*[\w-]\.(?:html?|s?css|m?js|cjs|jsx|tsx?|json|md|py|svg|txt|xml|csv|tsv|ya?ml|toml|ini|env|sql|sh|bat|java|kt|c|h|cpp|hpp|cs|go|rs|rb|php|swift|dart|vue|r|lua))\b/i;
@@ -56,6 +58,13 @@ export function extractFiles(markdown, partial = false) {
   return files;
 }
 
+/** The files plus the built-in design kit (krish-ui.css) when a page links it and the reply didn't include it. */
+export function withKit(files) {
+  const linked = files.some((f) => /\.html?$/i.test(f.path) && /href=["'](?:\.\/)?krish-ui\.css["']/i.test(f.content));
+  if (!linked || files.some((f) => f.path === "krish-ui.css")) return files;
+  return [...files, { path: "krish-ui.css", lang: "css", content: KIT_CSS }];
+}
+
 /** The reply's text without its file code blocks (the side panel shows those), e.g. "Here is your site." */
 export function stripFileBlocks(markdown, partial = false) {
   let text = markdown || "";
@@ -77,6 +86,7 @@ const STORAGE_SHIM = `<script>(function(){try{window.localStorage.getItem("x")}c
 
 /** One self-contained HTML page with the project's CSS and JS files inlined. */
 export function buildPreview(files) {
+  files = withKit(files);
   const entry = entryFile(files);
   if (!entry) return null;
   let html = entry.content;
