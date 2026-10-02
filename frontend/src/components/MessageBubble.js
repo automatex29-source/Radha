@@ -109,6 +109,11 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
         </div>
+        {message.stopped && !streaming && (
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="reply-stopped-note">
+            <Square className="h-2.5 w-2.5 fill-current" /> You stopped this reply
+          </p>
+        )}
         {codeProject && <CodeProject content={message.content || ""} streaming={streaming} onOpen={onOpenCode} active={codeActive} />}
         <MediaGallery items={message.media} onOpen={onOpenMedia} />
         {message.sources?.length > 0 && (

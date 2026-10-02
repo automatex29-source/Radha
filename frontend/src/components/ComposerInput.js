@@ -50,6 +50,14 @@ export default function ComposerInput({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [value]);
 
+  // Esc stops a reply that is being written, like ChatGPT and Claude.
+  useEffect(() => {
+    if (!streaming || !onStop) return undefined;
+    const onEsc = (e) => { if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("[role=dialog]")) onStop(); };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [streaming, onStop]);
+
   const onKeyDown = (e) => {
     // On phones the keyboard's return key adds a new line; the send button sends.
     if (e.key === "Enter" && !e.shiftKey && !phoneKeyboard()) {
@@ -163,8 +171,9 @@ export default function ComposerInput({
             </span>
           </div>
           {streaming ? (
-            <Button size="icon" variant="secondary" onClick={onStop} data-testid="stop-generation-button" className="h-11 w-11 rounded-full">
-              <Square className="h-4 w-4" />
+            <Button size="icon" onClick={onStop} onMouseDown={(e) => e.preventDefault()} data-testid="stop-generation-button" title="Stop (Esc)" aria-label="Stop the reply"
+              className="h-11 w-11 rounded-full bg-foreground text-background shadow-md transition-transform hover:scale-105 hover:bg-foreground/90 active:scale-95">
+              <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
           ) : (
             <Button size="icon" onClick={onSend} disabled={!canSend} data-testid="send-message-button"
