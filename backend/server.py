@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import asyncio
+import anyio
 import functools
 import hashlib
 import os
@@ -255,6 +256,7 @@ def public_message(doc: dict) -> dict:
         "images": doc.get("images") or [],
         "steps": doc.get("steps") or [],
         "media": doc.get("media") or [],
+        "stopped": bool(doc.get("stopped")),
         "createdAt": doc["createdAt"],
     }
 
@@ -818,6 +820,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
 
     full, steps, produced = [], [], []
+    stopped = False  # the user pressed Stop (the browser closed the stream) before the reply finished
     try:
         if use_runtime:
             if not agent_llm.configured(model):
@@ -850,6 +853,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             async for delta in model_router.stream(ai_request):
                 full.append(delta)
                 yield f"data: {_sse_json(delta)}\n\n"
+    except (asyncio.CancelledError, GeneratorExit):
+        stopped = True  # also cancels the model call and any running tool
+        raise
     except Exception as exc:  # surface provider errors to the client
         logger.exception("AI stream failed")
         yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"
@@ -868,6 +874,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     finally:
         content = "".join(full).strip()
         if content or steps:
+            if stopped:
+                for step in steps:
+                    if step["status"] == "running":
+                        step.update(status="stopped", summary="Stopped")
             assistant_msg = {
                 "id": str(uuid.uuid4()),
                 "conversationId": conv_id,
@@ -877,19 +887,39 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 "sources": sources or None,
                 "steps": steps or None,
                 "media": produced or None,
+                "stopped": stopped or None,
                 "createdAt": now_iso(),
             }
-            await db.messages.insert_one(assistant_msg)
-            await db.conversations.update_one(
-                {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": model}}
-            )
-            yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"
+            # Shielded, so the part written before Stop is kept even though the turn is being cancelled.
+            with anyio.CancelScope(shield=True):
+                await db.messages.insert_one(assistant_msg)
+                await db.conversations.update_one(
+                    {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": model}}
+                )
+            if not stopped:
+                yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"
+
+
+class _TurnResponse(StreamingResponse):
+    """A reply stream that is always closed, so a stopped turn saves what it wrote.
+
+    When the browser stops reading, Starlette cancels the response; if that lands while the reply is
+    waiting to be sent, the generator is left open and its cleanup would only run whenever it is
+    garbage-collected. Closing it here runs it right away.
+    """
+
+    async def stream_response(self, send) -> None:
+        try:
+            await super().stream_response(send)
+        finally:
+            with anyio.CancelScope(shield=True):
+                await self.body_iterator.aclose()
 
 
 
 def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False,
                      study: bool = False) -> StreamingResponse:
-    return StreamingResponse(
+    return _TurnResponse(
         run_turn(conv_id, model, agent, think=think, study=study),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},

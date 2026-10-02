@@ -2,7 +2,7 @@ import { useState } from "react";
 import { mediaUrl } from "@/lib/api";
 import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, CheckCircle2, XCircle, ChevronRight, FileDown,
   FileSpreadsheet, Presentation, FileText, Clapperboard, MousePointerClick, Eye, FilePen, FileSearch, FileX,
-  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree } from "lucide-react";
+  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree, CircleStop } from "lucide-react";
 import { fileKind, KIND_META } from "@/components/PreviewPanel";
 
 const ICONS = {
@@ -38,6 +38,7 @@ function Step({ step }) {
   const Icon = ICONS[step.name] || Wrench;
   const running = step.status === "running";
   const failed = step.status === "error";
+  const stopped = step.status === "stopped";
   return (
     <div className="rounded-lg border border-border bg-sunken" data-testid={`tool-step-${step.name}`}>
       <button onClick={() => setOpen((o) => !o)} disabled={running}
@@ -47,6 +48,7 @@ function Step({ step }) {
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">{argPreview(step)}</span>
         {running ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
           : failed ? <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+          : stopped ? <CircleStop className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />}
         {!running && <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />}
       </button>

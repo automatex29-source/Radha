@@ -182,6 +182,8 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
     } finally {
       setStreaming(false);
       abortRef.current = null;
+      // After Stop the server is still saving the part already written; give it a moment.
+      if (controller.signal.aborted) await new Promise((r) => setTimeout(r, 800));
       await load().catch(() => {});
       setText("");
       setSteps([]);
@@ -220,7 +222,8 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
             className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-sm focus:outline-none" />
           <div className="flex justify-end">
             {streaming ? (
-              <Button size="icon" variant="secondary" onClick={() => abortRef.current?.abort()} className="h-8 w-8"><Square className="h-3.5 w-3.5" /></Button>
+              <Button size="icon" onClick={() => abortRef.current?.abort()} title="Stop" aria-label="Stop the reply" data-testid="builder-stop"
+                className="h-10 w-10 rounded-full bg-foreground text-background hover:bg-foreground/90 sm:h-8 sm:w-8"><Square className="h-3 w-3 fill-current" /></Button>
             ) : (
               <Button size="icon" onClick={send} disabled={!input.trim()} data-testid="builder-send" className="h-10 w-10 sm:h-8 sm:w-8"><Send className="h-3.5 w-3.5" /></Button>
             )}

@@ -369,21 +369,31 @@ export default function Workspace({ mode = null }) {
     } catch (e) {
       if (e.name !== "AbortError") toast.error(e.message || "Something went wrong");
     } finally {
+      const stopped = controller.signal.aborted;
       abortRef.current = null;
       setStreaming(false);
       const finalText = streamTextRef.current;
-      if (finalText || streamStepsRef.current.length) {
-        setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model,
+      // A stopped reply keeps what was written so far (the server saves the same part).
+      const steps = stopped ? streamStepsRef.current.map((s) => (s.status === "running" ? { ...s, status: "stopped", summary: "Stopped" } : s))
+        : streamStepsRef.current;
+      if (finalText || steps.length) {
+        setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model, stopped,
           sources: streamSourcesRef.current.length ? streamSourcesRef.current : null,
-          steps: streamStepsRef.current, media: streamStepsRef.current.flatMap((s) => s.media || []) }]);
+          steps, media: steps.flatMap((s) => s.media || []) }]);
       }
       setStreamText("");
       setStreamSources([]);
       setStreamSteps([]);
-      // Sync ordering/titles/ids from server.
+      // Sync ordering/titles/ids from server. After Stop the server needs a moment to save the
+      // part already written, so wait for it rather than replacing the reply with nothing.
       try {
-        const { data } = await api.get(`/conversations/${convId}`);
-        setMessages(data.messages);
+        for (let tries = 0; ; tries++) {
+          const { data } = await api.get(`/conversations/${convId}`);
+          const saved = data.messages[data.messages.length - 1]?.role === "assistant";
+          if (saved || !(stopped && (finalText || steps.length))) { setMessages(data.messages); break; }
+          if (tries >= 5) break; // keep the local copy
+          await new Promise((r) => setTimeout(r, 400));
+        }
       } catch { /* keep local */ }
       loadConversations();
     }
