@@ -14,9 +14,12 @@ function cleanName(name) {
   return n && !n.split("/").includes("..") ? n : null;
 }
 
-/** Files from the fenced code blocks of a markdown reply: [{ path, lang, content }]. */
-export function extractFiles(markdown) {
+/** Files from the fenced code blocks of a markdown reply: [{ path, lang, content }].
+ * `partial` (while the reply is still streaming) also returns the file being written, before its block closes. */
+export function extractFiles(markdown, partial = false) {
+  if (partial && ((markdown || "").match(/(^|\n)[ \t]*```/g) || []).length % 2) markdown += "\n```";
   const files = [];
+  const spans = [];
   const seen = new Set();
   const re = /(^|\n)[ \t]*```([^\n`]*)\n([\s\S]*?)\n[ \t]*```/g;
   let m;
@@ -39,15 +42,26 @@ export function extractFiles(markdown) {
     if (!name && DEFAULT_NAMES[lang]) name = DEFAULT_NAMES[lang];
     name = name && cleanName(name);
     if (!name || !content.trim()) continue;
+    const span = [m.index + m[1].length, re.lastIndex];
     if (seen.has(name)) {
       const i = files.findIndex((f) => f.path === name);
-      files[i] = { path: name, lang, content }; // a later block replaces an earlier one
+      files[i] = { path: name, lang, content, span }; // a later block replaces an earlier one
     } else {
       seen.add(name);
-      files.push({ path: name, lang, content });
+      files.push({ path: name, lang, content, span });
     }
+    spans.push(span);
   }
+  files.allSpans = spans;
   return files;
+}
+
+/** The reply's text without its file code blocks (the side panel shows those), e.g. "Here is your site." */
+export function stripFileBlocks(markdown, partial = false) {
+  let text = markdown || "";
+  const spans = extractFiles(text, partial).allSpans || [];
+  for (const [a, b] of [...spans].sort((x, y) => y[0] - x[0])) text = text.slice(0, a) + text.slice(b);
+  return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export function entryFile(files) {
