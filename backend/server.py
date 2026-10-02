@@ -169,6 +169,8 @@ class MessageIn(BaseModel):
     agent: bool = False
     think: bool = False  # the Think button: reason longer and check the answer
     study: bool = False  # Study mode: teach step by step and quiz instead of just answering
+    voice: bool = False  # sent from voice mode: the reply is spoken aloud
+    voiceLang: Optional[str] = Field(default=None, max_length=8)
 
 
 class RegenerateIn(BaseModel):
@@ -181,7 +183,7 @@ class RegenerateIn(BaseModel):
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     voice: Optional[str] = None
-    lang: Optional[Literal["auto", "hi", "en"]] = None
+    lang: Optional[str] = Field(default=None, max_length=8)
 
 
 def public_user(doc: dict) -> dict:
@@ -537,6 +539,24 @@ THINK_PROMPT = (
     "anything you are unsure of. Still lead with the answer, then the key reasoning."
 )
 
+VOICE_LANG_NAMES = {"hi": "Hindi", "en": "English", "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati",
+                    "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "ur": "Urdu",
+                    "es": "Spanish", "fr": "French", "de": "German", "ar": "Arabic"}
+
+
+def voice_prompt(lang: Optional[str]) -> str:
+    language = VOICE_LANG_NAMES.get(lang or "")
+    reply_in = (f"Always reply in {language}, written in its own script." if language else
+                "Reply in the language the user just spoke, in its own script (Hindi in Devanagari); "
+                "if they mix Hindi and English, mix the same way.")
+    return (
+        "Voice mode is on: the user is talking to you out loud and your reply will be read aloud by a voice. "
+        "Answer like a warm, natural person on a phone call: usually one to three short sentences, the most useful "
+        "part first. Offer to say more instead of giving long lists. Never use markdown, bullet points, tables, "
+        "emoji, links, URLs or code; write numbers and symbols the way they are spoken. " + reply_in
+    )
+
+
 STUDY_PROMPT = (
     "Study mode is on: act as a patient, encouraging tutor for a student in India. Don't just hand over the final "
     "answer. First ask what level they are at if it isn't clear (class, exam such as CBSE, JEE, NEET, UPSC, or "
@@ -727,7 +747,8 @@ def _builder_summary(steps: list) -> str:
 
 
 async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: Optional[str] = None,
-                   max_steps: Optional[int] = None, think: bool = False, study: bool = False):
+                   max_steps: Optional[int] = None, think: bool = False, study: bool = False,
+                   voice: bool = False, voice_lang: Optional[str] = None):
     """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
 
     If the conversation belongs to a project, relevant document chunks (RAG) and
@@ -812,6 +833,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(THINK_PROMPT)
     if extra_system:
         system_parts.append(extra_system)
+    if voice and not app_id:
+        system_parts.append(voice_prompt(voice_lang))
     system_prompt = "\n\n".join(system_parts)
 
     if sources:
@@ -888,9 +911,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
 
 def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False,
-                     study: bool = False) -> StreamingResponse:
+                     study: bool = False, voice: bool = False, voice_lang: Optional[str] = None) -> StreamingResponse:
     return StreamingResponse(
-        run_turn(conv_id, model, agent, think=think, study=study),
+        run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
@@ -945,7 +968,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
     if ready_reply:
         return StreamingResponse(_canned_turn(conv_id, ready_reply), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study)
+    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study,
+                            voice=body.voice, voice_lang=body.voiceLang)
 
 
 async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
@@ -1456,8 +1480,8 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
     try:
-        lang = language if language in ("en", "hi") else None
-        text = await media.transcribe(data, file.filename or "audio.webm", lang)
+        lang = language if language in media.VOICE_LANGUAGES else None
+        text = media.clean_transcript(await media.transcribe(data, file.filename or "audio.webm", lang))
     except media.MediaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:

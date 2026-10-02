@@ -59,3 +59,18 @@ def test_openai_preferred_when_set(fake_openai):
     asyncio.run(media.transcribe(b"audio", "a.webm"))
     call = FakeClient.calls[-1]
     assert call["model"] == media.STT_MODEL and "language" not in call
+
+
+def test_edge_voice_follows_language_or_script():
+    assert media.edge_voice("hello", "ta") == media.EDGE_VOICES["ta"]
+    assert media.edge_voice("नमस्ते दोस्त", "auto") == media.EDGE_VOICES["hi"]
+    assert media.edge_voice("வணக்கம்", None) == media.EDGE_VOICES["ta"]
+    assert media.edge_voice("হ্যালো", None) == media.EDGE_VOICES["bn"]
+    assert media.edge_voice("Hello there", "auto") == media.EDGE_VOICES["en"]
+    assert len(media.VOICE_LANGUAGES) >= 10
+
+
+def test_phantom_transcripts_are_dropped():
+    assert media.clean_transcript(" Thank you. ") == ""
+    assert media.clean_transcript("धन्यवाद") == ""
+    assert media.clean_transcript("Thank you for the help") == "Thank you for the help"

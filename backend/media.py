@@ -279,8 +279,38 @@ async def transcribe(data: bytes, filename: str, language: Optional[str] = None)
 
 
 # Free natural voices (Microsoft Edge's online neural voices, no key) when there's no OpenAI key.
-EDGE_VOICES = {"hi": os.environ.get("EDGE_VOICE_HI", "hi-IN-SwaraNeural"),
-               "en": os.environ.get("EDGE_VOICE_EN", "en-IN-NeerjaNeural")}
+# Voice languages: ISO-639-1 code -> Edge neural voice. Whisper understands all of them.
+EDGE_VOICES = {
+    "hi": os.environ.get("EDGE_VOICE_HI", "hi-IN-SwaraNeural"),
+    "en": os.environ.get("EDGE_VOICE_EN", "en-IN-NeerjaNeural"),
+    "bn": "bn-IN-TanishaaNeural",
+    "mr": "mr-IN-AarohiNeural",
+    "gu": "gu-IN-DhwaniNeural",
+    "ta": "ta-IN-PallaviNeural",
+    "te": "te-IN-ShrutiNeural",
+    "kn": "kn-IN-SapnaNeural",
+    "ml": "ml-IN-SobhanaNeural",
+    "ur": "ur-IN-GulNeural",
+    "es": "es-ES-ElviraNeural",
+    "fr": "fr-FR-DeniseNeural",
+    "de": "de-DE-KatjaNeural",
+    "ar": "ar-SA-ZariyahNeural",
+}
+VOICE_LANGUAGES = tuple(EDGE_VOICES)
+
+# In auto mode, the script a reply is written in picks the voice.
+_SCRIPTS = [("bn", r"[\u0980-\u09FF]"), ("gu", r"[\u0A80-\u0AFF]"), ("ta", r"[\u0B80-\u0BFF]"),
+            ("te", r"[\u0C00-\u0C7F]"), ("kn", r"[\u0C80-\u0CFF]"), ("ml", r"[\u0D00-\u0D7F]"),
+            ("ur", r"[\u0600-\u06FF]"), ("hi", r"[\u0900-\u097F]")]
+
+# Whisper sometimes "hears" these stock phrases in silence or background noise.
+_PHANTOM = {"thank you.", "thank you", "thanks for watching!", "thanks for watching.", "thank you for watching.",
+            "you", ".", "bye.", "धन्यवाद।", "धन्यवाद", "शुक्रिया", "subscribe", "please subscribe."}
+
+
+def clean_transcript(text: str) -> str:
+    text = (text or "").strip()
+    return "" if text.lower() in _PHANTOM else text
 
 
 def edge_available() -> bool:
@@ -298,9 +328,12 @@ def speech_available() -> bool:
 
 
 def edge_voice(text: str, lang: Optional[str] = None) -> str:
-    """Hindi voice for Hindi (or Devanagari text in auto mode), Indian English otherwise."""
-    if lang == "hi" or (lang != "en" and re.search(r"[\u0900-\u097F]", text)):
-        return EDGE_VOICES["hi"]
+    """The chosen language's voice; in auto mode, the voice for the script the text is written in."""
+    if lang in EDGE_VOICES:
+        return EDGE_VOICES[lang]
+    for code, pattern in _SCRIPTS:
+        if re.search(pattern, text):
+            return EDGE_VOICES[code]
     return EDGE_VOICES["en"]
 
 

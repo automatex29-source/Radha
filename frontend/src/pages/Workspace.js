@@ -6,7 +6,7 @@ import IconRail from "@/components/IconRail";
 import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
-import { setServerSpeech, browserSpeechAvailable, unlockSpeech } from "@/lib/voice";
+import { setServerSpeech, browserSpeechAvailable, unlockSpeech, getVoiceLang } from "@/lib/voice";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel from "@/components/CodePanel";
 import { extractFiles } from "@/lib/codeFiles";
@@ -300,7 +300,7 @@ export default function Workspace({ mode = null }) {
     toast.success("Conversation exported");
   };
 
-  const runStream = async (url, body, convId) => {
+  const runStream = async (url, body, convId, onText) => {
     setStreaming(true);
     setStreamText("");
     setStreamSources([]);
@@ -363,6 +363,7 @@ export default function Workspace({ mode = null }) {
           if (dataStr) {
             streamTextRef.current += JSON.parse(dataStr);
             setStreamText(streamTextRef.current);
+            onText?.(streamTextRef.current);
           }
         }
       }
@@ -470,7 +471,7 @@ export default function Workspace({ mode = null }) {
     setAttachments((a) => a.filter((x) => x.id !== fid));
   };
 
-  const sendMessage = async (text) => {
+  const sendMessage = async (text, { voice = false, voiceLang, onText } = {}) => {
     const images = text === undefined ? pendingImages : [];
     const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
     const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
@@ -493,7 +494,7 @@ export default function Workspace({ mode = null }) {
     const imageIds = images.map((i) => i.id);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (text === undefined) { setInput(""); setPendingImages([]); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling }, convId);
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, voice, voiceLang }, convId, onText);
   };
 
   // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
@@ -656,7 +657,8 @@ export default function Workspace({ mode = null }) {
       <ShareDialog open={shareOpen} onOpenChange={setShareOpen} conversation={activeConv}
         onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
       {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
-      {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onUtterance={(t) => sendRef.current(t)} />}
+      {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onCancelReply={stopGeneration}
+        onUtterance={(t, opts) => sendRef.current(t, { ...opts, voice: true, voiceLang: getVoiceLang() })} />}
     </div>
   );
 }
