@@ -29,12 +29,15 @@ export default function ComposerInput({
   const toggleMic = async () => {
     if (rec.recording) { rec.stop(); return; }
     try {
-      const blob = await rec.record();
-      if (!blob) return;
+      // Stops by itself when you finish speaking, then sends what you said (no need to tap Send).
+      const blob = await rec.record({ autoStop: true });
+      if (!blob) { toast.message("I didn't hear anything. Tap the mic and speak."); return; }
       setTranscribing(true);
       const text = await transcribe(blob);
-      if (text) onChange(value ? `${value.trimEnd()} ${text}` : text);
-      else toast.message("Didn't catch that — try again.");
+      if (!text) { toast.message("Didn't catch that — try again."); return; }
+      const full = value ? `${value.trimEnd()} ${text}` : text;
+      onChange(full);
+      if (!streaming && !disabled) onSend(full);
     } catch (e) {
       toast.error(e?.response?.data?.detail || e.message || "Microphone error");
     } finally {
@@ -148,15 +151,17 @@ export default function ComposerInput({
                 title={studyMode ? "Study mode is on: Krish teaches step by step and quizzes you" : "Study mode: learn step by step with quizzes and flashcards"} />
             )}
             <button onClick={toggleMic} disabled={!voiceEnabled || transcribing || disabled} data-testid="composer-mic-button"
-              title={voiceEnabled ? (rec.recording ? "Stop and transcribe" : "Dictate") : voiceHint}
-              className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors sm:h-8 sm:w-8 disabled:opacity-40 ${
-                rec.recording ? "bg-destructive/20 text-destructive" : "text-muted-foreground hover:bg-surface hover:text-foreground"}`}>
+              title={voiceEnabled ? (rec.recording ? "Listening… stop talking and it sends by itself" : "Speak your message: it sends when you stop talking") : voiceHint}
+              aria-label="Speak your message"
+              className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 disabled:opacity-40 ${
+                rec.recording ? "animate-pulse bg-rose-500 text-white shadow-[0_0_0_4px_rgba(244,63,94,0.25)]"
+                  : "bg-indigo-100 text-indigo-600 hover:bg-indigo-200 dark:bg-primary/20 dark:text-brand dark:hover:bg-primary/30"}`}>
               {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
             </button>
             {onVoiceMode && (
               <button onClick={onVoiceMode} disabled={!voiceEnabled || streaming || disabled} data-testid="voice-mode-button"
                 title={voiceEnabled ? "Voice conversation" : voiceHint}
-                className="flex h-10 w-10 items-center justify-center rounded-lg sm:h-8 sm:w-8 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-40">
+                className="flex h-10 w-10 items-center justify-center rounded-full sm:h-8 sm:w-8 bg-violet-100 text-violet-600 transition-colors hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300 dark:hover:bg-violet-500/30 disabled:opacity-40">
                 <AudioLines className="h-4 w-4" />
               </button>
             )}

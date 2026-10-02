@@ -483,8 +483,9 @@ export default function Workspace({ mode = null }) {
     setAttachments((a) => a.filter((x) => x.id !== fid));
   };
 
-  const sendMessage = async (text, { voice = false, voiceLang, onText } = {}) => {
-    const images = text === undefined ? pendingImages : [];
+  // `composer`: sent from the message box (typed, or dictated text), so attached pictures go too.
+  const sendMessage = async (text, { voice = false, voiceLang, onText, composer = text === undefined } = {}) => {
+    const images = composer ? pendingImages : [];
     const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
     const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
     // Tell the model which images are video frames (and when they were taken).
@@ -505,7 +506,7 @@ export default function Workspace({ mode = null }) {
 
     const imageIds = images.map((i) => i.id);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
-    if (text === undefined) { setInput(""); setPendingImages([]); }
+    if (composer) { setInput(""); setPendingImages([]); }
     return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, voice, voiceLang }, convId, onText);
   };
 
@@ -651,7 +652,7 @@ export default function Workspace({ mode = null }) {
             Need urgent help? Tele-MANAS 14416, free 24x7 💛
           </p>
         )}
-        <ComposerInput value={input} onChange={setInput} onSend={() => sendMessage()} onStop={stopGeneration}
+        <ComposerInput value={input} onChange={setInput} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
           streaming={streaming} disabled={loadingConv}
           onAttach={counselling ? undefined : attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
           images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
