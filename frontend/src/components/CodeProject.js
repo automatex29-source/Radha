@@ -5,17 +5,10 @@ import { Download, Eye, EyeOff, FileCode2, Loader2, Maximize2, Minimize2, AppWin
 import { api, formatApiError } from "@/lib/api";
 import { buildPreview, extractFiles, makeZip, projectName } from "@/lib/codeFiles";
 
-/** Under an AI reply that contains code files: live preview, Download ZIP and Open in App Builder. */
-export default function CodeProject({ content, streaming }) {
-  const files = useMemo(() => extractFiles(content), [content]);
-  const html = useMemo(() => (streaming ? null : buildPreview(files)), [files, streaming]);
-  const [open, setOpen] = useState(true);
-  const [big, setBig] = useState(false);
-  const [reload, setReload] = useState(0);
+/** Download ZIP and Open in App Builder for a set of code files. */
+export function useProjectActions(files, content) {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
-
-  if (!files.length) return null;
   const name = projectName(files, content);
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "my-app";
 
@@ -43,8 +36,54 @@ export default function CodeProject({ content, streaming }) {
       setCreating(false);
     }
   };
+  return { name, download, openInBuilder, creating };
+}
 
-  const btn = "flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:border-primary/50 disabled:opacity-50";
+export const projectBtn = "flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:border-primary/50 disabled:opacity-50";
+
+/** In the chat, a reply with code files shows as a card that opens the side panel (like Claude's artifacts). */
+function CodeCard({ files, content, streaming, onOpen, active }) {
+  const { name, download } = useProjectActions(files, content);
+  return (
+    <div className={`mt-3 flex items-center gap-3 rounded-xl border bg-card p-3 transition ${active ? "border-primary/60 ring-2 ring-primary/15" : "border-border-strong hover:border-primary/50"}`}
+      data-testid="code-project">
+      <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left" data-testid="code-project-open-panel">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          {streaming ? <Loader2 className="h-5 w-5 animate-spin" /> : <FileCode2 className="h-5 w-5" />}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold">{name}</span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {streaming ? `Building ${files.length} file${files.length === 1 ? "" : "s"}…` : `${files.length} file${files.length === 1 ? "" : "s"} · Click to ${active ? "view" : "open"} preview`}
+          </span>
+        </span>
+      </button>
+      {!streaming && (
+        <button onClick={download} className={projectBtn} title="Download ZIP" data-testid="code-project-download">
+          <Download className="h-3.5 w-3.5" /><span className="max-sm:hidden">ZIP</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Under an AI reply that contains code files: a card for the side panel, or (with no panel) an inline preview. */
+export default function CodeProject({ content, streaming, onOpen, active }) {
+  const files = useMemo(() => extractFiles(content, streaming), [content, streaming]);
+  if (!files.length) return null;
+  if (onOpen) return <CodeCard files={files} content={content} streaming={streaming} onOpen={onOpen} active={active} />;
+  return <InlineProject files={files} content={content} streaming={streaming} />;
+}
+
+/** Elsewhere (shared chats): the preview right under the reply. */
+function InlineProject({ files, content, streaming }) {
+  const html = useMemo(() => (streaming ? null : buildPreview(files)), [files, streaming]);
+  const [open, setOpen] = useState(true);
+  const [big, setBig] = useState(false);
+  const [reload, setReload] = useState(0);
+  const { name, download, openInBuilder, creating } = useProjectActions(files, content);
+
+  const btn = projectBtn;
 
   return (
     <div className="mt-3 overflow-hidden rounded-xl border border-border-strong bg-sunken" data-testid="code-project">

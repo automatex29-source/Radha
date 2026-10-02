@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2 } from "lucide-react";
@@ -7,6 +7,7 @@ import { mediaUrl } from "@/lib/api";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
 import CodeProject from "@/components/CodeProject";
+import { stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 
@@ -54,9 +55,12 @@ function SpeakButton({ text, voice, id }) {
   );
 }
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive }) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
+  // With the side panel, the files live there (like Claude's artifacts) and the chat keeps just the words.
+  const shown = useMemo(() => (onOpenCode && codeProject && !isUser ? stripFileBlocks(message.content, streaming) : message.content || ""),
+    [onOpenCode, codeProject, isUser, message.content, streaming]);
 
   const copyMsg = () => {
     navigator.clipboard.writeText(message.content);
@@ -101,11 +105,11 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         <ToolSteps steps={message.steps} />
         <div className="radha-prose min-w-0">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
-            {message.content || ""}
+            {shown}
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
         </div>
-        {codeProject && <CodeProject content={message.content || ""} streaming={streaming} />}
+        {codeProject && <CodeProject content={message.content || ""} streaming={streaming} onOpen={onOpenCode} active={codeActive} />}
         <MediaGallery items={message.media} onOpen={onOpenMedia} />
         {message.sources?.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid={`message-sources-${message.id}`}>

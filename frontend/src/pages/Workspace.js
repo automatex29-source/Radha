@@ -8,6 +8,8 @@ import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
 import { setServerSpeech, browserSpeechAvailable, unlockSpeech } from "@/lib/voice";
 import PreviewPanel from "@/components/PreviewPanel";
+import CodePanel from "@/components/CodePanel";
+import { extractFiles } from "@/lib/codeFiles";
 import ShareDialog from "@/components/ShareDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
@@ -107,6 +109,8 @@ export default function Workspace({ mode = null }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  // The code side panel: null (closed), "live" (the newest reply with code, following the stream) or a message id.
+  const [codePanel, setCodePanel] = useState(null);
   const [streamText, setStreamText] = useState("");
   const [loadingConv, setLoadingConv] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -167,6 +171,29 @@ export default function Workspace({ mode = null }) {
   }, [loadConversations]);
 
   useEffect(() => { scrollToBottom(); }, [messages, streamText, scrollToBottom]);
+
+  // A reply that builds something opens the side panel on its own: on a computer as soon as the first
+  // file is written, on a phone (where the panel is full screen) once the reply is finished.
+  const streamHasCode = useMemo(() => streaming && extractFiles(streamText, true).length > 0, [streaming, streamText]);
+  const phone = () => window.matchMedia?.("(max-width: 767px)").matches;
+  const autoOpened = useRef(false);
+  useEffect(() => { if (streaming) autoOpened.current = false; }, [streaming]);
+  useEffect(() => {
+    if (streamHasCode && !autoOpened.current && !phone()) { autoOpened.current = true; setCodePanel("live"); }
+  }, [streamHasCode]);
+  const latestCode = useMemo(
+    () => [...messages].reverse().find((m) => m.role === "assistant" && extractFiles(m.content).length),
+    [messages]);
+  useEffect(() => {
+    if (!streaming && autoOpened.current === false && latestCode && phone() && latestCode.id.startsWith("ai-")) {
+      autoOpened.current = true;
+      setCodePanel("live");
+    }
+  }, [streaming, latestCode]);
+  useEffect(() => { setCodePanel(null); }, [activeId]);
+  const panelLive = codePanel === "live";
+  const panelMessage = panelLive ? (streaming && streamHasCode ? null : latestCode) : messages.find((m) => m.id === codePanel);
+  const panelContent = panelLive && streaming && streamHasCode ? streamText : panelMessage?.content;
 
   // React to ?conversation= and ?project= deep links (e.g. from a project view).
   useEffect(() => {
@@ -585,10 +612,13 @@ export default function Workspace({ mode = null }) {
             counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
-              {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem} />)}
+              {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
+                onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
+                codeActive={!!codePanel && panelMessage?.id === m.id} />)}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
-                  steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem} />
+                  steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
+                  onOpenCode={() => setCodePanel("live")} codeActive={panelLive} />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
                 <div className="flex justify-center pt-1">
@@ -620,6 +650,9 @@ export default function Workspace({ mode = null }) {
           onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
           placeholder={counselling ? "Type anything… how's your day going? 😊" : undefined} />
       </div>
+      {codePanel && panelContent && (
+        <CodePanel content={panelContent} streaming={panelLive && streaming && streamHasCode} onClose={() => setCodePanel(null)} />
+      )}
       <ShareDialog open={shareOpen} onOpenChange={setShareOpen} conversation={activeConv}
         onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
       {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
