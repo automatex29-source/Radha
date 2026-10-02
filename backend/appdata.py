@@ -6,6 +6,8 @@ Pages served by RADHA (preview and published sites) get a small `RADHA` client (
   RADHA.auth.user / RADHA.auth.logout()
   await RADHA.db.list("posts", { mine: true })     await RADHA.db.add("posts", {...}, { private: true })
   await RADHA.db.update("posts", id, {...})        await RADHA.db.remove("posts", id)
+  RADHA.db.list("posts", { where: {tag: "news"}, limit: 20 })   RADHA.db.watch("posts", rows => ...)
+  RADHA.ai / RADHA.notify / RADHA.files / RADHA.fetch are served by appcloud.py.
 
 The data belongs to the app, not to a RADHA user, and published sites are public, so anyone
 who opens the app can call these endpoints. Rules: a document created by a signed-in user can
@@ -36,6 +38,7 @@ MAX_USERS = 1000
 LIST_LIMIT = 500
 TOKEN_DAYS = 30
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+_FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 SDK = """<script>(function(){var A=%s,B=new URL(location.href).origin+"/api/appdata/"+A,K="radha-user-"+A,T=null,U=null;
@@ -48,10 +51,21 @@ function signed(r){T=r.token;U=r.user;keep();return U}
 var auth={get user(){return U},signup:function(e,p,n){return call("POST","/auth/signup",{email:e,password:p,name:n||""}).then(signed)},
 login:function(e,p){return call("POST","/auth/login",{email:e,password:p}).then(signed)},logout:function(){T=null;U=null;keep()}};
 var q=function(c){return "/db/"+encodeURIComponent(c)};
-var dbApi={list:function(c,o){return call("GET",q(c)+(o&&o.mine?"?mine=1":""))},get:function(c,id){return call("GET",q(c)+"/"+encodeURIComponent(id))},
+function qs(o){o=o||{};var p=[];if(o.mine)p.push("mine=1");if(o.where)p.push("where="+encodeURIComponent(JSON.stringify(o.where)));
+if(o.limit)p.push("limit="+(o.limit|0));if(o.oldest)p.push("oldest=1");return p.length?"?"+p.join("&"):""}
+var dbApi={list:function(c,o){return call("GET",q(c)+qs(o))},
+watch:function(c,cb,o){var on=true,last="";function tick(){if(!on)return;dbApi.list(c,o).then(function(r){var s=JSON.stringify(r);
+if(s!==last){last=s;cb(r)}}).catch(function(){}).then(function(){if(on)setTimeout(tick,(o&&o.every)||4000)})}tick();return function(){on=false}},get:function(c,id){return call("GET",q(c)+"/"+encodeURIComponent(id))},
 add:function(c,d,o){return call("POST",q(c),{data:d,private:!!(o&&o.private)})},update:function(c,id,d){return call("PATCH",q(c)+"/"+encodeURIComponent(id),{data:d})},
 remove:function(c,id){return call("DELETE",q(c)+"/"+encodeURIComponent(id))}};
-window.RADHA={appId:A,auth:auth,db:dbApi};})();</script>"""
+async function form(p,fd){var h={};if(T)h.Authorization="Bearer "+T;var r=await fetch(B+p,{method:"POST",headers:h,body:fd});var j=null;
+try{j=await r.json()}catch(e){}if(!r.ok)throw new Error((j&&j.detail&&(j.detail.msg||j.detail))||("Upload failed ("+r.status+")"));return j}
+function ai(p,o){o=o||{};return call("POST","/ai",{prompt:String(p),system:o.system||"",history:o.history||[],json:!!o.json}).then(function(r){return o.json?r.data:r.text})}
+var files={upload:function(f){var fd=new FormData();fd.append("file",f);return form("/files",fd)},remove:function(id){return call("DELETE","/files/"+encodeURIComponent(id))}};
+function notify(m){m=m||{};var x={};for(var k in m)if(["subject","message","replyTo"].indexOf(k)<0)x[k]=m[k];
+return call("POST","/notify",{subject:m.subject||"",message:m.message||JSON.stringify(x,null,1),replyTo:m.replyTo||m.email||"",fields:x})}
+function rfetch(u,o){o=o||{};return call("POST","/fetch",{url:String(u),method:(o.method||"GET").toUpperCase(),headers:o.headers||{},body:o.body===undefined?null:o.body})}
+window.RADHA={appId:A,auth:auth,db:dbApi,ai:ai,files:files,notify:notify,fetch:rfetch};})();</script>"""
 
 
 def init(database):
@@ -179,15 +193,35 @@ def _visible(uid: Optional[str]) -> dict:
     return {"$or": [{"private": {"$ne": True}}, {"ownerId": uid}]} if uid else {"private": {"$ne": True}}
 
 
+def _where(raw: Optional[str]) -> dict:
+    """{"status": "open", "price": 5} -> matches on data.status and data.price (plain values only)."""
+    if not raw:
+        return {}
+    try:
+        where = json.loads(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="where must be JSON, like {\"status\": \"open\"}")
+    if not isinstance(where, dict) or len(where) > 10:
+        raise HTTPException(status_code=400, detail="where must be an object with up to 10 fields")
+    out = {}
+    for key, value in where.items():
+        if not _FIELD_RE.match(str(key)) or not (value is None or isinstance(value, (str, int, float, bool))):
+            raise HTTPException(status_code=400, detail=f"where can only match plain values (field '{key}')")
+        out[f"data.{key}"] = value
+    return out
+
+
 @router.get("/{app_id}/db/{collection}")
-async def list_docs(app_id: str, collection: str, request: Request, mine: bool = Query(False)):
+async def list_docs(app_id: str, collection: str, request: Request, mine: bool = Query(False),
+                    where: Optional[str] = Query(None, max_length=2000), limit: int = Query(LIST_LIMIT, ge=1, le=LIST_LIMIT),
+                    oldest: bool = Query(False)):
     uid = _viewer(request, app_id)
-    query = {"appId": app_id, "collection": _collection(collection), **_visible(uid)}
+    query = {"appId": app_id, "collection": _collection(collection), **_visible(uid), **_where(where)}
     if mine:
         if not uid:
             raise HTTPException(status_code=401, detail="Log in to see your items")
         query["ownerId"] = uid
-    docs = await db.appdata_docs.find(query).sort("createdAt", -1).to_list(LIST_LIMIT)
+    docs = await db.appdata_docs.find(query).sort("createdAt", 1 if oldest else -1).limit(limit).to_list(limit)
     return [_public_doc(d) for d in docs]
 
 
@@ -246,3 +280,4 @@ async def delete_doc(app_id: str, collection: str, doc_id: str, request: Request
 async def delete_app_data(app_id: str):
     await db.appdata_docs.delete_many({"appId": app_id})
     await db.appdata_users.delete_many({"appId": app_id})
+    await db.appdata_files.delete_many({"appId": app_id})

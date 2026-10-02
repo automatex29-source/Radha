@@ -23,11 +23,12 @@ export function extractFiles(markdown, partial = false) {
   const files = [];
   const spans = [];
   const seen = new Set();
-  const re = /(^|\n)[ \t]*```([^\n`]*)\n([\s\S]*?)\n[ \t]*```/g;
+  // A file that itself contains ``` is fenced with four or more backticks.
+  const re = /(^|\n)[ \t]*(`{3,})([^\n`]*)\n([\s\S]*?)\n[ \t]*\2(?!`)/g;
   let m;
   while ((m = re.exec(markdown || ""))) {
-    const info = m[2].trim();
-    const content = m[3];
+    const info = m[3].trim();
+    const content = m[4];
     const [langRaw = "", ...rest] = info.split(/[\s:]+/);
     let lang = langRaw.toLowerCase();
     let name = null;

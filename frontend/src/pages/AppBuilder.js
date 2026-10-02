@@ -5,16 +5,17 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { streamSSE } from "@/lib/sse";
 import MessageBubble from "@/components/MessageBubble";
 import GitHubPushButton from "@/components/GitHubPushButton";
+import DataTab from "@/components/DataTab";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
-  Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare,
+  Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
 } from "lucide-react";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit"]);
 
-const PANES = [["preview", Eye, "Preview"], ["code", Code2, "Code"], ["terminal", SquareTerminal, "Terminal"], ["history", History, "History"]];
+const PANES = [["preview", Eye, "Preview"], ["code", Code2, "Code"], ["terminal", SquareTerminal, "Terminal"], ["history", History, "History"], ["data", Database, "Data"]];
 
 export default function AppBuilder() {
   const { id } = useParams();
@@ -115,6 +116,7 @@ export default function AppBuilder() {
               onFix={(content) => { setFixAsk({ content, at: Date.now() }); if (window.matchMedia?.("(max-width: 767px)").matches) setTab("chat"); }} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
             {tab === "terminal" && <TerminalTab appId={id} />}
+            {tab === "data" && <DataTab appId={id} />}
             {tab === "history" && <HistoryTab appId={id} commits={commits} pending={pending} onRestored={onFilesChanged} />}
           </div>
         </section>

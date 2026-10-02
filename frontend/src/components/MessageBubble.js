@@ -7,7 +7,7 @@ import { mediaUrl } from "@/lib/api";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
 import CodeProject from "@/components/CodeProject";
-import { stripFileBlocks } from "@/lib/codeFiles";
+import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 
@@ -62,6 +62,16 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   const shown = useMemo(() => (onOpenCode && codeProject && !isUser ? stripFileBlocks(message.content, streaming) : message.content || ""),
     [onOpenCode, codeProject, isUser, message.content, streaming]);
 
+  // Code the user pasted or attached shows as file chips (Krish shows the page itself in the side panel).
+  const userFiles = useMemo(() => {
+    if (!isUser) return [];
+    const files = extractFiles(message.content);
+    if (files.length) return files;
+    const text = (message.content || "").trim();
+    return text.startsWith("<") && text.length > 80 && /<\/[A-Za-z][\w-]*>\s*$/.test(text) ? [{ path: "index.html", content: text, whole: true }] : [];
+  }, [isUser, message.content]);
+  const userText = userFiles.length ? (userFiles[0].whole ? "" : stripFileBlocks(message.content)) : message.content;
+
   const copyMsg = () => {
     navigator.clipboard.writeText(message.content);
     setCopied(true);
@@ -81,7 +91,17 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
               ))}
             </div>
           )}
-          <p dir="auto" className="whitespace-pre-wrap break-words">{message.content}</p>
+          {userText && <p dir="auto" className="whitespace-pre-wrap break-words">{userText}</p>}
+          {userFiles.length > 0 && (
+            <div className={`flex flex-wrap gap-2 ${userText ? "mt-2" : ""}`} data-testid={`user-message-files-${message.id}`}>
+              {userFiles.map((f) => (
+                <span key={f.path} className="flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-2.5 py-1.5 font-mono text-xs">
+                  <FileIcon className="h-3 w-3 text-primary" /> {f.path}
+                  <span className="text-muted-foreground">· {f.content.split("\n").length} lines</span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border-strong bg-surface-strong">
           <User className="h-4 w-4 text-brand" />

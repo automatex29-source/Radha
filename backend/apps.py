@@ -501,7 +501,17 @@ async def app_prompt(database, app_id: str) -> str:
         "await RADHA.db.list(collection, {mine: true}) returns [{id, data, ownerId, createdAt}] newest first; "
         "RADHA.db.add(collection, data, {private: true}), RADHA.db.update(collection, id, data), "
         "RADHA.db.remove(collection, id). All calls return promises and throw Error with a readable message. "
+        "Filter with RADHA.db.list(collection, {where: {status: 'open'}, limit: 20}); live updates with "
+        "RADHA.db.watch(collection, rows => render(rows)) (returns a stop function). "
         "Use it when data must be shared between visitors or the app needs accounts; otherwise use localStorage.\n"
+        "- More backend, all free and ready, use them to make the app really work instead of faking it: "
+        "await RADHA.ai(prompt, {system, history: [{role, content}]}) returns the AI's answer text ({json: true} "
+        "returns parsed JSON) for chatbots, writing, summaries, quizzes and recommendations; "
+        "await RADHA.notify({subject, message, replyTo, ...fields}) emails the app's owner (contact forms, orders, "
+        "bookings, leads) and saves it to their inbox; await RADHA.files.upload(fileInput.files[0]) stores a "
+        "picture or document (max 2 MB) and returns {url, name}; await RADHA.fetch(url, {method, headers, body}) "
+        "calls any public API from the server (no CORS problems) and returns {status, ok, data, text}. "
+        "Show a loading state while these run and a friendly message if they fail.\n"
         "- Keep your chat replies short: say what you built or changed.\n\n"
         + DESIGN_GUIDE
     )
