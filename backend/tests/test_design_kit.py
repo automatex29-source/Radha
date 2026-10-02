@@ -17,7 +17,7 @@ def test_backend_and_frontend_kits_match():
 
 
 def test_guide_teaches_the_kit():
-    assert 'href="krish-ui.css"' in apps.DESIGN_GUIDE and "loremflickr" in apps.DESIGN_GUIDE
+    assert 'href="krish-ui.css"' in apps.DESIGN_GUIDE and "krish-image.invalid" in apps.DESIGN_GUIDE
 
 
 def test_page_linking_the_kit_gets_the_file():

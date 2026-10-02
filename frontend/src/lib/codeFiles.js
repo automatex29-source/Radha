@@ -58,6 +58,23 @@ export function extractFiles(markdown, partial = false) {
   return files;
 }
 
+// AI pictures: the AI links https://krish-image.invalid/<what it shows>.jpg?w=800&h=600 and Krish AI's server
+// makes them (backend/site_images.py). Mirrors site_images.rewrite.
+const IMAGE_LINK_RE = /https?:\/\/krish-image\.invalid\/([^\s"'()<>?#]+?)(?:\.(?:jpe?g|png|webp))?(?:\?([^\s"'()<>#]*))?(?=[\s"'()<>#]|$)/g;
+const snap = (v, d) => Math.max(64, Math.min(1600, Math.round((Number(v) || d) / 8) * 8));
+
+export function rewriteImages(text) {
+  if (!text || !text.includes("krish-image.invalid")) return text;
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return text.replace(IMAGE_LINK_RE, (_, what, query = "") => {
+    const params = Object.fromEntries(query.split("&").filter((p) => p.includes("=")).map((p) => p.split("=")));
+    const prompt = decodeURIComponent(what.replace(/\+/g, " ")).replace(/[-_]+/g, " ").replace(/[^\w\s,.'&]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+    return `${origin}/api/site-image?prompt=${encodeURIComponent(prompt)}&w=${snap(params.w, 800)}&h=${snap(params.h, 600)}`;
+  });
+}
+
+export const withImages = (files) => files.map((f) => ({ ...f, content: rewriteImages(f.content) }));
+
 /** The files plus the built-in design kit (krish-ui.css) when a page links it and the reply didn't include it. */
 export function withKit(files) {
   const linked = files.some((f) => /\.html?$/i.test(f.path) && /href=["'](?:\.\/)?krish-ui\.css["']/i.test(f.content));
@@ -86,7 +103,7 @@ const STORAGE_SHIM = `<script>(function(){try{window.localStorage.getItem("x")}c
 
 /** One self-contained HTML page with the project's CSS and JS files inlined. */
 export function buildPreview(files) {
-  files = withKit(files);
+  files = withImages(withKit(files));
   const entry = entryFile(files);
   if (!entry) return null;
   let html = entry.content;
