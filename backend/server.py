@@ -567,14 +567,18 @@ THINK_PROMPT = (
 
 VOICE_LANG_NAMES = {"hi": "Hindi", "en": "English", "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati",
                     "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "ur": "Urdu",
-                    "es": "Spanish", "fr": "French", "de": "German", "ar": "Arabic"}
+                    "es": "Spanish", "fr": "French", "de": "German", "ar": "Arabic", "pa": "Punjabi"}
 
 
-def voice_prompt(lang: Optional[str]) -> str:
+def voice_prompt(lang: Optional[str], fallback: Optional[str] = None) -> str:
+    """`lang` is the language the user just spoke (or picked); `fallback` is their Settings language."""
     language = VOICE_LANG_NAMES.get(lang or "")
-    reply_in = (f"Always reply in {language}, written in its own script." if language else
-                "Reply in the language the user just spoke, in its own script (Hindi in Devanagari); "
-                "if they mix Hindi and English, mix the same way.")
+    usual = VOICE_LANG_NAMES.get(fallback or "")
+    reply_in = (f"The user just spoke {language}: reply in {language}, written in its own script, even if their "
+                "Settings language or earlier messages are different. If they mix Hindi and English, mix the same way."
+                if language else
+                "Reply in the language the user just spoke, in its own script (Hindi in Devanagari); if they mix "
+                "Hindi and English, mix the same way." + (f" If you can't tell, use {usual}." if usual else ""))
     return (
         "Voice mode is on: the user is talking to you out loud and your reply will be read aloud by a voice. "
         "Answer like a warm, natural person on a phone call: usually one to three short sentences, the most useful "
@@ -800,13 +804,15 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
     # Memory (user-global + project) — real, user-controlled facts.
+    settings_lang = None
     if user_id:
         remembered = await memory.prompt_section(db, user_id, project_id)
         if remembered:
             system_parts.append(remembered)
         owner = await db.users.find_one({"id": user_id}, {"language": 1})
-        lang_line = languages.prompt_line((owner or {}).get("language"))
-        if lang_line:
+        settings_lang = (owner or {}).get("language")
+        lang_line = languages.prompt_line(settings_lang)
+        if lang_line and not voice:  # voice replies follow the language spoken (see voice_prompt)
             system_parts.append(lang_line)
 
     # Project instructions.
@@ -864,7 +870,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if extra_system:
         system_parts.append(extra_system)
     if voice and not app_id:
-        system_parts.append(voice_prompt(voice_lang))
+        system_parts.append(voice_prompt(voice_lang, settings_lang))
     system_prompt = "\n\n".join(system_parts)
 
     if sources:
@@ -1576,13 +1582,19 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
         raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
     try:
         lang = language if language in media.VOICE_LANGUAGES else None
-        text = media.clean_transcript(await media.transcribe(data, file.filename or "audio.webm", lang))
+        text, heard = await media.transcribe_detect(data, file.filename or "audio.webm", lang)
+        text = media.clean_transcript(text)
+        if heard in ("hi", "ur") and not lang:
+            # Spoken Hindi and Urdu sound alike; lean on the language they chose in Settings.
+            owner = await db.users.find_one({"id": user_id}, {"language": 1})
+            if (owner or {}).get("language") in ("hi", "ur") and not media.script_language(text):
+                heard = owner["language"]
     except media.MediaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         logger.exception("Transcription failed")
         raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}")
-    return {"text": text.strip()}
+    return {"text": text.strip(), "language": heard if text else None}
 
 
 @api.post("/audio/speech")

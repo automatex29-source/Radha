@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRecorder } from "@/hooks/useRecorder";
-import { transcribe, createSpeaker, stopSpeaking, speechText, watchForSpeech, VOICE_LANGS, getVoiceLang, setVoiceLang } from "@/lib/voice";
+import { useAuth } from "@/context/AuthContext";
+import { transcribeDetect, createSpeaker, stopSpeaking, speechText, watchForSpeech, VOICE_LANGS, getVoiceLang, setVoiceLang } from "@/lib/voice";
 import { X, Mic, Loader2, Volume2, Square, Pause } from "lucide-react";
 
 const LABELS = {
@@ -24,6 +25,10 @@ function getBargeIn() {
  */
 export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }) {
   const rec = useRecorder();
+  const { user } = useAuth();
+  const settingsLangRef = useRef("en");
+  settingsLangRef.current = user?.language || "en";
+  const [spoken, setSpoken] = useState(null); // language heard last, in Auto
   const [phase, setPhase] = useState("idle");
   const [heard, setHeard] = useState("");
   const [reply, setReply] = useState("");
@@ -62,15 +67,23 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
         if (!activeRef.current || nextRef.current === "pause") break;
         if (!blob) { setPhase("idle"); break; } // nobody spoke for a while: pause
         setPhase("transcribing");
-        const text = (await transcribe(blob)).trim();
+        const result = await transcribeDetect(blob);
+        const text = result.text.trim();
         if (!activeRef.current || nextRef.current === "pause") break;
         if (!text) continue;
+        // Auto: answer in the language they just spoke; if unknown, their Settings language.
+        const picked = getVoiceLang();
+        const replyLang = picked !== "auto" ? picked
+          : VOICE_LANGS.some((l) => l.id === result.language) ? result.language
+          : settingsLangRef.current;
+        if (picked === "auto") setSpoken(replyLang);
         setHeard(text);
         setReply("");
         setPhase("thinking");
 
         const speaker = createSpeaker({
           voice,
+          lang: replyLang,
           onStart: () => {
             if (!activeRef.current) return;
             setPhase("speaking");
@@ -84,6 +97,7 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
         });
         speakerRef.current = speaker;
         const answer = await onUtterance(text, {
+          voiceLang: replyLang,
           onText: (t) => { setReply(t); speaker.push(t); },
         });
         if (!activeRef.current) break;
@@ -163,6 +177,11 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
       </button>
 
       <p className="mt-8 text-sm font-medium text-foreground" data-testid="voice-mode-status">{LABELS[phase]}</p>
+      {lang === "auto" && spoken && (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="voice-mode-heard-language">
+          Answering in {VOICE_LANGS.find((l) => l.id === spoken)?.name || spoken}
+        </p>
+      )}
       {error && <p className="mt-2 max-w-md text-center text-xs text-destructive">{error}</p>}
       <div className="mt-6 w-full max-w-lg space-y-3 text-center">
         {heard && <p className="text-sm text-muted-foreground">“{heard}”</p>}

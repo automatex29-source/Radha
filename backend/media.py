@@ -266,16 +266,32 @@ def transcription_available() -> bool:
 
 async def transcribe(data: bytes, filename: str, language: Optional[str] = None) -> str:
     """Speech to text. `language` is an optional ISO-639-1 hint (e.g. "hi", "en")."""
+    return (await transcribe_detect(data, filename, language))[0]
+
+
+# Whisper reports the language it heard by English name.
+WHISPER_NAMES = {"english": "en", "hindi": "hi", "bengali": "bn", "marathi": "mr", "gujarati": "gu",
+                 "tamil": "ta", "telugu": "te", "kannada": "kn", "malayalam": "ml", "urdu": "ur",
+                 "punjabi": "pa", "panjabi": "pa", "spanish": "es", "french": "fr", "german": "de", "arabic": "ar"}
+
+
+async def transcribe_detect(data: bytes, filename: str, language: Optional[str] = None) -> tuple:
+    """Speech to text plus the language that was spoken: (text, ISO-639-1 code or None)."""
     extra = {"language": language} if language else {}
     if openai_configured():
         resp = await _client().audio.transcriptions.create(model=STT_MODEL, file=(filename, data), **extra)
-        return resp.text
-    if not os.environ.get("GROQ_API_KEY"):
-        raise MediaUnavailable("Set GROQ_API_KEY (free) or OPENAI_API_KEY on the backend to enable voice input.")
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=GROQ_BASE_URL)
-    resp = await client.audio.transcriptions.create(model=GROQ_STT_MODEL, file=(filename, data), **extra)
-    return resp.text
+        text, heard = resp.text, None
+    else:
+        if not os.environ.get("GROQ_API_KEY"):
+            raise MediaUnavailable("Set GROQ_API_KEY (free) or OPENAI_API_KEY on the backend to enable voice input.")
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=GROQ_BASE_URL)
+        resp = await client.audio.transcriptions.create(model=GROQ_STT_MODEL, file=(filename, data),
+                                                        response_format="verbose_json", **extra)
+        text, heard = resp.text, getattr(resp, "language", None)
+    code = language or WHISPER_NAMES.get((heard or "").strip().lower()) or (heard if heard in WHISPER_NAMES.values() else None)
+    # The script it was written in is the surest sign (Whisper can say "urdu" for Hindi and vice versa).
+    return text, script_language(text) or code
 
 
 # Free natural voices (Microsoft Edge's online neural voices, no key) when there's no OpenAI key.
@@ -295,13 +311,22 @@ EDGE_VOICES = {
     "fr": "fr-FR-DeniseNeural",
     "de": "de-DE-KatjaNeural",
     "ar": "ar-SA-ZariyahNeural",
+    "pa": "pa-IN-OjasNeural",
 }
 VOICE_LANGUAGES = tuple(EDGE_VOICES)
 
 # In auto mode, the script a reply is written in picks the voice.
-_SCRIPTS = [("bn", r"[\u0980-\u09FF]"), ("gu", r"[\u0A80-\u0AFF]"), ("ta", r"[\u0B80-\u0BFF]"),
+_SCRIPTS = [("pa", r"[\u0A00-\u0A7F]"), ("bn", r"[\u0980-\u09FF]"), ("gu", r"[\u0A80-\u0AFF]"), ("ta", r"[\u0B80-\u0BFF]"),
             ("te", r"[\u0C00-\u0C7F]"), ("kn", r"[\u0C80-\u0CFF]"), ("ml", r"[\u0D00-\u0D7F]"),
             ("ur", r"[\u0600-\u06FF]"), ("hi", r"[\u0900-\u097F]")]
+
+def script_language(text: str) -> Optional[str]:
+    """The language an Indian or Arabic script points to; None for Latin text."""
+    for code, pattern in _SCRIPTS:
+        if re.search(pattern, text or ""):
+            return code
+    return None
+
 
 # Whisper sometimes "hears" these stock phrases in silence or background noise.
 _PHANTOM = {"thank you.", "thank you", "thanks for watching!", "thanks for watching.", "thank you for watching.",
@@ -331,10 +356,7 @@ def edge_voice(text: str, lang: Optional[str] = None) -> str:
     """The chosen language's voice; in auto mode, the voice for the script the text is written in."""
     if lang in EDGE_VOICES:
         return EDGE_VOICES[lang]
-    for code, pattern in _SCRIPTS:
-        if re.search(pattern, text):
-            return EDGE_VOICES[code]
-    return EDGE_VOICES["en"]
+    return EDGE_VOICES.get(script_language(text) or "en", EDGE_VOICES["en"])
 
 
 async def _edge_speak(text: str, lang: Optional[str]) -> bytes:
