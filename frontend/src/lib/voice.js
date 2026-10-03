@@ -3,9 +3,10 @@ import { api, API, getToken } from "@/lib/api";
 const EXT = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/wav": "wav" };
 
 // Spoken language: "auto" lets the server detect it. `bcp` is the browser voice locale.
-const LANG_KEY = "radha.voiceLang";
+// New key: everyone starts on Auto, which follows whatever language they speak.
+const LANG_KEY = "krish.voiceLang";
 export const VOICE_LANGS = [
-  { id: "auto", label: "Auto", name: "Auto detect", bcp: "en-IN" },
+  { id: "auto", label: "Auto", name: "Auto (matches the language you speak)", bcp: "en-IN" },
   { id: "hi", label: "हिंदी", name: "Hindi", bcp: "hi-IN" },
   { id: "en", label: "English", name: "English", bcp: "en-IN" },
   { id: "bn", label: "বাংলা", name: "Bengali", bcp: "bn-IN" },
@@ -15,6 +16,7 @@ export const VOICE_LANGS = [
   { id: "te", label: "తెలుగు", name: "Telugu", bcp: "te-IN" },
   { id: "kn", label: "ಕನ್ನಡ", name: "Kannada", bcp: "kn-IN" },
   { id: "ml", label: "മലയാളം", name: "Malayalam", bcp: "ml-IN" },
+  { id: "pa", label: "ਪੰਜਾਬੀ", name: "Punjabi", bcp: "pa-IN" },
   { id: "ur", label: "اردو", name: "Urdu", bcp: "ur-IN" },
   { id: "es", label: "Español", name: "Spanish", bcp: "es-ES" },
   { id: "fr", label: "Français", name: "French", bcp: "fr-FR" },
@@ -23,12 +25,12 @@ export const VOICE_LANGS = [
 ];
 
 // In auto mode, the script a reply is written in picks the browser voice.
-const SCRIPTS = [[/[\u0980-\u09FF]/, "bn-IN"], [/[\u0A80-\u0AFF]/, "gu-IN"], [/[\u0B80-\u0BFF]/, "ta-IN"],
+const SCRIPTS = [[/[\u0A00-\u0A7F]/, "pa-IN"], [/[\u0980-\u09FF]/, "bn-IN"], [/[\u0A80-\u0AFF]/, "gu-IN"], [/[\u0B80-\u0BFF]/, "ta-IN"],
   [/[\u0C00-\u0C7F]/, "te-IN"], [/[\u0C80-\u0CFF]/, "kn-IN"], [/[\u0D00-\u0D7F]/, "ml-IN"],
   [/[\u0600-\u06FF]/, "ur-IN"], [/[\u0900-\u097F]/, "hi-IN"]];
 
-function browserLang(text) {
-  const pref = getVoiceLang();
+function browserLang(text, override) {
+  const pref = override || getVoiceLang();
   if (pref !== "auto") return VOICE_LANGS.find((l) => l.id === pref)?.bcp || "en-IN";
   return SCRIPTS.find(([re]) => re.test(text))?.[1] || "en-IN";
 }
@@ -54,13 +56,18 @@ export function browserSpeechAvailable() {
 }
 
 export async function transcribe(blob) {
+  return (await transcribeDetect(blob)).text;
+}
+
+/** Speech to text plus the language that was spoken ({ text, language }). */
+export async function transcribeDetect(blob) {
   const type = (blob.type || "audio/webm").split(";")[0];
   const fd = new FormData();
   fd.append("file", blob, `speech.${EXT[type] || "webm"}`);
   const lang = getVoiceLang();
   if (lang !== "auto") fd.append("language", lang);
   const { data } = await api.post("/audio/transcribe", fd, { headers: { "Content-Type": "multipart/form-data" } });
-  return data.text || "";
+  return { text: data.text || "", language: data.language || null };
 }
 
 let current = null;
@@ -134,10 +141,10 @@ function chunks(text, max = 200) {
   return out;
 }
 
-async function speakInBrowser(text, { onStart } = {}) {
+async function speakInBrowser(text, { onStart, lang: forced } = {}) {
   if (!browserSpeechAvailable()) throw new Error("This browser can't read aloud");
   const synth = window.speechSynthesis;
-  const lang = browserLang(text);
+  const lang = browserLang(text, forced);
   const voice = pickVoice(await loadVoices(), lang);
   const run = { cancelled: false, resolve: () => {} };
   browserRun = run;
@@ -173,11 +180,11 @@ export async function speak(text, voice, { onStart } = {}) {
   }
 }
 
-async function fetchSpeech(text, voice) {
+async function fetchSpeech(text, voice, lang) {
   const res = await fetch(`${API}/audio/speech`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-    body: JSON.stringify({ text, voice, lang: getVoiceLang() }),
+    body: JSON.stringify({ text, voice, lang: lang || getVoiceLang() }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -245,7 +252,7 @@ async function speakOnServer(text, voice, { onStart } = {}) {
  * complete, and the next sentence's audio is fetched while the current one plays.
  * `done` resolves when everything has been spoken or `stop()` is called.
  */
-export function createSpeaker({ voice, onStart } = {}) {
+export function createSpeaker({ voice, onStart, lang } = {}) {
   const queue = [];
   let consumed = 0;
   let ended = false;
@@ -258,7 +265,7 @@ export function createSpeaker({ voice, onStart } = {}) {
     const text = speechText(raw).replace(/\s+/g, " ").trim();
     if (!text || !/[\p{L}\p{N}]/u.test(text)) return;
     const item = { text };
-    if (useServer) item.url = fetchSpeech(text, voice).catch((e) => { item.failed = e; return null; });
+    if (useServer) item.url = fetchSpeech(text, voice, lang).catch((e) => { item.failed = e; return null; });
     queue.push(item);
     wake?.();
   };
@@ -302,7 +309,7 @@ export function createSpeaker({ voice, onStart } = {}) {
           try { await playUrl(url, { onStart: first }); continue; } catch { /* fall back below */ }
         }
         if (item.url) useServer = false; // the free voice service failed; use the browser from now on
-        if (browserSpeechAvailable()) await speakInBrowser(item.text, { onStart: first });
+        if (browserSpeechAvailable()) await speakInBrowser(item.text, { onStart: first, lang });
         else if (item.failed) throw item.failed;
       }
     } finally {

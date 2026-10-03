@@ -687,7 +687,7 @@ export default function Workspace({ mode = null }) {
         onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
       {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
       {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onCancelReply={stopGeneration}
-        onUtterance={(t, opts) => sendRef.current(t, { ...opts, voice: true, voiceLang: getVoiceLang() })} />}
+        onUtterance={(t, opts) => sendRef.current(t, { voiceLang: getVoiceLang(), ...opts, voice: true })} />}
     </div>
   );
 }
