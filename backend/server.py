@@ -177,6 +177,8 @@ class MessageIn(BaseModel):
     think: bool = False  # the Think button: reason longer and check the answer
     study: bool = False  # Study mode: teach step by step and quiz instead of just answering
     web: bool = False  # the Search button: always search the web and cite sources
+    focus: Literal["web", "academic", "social", "video"] = "web"  # where Search looks
+    pro: bool = False  # Pro search: plan several searches and read the best pages
     voice: bool = False  # sent from voice mode: the reply is spoken aloud
     voiceLang: Optional[str] = Field(default=None, max_length=8)
 
@@ -187,6 +189,8 @@ class RegenerateIn(BaseModel):
     think: bool = False
     study: bool = False
     web: bool = False
+    focus: Literal["web", "academic", "social", "video"] = "web"
+    pro: bool = False
 
 
 class SpeechIn(BaseModel):
@@ -782,7 +786,8 @@ def _builder_summary(steps: list) -> str:
 
 async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: Optional[str] = None,
                    max_steps: Optional[int] = None, think: bool = False, study: bool = False,
-                   voice: bool = False, voice_lang: Optional[str] = None, web: bool = False):
+                   voice: bool = False, voice_lang: Optional[str] = None, web: bool = False,
+                   focus: str = "web", pro: bool = False):
     """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
 
     If the conversation belongs to a project, relevant document chunks (RAG) and
@@ -805,6 +810,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
     system_parts = [base, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
     sources = []
+    pro_step = None
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
     # Memory (user-global + project) — real, user-controlled facts.
@@ -858,11 +864,22 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     use_runtime = agent or any(m.get("images") for m in history_docs)
     # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
     if not app_id and not counselling:
-        live, web_sources = await live_search.gather([m["content"] for m in history_docs if m["role"] == "user"],
-                                                     force=web)
-        if live:
-            system_parts.append(live)
-        sources = sources + web_sources
+        user_texts = [m["content"] for m in history_docs if m["role"] == "user"]
+        if pro:
+            pro_step = {"id": "pro-search", "name": "pro_search", "label": "Pro search",
+                        "args": {"query": (last_user or "")[:200]}, "status": "running"}
+            yield f"event: tool\ndata: {_sse_json(pro_step)}\n\n"
+        found = await live_search.gather(user_texts, force=web, focus=focus, pro=pro, model=model)
+        if found["context"]:
+            system_parts.append(found["context"])
+        sources = sources + found["sources"]
+        if pro:
+            pages = sum(1 for s in found["sources"] if s.get("type") == "web")
+            pro_step.update(status="done" if pages else "error", args={"queries": found["queries"]},
+                            summary=f"Searched {len(found['queries'])} ways, read {pages} pages" if pages
+                            else "No pages found, answering from what Krish knows",
+                            output="\n".join(f"Searched: {q}" for q in found["queries"]), media=[])
+            yield f"event: tool_result\ndata: {_sse_json(pro_step)}\n\n"
     # Perplexity-style follow-up questions under ordinary chat answers.
     ask_related = not app_id and not counselling and not voice and not extra_system
     if ask_related:
@@ -886,7 +903,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if sources:
         yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
 
-    full, steps, produced = [], [], []
+    full, steps, produced = [], [pro_step] if pro_step else [], []
     stopped = False  # the user pressed Stop (the browser closed the stream) before the reply finished
     try:
         if use_runtime:
@@ -991,9 +1008,11 @@ class _TurnResponse(StreamingResponse):
 
 
 def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False, study: bool = False,
-                     voice: bool = False, voice_lang: Optional[str] = None, web: bool = False) -> StreamingResponse:
+                     voice: bool = False, voice_lang: Optional[str] = None, web: bool = False, focus: str = "web",
+                     pro: bool = False) -> StreamingResponse:
     return _TurnResponse(
-        run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang, web=web),
+        run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang, web=web,
+                 focus=focus, pro=pro),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
@@ -1056,7 +1075,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         return StreamingResponse(_canned_turn(conv_id, ready_reply), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study,
-                            voice=body.voice, voice_lang=body.voiceLang, web=body.web)
+                            voice=body.voice, voice_lang=body.voiceLang, web=body.web,
+                            focus=body.focus, pro=body.pro)
 
 
 async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
@@ -1145,7 +1165,8 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
     if remaining == 0:
         raise HTTPException(status_code=400, detail="Nothing to regenerate")
 
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web)
+    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
+                            focus=body.focus, pro=body.pro)
 
 
 # -------------------------------------------------------------------- sharing

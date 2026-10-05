@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus } from "lucide-react";
+import { Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
@@ -21,7 +21,7 @@ function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
 // Like Perplexity: the web pages the answer came from, as cards above it.
 function WebSources({ items, id }) {
   const [all, setAll] = useState(false);
-  const shown = all ? items : items.slice(0, 3);
+  const shown = all || items.length <= 4 ? items : items.slice(0, 3);
   const more = items.length - shown.length;
   return (
     <div className="mb-3" data-testid={`web-sources-${id}`}>
@@ -33,6 +33,14 @@ function WebSources({ items, id }) {
           <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" title={s.snippet || s.title}
             data-testid={`web-source-card-${i + 1}`}
             className="flex min-w-0 flex-col justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5 transition-colors hover:border-primary/50 hover:bg-surface">
+            {s.thumbnail && (
+              <span className="relative -mx-1 -mt-0.5 block overflow-hidden rounded-lg bg-surface">
+                <img src={s.thumbnail} alt="" loading="lazy" className="aspect-video w-full object-cover" />
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white"><Play className="ml-0.5 h-4 w-4 fill-current" /></span>
+                </span>
+              </span>
+            )}
             <span className="line-clamp-2 text-[12.5px] font-medium leading-snug text-foreground">{s.title}</span>
             <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
               <SiteIcon domain={s.domain} />
@@ -51,6 +59,25 @@ function WebSources({ items, id }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// Pictures found for the question, like Perplexity's image strip. Each opens the page it came from.
+function ImageResults({ items, id }) {
+  const [hidden, setHidden] = useState({});
+  const shown = items.filter((im) => !hidden[im.thumbnail]).slice(0, 6);
+  if (!shown.length) return null;
+  return (
+    <div className="mb-3 grid grid-cols-3 gap-1.5 sm:grid-cols-6" data-testid={`image-results-${id}`}>
+      {shown.map((im, i) => (
+        <a key={im.thumbnail} href={im.url} target="_blank" rel="noopener noreferrer" title={im.title}
+          className={`group/img block overflow-hidden rounded-lg border border-border bg-surface ${i >= 3 ? "max-sm:hidden" : ""}`}>
+          <img src={im.thumbnail} alt={im.title || ""} loading="lazy"
+            onError={() => setHidden((h) => ({ ...h, [im.thumbnail]: true }))}
+            className="aspect-square h-full w-full object-cover transition-transform duration-300 group-hover/img:scale-105" />
+        </a>
+      ))}
     </div>
   );
 }
@@ -135,7 +162,8 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
   // With the side panel, the files live there (like Claude's artifacts) and the chat keeps just the words.
-  const webSources = useMemo(() => (message.sources || []).filter((s) => s.type === "web" && s.url), [message.sources]);
+  const webSources = useMemo(() => (message.sources || []).filter((s) => (s.type === "web" || s.type === "video") && s.url), [message.sources]);
+  const imageResults = useMemo(() => (message.sources || []).filter((s) => s.type === "image" && s.thumbnail), [message.sources]);
   const fileSources = useMemo(() => (message.sources || []).filter((s) => s.fileName), [message.sources]);
   const shown = useMemo(() => {
     if (isUser) return message.content || "";
@@ -205,6 +233,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         </div>
         <ToolSteps steps={message.steps} />
         {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
+        {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         <div dir="auto" className="radha-prose min-w-0">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: Citation }}>
             {shown}

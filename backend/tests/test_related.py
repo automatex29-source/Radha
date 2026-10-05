@@ -38,7 +38,8 @@ def test_gather_returns_cards_and_cite_note(monkeypatch):
         assert limit == 8  # the Search button asks for more results
         return [{"title": "Tata Motors", "url": "https://www.tatamotors.com/about", "snippet": "About us"}]
     monkeypatch.setattr(web, "search", fake_search)
-    text, cards = asyncio.run(live_search.gather(["tell me about tata motors"], force=True))
+    found = asyncio.run(live_search.gather(["tell me about tata motors"], force=True))
+    text, cards = found["context"], found["sources"]
     assert "[1] Tata Motors" in text and "square brackets" in text
     assert cards == [{"type": "web", "title": "Tata Motors", "url": "https://www.tatamotors.com/about",
                       "domain": "tatamotors.com", "snippet": "About us"}]
@@ -48,4 +49,4 @@ def test_gather_skips_without_force(monkeypatch):
     async def boom(*a, **k):
         raise AssertionError("should not search")
     monkeypatch.setattr(web, "search", boom)
-    assert asyncio.run(live_search.gather(["tell me about tata motors"])) == (None, [])
+    assert asyncio.run(live_search.gather(["tell me about tata motors"]))["context"] is None

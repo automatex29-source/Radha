@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck, Lightbulb, GraduationCap, Globe } from "lucide-react";
+import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck, Lightbulb, GraduationCap, Globe, ChevronDown, BookOpenText, MessagesSquare, PlaySquare, Sparkles, Check } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
@@ -16,7 +18,8 @@ export default function ComposerInput({
   onAttach, attachments = [], onRemoveAttachment, uploading,
   images = [], onRemoveImage,
   agentMode, onToggleAgent, agentAvailable, agentHint,
-  thinkMode, onToggleThink, studyMode, onToggleStudy, webMode, onToggleWeb,
+  thinkMode, onToggleThink, studyMode, onToggleStudy, webMode, onToggleWeb, searchFocus = "web", onSearchFocus,
+  proSearch, onTogglePro,
   voiceEnabled, voiceHint, onVoiceMode, placeholder,
 }) {
   const ref = useRef(null);
@@ -171,8 +174,8 @@ export default function ComposerInput({
               </button>
             )}
             {onToggleWeb && (
-              <ModeChip on={webMode} onClick={onToggleWeb} icon={Globe} label={t("web")} testId="web-mode-toggle"
-                title={webMode ? "Search is on: every answer searches the web and shows its sources" : "Search the web and show sources for every answer"} />
+              <SearchChip on={webMode} onToggle={onToggleWeb} label={t("web")} focus={searchFocus} onFocus={onSearchFocus}
+                pro={proSearch} onTogglePro={onTogglePro} />
             )}
             {onToggleThink && (
               <ModeChip on={thinkMode} onClick={onToggleThink} icon={Lightbulb} label={t("think")} testId="think-mode-toggle"
@@ -232,6 +235,64 @@ function ModeChip({ on, onClick, icon: Icon, label, title, testId }) {
         on ? "bg-primary/15 text-brand ring-1 ring-primary/50" : "text-muted-foreground hover:bg-surface hover:text-foreground"}`}>
       <Icon className="h-4 w-4" /> <span className={on ? "" : "max-sm:hidden"}>{label}</span>
     </button>
+  );
+}
+
+const FOCUS_OPTIONS = [
+  { id: "web", icon: Globe, label: "Web", hint: "Search the whole internet" },
+  { id: "academic", icon: BookOpenText, label: "Academic", hint: "Research papers and studies" },
+  { id: "social", icon: MessagesSquare, label: "Social", hint: "What people say on Reddit" },
+  { id: "video", icon: PlaySquare, label: "Video", hint: "YouTube videos" },
+];
+
+// The Search button, like Perplexity's: tap to turn on, the arrow picks where to search and Pro search.
+function SearchChip({ on, onToggle, label, focus, onFocus, pro, onTogglePro }) {
+  const current = FOCUS_OPTIONS.find((f) => f.id === focus) || FOCUS_OPTIONS[0];
+  const Icon = on ? current.icon : Globe;
+  const name = on && focus !== "web" ? current.label : label;
+  const tone = on ? "bg-primary/15 text-brand ring-1 ring-primary/50" : "text-muted-foreground hover:bg-surface hover:text-foreground";
+  return (
+    <div className={`flex h-10 items-center rounded-lg transition-colors sm:h-8 ${tone}`}>
+      <button onClick={onToggle} data-testid="web-mode-toggle" aria-pressed={!!on}
+        title={on ? "Search is on: every answer searches and shows its sources" : "Search the web and show sources for every answer"}
+        className="flex h-full items-center gap-1.5 pl-2 pr-1 text-xs font-medium sm:pl-2.5">
+        <Icon className="h-4 w-4" /> <span className="max-sm:hidden">{name}</span>
+        {on && pro && <span data-testid="pro-search-badge" className="rounded bg-primary px-1 py-px text-[9px] font-bold uppercase tracking-wide text-primary-foreground">Pro</span>}
+      </button>
+      {onFocus && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button data-testid="search-options-button" aria-label="Search options" className="flex h-full items-center pl-0.5 pr-1.5">
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="top" className="w-64">
+            <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground">Search in</DropdownMenuLabel>
+            {FOCUS_OPTIONS.map((f) => (
+              <DropdownMenuItem key={f.id} onSelect={() => onFocus(f.id)} data-testid={`search-focus-${f.id}`} className="gap-2.5">
+                <f.icon className="h-4 w-4 text-brand" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm font-medium">{f.label}</span>
+                  <span className="text-[11px] text-muted-foreground">{f.hint}</span>
+                </span>
+                {on && focus === f.id && <Check className="h-4 w-4 text-brand" />}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); onTogglePro(); }} data-testid="pro-search-toggle" className="gap-2.5">
+              <Sparkles className="h-4 w-4 text-brand" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="text-sm font-medium">Pro search</span>
+                <span className="text-[11px] text-muted-foreground">Searches several ways and reads the pages. Slower, more thorough.</span>
+              </span>
+              <span className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${pro ? "bg-primary" : "bg-surface-strong"}`}>
+                <span className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${pro ? "translate-x-4" : ""}`} />
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
   );
 }
 
