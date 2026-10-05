@@ -46,6 +46,7 @@ import decks
 import appdata
 import automations
 import live_search
+import related
 import mailer
 import counsellor
 import help_center
@@ -175,6 +176,7 @@ class MessageIn(BaseModel):
     agent: bool = False
     think: bool = False  # the Think button: reason longer and check the answer
     study: bool = False  # Study mode: teach step by step and quiz instead of just answering
+    web: bool = False  # the Search button: always search the web and cite sources
     voice: bool = False  # sent from voice mode: the reply is spoken aloud
     voiceLang: Optional[str] = Field(default=None, max_length=8)
 
@@ -184,6 +186,7 @@ class RegenerateIn(BaseModel):
     agent: bool = False
     think: bool = False
     study: bool = False
+    web: bool = False
 
 
 class SpeechIn(BaseModel):
@@ -261,6 +264,7 @@ def public_message(doc: dict) -> dict:
         "content": doc["content"],
         "model": doc.get("model"),
         "sources": doc.get("sources"),
+        "related": doc.get("related") or [],
         "images": doc.get("images") or [],
         "steps": doc.get("steps") or [],
         "media": doc.get("media") or [],
@@ -778,7 +782,7 @@ def _builder_summary(steps: list) -> str:
 
 async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: Optional[str] = None,
                    max_steps: Optional[int] = None, think: bool = False, study: bool = False,
-                   voice: bool = False, voice_lang: Optional[str] = None):
+                   voice: bool = False, voice_lang: Optional[str] = None, web: bool = False):
     """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
 
     If the conversation belongs to a project, relevant document chunks (RAG) and
@@ -854,9 +858,15 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     use_runtime = agent or any(m.get("images") for m in history_docs)
     # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
     if not app_id and not counselling:
-        live = await live_search.lookup([m["content"] for m in history_docs if m["role"] == "user"])
+        live, web_sources = await live_search.gather([m["content"] for m in history_docs if m["role"] == "user"],
+                                                     force=web)
         if live:
             system_parts.append(live)
+        sources = sources + web_sources
+    # Perplexity-style follow-up questions under ordinary chat answers.
+    ask_related = not app_id and not counselling and not voice and not extra_system
+    if ask_related:
+        system_parts.append(related.PROMPT)
     # Free models (Groq) get only the app tools inside an app, to stay within their token budget.
     focused = bool(app_id) and agent_llm.lean(model)
     if app_id and not max_steps and (not agent_llm.lean(model) or agent_llm.token_budget(model) > 16000):
@@ -930,6 +940,11 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             yield f"data: {_sse_json(note)}\n\n"
     finally:
         content = "".join(full).strip()
+        follow_ups = []
+        if ask_related:
+            content, follow_ups = related.split(content)
+            if follow_ups and not stopped:
+                yield f"event: related\ndata: {_sse_json(follow_ups)}\n\n"
         if content or steps:
             if stopped:
                 for step in steps:
@@ -942,6 +957,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 "content": content,
                 "model": model,
                 "sources": sources or None,
+                "related": follow_ups or None,
                 "steps": steps or None,
                 "media": produced or None,
                 "stopped": stopped or None,
@@ -974,10 +990,10 @@ class _TurnResponse(StreamingResponse):
 
 
 
-def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False,
-                     study: bool = False, voice: bool = False, voice_lang: Optional[str] = None) -> StreamingResponse:
+def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False, study: bool = False,
+                     voice: bool = False, voice_lang: Optional[str] = None, web: bool = False) -> StreamingResponse:
     return _TurnResponse(
-        run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang),
+        run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang, web=web),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
@@ -1040,7 +1056,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         return StreamingResponse(_canned_turn(conv_id, ready_reply), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study,
-                            voice=body.voice, voice_lang=body.voiceLang)
+                            voice=body.voice, voice_lang=body.voiceLang, web=body.web)
 
 
 async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
@@ -1129,7 +1145,7 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
     if remaining == 0:
         raise HTTPException(status_code=400, detail="Nothing to regenerate")
 
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study)
+    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web)
 
 
 # -------------------------------------------------------------------- sharing

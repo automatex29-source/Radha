@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck, Lightbulb, GraduationCap } from "lucide-react";
+import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck, Lightbulb, GraduationCap, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
@@ -16,7 +16,7 @@ export default function ComposerInput({
   onAttach, attachments = [], onRemoveAttachment, uploading,
   images = [], onRemoveImage,
   agentMode, onToggleAgent, agentAvailable, agentHint,
-  thinkMode, onToggleThink, studyMode, onToggleStudy,
+  thinkMode, onToggleThink, studyMode, onToggleStudy, webMode, onToggleWeb,
   voiceEnabled, voiceHint, onVoiceMode, placeholder,
 }) {
   const ref = useRef(null);
@@ -169,6 +169,10 @@ export default function ComposerInput({
                   agentMode ? "bg-primary/15 text-brand ring-1 ring-primary/50" : "text-muted-foreground hover:bg-surface hover:text-foreground"}`}>
                 <Bot className="h-4 w-4" /> Agent
               </button>
+            )}
+            {onToggleWeb && (
+              <ModeChip on={webMode} onClick={onToggleWeb} icon={Globe} label={t("web")} testId="web-mode-toggle"
+                title={webMode ? "Search is on: every answer searches the web and shows its sources" : "Search the web and show sources for every answer"} />
             )}
             {onToggleThink && (
               <ModeChip on={thinkMode} onClick={onToggleThink} icon={Lightbulb} label={t("think")} testId="think-mode-toggle"
