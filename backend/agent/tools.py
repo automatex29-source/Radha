@@ -8,6 +8,7 @@ tool errors instead of crashing the turn). Adding a tool = one `register()`.
 import contextlib
 import json
 import logging
+from urllib.parse import urlparse
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -29,6 +30,10 @@ class ToolContext:
     app_id: Optional[str] = None
     focused: bool = False  # in an app, offer only the app tools (keeps prompts small for free models)
     model: str = ""  # the chat model, for tools that call a model themselves (deep_research)
+    # The answer's source cards: web_search adds its results here, numbered after the ones already shown,
+    # so the model's [n] citations point at real cards.
+    sources: Optional[List[dict]] = None
+    searches_left: Optional[int] = None  # None means no limit
 
 
 @dataclass
@@ -113,8 +118,36 @@ def _require(args: dict, key: str) -> str:
     return val.strip()
 
 
+SEARCH_DONE = ("You have already searched enough for this question. Don't search again: answer now from the "
+               "results above, citing them with their [n] numbers.")
+
+
+def _number_results(ctx: ToolContext, results: List[dict]) -> List[int]:
+    """Each result's citation number: its card's place among the answer's web cards (added when new)."""
+    if ctx is None or ctx.sources is None:
+        return list(range(1, len(results) + 1))
+    web_cards = [c for c in ctx.sources if c.get("type") in ("web", "video")]
+    numbers = []
+    for r in results:
+        url = r.get("url") or ""
+        known = next((i for i, c in enumerate(web_cards) if c.get("url") == url), None)
+        if known is None and url.startswith("http"):
+            host = urlparse(url).netloc.lower()
+            card = {"type": "web", "title": r.get("title") or host, "url": url,
+                    "domain": host[4:] if host.startswith("www.") else host, "snippet": (r.get("snippet") or "")[:240]}
+            ctx.sources.append(card)
+            web_cards.append(card)
+            known = len(web_cards) - 1
+        numbers.append(known + 1 if known is not None else 0)
+    return numbers
+
+
 async def _web_search(ctx: ToolContext, args: dict) -> ToolOutput:
     query = _require(args, "query")
+    if ctx is not None and ctx.searches_left is not None:
+        if ctx.searches_left <= 0:
+            return ToolOutput(content=SEARCH_DONE, summary="Already searched, answering now")
+        ctx.searches_left -= 1
     rates = ""
     if web.CURRENCY.search(query):  # live rates beat search snippets for currency questions
         try:
@@ -128,7 +161,12 @@ async def _web_search(ctx: ToolContext, args: dict) -> ToolOutput:
         if not rates:
             raise
         results = []
-    lines = [f"{i + 1}. {r['title']}\n   {r['url']}\n   {r['snippet']}" for i, r in enumerate(results)]
+    numbers = _number_results(ctx, results)
+    lines = [f"[{n}] {r['title']}\n   {r['url']}\n   {r['snippet']}" if n else f"- {r['title']}\n   {r['snippet']}"
+             for n, r in zip(numbers, results)]
+    if lines and ctx is not None and ctx.sources is not None:
+        lines.append(("Cite these with their [n] numbers after the sentences that use them. Results can be "
+                      "old: a change they say takes effect on a date already passed has happened."))
     content = "\n\n".join(part for part in (rates, "\n".join(lines)) if part)
     if not content:
         return ToolOutput(content="No results found. Try a simpler or corrected query.", summary=f"No results for “{query}”")

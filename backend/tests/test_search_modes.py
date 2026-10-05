@@ -205,3 +205,20 @@ def test_pro_falls_back_when_it_times_out(monkeypatch):
     monkeypatch.setattr(search_modes, "search", fake_search)
     found = asyncio.run(live_search.gather(["ceo of airtel"], pro=True, model="m"))
     assert found["sources"][0]["url"] == "https://airtel.in/" and found["queries"] == ["ceo of airtel"]
+
+
+def test_model_web_search_adds_numbered_cards_and_stops_after_limit(monkeypatch):
+    from agent import tools, web as agent_web
+
+    async def fake_search(query, limit=6):
+        return [{"title": "Old", "url": "https://a.test/old", "snippet": "x"},
+                {"title": "Airtel CEO", "url": "https://www.airtel.in/ceo", "snippet": "Shashwat Sharma"}]
+    monkeypatch.setattr(agent_web, "search", fake_search)
+    sources = [{"type": "weather"}, {"type": "web", "url": "https://a.test/old", "title": "Old", "domain": "a.test"}]
+    ctx = tools.ToolContext(db=None, user_id="u", sources=sources, searches_left=1)
+    out = asyncio.run(tools._web_search(ctx, {"query": "airtel ceo"}))
+    assert "[1] Old" in out.content and "[2] Airtel CEO" in out.content
+    assert sources[-1] == {"type": "web", "title": "Airtel CEO", "url": "https://www.airtel.in/ceo",
+                           "domain": "airtel.in", "snippet": "Shashwat Sharma"} and len(sources) == 3
+    again = asyncio.run(tools._web_search(ctx, {"query": "airtel ceo 2026"}))
+    assert again.content == tools.SEARCH_DONE and len(sources) == 3
