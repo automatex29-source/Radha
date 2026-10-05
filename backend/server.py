@@ -1853,6 +1853,8 @@ async def startup():
     await db.password_resets.create_index("tokenHash")
     await db.conversations.create_index([("userId", 1), ("updatedAt", -1)])
     await db.conversations.create_index("shareId", sparse=True)
+    await db.pages.create_index("id", unique=True)
+    await db.pages.create_index([("messageId", 1), ("userId", 1)])
     await db.messages.create_index([("conversationId", 1), ("createdAt", 1)])
     await db.projects.create_index([("userId", 1), ("updatedAt", -1)])
     await db.files.create_index([("projectId", 1), ("is_deleted", 1)])
