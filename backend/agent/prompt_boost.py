@@ -20,7 +20,7 @@ from . import llm, styles
 logger = logging.getLogger("radha.agent")
 
 TIMEOUT = float(os.environ.get("PROMPT_BOOST_TIMEOUT_SECONDS", "25"))
-_MODELS = ["openai/gpt-oss-120b", "gemini-2.5-flash", "claude-haiku-4-5-20251001", "gpt-5.4", "claude-sonnet-4-6"]
+_MODELS = ["openai/gpt-oss-120b", "gemini-3.5-flash-lite", "claude-haiku-4-5-20251001", "gpt-5.4", "claude-sonnet-4-6"]
 
 IMAGE_SYSTEM = (
     "You are an award-winning art director writing prompts for an AI image model. Rewrite the user's request as "

@@ -145,7 +145,7 @@ def test_gemini_out_of_free_requests_falls_back_to_groq(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "x")
     seen = fake_completion(monkeypatch, failures=1)
     events = run(collect(llm.stream_completion("gemini-2.5-flash", [{"role": "user", "content": "hi"}], [])))
-    assert [kw["model"] for kw in seen] == ["gemini/gemini-2.5-flash", "groq/openai/gpt-oss-120b"]
+    assert [kw["model"] for kw in seen] == ["gemini/gemini-3.5-flash-lite", "groq/openai/gpt-oss-120b"]  # old name -> current
     assert events == []
 
 
@@ -162,8 +162,8 @@ def test_gemini_blocked_key_falls_back_to_groq(monkeypatch):
         return FakeStream()
 
     monkeypatch.setattr(litellm, "acompletion", acompletion)
-    run(collect(llm.stream_completion("gemini-2.5-flash", [{"role": "user", "content": "hi"}], [])))
-    assert [kw["model"] for kw in seen] == ["gemini/gemini-2.5-flash", "groq/openai/gpt-oss-120b"]
+    run(collect(llm.stream_completion("gemini-3.5-flash-lite", [{"role": "user", "content": "hi"}], [])))
+    assert [kw["model"] for kw in seen] == ["gemini/gemini-3.5-flash-lite", "groq/openai/gpt-oss-120b"]
 
 
 def test_gemini_without_groq_or_with_pictures_does_not_fall_back(monkeypatch):
@@ -173,3 +173,36 @@ def test_gemini_without_groq_or_with_pictures_does_not_fall_back(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "x")
     picture = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:x"}}]}]
     assert llm.fallback_for("gemini-2.5-flash", picture) is None
+
+
+def test_gemini_busy_mid_stream_falls_back_before_any_text(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    seen = []
+
+    class Busy:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise litellm.ServiceUnavailableError("model is experiencing high demand", "gemini", "gemini-3.5-flash-lite")
+
+    async def acompletion(**kwargs):
+        seen.append(kwargs)
+        return Busy() if len(seen) == 1 else FakeStream()
+
+    monkeypatch.setattr(litellm, "acompletion", acompletion)
+    run(collect(llm.stream_completion("gemini-3.5-flash-lite", [{"role": "user", "content": "hi"}], [])))
+    assert [kw["model"] for kw in seen] == ["gemini/gemini-3.5-flash-lite", "groq/openai/gpt-oss-120b"]
+
+
+def test_gemini_tool_calls_are_sent_back_signed():
+    call = {"id": "c1", "type": "function", "function": {"name": "web_search", "arguments": '{"q": "news"}'}}
+    msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": None, "tool_calls": [call]},
+            {"role": "tool", "tool_call_id": "c1", "content": "ok"}]
+    sent = llm.request_kwargs("gemini-3.5-flash-lite", msgs, [])["messages"]
+    block = sent[1]["thinking_blocks"][0]
+    assert json.loads(block["thinking"]) == {"function_call": {"name": "web_search", "args": {"q": "news"}}}
+    assert block["signature"] == "skip_thought_signature_validator"
+    assert "thinking_blocks" not in msgs[1]  # the conversation itself is untouched
+    assert "thinking_blocks" not in llm.request_kwargs(GROQ, msgs, [])["messages"][1]

@@ -79,6 +79,11 @@ _FALLBACK = {"openai/gpt-oss-120b": "openai/gpt-oss-20b", "cerebras/gpt-oss-120b
 # Gemini's free tier has a small daily allowance (and Google can block a key), so when it runs out
 # Groq answers instead of the user seeing an error.
 _GEMINI_FALLBACK = "openai/gpt-oss-120b"
+# Google retires Gemini models for new keys; chats saved with an old name use the current one.
+_RENAMED = {"gemini-2.5-flash": "gemini-3.5-flash-lite"}
+# Gemini 3 wants each tool call sent back with the "thought signature" it came with. LiteLLM's streaming
+# drops it, so calls are sent back with Google's documented placeholder instead.
+_SKIP_SIGNATURE = "skip_thought_signature_validator"
 
 
 def _has_images(messages: List[dict]) -> bool:
@@ -86,22 +91,11 @@ def _has_images(messages: List[dict]) -> bool:
                                                         if isinstance(p, dict)) for m in messages)
 
 
-def _key_refused(exc: Exception) -> bool:
-    """True when the provider turned the key away (blocked project, wrong or expired key)."""
-    text = str(exc).lower()
-    return getattr(exc, "status_code", None) in (401, 403) or any(
-        w in text for w in ("denied access", "permission_denied", "api key not valid", "api_key_invalid"))
-
-
 def fallback_for(model: str, messages: List[dict]) -> Optional[str]:
-    """The model that answers when `model` is rate limited, or None to wait and retry."""
-    if gateway():
+    """The model that answers when Gemini can't, or None."""
+    if gateway() or provider_for(model) != "gemini":
         return None
-    if provider_for(model) == "gemini":
-        if configured(_GEMINI_FALLBACK) and not _has_images(messages):
-            return _GEMINI_FALLBACK
-        return None
-    return _FALLBACK.get(model) if lean(model) else None
+    return _GEMINI_FALLBACK if configured(_GEMINI_FALLBACK) and not _has_images(messages) else None
 
 
 def lean(model: str) -> bool:
@@ -120,6 +114,7 @@ def token_budget(model: str = "") -> int:
 
 def litellm_model(model: str) -> str:
     """The model name LiteLLM expects: provider-prefixed, without doubling a prefix already there."""
+    model = _RENAMED.get(model, model)
     provider = provider_for(model)
     return model if model.startswith(provider + "/") else f"{provider}/{model}"
 
@@ -239,6 +234,24 @@ def _cached_system(messages: List[dict]) -> List[dict]:
     return [first] + messages[1:]
 
 
+def _signed_calls(messages: List[dict]) -> List[dict]:
+    """Attach a thought signature to each earlier tool call, which Gemini 3 rejects without one."""
+    out = []
+    for m in messages:
+        if m.get("role") == "assistant" and m.get("tool_calls") and not m.get("thinking_blocks"):
+            blocks = []
+            for c in m["tool_calls"]:
+                try:
+                    args = json.loads(c["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                part = {"function_call": {"name": c["function"]["name"], "args": args}}
+                blocks.append({"type": "thinking", "thinking": json.dumps(part), "signature": _SKIP_SIGNATURE})
+            m = {**m, "thinking_blocks": blocks}
+        out.append(m)
+    return out
+
+
 def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: bool = False,
                    max_output: Optional[int] = None) -> dict:
     """LiteLLM arguments for one request, trimmed to the model's token budget when it has one."""
@@ -248,6 +261,8 @@ def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: b
         kwargs.update(model=f"openai/{model}", **gw)
     elif provider_for(model) == "anthropic":
         kwargs["messages"] = _cached_system(messages)
+    elif provider_for(model) == "gemini":
+        kwargs["messages"] = _signed_calls(messages)
     if tools:
         kwargs["tools"] = tools
     if lean(model):
@@ -263,10 +278,32 @@ def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: b
 
 async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: bool = False,
                        max_output: Optional[int] = None) -> AsyncIterator[dict]:
+    """One model call; Gemini hands over to Groq if it fails before saying anything."""
+    fallback = fallback_for(model, messages)
+    if not fallback:
+        async for event in _stream_model(model, messages, tools, think, max_output):
+            yield event
+        return
+    sent = False
+    try:
+        async for event in _stream_model(model, messages, tools, think, max_output, wait=False):
+            sent = sent or event["type"] != "heartbeat"
+            yield event
+    except Exception as exc:
+        # Out of free requests, busy (503), retired or a blocked key: Groq answers instead of an error.
+        if sent:
+            raise
+        logger.warning("%s failed (%s), answering with %s", model, str(exc)[:300], fallback)
+        async for event in _stream_model(fallback, messages, tools, think, max_output):
+            yield event
+
+
+async def _stream_model(model: str, messages: List[dict], tools: List[dict], think: bool = False,
+                        max_output: Optional[int] = None, wait: bool = True) -> AsyncIterator[dict]:
     import litellm
 
     kwargs = request_kwargs(model, messages, tools, think, max_output)
-    fallback = fallback_for(model, messages)
+    fallback = _FALLBACK.get(model) if lean(model) else None
     attempt = 0
     while True:
         try:
@@ -275,26 +312,17 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
         except litellm.RateLimitError as exc:
             if fallback and (provider_for(fallback) == provider_for(model) or configured(fallback)):
                 logger.info("%s is rate limited, answering with %s", model, fallback)
-                model, kwargs = fallback, request_kwargs(fallback, messages, tools, think, max_output)
-                fallback = fallback_for(fallback, messages)
-                attempt = 0
+                kwargs = request_kwargs(fallback, messages, tools, think, max_output)
+                fallback = None
                 continue
-            if attempt == _RATE_LIMIT_RETRIES or "per day" in str(exc).lower():
+            if not wait or attempt == _RATE_LIMIT_RETRIES or "per day" in str(exc).lower():
                 raise
             attempt += 1
-            wait = _retry_after(exc)
-            while wait > 0:
-                await asyncio.sleep(min(wait, _HEARTBEAT_SECONDS))
-                wait -= _HEARTBEAT_SECONDS
+            pause = _retry_after(exc)
+            while pause > 0:
+                await asyncio.sleep(min(pause, _HEARTBEAT_SECONDS))
+                pause -= _HEARTBEAT_SECONDS
                 yield {"type": "heartbeat"}
-        except Exception as exc:
-            # A blocked or wrong Gemini key shouldn't stop the chat while Groq is set up.
-            if provider_for(model) == "gemini" and fallback and _key_refused(exc):
-                logger.warning("%s refused the key (%s), answering with %s", model, exc, fallback)
-                model, kwargs = fallback, request_kwargs(fallback, messages, tools, think, max_output)
-                fallback = fallback_for(fallback, messages)
-                continue
-            raise
 
     calls = {}
     async for chunk in resp:
