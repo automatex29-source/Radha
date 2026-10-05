@@ -138,3 +138,38 @@ def test_focused_app_context_offers_only_app_tools():
     assert names(ToolContext(None, "u", app_id="a", focused=True)) == ["write_file"]
     assert names(ToolContext(None, "u", app_id="a")) == ["web_search", "write_file"]
     assert names(ToolContext(None, "u")) == ["web_search"]
+
+
+def test_gemini_out_of_free_requests_falls_back_to_groq(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    seen = fake_completion(monkeypatch, failures=1)
+    events = run(collect(llm.stream_completion("gemini-2.5-flash", [{"role": "user", "content": "hi"}], [])))
+    assert [kw["model"] for kw in seen] == ["gemini/gemini-2.5-flash", "groq/openai/gpt-oss-120b"]
+    assert events == []
+
+
+def test_gemini_blocked_key_falls_back_to_groq(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    seen = []
+
+    async def acompletion(**kwargs):
+        seen.append(kwargs)
+        if len(seen) == 1:
+            raise litellm.BadRequestError("Your project has been denied access. PERMISSION_DENIED", "gemini-2.5-flash",
+                                          "gemini")
+        return FakeStream()
+
+    monkeypatch.setattr(litellm, "acompletion", acompletion)
+    run(collect(llm.stream_completion("gemini-2.5-flash", [{"role": "user", "content": "hi"}], [])))
+    assert [kw["model"] for kw in seen] == ["gemini/gemini-2.5-flash", "groq/openai/gpt-oss-120b"]
+
+
+def test_gemini_without_groq_or_with_pictures_does_not_fall_back(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    assert llm.fallback_for("gemini-2.5-flash", [{"role": "user", "content": "hi"}]) is None
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    picture = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:x"}}]}]
+    assert llm.fallback_for("gemini-2.5-flash", picture) is None

@@ -76,6 +76,32 @@ PLAIN_OUTPUT = 3000
 # Groq's limits are per model: when the big model is rate limited, its smaller sibling answers right away
 # instead of the user waiting up to a minute.
 _FALLBACK = {"openai/gpt-oss-120b": "openai/gpt-oss-20b", "cerebras/gpt-oss-120b": "openai/gpt-oss-120b"}
+# Gemini's free tier has a small daily allowance (and Google can block a key), so when it runs out
+# Groq answers instead of the user seeing an error.
+_GEMINI_FALLBACK = "openai/gpt-oss-120b"
+
+
+def _has_images(messages: List[dict]) -> bool:
+    return any(isinstance(m.get("content"), list) and any(p.get("type") == "image_url" for p in m["content"]
+                                                        if isinstance(p, dict)) for m in messages)
+
+
+def _key_refused(exc: Exception) -> bool:
+    """True when the provider turned the key away (blocked project, wrong or expired key)."""
+    text = str(exc).lower()
+    return getattr(exc, "status_code", None) in (401, 403) or any(
+        w in text for w in ("denied access", "permission_denied", "api key not valid", "api_key_invalid"))
+
+
+def fallback_for(model: str, messages: List[dict]) -> Optional[str]:
+    """The model that answers when `model` is rate limited, or None to wait and retry."""
+    if gateway():
+        return None
+    if provider_for(model) == "gemini":
+        if configured(_GEMINI_FALLBACK) and not _has_images(messages):
+            return _GEMINI_FALLBACK
+        return None
+    return _FALLBACK.get(model) if lean(model) else None
 
 
 def lean(model: str) -> bool:
@@ -240,7 +266,7 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
     import litellm
 
     kwargs = request_kwargs(model, messages, tools, think, max_output)
-    fallback = _FALLBACK.get(model) if lean(model) else None
+    fallback = fallback_for(model, messages)
     attempt = 0
     while True:
         try:
@@ -249,8 +275,9 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
         except litellm.RateLimitError as exc:
             if fallback and (provider_for(fallback) == provider_for(model) or configured(fallback)):
                 logger.info("%s is rate limited, answering with %s", model, fallback)
-                kwargs = request_kwargs(fallback, messages, tools, think, max_output)
-                fallback = None
+                model, kwargs = fallback, request_kwargs(fallback, messages, tools, think, max_output)
+                fallback = fallback_for(fallback, messages)
+                attempt = 0
                 continue
             if attempt == _RATE_LIMIT_RETRIES or "per day" in str(exc).lower():
                 raise
@@ -260,6 +287,14 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
                 await asyncio.sleep(min(wait, _HEARTBEAT_SECONDS))
                 wait -= _HEARTBEAT_SECONDS
                 yield {"type": "heartbeat"}
+        except Exception as exc:
+            # A blocked or wrong Gemini key shouldn't stop the chat while Groq is set up.
+            if provider_for(model) == "gemini" and fallback and _key_refused(exc):
+                logger.warning("%s refused the key (%s), answering with %s", model, exc, fallback)
+                model, kwargs = fallback, request_kwargs(fallback, messages, tools, think, max_output)
+                fallback = fallback_for(fallback, messages)
+                continue
+            raise
 
     calls = {}
     async for chunk in resp:
