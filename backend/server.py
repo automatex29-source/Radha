@@ -546,11 +546,13 @@ SYSTEM_PROMPT = (
 )
 
 
+MAX_WEB_SEARCHES = 3  # per answer, when nothing was searched before the model started
+
 AGENT_PROMPT = (
     "You have tools; use them on your own whenever they make the answer better, without asking. "
     "Anything current or checkable (news, prices, rates, scores, people, recent events, facts you are unsure of): "
     "call web_search first, open the best result with fetch_url when snippets are thin, and answer from what you "
-    "found with 1-2 source links. For research, reports, market analysis or detailed comparisons of tools, prices or options, "
+    "found, citing results with their [n] numbers. For research, reports, market analysis or detailed comparisons of tools, prices or options, "
     "call deep_research (it writes a cited PDF report). For step-by-step guides, web_search the service's current "
     "docs first so button names are right. Live exchange rates, when given, are the source of truth for currency questions. "
     "Use run_python for any calculation, data work or chart; browser to operate websites; edit_image to change a "
@@ -904,6 +906,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     if sources:
         yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
+    shown_sources = len(sources)
 
     full, steps, produced = [], [pro_step] if pro_step else [], []
     stopped = False  # the user pressed Stop (the browser closed the stream) before the reply finished
@@ -913,8 +916,12 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 raise RuntimeError(agent_llm.missing_key_message(model))
             llm_messages = await _llm_messages(history_docs, system_prompt, user_id,
                                                see_images=agent_llm.supports_images(model))
+            # Searched already (Search button, Pro or a fact question): one more web search at most, so the
+            # answer doesn't wait on a chain of searches. The model's own results join the source cards.
+            searched = any(s.get("type") in ("web", "video") for s in sources)
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
-                              model=model)
+                              model=model, sources=None if app_id else sources,
+                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES))
             stream_fn = functools.partial(agent_llm.stream_completion, think=think)
             async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS):
                 if ev["type"] == "text":
@@ -932,6 +939,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                                     output=ev["output"], media=ev["media"])
                         produced.extend(ev["media"])
                         yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
+                    if len(sources) != shown_sources:
+                        shown_sources = len(sources)
+                        yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
         else:
             if not uses_emergent(AI_API_KEY) and not agent_llm.configured(model):
                 raise RuntimeError(agent_llm.missing_key_message(model))

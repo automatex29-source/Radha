@@ -41,6 +41,11 @@ CITE_NOTE = (
     "These results were searched just now for this question: answer from them directly and don't call "
     "web_search again unless they clearly don't contain the answer. If the question has a typo, answer what "
     "the user meant. "
+    "Write a full answer, not one line: open with the direct answer in a sentence or two, then give the useful "
+    "details (who, what, when, key numbers, what changed recently) in short paragraphs or bullets with bold "
+    "key facts. When results show a change over time (someone appointed, a price revised), say what is true as of "
+    "today's date and when it changed; a change that a result says takes effect on a date already passed has "
+    "happened, so the newer person or number is current. "
     "Cite: after each sentence that uses a numbered web result, add its number in square brackets, like [1] or "
     "[2][3]. Use only the numbers listed here. Don't add a separate list of sources or links; the app shows them."
 )
