@@ -11,10 +11,10 @@ import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 
-function CodeBlock({ inline, className, children }) {
+// Only fenced code gets the box and copy button; `inline code` stays in the sentence.
+function CodeBlock({ node, children }) {
   const [copied, setCopied] = useState(false);
-  if (inline) return <code className={className}>{children}</code>;
-  const text = String(children).replace(/\n$/, "");
+  const text = (node?.children?.[0]?.children || []).map((c) => c.value || "").join("").replace(/\n$/, "");
   const copy = () => {
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -27,7 +27,7 @@ function CodeBlock({ inline, className, children }) {
         {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
         {copied ? "Copied" : "Copy"}
       </button>
-      <pre className="max-h-[28rem] overflow-auto"><code className={className}>{children}</code></pre>
+      <pre className="max-h-[28rem] overflow-auto">{children}</pre>
     </div>
   );
 }
@@ -124,7 +124,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         </div>
         <ToolSteps steps={message.steps} />
         <div dir="auto" className="radha-prose min-w-0">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock }}>
             {shown}
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
