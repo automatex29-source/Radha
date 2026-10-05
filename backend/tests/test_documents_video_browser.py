@@ -150,7 +150,7 @@ class TestVideo:
         monkeypatch.setenv("POLLINATIONS_API_KEY", "p")
         assert video.provider() == "pollinations"
         monkeypatch.setenv("GEMINI_API_KEY", "g")
-        assert video.provider() == "gemini"
+        assert video.provider() == "pollinations"  # a Gemini chat key doesn't switch video to paid Veo
         monkeypatch.setenv("OPENAI_API_KEY", "o")
         assert video.provider() == "openai"
         monkeypatch.setenv("VIDEO_PROVIDER", "gemini")
