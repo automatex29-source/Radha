@@ -252,3 +252,22 @@ def test_groq_gets_a_smaller_pro_pack(monkeypatch):
     monkeypatch.setattr(search_modes, "pro", fake_pro)
     asyncio.run(live_search.gather(["airtel ceo"], pro=True, model="openai/gpt-oss-120b"))
     assert seen == {"max_sources": 4, "max_chars": 500}
+
+
+def test_weather_question_skips_pro(monkeypatch):
+    called = {}
+
+    async def fake_pro(question, model, **k):
+        called["pro"] = True
+        return {"queries": [], "results": []}
+
+    async def fake_weather(text):
+        return "Weather now", {"type": "weather", "place": "Mumbai"}
+
+    async def fake_search(query, focus, limit):
+        return [{"title": "Mumbai weather", "url": "https://w.test", "snippet": "28C"}]
+    monkeypatch.setattr(search_modes, "pro", fake_pro)
+    monkeypatch.setattr(search_modes, "search", fake_search)
+    monkeypatch.setattr(live_search.widgets, "weather", fake_weather)
+    found = asyncio.run(live_search.gather(["WHO IS THE CEO OF AIRTEL", "weather in Mumbai"], pro=True, model="m"))
+    assert "pro" not in called and found["sources"][0]["type"] == "weather"

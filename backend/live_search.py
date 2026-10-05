@@ -56,7 +56,9 @@ def _recent_user_text(user_messages: List[str]) -> str:
     if not user_messages:
         return ""
     last = user_messages[-1].strip()
-    if len(last.split()) <= 3 and len(user_messages) > 1:
+    # "weather in Mumbai" or "who is Sachin" is a new question of its own, not a follow-up.
+    stands_alone = _QUESTION.search(last) or widgets.weather_place(last) or widgets.stock_query(last)
+    if len(last.split()) <= 3 and len(user_messages) > 1 and not stands_alone:
         return f"{user_messages[-2].strip()} {last}"
     return last
 
@@ -148,7 +150,8 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
     if widgets.stock_query(text) or re.search(r"\b(sensex|nifty)\b", text, re.I):
         jobs["stock"] = asyncio.wait_for(widgets.stock(text), LOOKUP_TIMEOUT)
     if search:
-        if pro and focus == "web":
+        # Weather and stock questions are answered by their live card; Pro's extra searches add nothing there.
+        if pro and focus == "web" and not ("weather" in jobs or "stock" in jobs):
             jobs["search"] = asyncio.wait_for(_pro(text, model), PRO_TIMEOUT)
         else:
             jobs["search"] = asyncio.wait_for(_search(text, 8 if force else 5, focus), LOOKUP_TIMEOUT)
@@ -171,7 +174,7 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
         elif name == "search":
             parts.append(item[0])
             cards = item[1]
-            queries = list(item[2]) if len(item) > 2 else []
+            queries = list(item[2]) if len(item) > 2 else [text[:200]]
         elif name == "images":
             pictures = item
     return {"context": "\n\n".join(parts) or None, "sources": live_cards + cards + pictures, "queries": queries}

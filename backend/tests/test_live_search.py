@@ -19,6 +19,7 @@ def test_detects_questions_that_need_live_info():
 
 def test_short_follow_up_joins_previous_question():
     assert live_search._recent_user_text(["what is the dollar rate", "USD"]) == "what is the dollar rate USD"
+    assert live_search._recent_user_text(["WHO IS THE CEO OF AIRTEL", "weather in Mumbai"]) == "weather in Mumbai"
     assert live_search._recent_user_text(["hi", "tell me a long story about dragons"]) == "tell me a long story about dragons"
 
 
