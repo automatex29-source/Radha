@@ -222,3 +222,33 @@ def test_model_web_search_adds_numbered_cards_and_stops_after_limit(monkeypatch)
                            "domain": "airtel.in", "snippet": "Shashwat Sharma"} and len(sources) == 3
     again = asyncio.run(tools._web_search(ctx, {"query": "airtel ceo 2026"}))
     assert again.content == tools.SEARCH_DONE and len(sources) == 3
+
+
+def test_pro_drops_off_topic_pages():
+    pages = [{"title": "Current | Future of Banking", "url": "https://current.com/", "text": "Banking app"},
+             {"title": "Airtel leadership", "url": "https://airtel.in/about", "text": "CEO Shashwat Sharma"},
+             {"title": "Bharti Airtel", "url": "https://en.wikipedia.org/wiki/Bharti_Airtel", "text": "The CEO is"}]
+    kept = search_modes.on_topic(pages, research_terms("WHO IS THE CEO OF AIRTEL"))
+    assert [p["url"] for p in kept] == ["https://airtel.in/about", "https://en.wikipedia.org/wiki/Bharti_Airtel"]
+    assert search_modes.on_topic(pages[:1], ["airtel"]) == pages[:1]  # nothing matches: keep what there is
+
+
+def research_terms(text):
+    from agent import research
+    return research.keywords(text)
+
+
+def test_no_pictures_for_who_holds_a_job():
+    assert not search_modes.wants_images("WHO IS THE CEO OF AIRTEL")
+    assert search_modes.wants_images("who is virat kohli")
+
+
+def test_groq_gets_a_smaller_pro_pack(monkeypatch):
+    seen = {}
+
+    async def fake_pro(question, model, **size):
+        seen.update(size)
+        return {"queries": [question], "results": [{"title": "A", "url": "https://a.test", "snippet": "s"}]}
+    monkeypatch.setattr(search_modes, "pro", fake_pro)
+    asyncio.run(live_search.gather(["airtel ceo"], pro=True, model="openai/gpt-oss-120b"))
+    assert seen == {"max_sources": 4, "max_chars": 500}

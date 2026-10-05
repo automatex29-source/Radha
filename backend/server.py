@@ -546,6 +546,17 @@ SYSTEM_PROMPT = (
 )
 
 
+NO_RESULTS_NOTE = (
+    "The automatic web search found nothing for this question. Call web_search now with a short, clear query "
+    "before answering. Don't answer current facts (who holds a job, prices, news) from memory: they may have "
+    "changed. If your search also finds nothing, say you couldn't check it live and that your answer may be out of date."
+)
+NO_RESULTS_NOTE_PLAIN = (
+    "The web search found nothing for this question just now. Answer from what you know, but say plainly that you "
+    "couldn't check it live, so facts that change (who holds a job, prices, news) may be out of date."
+)
+STREAM_FAILED_NOTE = ("Sorry, the AI model stopped before writing the answer (it may be busy or out of free "
+                      "requests for now). Tap Regenerate, or pick another model from the menu at the top.")
 MAX_WEB_SEARCHES = 3  # per answer, when nothing was searched before the model started
 
 AGENT_PROMPT = (
@@ -875,6 +886,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         found = await live_search.gather(user_texts, force=web, focus=focus, pro=pro, model=model)
         if found["context"]:
             system_parts.append(found["context"])
+        if (web or pro) and not any(c.get("type") in ("web", "video") for c in found["sources"]):
+            system_parts.append(NO_RESULTS_NOTE if agent else NO_RESULTS_NOTE_PLAIN)
         sources = sources + found["sources"]
         if pro:
             pages = sum(1 for s in found["sources"] if s.get("type") == "web")
@@ -954,6 +967,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         raise
     except Exception as exc:  # surface provider errors to the client
         logger.exception("AI stream failed")
+        if steps and not related.split("".join(full))[0].strip():
+            # Keep a visible reason with the search steps instead of an empty answer.
+            full.append(STREAM_FAILED_NOTE)
+            yield f"data: {_sse_json(STREAM_FAILED_NOTE)}\n\n"
         yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"
     else:
         if app_id and steps and not "".join(full).strip():

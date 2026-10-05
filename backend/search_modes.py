@@ -141,14 +141,33 @@ async def images(query: str, limit: int = 6) -> List[dict]:
 
 
 # ---------------------------------------------------------------- pro search
+def on_topic(sources: List[dict], terms: List[str]) -> List[dict]:
+    """Drops pages that don't mention the question's words (a search for "current CEO" can bring back a bank
+    called Current). Keeps the closest matches when too few pass, and everything when none match at all."""
+    terms = set(terms)
+    if not terms:
+        return sources
+    def hits(s):
+        words = set(research.keywords(f"{s.get('title', '')} {s.get('url', '')} {s.get('text', '')}"))
+        return len(terms & words)
+    need = min(2, len(terms))
+    for floor in (need, 1):
+        kept = [s for s in sources if hits(s) >= floor]
+        if len(kept) >= 2 or (kept and floor == 1):
+            return kept
+    return sources
+
+
 async def pro(question: str, model: str, max_sources: int = 6, max_chars: int = 900) -> dict:
     """Plans a few searches, reads the best pages. Returns {"queries", "results"} (results carry page text)."""
     queries = await research.plan(question, "", model, research.default_ask)
     # The planner's queries are cleaned up (typos fixed, clearer words), so they lead; the raw question goes last.
     queries = queries[1:] + queries[:1] if len(queries) > 1 else queries
     # Short limits so a slow engine or page can't use up the whole Pro budget; a page that won't load keeps its snippet.
-    sources = await research.gather_sources(queries, research.keywords(question), max_sources, max_chars,
+    terms = research.keywords(question)
+    sources = await research.gather_sources(queries, terms, max_sources + 2, max_chars,
                                             search_timeout=12, fetch_timeout=8)
+    sources = on_topic(sources, terms)[:max_sources]
     return {"queries": queries,
             "results": [{"title": s["title"], "url": s["url"], "snippet": s["text"]} for s in sources]}
 
@@ -167,6 +186,9 @@ def wants_images(text: str) -> bool:
     """Pictures help for places, people, products, animals and "show me" questions, not for prices or how-tos."""
     t = text.lower()
     if re.search(r"\b(price|rate|score|how to|why|calculate|code|error|stock|share)\b", t):
+        return False
+    # "Who is the CEO of X" asks for a name; picture searches for it bring back random things.
+    if re.search(r"\bwho (is|was|are|were) the\b", t):
         return False
     return bool(re.search(r"\b(show|photo|photos|picture|pictures|image|images|look like|looks like|design|"
                           r"who is|who was|where is|car|phone|laptop|place|places|temple|fort|beach|city|animal|"
