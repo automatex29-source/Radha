@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 import search_modes
 import widgets
-from agent import web
+from agent import llm as agent_llm, web
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,9 @@ async def _pro(text: str, model: str) -> Optional[Tuple[str, List[dict], List[st
     # Pro gets most of the time; if it finds nothing (slow engines, pages that won't load), a plain search
     # with the planner's cleaned-up query still brings back sources.
     try:
-        found = await asyncio.wait_for(search_modes.pro(text[:300], model), PRO_TIMEOUT - LOOKUP_TIMEOUT - 2)
+        # Groq's free tier fits about 8,000 tokens per request, so it gets a smaller reading pack.
+        size = {"max_sources": 4, "max_chars": 500} if model and agent_llm.lean(model) else {}
+        found = await asyncio.wait_for(search_modes.pro(text[:300], model, **size), PRO_TIMEOUT - LOOKUP_TIMEOUT - 2)
     except Exception as exc:
         logger.warning("Pro search failed, falling back to a plain search: %r", exc)
         found = {"queries": [], "results": []}

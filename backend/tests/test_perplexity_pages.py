@@ -127,3 +127,23 @@ def test_parse_google_news_feed():
     assert items == [{"title": "Rain lashes Mumbai", "url": "https://news.google.com/a", "source": "The Hindu",
                       "domain": "thehindu.com", "published": "2026-10-05T08:00:00+00:00"}]
     assert "hl=hi-IN" in discover.feed_url("top", "hi") and "TECHNOLOGY" in discover.feed_url("tech", "en")
+
+
+def test_empty_search_tells_the_model_to_search(client, monkeypatch):
+    import litellm
+    import server
+    from agent import web
+    prompts = []
+
+    async def nothing(query, limit=6):
+        return []
+
+    async def recording(**kw):
+        if kw.get("stream"):
+            prompts.append(kw["messages"][0]["content"])
+        return await _fake_completion(**kw)
+    monkeypatch.setattr(web, "search", nothing)
+    monkeypatch.setattr(litellm, "acompletion", recording)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    client.post(f"/api/conversations/{cid}/stream", json={"content": "Who is the CEO of Airtel?", "web": True})
+    assert prompts and (server.NO_RESULTS_NOTE in prompts[0] or server.NO_RESULTS_NOTE_PLAIN in prompts[0])
