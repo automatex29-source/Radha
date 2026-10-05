@@ -16,6 +16,9 @@ MAX_STEPS = 8
 HEARTBEAT_SECONDS = 10
 UI_OUTPUT_CHARS = 4000
 SEQUENTIAL_TOOLS = {"browser"}
+# Some models (Gemini Flash Lite) sometimes end a turn after their tool calls without a word.
+ANSWER_NUDGE = ("Now answer my question in plain words, using the tool results above. Don't call any more "
+                "tools.")
 
 
 async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContext,
@@ -23,6 +26,7 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
                     max_steps: int = MAX_STEPS) -> AsyncIterator[dict]:
     tools = registry.schemas(ctx) if use_tools else []
     labels = {t.name: (t.label or t.name) for t in registry.active(ctx)}
+    said = False
     for step in range(max_steps):
         # Last step: withhold tools so the model must answer with what it has.
         step_tools = tools if step < max_steps - 1 else []
@@ -30,12 +34,19 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
         async for ev in stream_fn(model, messages, step_tools):
             if ev["type"] == "text":
                 text.append(ev["text"])
+                said = said or bool(ev["text"].strip())
                 yield ev
             elif ev["type"] == "tool_calls":
                 calls = ev["calls"]
             elif ev["type"] == "heartbeat":
                 yield ev
         if not calls:
+            if not said and step > 0 and not ctx.app_id:
+                # Tools ran but nothing was said: ask once more, without tools, for the answer itself.
+                messages.append({"role": "user", "content": ANSWER_NUDGE})
+                async for ev in stream_fn(model, messages, []):
+                    if ev["type"] in ("text", "heartbeat"):
+                        yield ev
             return
         if text:
             # Separate pre-tool narration from what comes next.

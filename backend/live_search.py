@@ -38,6 +38,9 @@ _QUESTION = re.compile(
 _CURRENCY = web.CURRENCY
 MAX_QUESTION_CHARS = 300
 CITE_NOTE = (
+    "These results were searched just now for this question: answer from them directly and don't call "
+    "web_search again unless they clearly don't contain the answer. If the question has a typo, answer what "
+    "the user meant. "
     "Cite: after each sentence that uses a numbered web result, add its number in square brackets, like [1] or "
     "[2][3]. Use only the numbers listed here. Don't add a separate list of sources or links; the app shows them."
 )
