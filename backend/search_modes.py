@@ -146,7 +146,9 @@ async def pro(question: str, model: str, max_sources: int = 6, max_chars: int = 
     queries = await research.plan(question, "", model, research.default_ask)
     # The planner's queries are cleaned up (typos fixed, clearer words), so they lead; the raw question goes last.
     queries = queries[1:] + queries[:1] if len(queries) > 1 else queries
-    sources = await research.gather_sources(queries, research.keywords(question), max_sources, max_chars)
+    # Short limits so a slow engine or page can't use up the whole Pro budget; a page that won't load keeps its snippet.
+    sources = await research.gather_sources(queries, research.keywords(question), max_sources, max_chars,
+                                            search_timeout=12, fetch_timeout=8)
     return {"queries": queries,
             "results": [{"title": s["title"], "url": s["url"], "snippet": s["text"]} for s in sources]}
 

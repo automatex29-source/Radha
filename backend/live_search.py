@@ -99,9 +99,23 @@ async def _search(text: str, limit: int = 5, focus: str = "web") -> Optional[Tup
 
 
 async def _pro(text: str, model: str) -> Optional[Tuple[str, List[dict], List[str]]]:
-    found = await search_modes.pro(text[:300], model)
+    # Pro gets most of the time; if it finds nothing (slow engines, pages that won't load), a plain search
+    # with the planner's cleaned-up query still brings back sources.
+    try:
+        found = await asyncio.wait_for(search_modes.pro(text[:300], model), PRO_TIMEOUT - LOOKUP_TIMEOUT - 2)
+    except Exception as exc:
+        logger.warning("Pro search failed, falling back to a plain search: %r", exc)
+        found = {"queries": [], "results": []}
     formatted = _format(found["results"])
-    return (*formatted, found["queries"]) if formatted else None
+    if formatted:
+        return (*formatted, found["queries"])
+    query = (found["queries"] or [text])[0][:200]
+    try:
+        plain = await asyncio.wait_for(_search(query, 8), LOOKUP_TIMEOUT)
+    except Exception as exc:
+        logger.warning("Plain search after Pro failed: %r", exc)
+        plain = None
+    return (*plain, [query]) if plain else None
 
 
 async def gather(user_messages: List[str], search: bool = True, force: bool = False, focus: str = "web",

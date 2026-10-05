@@ -167,10 +167,41 @@ def test_pro_search_leads_with_planned_queries(monkeypatch):
 
     seen = {}
 
-    async def fake_gather(queries, terms, max_sources, max_chars):
+    async def fake_gather(queries, terms, max_sources, max_chars, **limits):
+        seen["limits"] = limits
         seen["queries"] = queries
         return []
     monkeypatch.setattr(research, "plan", fake_plan)
     monkeypatch.setattr(research, "gather_sources", fake_gather)
     asyncio.run(search_modes.pro("who isceo of whasapp", "m"))
     assert seen["queries"] == ["WhatsApp CEO 2026", "head of WhatsApp Meta", "who isceo of whasapp"]
+    assert seen["limits"] == {"search_timeout": 12, "fetch_timeout": 8}
+
+
+def test_pro_falls_back_to_plain_search_when_it_finds_nothing(monkeypatch):
+    async def empty_pro(question, model, **k):
+        return {"queries": ["Bharti Airtel CEO", "who is ceo of BHARTI Airtel"], "results": []}
+    seen = []
+
+    async def fake_search(query, focus, limit):
+        seen.append(query)
+        return [{"title": "Airtel leadership", "url": "https://airtel.in/leadership", "snippet": "Gopal Vittal"}]
+    monkeypatch.setattr(search_modes, "pro", empty_pro)
+    monkeypatch.setattr(search_modes, "search", fake_search)
+    found = asyncio.run(live_search.gather(["who is the ceo of BHARTI Airtel"], pro=True, model="m"))
+    assert seen == ["Bharti Airtel CEO"] and found["queries"] == ["Bharti Airtel CEO"]
+    assert found["sources"][0]["url"] == "https://airtel.in/leadership" and "Gopal Vittal" in found["context"]
+
+
+def test_pro_falls_back_when_it_times_out(monkeypatch):
+    async def slow_pro(question, model, **k):
+        await asyncio.sleep(5)
+
+    async def fake_search(query, focus, limit):
+        return [{"title": "Airtel", "url": "https://airtel.in/", "snippet": "CEO"}]
+    monkeypatch.setattr(live_search, "PRO_TIMEOUT", 8.2)
+    monkeypatch.setattr(live_search, "LOOKUP_TIMEOUT", 6.0)
+    monkeypatch.setattr(search_modes, "pro", slow_pro)
+    monkeypatch.setattr(search_modes, "search", fake_search)
+    found = asyncio.run(live_search.gather(["ceo of airtel"], pro=True, model="m"))
+    assert found["sources"][0]["url"] == "https://airtel.in/" and found["queries"] == ["ceo of airtel"]
