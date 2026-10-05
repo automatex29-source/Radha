@@ -182,6 +182,12 @@ async def search(query: str, focus: str, limit: int) -> List[dict]:
     return await web.search(query, limit)
 
 
+def wants_videos(text: str) -> bool:
+    """How-tos, recipes, workouts and tutorials are easier to follow on video (Perplexity shows a few too)."""
+    return bool(re.search(r"\b(how to|how do i|how can i|recipe|recipes|tutorial|step by step|workout|exercise|"
+                          r"yoga|diy|install|fix|repair|learn|guide|kaise|banaye|banate)\b", text.lower()))
+
+
 def wants_images(text: str) -> bool:
     """Pictures help for places, people, products, animals and "show me" questions, not for prices or how-tos."""
     t = text.lower()
