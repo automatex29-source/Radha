@@ -134,11 +134,15 @@ export default function Workspace({ mode = null }) {
   const [study, setStudy] = useState(() => readFlag("krish.study"));
   const toggleThink = () => setThink((v) => { saveFlag("krish.think", !v); return !v; });
   const toggleStudy = () => setStudy((v) => { saveFlag("krish.study", !v); return !v; });
+  // Search: every question searches the web and cites its sources (Perplexity-style).
+  const [webMode, setWebMode] = useState(() => readFlag("krish.web"));
+  const toggleWeb = () => setWebMode((v) => { saveFlag("krish.web", !v); return !v; });
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
   const streamTextRef = useRef("");
   const streamSourcesRef = useRef([]);
+  const streamRelatedRef = useRef([]);
   const streamStepsRef = useRef([]);
 
   // Chat always uses Krish AI's tools (web search, code, files) whenever the model supports them; no mode switch.
@@ -311,6 +315,7 @@ export default function Workspace({ mode = null }) {
     setStreamSteps([]);
     streamTextRef.current = "";
     streamSourcesRef.current = [];
+    streamRelatedRef.current = [];
     streamStepsRef.current = [];
     const controller = new AbortController();
     abortRef.current = controller;
@@ -352,6 +357,10 @@ export default function Workspace({ mode = null }) {
             setStreamSources(streamSourcesRef.current);
             continue;
           }
+          if (eventName === "related") {
+            streamRelatedRef.current = JSON.parse(dataStr || "[]");
+            continue;
+          }
           if (eventName === "tool" || eventName === "tool_result") {
             const step = JSON.parse(dataStr);
             const others = streamStepsRef.current.filter((s) => s.id !== step.id);
@@ -383,7 +392,7 @@ export default function Workspace({ mode = null }) {
         : streamStepsRef.current;
       if (finalText || steps.length) {
         setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model, stopped,
-          sources: streamSourcesRef.current.length ? streamSourcesRef.current : null,
+          sources: streamSourcesRef.current.length ? streamSourcesRef.current : null, related: streamRelatedRef.current,
           steps, media: steps.flatMap((s) => s.media || []) }]);
       }
       setStreamText("");
@@ -523,7 +532,7 @@ export default function Workspace({ mode = null }) {
     const imageIds = images.map((i) => i.id);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, voice, voiceLang }, convId, onText);
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, web: webMode && !counselling, voice, voiceLang }, convId, onText);
   };
 
   // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
@@ -549,7 +558,7 @@ export default function Workspace({ mode = null }) {
       if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
       return copy;
     });
-    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling }, activeId);
+    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, web: webMode && !counselling }, activeId);
   };
 
   return (
@@ -642,7 +651,8 @@ export default function Workspace({ mode = null }) {
             counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
-              {messages.map((m) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
+              {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
+                onAsk={i === messages.length - 1 && !streaming ? (q) => sendMessage(q) : undefined}
                 onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
                 codeActive={!!codePanel && panelMessage?.id === m.id} />)}
               {streaming && (
@@ -676,6 +686,7 @@ export default function Workspace({ mode = null }) {
           agentHint="Agent mode needs a provider API key for this model on the backend"
           thinkMode={think} onToggleThink={counselling ? undefined : toggleThink}
           studyMode={study} onToggleStudy={counselling ? undefined : toggleStudy}
+          webMode={webMode} onToggleWeb={counselling ? undefined : toggleWeb}
           voiceEnabled={voiceEnabled} voiceHint="Voice needs GROQ_API_KEY (free) on the backend"
           onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
           placeholder={counselling ? "Type anything… how's your day going? 😊" : undefined} />

@@ -222,6 +222,8 @@
 .radha-prose ul { list-style: disc; }
 .radha-prose ol { list-style: decimal; }
 .radha-prose a { color: hsl(var(--brand)); text-decoration: underline; text-underline-offset: 2px; }
+.radha-prose a.krish-cite { color: hsl(var(--muted-foreground)); text-decoration: none; }
+.radha-prose a.krish-cite:hover { color: hsl(var(--primary-foreground)); }
 .radha-prose hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.4em 0; }
 .radha-prose blockquote { border-left: 3px solid hsl(var(--primary) / 0.6); padding: 0.1em 0 0.1em 1em; color: hsl(var(--muted-foreground)); margin: 0.9em 0; }
 .radha-prose code { font-family: var(--font-mono); font-size: 0.86em; background: hsl(var(--sunken)); border: 1px solid hsl(var(--border)); border-radius: 5px; padding: 0.1em 0.35em; color: hsl(var(--brand-soft)); }
