@@ -68,7 +68,7 @@ AVAILABLE_MODELS = [
     {"id": "claude-sonnet-5-5", "label": "Krish Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
     {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "provider": "anthropic", "description": "Fast · lightweight"},
     {"id": "gpt-5.4", "label": "Krish Vision", "provider": "openai", "description": "Versatile · OpenAI"},
-    {"id": "gemini-2.5-flash", "label": "Krish Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
+    {"id": "gemini-3.5-flash-lite", "label": "Krish Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
     {"id": "openai/gpt-oss-120b", "label": "Krish Open", "provider": "groq", "description": "Fast · Groq · free tier"},
     {"id": "openai/gpt-oss-20b", "label": "Krish Open Fast", "provider": "groq", "description": "Quickest replies · free tier"},
     {"id": "cerebras/gpt-oss-120b", "label": "Krish Open Max", "provider": "cerebras", "description": "Bigger memory · Cerebras · free tier"},
