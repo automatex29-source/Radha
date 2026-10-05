@@ -950,6 +950,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             summary = _builder_summary(steps)
             full.append(summary)
             yield f"data: {_sse_json(summary)}\n\n"
+        elif steps and not related.split("".join(full))[0].strip():
+            note = "Sorry, I searched but couldn't finish writing the answer. Tap Regenerate to try again."
+            full.insert(0, note + "\n\n")
+            yield f"data: {_sse_json(note)}\n\n"
         # Crisis replies always carry the helplines, even if the model left them out.
         note = counsellor.helpline_note("".join(full)) if counselling and counsellor.is_crisis(last_user or "") else ""
         if note:

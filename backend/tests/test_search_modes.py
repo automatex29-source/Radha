@@ -123,3 +123,54 @@ def test_stock_card():
     context, card = widgets.stock_card(chart)
     assert card["changePct"] == 2.05 and card["points"] == [990.0, 1000.0, 1020.5] and card["currency"] == "INR"
     assert "Tata Motors Limited" in context
+
+
+def test_agent_asks_again_when_tools_end_in_silence():
+    from agent import runtime
+    from agent.tools import ToolContext
+
+    calls = []
+
+    async def stream_fn(model, messages, tools):
+        calls.append([m.get("content") for m in messages])
+        if len(calls) == 1:
+            yield {"type": "tool_calls", "calls": [{"id": "1", "name": "web_search", "arguments": '{"query": "x"}'}]}
+        elif len(calls) == 2:
+            return  # the silent ending some models produce
+        else:
+            yield {"type": "text", "text": "Will Cathcart runs WhatsApp."}
+
+    class Registry:
+        def schemas(self, ctx):
+            return [{}]
+
+        def active(self, ctx):
+            return []
+
+        async def run(self, name, args, ctx):
+            from types import SimpleNamespace
+            return SimpleNamespace(ok=True, summary="ok", content="results", media=[])
+
+    async def go():
+        return [ev async for ev in runtime.run_agent(stream_fn, Registry(), ToolContext(db=None, user_id="u"), "m",
+                                                     [{"role": "user", "content": "who runs whatsapp"}])]
+    events = asyncio.run(go())
+    assert any(e.get("text") == "Will Cathcart runs WhatsApp." for e in events)
+    assert calls[-1][-1] == runtime.ANSWER_NUDGE
+
+
+def test_pro_search_leads_with_planned_queries(monkeypatch):
+    from agent import research
+
+    async def fake_plan(question, focus, model, ask):
+        return [question, "WhatsApp CEO 2026", "head of WhatsApp Meta"]
+
+    seen = {}
+
+    async def fake_gather(queries, terms, max_sources, max_chars):
+        seen["queries"] = queries
+        return []
+    monkeypatch.setattr(research, "plan", fake_plan)
+    monkeypatch.setattr(research, "gather_sources", fake_gather)
+    asyncio.run(search_modes.pro("who isceo of whasapp", "m"))
+    assert seen["queries"] == ["WhatsApp CEO 2026", "head of WhatsApp Meta", "who isceo of whasapp"]
