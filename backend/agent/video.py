@@ -1,7 +1,7 @@
 """Video generation: OpenAI Sora, Google Veo, Pollinations, or a free slideshow.
 
 Provider: VIDEO_PROVIDER=openai|gemini|pollinations|slideshow|off, otherwise the
-first key that is set: OPENAI_API_KEY, GEMINI_API_KEY, POLLINATIONS_API_KEY.
+first key that is set: OPENAI_API_KEY, POLLINATIONS_API_KEY (Veo only with VIDEO_PROVIDER=gemini).
 With no key we make a "slideshow": AI images for a few scenes, animated with
 slow camera moves and cross-fades (see slideshow.py). Pollinations falls back to
 the slideshow when its free daily allowance runs out. Sora and Veo are
@@ -58,8 +58,8 @@ def provider() -> Optional[str]:
         return "fal"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
-    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-        return "gemini"
+    # A Gemini key alone doesn't pick Veo: Veo has no free tier, and the key is usually there for chat.
+    # Set VIDEO_PROVIDER=gemini on a paid Google plan.
     if os.environ.get("POLLINATIONS_API_KEY"):
         return "pollinations"
     if slideshow.ffmpeg_path() and media.image_available():
@@ -182,7 +182,12 @@ async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality
     if which == "openai":
         return {"data": await _sora(ai_prompt, seconds, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
     if which == "gemini":
-        return {"data": await _veo(ai_prompt, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
+        try:
+            return {"data": await _veo(ai_prompt, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
+        except Exception as exc:
+            logger.warning("veo video failed, falling back to the free method: %s", exc)
+            note = "Google's video service failed (it needs a paid plan), so a free method was used. "
+            which = "pollinations" if os.environ.get("POLLINATIONS_API_KEY") else "slideshow"
     if which == "pollinations":
         try:
             return {"data": await _pollinations(ai_prompt, seconds, portrait), "contentType": "video/mp4",
