@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Awaitable, Callable, List, Optional
 
 from . import llm, web
@@ -111,7 +112,10 @@ def planner_model(model: str) -> str:
 
 async def plan(question: str, focus: str, model: str, ask: Ask) -> List[str]:
     prompt = (f"Break this research question into {MAX_QUERIES - 1} short, different web search queries that "
-              "together cover it (facts, prices, comparisons, recent news, pros and cons). Reply with only a JSON "
+              "together cover it (facts, prices, comparisons, recent news, pros and cons). Today is "
+              f"{datetime.now(timezone.utc):%d %B %Y}: for anything that changes (who holds a job, prices, "
+              "rankings, news), put the current year in at least one query so the newest pages come first. "
+              "Reply with only a JSON "
               f"array of strings.\n\nQuestion: {question}" + (f"\nFocus: {focus}" if focus else ""))
     try:
         return parse_queries(await ask(planner_model(model), prompt, 400), question)
