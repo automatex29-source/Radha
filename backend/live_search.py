@@ -157,10 +157,12 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
             jobs["search"] = asyncio.wait_for(_search(text, 8 if force else 5, focus), LOOKUP_TIMEOUT)
         if force and focus == "web" and search_modes.wants_images(text):
             jobs["images"] = asyncio.wait_for(search_modes.images(text[:150], 6), LOOKUP_TIMEOUT)
+        if force and focus == "web" and search_modes.wants_videos(text):
+            jobs["videos"] = asyncio.wait_for(search_modes.video(text[:150], 4), LOOKUP_TIMEOUT + 4)
     if not jobs:
         return empty
     found = dict(zip(jobs, await asyncio.gather(*jobs.values(), return_exceptions=True)))
-    parts, cards, pictures, live_cards, queries = [], [], [], [], []
+    parts, cards, pictures, clips, live_cards, queries = [], [], [], [], [], []
     for name, item in found.items():
         if isinstance(item, Exception):
             logger.warning("Live lookup %s failed: %r", name, item)
@@ -177,7 +179,12 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
             queries = list(item[2]) if len(item) > 2 else [text[:200]]
         elif name == "images":
             pictures = item
-    return {"context": "\n\n".join(parts) or None, "sources": live_cards + cards + pictures, "queries": queries}
+        elif name == "videos":
+            # Shown as a row of YouTube videos under the sources; not numbered, so citations stay on the web cards.
+            clips = [{"type": "clip", "title": v.get("title") or "YouTube video", "url": v["url"],
+                      "thumbnail": v["thumbnail"], "domain": "youtube.com"} for v in item]
+    return {"context": "\n\n".join(parts) or None, "sources": live_cards + cards + pictures + clips,
+            "queries": queries}
 
 
 async def lookup(user_messages: List[str], search: bool = True) -> Optional[str]:

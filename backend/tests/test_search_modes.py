@@ -271,3 +271,17 @@ def test_weather_question_skips_pro(monkeypatch):
     monkeypatch.setattr(live_search.widgets, "weather", fake_weather)
     found = asyncio.run(live_search.gather(["WHO IS THE CEO OF AIRTEL", "weather in Mumbai"], pro=True, model="m"))
     assert "pro" not in called and found["sources"][0]["type"] == "weather"
+
+
+def test_how_to_search_adds_a_video_row(monkeypatch):
+    async def fake_search(query, focus, limit):
+        return [{"title": "Paneer recipe", "url": "https://hebbars.test/paneer", "snippet": "steps"}]
+
+    async def fake_video(query, limit):
+        return [{"title": "Paneer butter masala", "url": "https://www.youtube.com/watch?v=abc123def45",
+                 "thumbnail": "https://i.ytimg.com/vi/abc123def45/hqdefault.jpg", "snippet": ""}]
+    monkeypatch.setattr(search_modes, "search", fake_search)
+    monkeypatch.setattr(search_modes, "video", fake_video)
+    found = asyncio.run(live_search.gather(["how to make paneer butter masala"], force=True))
+    assert [s["type"] for s in found["sources"]] == ["web", "clip"]
+    assert found["sources"][1]["thumbnail"].endswith("hqdefault.jpg") and "youtube" not in found["context"]

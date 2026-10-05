@@ -83,6 +83,32 @@ function ImageResults({ items, id }) {
   );
 }
 
+// YouTube videos for how-tos and recipes, like Perplexity's video row.
+function VideoResults({ items, id }) {
+  const [hidden, setHidden] = useState({});
+  const shown = items.filter((v) => !hidden[v.thumbnail]).slice(0, 4);
+  if (!shown.length) return null;
+  return (
+    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid={`video-results-${id}`}>
+      {shown.map((v, i) => (
+        <a key={v.url} href={v.url} target="_blank" rel="noopener noreferrer" title={v.title}
+          className={`group/vid block overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 ${i >= 2 ? "max-sm:hidden" : ""}`}>
+          <span className="relative block aspect-video overflow-hidden bg-surface">
+            <img src={v.thumbnail} alt="" loading="lazy" onError={() => setHidden((h) => ({ ...h, [v.thumbnail]: true }))}
+              className="h-full w-full object-cover transition-transform duration-300 group-hover/vid:scale-105" />
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
+                <Play className="ml-0.5 h-4 w-4 fill-current" />
+              </span>
+            </span>
+          </span>
+          <span className="block px-2.5 py-2"><span className="line-clamp-2 text-xs font-medium leading-snug text-foreground">{v.title}</span></span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 // [1] in the answer: a small pill that opens that source.
 function Citation({ href, title, children, ...rest }) {
   if (title !== "cite") return <a href={href} title={title} target="_blank" rel="noopener noreferrer" {...rest}>{children}</a>;
@@ -191,6 +217,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   const webSources = useMemo(() => (message.sources || []).filter((s) => (s.type === "web" || s.type === "video") && s.url), [message.sources]);
   const liveCards = useMemo(() => (message.sources || []).filter((s) => s.type === "weather" || s.type === "stock"), [message.sources]);
   const imageResults = useMemo(() => (message.sources || []).filter((s) => s.type === "image" && s.thumbnail), [message.sources]);
+  const videoResults = useMemo(() => (message.sources || []).filter((s) => s.type === "clip" && s.thumbnail && s.url), [message.sources]);
   const fileSources = useMemo(() => (message.sources || []).filter((s) => s.fileName), [message.sources]);
   const shown = useMemo(() => {
     if (isUser) return message.content || "";
@@ -262,6 +289,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         <LiveCards items={liveCards} />
         {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
+        {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
         <div dir="auto" className="radha-prose min-w-0">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: Citation }}>
             {shown}
