@@ -6,7 +6,7 @@ import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, CheckCircle2, XCircle
 import { fileKind, KIND_META } from "@/components/PreviewPanel";
 
 const ICONS = {
-  web_search: Search, fetch_url: Globe, run_python: Code2, generate_image: ImagePlus, generate_video: Clapperboard,
+  web_search: Search, pro_search: Search, fetch_url: Globe, run_python: Code2, generate_image: ImagePlus, generate_video: Clapperboard,
   create_spreadsheet: FileSpreadsheet, create_presentation: Presentation, create_document: FileText, create_html: Globe,
   browser: MousePointerClick,
   write_file: FilePen, edit_file: FilePen, read_file: FileSearch, delete_file: FileX, list_files: FolderTree,
@@ -16,6 +16,7 @@ const ICONS = {
 function argPreview(step) {
   const a = step.args || {};
   if (step.name === "web_search") return a.query;
+  if (step.name === "pro_search") return (a.queries || []).join(" · ") || a.query;
   if (step.name === "fetch_url") return a.url;
   if (step.name === "generate_image") return a.prompt;
   if (step.name === "run_python") return (a.code || "").split("\n").find((l) => l.trim()) || "";

@@ -137,6 +137,20 @@ export default function Workspace({ mode = null }) {
   // Search: every question searches the web and cites its sources (Perplexity-style).
   const [webMode, setWebMode] = useState(() => readFlag("krish.web"));
   const toggleWeb = () => setWebMode((v) => { saveFlag("krish.web", !v); return !v; });
+  // Where Search looks (Web, Academic, Social, Video) and Pro search (several searches, reads the pages).
+  const [focus, setFocusState] = useState(() => { try { return localStorage.getItem("krish.focus") || "web"; } catch { return "web"; } });
+  const [pro, setPro] = useState(() => readFlag("krish.pro"));
+  const setFocus = (f) => {
+    setFocusState(f);
+    try { localStorage.setItem("krish.focus", f); } catch { /* optional */ }
+    if (!webMode) { setWebMode(true); saveFlag("krish.web", true); }
+  };
+  const togglePro = () => setPro((v) => {
+    saveFlag("krish.pro", !v);
+    if (!v && !webMode) { setWebMode(true); saveFlag("krish.web", true); }
+    return !v;
+  });
+  const searchOpts = () => (webMode && !counselling ? { web: true, focus, pro } : { web: false });
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
@@ -532,7 +546,7 @@ export default function Workspace({ mode = null }) {
     const imageIds = images.map((i) => i.id);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, web: webMode && !counselling, voice, voiceLang }, convId, onText);
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
   };
 
   // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
@@ -558,7 +572,7 @@ export default function Workspace({ mode = null }) {
       if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
       return copy;
     });
-    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, web: webMode && !counselling }, activeId);
+    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts() }, activeId);
   };
 
   return (
@@ -687,6 +701,7 @@ export default function Workspace({ mode = null }) {
           thinkMode={think} onToggleThink={counselling ? undefined : toggleThink}
           studyMode={study} onToggleStudy={counselling ? undefined : toggleStudy}
           webMode={webMode} onToggleWeb={counselling ? undefined : toggleWeb}
+          searchFocus={focus} onSearchFocus={setFocus} proSearch={pro} onTogglePro={togglePro}
           voiceEnabled={voiceEnabled} voiceHint="Voice needs GROQ_API_KEY (free) on the backend"
           onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
           placeholder={counselling ? "Type anything… how's your day going? 😊" : undefined} />

@@ -12,6 +12,7 @@ import re
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 
+import search_modes
 from agent import web
 
 logger = logging.getLogger(__name__)
@@ -69,44 +70,78 @@ async def _rates(text: str) -> Optional[str]:
     return await web.exchange_rates(text) or None
 
 
-async def _search(text: str, limit: int = 5) -> Optional[Tuple[str, List[dict]]]:
-    results = [r for r in await web.search(text[:200], limit) if r.get("url", "").startswith("http")]
+_HEADINGS = {"web": "Web search results", "academic": "Scholarly papers (OpenAlex)",
+             "social": "Reddit discussions", "video": "YouTube videos"}
+PRO_TIMEOUT = 35.0
+
+
+def _format(results: List[dict], focus: str = "web") -> Optional[Tuple[str, List[dict]]]:
+    results = [r for r in results if r.get("url", "").startswith("http")]
     if not results:
         return None
     lines = [f"[{i + 1}] {r['title']} ({r['url']})\n   {r['snippet']}" for i, r in enumerate(results)]
-    cards = [{"type": "web", "title": r["title"] or domain_of(r["url"]), "url": r["url"],
-              "domain": domain_of(r["url"]), "snippet": (r.get("snippet") or "")[:240]} for r in results]
-    return "Web search results:\n" + "\n".join(lines) + "\n" + CITE_NOTE, cards
+    cards = []
+    for r in results:
+        card = {"type": "video" if focus == "video" else "web", "title": r["title"] or domain_of(r["url"]),
+                "url": r["url"], "domain": domain_of(r["url"]), "snippet": (r.get("snippet") or "")[:240]}
+        if r.get("thumbnail"):
+            card["thumbnail"] = r["thumbnail"]
+        cards.append(card)
+    return f"{_HEADINGS.get(focus, _HEADINGS['web'])}:\n" + "\n".join(lines) + "\n" + CITE_NOTE, cards
 
 
-async def gather(user_messages: List[str], search: bool = True, force: bool = False) -> Tuple[Optional[str], List[dict]]:
-    """(live context, web source cards) for the latest question; (None, []) when it needs none or lookups fail.
+async def _search(text: str, limit: int = 5, focus: str = "web") -> Optional[Tuple[str, List[dict]]]:
+    return _format(await search_modes.search(text[:200], focus, limit), focus)
 
-    force=True (the Search button) always searches, with more results. With search=False only exchange rates
-    are fetched.
+
+async def _pro(text: str, model: str) -> Optional[Tuple[str, List[dict], List[str]]]:
+    found = await search_modes.pro(text[:300], model)
+    formatted = _format(found["results"])
+    return (*formatted, found["queries"]) if formatted else None
+
+
+async def gather(user_messages: List[str], search: bool = True, force: bool = False, focus: str = "web",
+                 pro: bool = False, model: str = "") -> dict:
+    """Live context for the latest question: {"context", "sources", "queries"}; context is None when the
+    question needs no lookup or every lookup fails.
+
+    force=True (the Search button) always searches, with more results and pictures; focus picks Academic,
+    Social or Video sources; pro plans several searches and reads the best pages. With search=False only
+    exchange rates are fetched.
     """
+    empty = {"context": None, "sources": [], "queries": []}
+    focus = focus if focus in search_modes.FOCUSES else "web"
+    force = force or pro or focus != "web"
     text = _recent_user_text(user_messages)
     if not text or not (force or needs_lookup(text)):
-        return None, []
-    jobs = [_rates(text)] if _CURRENCY.search(text) else []
+        return empty
+    jobs = [asyncio.wait_for(_rates(text), LOOKUP_TIMEOUT)] if _CURRENCY.search(text) else []
     if search:
-        jobs.append(_search(text, 8 if force else 5))
+        if pro and focus == "web":
+            jobs.append(asyncio.wait_for(_pro(text, model), PRO_TIMEOUT))
+        else:
+            jobs.append(asyncio.wait_for(_search(text, 8 if force else 5, focus), LOOKUP_TIMEOUT))
+        if force and focus == "web" and search_modes.wants_images(text):
+            jobs.append(asyncio.wait_for(search_modes.images(text[:150], 6), LOOKUP_TIMEOUT))
     if not jobs:
-        return None, []
+        return empty
     # Each part has its own time limit, so slow search engines never cost us the exchange rates.
-    found = await asyncio.gather(*(asyncio.wait_for(j, LOOKUP_TIMEOUT) for j in jobs), return_exceptions=True)
-    parts, cards = [], []
+    found = await asyncio.gather(*jobs, return_exceptions=True)
+    parts, cards, pictures, queries = [], [], [], []
     for item in found:
         if isinstance(item, Exception):
             logger.warning("Live lookup part failed: %r", item)
         elif isinstance(item, tuple):
             parts.append(item[0])
             cards = item[1]
+            queries = list(item[2]) if len(item) > 2 else []
+        elif isinstance(item, list):
+            pictures = item
         elif item:
             parts.append(item)
-    return "\n\n".join(parts) or None, cards
+    return {"context": "\n\n".join(parts) or None, "sources": cards + pictures, "queries": queries}
 
 
 async def lookup(user_messages: List[str], search: bool = True) -> Optional[str]:
     """Live context for the latest question, or None when it doesn't need any (or the lookup fails)."""
-    return (await gather(user_messages, search))[0]
+    return (await gather(user_messages, search))["context"]
