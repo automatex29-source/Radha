@@ -49,6 +49,7 @@ import live_search
 import related
 import mailer
 import counsellor
+import discover
 import help_center
 import writer
 import limits
@@ -1518,6 +1519,73 @@ def _user_from_header_or_query(authorization: Optional[str], auth: Optional[str]
 @api.get("/usage")
 async def usage(user_id: str = Depends(current_user_id)):
     return await limits.summary(db, user_id)
+
+
+# ------------------------------------------------------------------ discover
+@api.get("/discover")
+async def discover_news(topic: str = "top", limit: int = 24, user_id: str = Depends(current_user_id)):
+    """Today's top stories for the Discover page (free Google News feeds), in the user's language."""
+    owner = await db.users.find_one({"id": user_id}, {"language": 1})
+    try:
+        items = await discover.stories(topic, (owner or {}).get("language") or "en", max(1, min(limit, 40)))
+    except Exception as exc:
+        logger.warning("Discover feed failed: %s", exc)
+        raise HTTPException(status_code=503, detail="News is not available right now. Try again in a minute.")
+    return {"topic": topic if topic in discover.TOPICS else "top", "topics": list(discover.TOPICS), "stories": items}
+
+
+# --------------------------------------------------------------------- pages
+# A Page turns one answer into a clean public article (like Perplexity Pages), with its own link.
+PAGE_SOURCE_TYPES = {"web", "video", "image", "weather", "stock"}
+
+
+class PageIn(BaseModel):
+    messageId: str = Field(min_length=1, max_length=64)
+
+
+def public_page(doc: dict) -> dict:
+    return {"id": doc["id"], "title": doc["title"], "question": doc["question"], "content": doc["content"],
+            "sources": doc.get("sources") or [], "related": doc.get("related") or [], "createdAt": doc["createdAt"],
+            "path": f"/page/{doc['id']}"}
+
+
+@api.post("/pages")
+async def create_page(body: PageIn, user_id: str = Depends(current_user_id)):
+    msg = await db.messages.find_one({"id": body.messageId, "role": "assistant"})
+    if not msg:
+        raise HTTPException(status_code=404, detail="Answer not found")
+    await _owned_conversation(msg["conversationId"], user_id)
+    existing = await db.pages.find_one({"messageId": msg["id"], "userId": user_id})
+    if existing:
+        return public_page(existing)
+    question = await db.messages.find_one({"conversationId": msg["conversationId"], "role": "user",
+                                           "createdAt": {"$lte": msg["createdAt"]}}, sort=[("createdAt", -1)])
+    asked = " ".join(((question or {}).get("content") or "").split())
+    title = asked[:110].rstrip(" ?.!") if asked else "Krish AI answer"
+    doc = {"id": secrets.token_urlsafe(10), "userId": user_id, "conversationId": msg["conversationId"],
+           "messageId": msg["id"], "title": title[:1].upper() + title[1:], "question": asked[:2000],
+           "content": msg.get("content") or "", "related": msg.get("related") or [],
+           "sources": [x for x in msg.get("sources") or [] if x.get("type") in PAGE_SOURCE_TYPES],
+           "createdAt": now_iso()}
+    await db.pages.insert_one(doc)
+    return public_page(doc)
+
+
+@api.get("/pages/{page_id}")
+async def get_page(page_id: str):
+    """Public: anyone with the link can read a Page. Shows no account details."""
+    doc = await db.pages.find_one({"id": page_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="This page was removed or doesn't exist")
+    return public_page(doc)
+
+
+@api.delete("/pages/{page_id}")
+async def delete_page(page_id: str, user_id: str = Depends(current_user_id)):
+    result = await db.pages.delete_one({"id": page_id, "userId": user_id})
+    if not result.deleted_count:
+        raise HTTPException(status_code=404, detail="Page not found")
+    return {"ok": True}
 
 
 @api.get("/capabilities")

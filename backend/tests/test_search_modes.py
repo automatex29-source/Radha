@@ -83,3 +83,43 @@ def test_images_join_forced_web_search(monkeypatch):
     monkeypatch.setattr(search_modes, "images", fake_images)
     found = asyncio.run(live_search.gather(["show me the taj mahal"], force=True))
     assert [s["type"] for s in found["sources"]] == ["web", "image"]
+
+
+import widgets
+
+
+def test_weather_place():
+    assert widgets.weather_place("weather in New Delhi today") == "New Delhi"
+    assert widgets.weather_place("mumbai weather") == "mumbai"
+    assert widgets.weather_place("will it rain in Pune tomorrow?") == "Pune"
+    assert widgets.weather_place("write a poem") == ""
+
+
+def test_weather_card():
+    g = {"name": "Pune", "admin1": "Maharashtra", "country": "India"}
+    data = {"current": {"temperature_2m": 27.6, "apparent_temperature": 30.1, "relative_humidity_2m": 70,
+                        "wind_speed_10m": 9.4, "weather_code": 2},
+            "daily": {"time": ["2026-10-05"], "weather_code": [61], "temperature_2m_max": [29.2],
+                      "temperature_2m_min": [21.4], "precipitation_probability_max": [60]}}
+    context, card = widgets.weather_card(g, data)
+    assert card["place"] == "Pune, Maharashtra, India" and card["temp"] == 28 and card["label"] == "Partly cloudy"
+    assert card["days"] == [{"date": "2026-10-05", "code": 61, "label": "Light rain", "max": 29, "min": 21, "rain": 60}]
+    assert "28°C" in context
+
+
+def test_stock_query_and_symbol():
+    assert widgets.stock_query("tata motors share price today") == "tata motors"
+    assert widgets.stock_query("should I buy reliance shares?") == "reliance"
+    assert widgets.stock_query("can you share a poem") == ""
+    quotes = [{"symbol": "TTM", "quoteType": "EQUITY"}, {"symbol": "TATAMOTORS.NS", "quoteType": "EQUITY"}]
+    assert widgets.pick_symbol(quotes) == "TATAMOTORS.NS"
+
+
+def test_stock_card():
+    chart = {"chart": {"result": [{"meta": {"symbol": "TATAMOTORS.NS", "longName": "Tata Motors Limited",
+                                            "regularMarketPrice": 1020.5, "previousClose": 1000.0, "currency": "INR",
+                                            "fullExchangeName": "NSE"},
+                                   "indicators": {"quote": [{"close": [990.0, None, 1000.0, 1020.5]}]}}]}}
+    context, card = widgets.stock_card(chart)
+    assert card["changePct"] == 2.05 and card["points"] == [990.0, 1000.0, 1020.5] and card["currency"] == "INR"
+    assert "Tata Motors Limited" in context

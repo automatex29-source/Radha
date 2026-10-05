@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
+import TopStories from "@/components/TopStories";
 import { useAuth } from "@/context/AuthContext";
 import { useT } from "@/lib/i18n";
 
@@ -778,6 +779,7 @@ function EmptyState({ onPick }) {
           <StarterCard key={s.title} s={s} i={i} onPick={onPick} testid={`prompt-starter-card-${i}`} />
         ))}
       </div>
+      <TopStories onAsk={onPick} />
     </div>
   );
 }
