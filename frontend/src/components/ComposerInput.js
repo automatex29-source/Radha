@@ -24,6 +24,33 @@ export default function ComposerInput({
   const rec = useRecorder();
   const t = useT();
   const [transcribing, setTranscribing] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  // One after another, so the first file's upload creates the chat before the next one needs it.
+  const attachAll = async (files) => {
+    for (const f of files) await onAttach(f);
+  };
+
+  // Pasting a copied file or a screenshot attaches it, like the paperclip. Text copied from Word or
+  // Excel also carries a picture of itself, so whenever there's text, the text is what gets pasted.
+  const onPaste = (e) => {
+    const files = Array.from(e.clipboardData?.files || []);
+    if (!onAttach || !files.length || e.clipboardData.getData("text/plain").trim()) return;
+    e.preventDefault();
+    attachAll(files);
+  };
+
+  const dropProps = onAttach ? {
+    onDragOver: (e) => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); setDragging(true); } },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); },
+    onDrop: (e) => {
+      const files = Array.from(e.dataTransfer?.files || []);
+      setDragging(false);
+      if (!files.length) return;
+      e.preventDefault();
+      attachAll(files);
+    },
+  } : {};
   const canSend = (value.trim() || images.length > 0 || attachments.some((a) => a.code !== undefined)) && !disabled;
 
   const toggleMic = async () => {
@@ -109,13 +136,14 @@ export default function ComposerInput({
           ))}
         </div>
       )}
-      <div className="rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3">
+      <div {...dropProps} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
         <textarea
           ref={ref}
           data-testid="message-composer-textarea"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           disabled={disabled}
           rows={1}
           placeholder={rec.recording ? t("listening") : placeholder || t(agentMode && !narrowScreen() ? "askAnything" : "message")}
@@ -125,9 +153,9 @@ export default function ComposerInput({
           <div className="flex items-center gap-1">
             {onAttach && (
               <>
-                <input ref={fileRef} type="file" className="hidden" data-testid="composer-file-input"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); if (fileRef.current) fileRef.current.value = ""; }} />
-                <button onClick={() => fileRef.current?.click()} disabled={uploading || disabled} data-testid="composer-attach-button" title="Attach any file: documents, web pages, code, ZIP, images or video"
+                <input ref={fileRef} type="file" multiple className="hidden" data-testid="composer-file-input"
+                  onChange={(e) => { attachAll(Array.from(e.target.files || [])); if (fileRef.current) fileRef.current.value = ""; }} />
+                <button onClick={() => fileRef.current?.click()} disabled={uploading || disabled} data-testid="composer-attach-button" title="Attach any file: documents, web pages, code, ZIP, images or video. You can also paste or drag files here."
                   className="flex h-10 w-10 items-center justify-center rounded-lg sm:h-8 sm:w-8 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50">
                   {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 </button>
