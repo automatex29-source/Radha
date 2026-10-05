@@ -877,8 +877,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         if pro:
             pages = sum(1 for s in found["sources"] if s.get("type") == "web")
             pro_step.update(status="done" if pages else "error", args={"queries": found["queries"]},
-                            summary=f"Searched {len(found['queries'])} ways, read {pages} pages" if pages
-                            else "No pages found, answering from what Krish knows",
+                            summary=(f"Searched {len(found['queries'])} way{'s' if len(found['queries']) != 1 else ''}, "
+                                     f"found {pages} source{'s' if pages != 1 else ''}") if pages
+                            else "Search engines didn't answer, so Krish answered from what it knows",
                             output="\n".join(f"Searched: {q}" for q in found["queries"]), media=[])
             yield f"event: tool_result\ndata: {_sse_json(pro_step)}\n\n"
     # Perplexity-style follow-up questions under ordinary chat answers.

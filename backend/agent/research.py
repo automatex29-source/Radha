@@ -121,8 +121,11 @@ async def plan(question: str, focus: str, model: str, ask: Ask) -> List[str]:
 
 
 async def gather_sources(queries: List[str], terms: List[str], max_sources: int, max_chars: int,
-                         search=web.search, fetch=web.fetch_page) -> List[dict]:
-    results = await asyncio.gather(*(search(q, RESULTS_PER_QUERY) for q in queries), return_exceptions=True)
+                         search=web.search, fetch=web.fetch_page, search_timeout: Optional[float] = None,
+                         fetch_timeout: float = FETCH_TIMEOUT) -> List[dict]:
+    def one(q):
+        return asyncio.wait_for(search(q, RESULTS_PER_QUERY), search_timeout) if search_timeout else search(q, RESULTS_PER_QUERY)
+    results = await asyncio.gather(*(one(q) for q in queries), return_exceptions=True)
     # Round-robin across queries so every angle gets a source.
     lists = [r for r in results if isinstance(r, list)]
     picked, seen = [], set()
@@ -138,7 +141,7 @@ async def gather_sources(queries: List[str], terms: List[str], max_sources: int,
 
     async def load(r: dict) -> Optional[dict]:
         try:
-            page = await asyncio.wait_for(fetch(r["url"]), FETCH_TIMEOUT)
+            page = await asyncio.wait_for(fetch(r["url"]), fetch_timeout)
             text = best_passages(page.get("text") or "", terms, max_chars)
         except Exception as exc:
             logger.info("research: could not read %s: %s", r.get("url"), exc)
