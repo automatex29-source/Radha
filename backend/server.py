@@ -890,7 +890,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             system_parts.append(NO_RESULTS_NOTE if agent else NO_RESULTS_NOTE_PLAIN)
         sources = sources + found["sources"]
         if pro:
-            pages = sum(1 for s in found["sources"] if s.get("type") == "web")
+            pages = sum(1 for s in found["sources"] if s.get("type") in ("web", "video", "weather", "stock"))
             pro_step.update(status="done" if pages else "error", args={"queries": found["queries"]},
                             summary=(f"Searched {len(found['queries'])} way{'s' if len(found['queries']) != 1 else ''}, "
                                      f"found {pages} source{'s' if pages != 1 else ''}") if pages
