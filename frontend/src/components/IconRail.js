@@ -1,11 +1,13 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
-import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy, FileText } from "lucide-react";
+import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy, FileText, Compass } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
 import { useT } from "@/lib/i18n";
 
 const ITEMS = [
   { icon: MessageSquare, label: "Chat", key: "chat", to: "/", match: (p) => p === "/" },
+  // Phones reach Discover from the chat home ("Today's top stories"), so the tab bar stays at 7.
+  { icon: Compass, label: "Discover", key: "discover", to: "/discover", match: (p) => p.startsWith("/discover"), desktopOnly: true },
   { icon: HeartHandshake, label: "Counsellor", key: "counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
   { icon: FolderKanban, label: "Projects", key: "projects", to: "/projects", match: (p) => p.startsWith("/projects") },
   { icon: AppWindow, label: "Apps", key: "apps", to: "/apps", match: (p) => p.startsWith("/apps") },
@@ -53,7 +55,7 @@ export default function IconRail({ mobileBar = true }) {
       {mobileBar && (
         <nav data-testid="mobile-tab-bar"
           className="krish-tabbar order-last flex shrink-0 border-t border-white/70 bg-white/80 dark:border-border dark:bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
-          {ITEMS.map((it) => {
+          {ITEMS.filter((it) => !it.desktopOnly).map((it) => {
             const active = it.match(pathname);
             return (
               <button key={it.to} onClick={() => navigate(it.to)} data-testid={`tab-${it.label.toLowerCase()}`}

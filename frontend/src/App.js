@@ -17,6 +17,8 @@ const AssistantInvite = lazy(() => import("@/pages/AssistantInvite"));
 const DocsPage = lazy(() => import("@/pages/DocsPage"));
 const DocEditor = lazy(() => import("@/pages/DocEditor"));
 const SharedChat = lazy(() => import("@/pages/SharedChat"));
+const PageView = lazy(() => import("@/pages/PageView"));
+const DiscoverPage = lazy(() => import("@/pages/DiscoverPage"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
@@ -81,6 +83,7 @@ function Gate() {
       <Route path="/decks/:id" element={<DeckEditor />} />
       <Route path="/automations" element={<AutomationsPage />} />
       <Route path="/help" element={<HelpPage />} />
+      <Route path="/discover" element={<DiscoverPage />} />
       <Route path="/assistant/:code" element={<AssistantInvite />} />
       <Route path="/docs" element={<DocsPage />} />
       <Route path="/docs/:id" element={<DocEditor />} />
@@ -100,6 +103,7 @@ export default function App() {
               <Routes>
                 {/* Shared chats open for anyone, signed in or not. */}
                 <Route path="/share/:shareId" element={<SharedChat />} />
+                <Route path="/page/:pageId" element={<PageView />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="*" element={<Gate />} />
               </Routes>

@@ -13,6 +13,7 @@ from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 
 import search_modes
+import widgets
 from agent import web
 
 logger = logging.getLogger(__name__)
@@ -115,31 +116,41 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
     text = _recent_user_text(user_messages)
     if not text or not (force or needs_lookup(text)):
         return empty
-    jobs = [asyncio.wait_for(_rates(text), LOOKUP_TIMEOUT)] if _CURRENCY.search(text) else []
+    jobs = {}  # name -> awaitable; each part has its own time limit, so one slow source never costs the rest
+    if _CURRENCY.search(text):
+        jobs["rates"] = asyncio.wait_for(_rates(text), LOOKUP_TIMEOUT)
+    if widgets.weather_place(text):
+        jobs["weather"] = asyncio.wait_for(widgets.weather(text), LOOKUP_TIMEOUT)
+    if widgets.stock_query(text) or re.search(r"\b(sensex|nifty)\b", text, re.I):
+        jobs["stock"] = asyncio.wait_for(widgets.stock(text), LOOKUP_TIMEOUT)
     if search:
         if pro and focus == "web":
-            jobs.append(asyncio.wait_for(_pro(text, model), PRO_TIMEOUT))
+            jobs["search"] = asyncio.wait_for(_pro(text, model), PRO_TIMEOUT)
         else:
-            jobs.append(asyncio.wait_for(_search(text, 8 if force else 5, focus), LOOKUP_TIMEOUT))
+            jobs["search"] = asyncio.wait_for(_search(text, 8 if force else 5, focus), LOOKUP_TIMEOUT)
         if force and focus == "web" and search_modes.wants_images(text):
-            jobs.append(asyncio.wait_for(search_modes.images(text[:150], 6), LOOKUP_TIMEOUT))
+            jobs["images"] = asyncio.wait_for(search_modes.images(text[:150], 6), LOOKUP_TIMEOUT)
     if not jobs:
         return empty
-    # Each part has its own time limit, so slow search engines never cost us the exchange rates.
-    found = await asyncio.gather(*jobs, return_exceptions=True)
-    parts, cards, pictures, queries = [], [], [], []
-    for item in found:
+    found = dict(zip(jobs, await asyncio.gather(*jobs.values(), return_exceptions=True)))
+    parts, cards, pictures, live_cards, queries = [], [], [], [], []
+    for name, item in found.items():
         if isinstance(item, Exception):
-            logger.warning("Live lookup part failed: %r", item)
-        elif isinstance(item, tuple):
+            logger.warning("Live lookup %s failed: %r", name, item)
+        elif not item:
+            continue
+        elif name == "rates":
+            parts.append(item)
+        elif name in ("weather", "stock"):
+            parts.insert(0, item[0])
+            live_cards.append(item[1])
+        elif name == "search":
             parts.append(item[0])
             cards = item[1]
             queries = list(item[2]) if len(item) > 2 else []
-        elif isinstance(item, list):
+        elif name == "images":
             pictures = item
-        elif item:
-            parts.append(item)
-    return {"context": "\n\n".join(parts) or None, "sources": cards + pictures, "queries": queries}
+    return {"context": "\n\n".join(parts) or None, "sources": live_cards + cards + pictures, "queries": queries}
 
 
 async def lookup(user_messages: List[str], search: bool = True) -> Optional[str]:

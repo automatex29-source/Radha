@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play } from "lucide-react";
+import { Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper } from "lucide-react";
 import { toast } from "sonner";
-import { mediaUrl } from "@/lib/api";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
 import CodeProject from "@/components/CodeProject";
@@ -11,6 +10,8 @@ import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
+import { LiveCards } from "@/components/LiveCards";
+import { api, formatApiError, mediaUrl } from "@/lib/api";
 
 function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
   const [failed, setFailed] = useState(false);
@@ -95,6 +96,31 @@ function Citation({ href, title, children, ...rest }) {
   );
 }
 
+// Publishes this answer as a Page: a clean article with its own link (like Perplexity Pages).
+function MakePageButton({ id }) {
+  const [busy, setBusy] = useState(false);
+  if (!id || id === "streaming" || id.startsWith("ai-")) return null;
+  const make = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/pages", { messageId: id });
+      const url = `${window.location.origin}${data.path}`;
+      try { await navigator.clipboard.writeText(url); } catch { /* the toast still has the link */ }
+      toast.success("Page published, link copied", { action: { label: "Open", onClick: () => window.open(url, "_blank", "noopener") } });
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button onClick={make} disabled={busy} data-testid={`make-page-button-${id}`} title="Publish this answer as a page anyone can read"
+      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50">
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Newspaper className="h-3 w-3" />} Make a page
+    </button>
+  );
+}
+
 function RelatedQuestions({ items, onAsk, id }) {
   return (
     <div className="mt-5" data-testid={`related-questions-${id}`}>
@@ -163,6 +189,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   const isUser = message.role === "user";
   // With the side panel, the files live there (like Claude's artifacts) and the chat keeps just the words.
   const webSources = useMemo(() => (message.sources || []).filter((s) => (s.type === "web" || s.type === "video") && s.url), [message.sources]);
+  const liveCards = useMemo(() => (message.sources || []).filter((s) => s.type === "weather" || s.type === "stock"), [message.sources]);
   const imageResults = useMemo(() => (message.sources || []).filter((s) => s.type === "image" && s.thumbnail), [message.sources]);
   const fileSources = useMemo(() => (message.sources || []).filter((s) => s.fileName), [message.sources]);
   const shown = useMemo(() => {
@@ -232,6 +259,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           )}
         </div>
         <ToolSteps steps={message.steps} />
+        <LiveCards items={liveCards} />
         {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         <div dir="auto" className="radha-prose min-w-0">
@@ -265,6 +293,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
               {copied ? "Copied" : "Copy"}
             </button>
             {voiceEnabled && <SpeakButton text={message.content} voice={voice} id={message.id} />}
+            {codeProject && <MakePageButton id={message.id} />}
           </div>
         )}
         {!streaming && onAsk && message.related?.length > 0 && <RelatedQuestions items={message.related} onAsk={onAsk} id={message.id} />}
