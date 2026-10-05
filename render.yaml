@@ -13,6 +13,8 @@ services:
     envVars:
       - key: MONGO_URL
         sync: false
+      # Free (no card): Gemini 2.5 Flash becomes the default chat model and can see pictures.
+      # Keep GROQ_API_KEY too: Groq answers when Gemini's free daily limit runs out.
       - key: GEMINI_API_KEY
         sync: false
       - key: GROQ_API_KEY

@@ -74,7 +74,7 @@ AVAILABLE_MODELS = [
     {"id": "cerebras/gpt-oss-120b", "label": "Krish Open Max", "provider": "cerebras", "description": "Bigger memory · Cerebras · free tier"},
 ]
 # The App Builder's models: BUILDER_MODEL (any model above, the owner's choice for every user) wins;
-# otherwise free-tier builds move to Cerebras when its key is set, since it fits about 4x more per request.
+# otherwise free-tier builds (Groq or Gemini) move to Cerebras when its key is set, since it fits about 4x more per request.
 FREE_BUILDER = "cerebras/gpt-oss-120b"
 BUILDER_STEPS = 14  # tool steps per builder turn for models with room for them (Groq's free tier keeps the default)
 
@@ -1051,7 +1051,8 @@ async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
         override = os.environ.get("BUILDER_MODEL", "").strip()
         if override and agent_llm.configured(override):
             return override
-        if agent_llm.lean(model) and agent_llm.configured(FREE_BUILDER):
+        # Gemini's free daily allowance is kept for chat; a build takes many steps.
+        if (agent_llm.lean(model) or agent_llm.provider_for(model) == "gemini") and agent_llm.configured(FREE_BUILDER):
             model = FREE_BUILDER
     if agent_llm.paid(model) and not agent_llm.paid(AI_MODEL) and os.environ.get("PAID_MODELS") != "all" \
             and not await limits.is_pro(db, user_id):
