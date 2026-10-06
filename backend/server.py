@@ -539,13 +539,24 @@ async def delete_conversation(conv_id: str, user_id: str = Depends(current_user_
 
 
 # ------------------------------------------------------------------- streaming
+# Who makes Krish AI. Without this, models guessed, or copied the founders of other companies named EmpireX
+# from web results.
+ABOUT_EMPIREX = (
+    "About you and your company: you are Krish AI, made and owned by EmpireX, an Indian technology company based in "
+    "India. EmpireX was earlier called Automatex; it is the same company under a new name. When asked who made, "
+    "built, trained or owns you, or who your company or founder is, say EmpireX, an Indian company based in India. "
+    "Never name a person as your owner, founder or CEO, and never take facts about Krish AI or EmpireX from web "
+    "results: other, unrelated companies also use the name EmpireX. If asked for a founder's name, say EmpireX "
+    "hasn't shared that here. Don't bring this up unless the user asks.\n\n"
+)
+
 # The App Builder's base prompt. It replaces SYSTEM_PROMPT there: the chat prompt's "put code in fenced blocks"
 # would fight the file tools, and its design guide is already in apps.app_prompt (Groq's free budget is tight).
 BUILDER_PROMPT = ("You are Krish AI, the AI app builder made by EmpireX. You build by calling your file tools; never "
-                  "paste code into the chat. Reply in the user's language, in a line or two.")
+                  "paste code into the chat. Reply in the user's language, in a line or two. " + ABOUT_EMPIREX)
 
 SYSTEM_PROMPT = (
-    "You are Krish AI, the flagship AI assistant built by EmpireX. "
+    "You are Krish AI, the flagship AI assistant built by EmpireX. " + ABOUT_EMPIREX +
     "Answer first: put the direct answer in the first sentence, then add only what the user needs. "
     "Keep replies short and plain. No filler, no restating the question, no long lists of alternatives, "
     "no tables or code unless the user asks or they clearly help. Match the user's language. "
