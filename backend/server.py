@@ -584,6 +584,8 @@ SYSTEM_PROMPT = (
 )
 
 
+_CITATION = re.compile(r"\[\d{1,2}\]")
+
 NO_RESULTS_NOTE = (
     "The automatic web search found nothing for this question. Call web_search now with a short, clear query "
     "before answering. Don't answer current facts (who holds a job, prices, news) from memory: they may have "
@@ -862,6 +864,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
     system_parts = [base, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
     sources = []
+    quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
@@ -927,6 +930,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         if (web or pro) and not any(c.get("type") in ("web", "video") for c in found["sources"]):
             system_parts.append(NO_RESULTS_NOTE if agent else NO_RESULTS_NOTE_PLAIN)
         sources = sources + found["sources"]
+        if not (web or pro or focus != "web"):
+            # The automatic search runs on every answer, but its source cards only show when the answer cites them.
+            quiet_cards = [c for c in found["sources"] if c.get("type") in ("web", "video")]
         if pro:
             pages = sum(1 for s in found["sources"] if s.get("type") in ("web", "video", "weather", "stock"))
             pro_step.update(status="done" if pages else "error", args={"queries": found["queries"]},
@@ -955,8 +961,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(voice_prompt(voice_lang, settings_lang))
     system_prompt = "\n\n".join(system_parts)
 
-    if sources:
-        yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
+    shown = [s for s in sources if s not in quiet_cards]
+    if shown:
+        yield f"event: sources\ndata: {_sse_json(shown)}\n\n"
     shown_sources = len(sources)
 
     full, steps, produced = [], [pro_step] if pro_step else [], []
@@ -995,6 +1002,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                         ctx.limit_hit = None
                     if len(sources) != shown_sources:
                         shown_sources = len(sources)
+                        quiet_cards = []  # Krish searched on its own: show everything it read
                         yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
         else:
             if not uses_emergent(AI_API_KEY) and not agent_llm.configured(model):
@@ -1036,6 +1044,12 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             content, follow_ups = related.split(content)
             if follow_ups and not stopped:
                 yield f"event: related\ndata: {_sse_json(follow_ups)}\n\n"
+        if quiet_cards:
+            if _CITATION.search(content):
+                if not stopped:
+                    yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
+            else:
+                sources = [s for s in sources if s not in quiet_cards]
         if content or steps:
             if stopped:
                 for step in steps:
