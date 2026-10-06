@@ -526,7 +526,7 @@ export default function Workspace({ mode = null }) {
   };
 
   // `composer`: sent from the message box (typed, or dictated text), so attached pictures go too.
-  const sendMessage = async (text, { voice = false, voiceLang, onText, composer = text === undefined } = {}) => {
+  const sendMessage = async (text, { voice = false, voiceLang, onText, frame, composer = text === undefined } = {}) => {
     const images = composer ? pendingImages : [];
     const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
     const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
@@ -540,7 +540,9 @@ export default function Workspace({ mode = null }) {
       const fence = f.code.includes("```") ? "````" : "```";
       return `${fence}${f.filename.split(".").pop().toLowerCase()} ${f.filename}\n${f.code.replace(/\s+$/, "")}\n${fence}`;
     });
-    const content = [...videoNotes, typed, ...codeBlocks].join("\n\n").trim();
+    // Voice chat with the camera or screen on sends one picture of what it shows right now.
+    const liveNote = frame ? [`[Live ${frame.source} view: the picture below is what my ${frame.source} shows right now.]`] : [];
+    const content = [...videoNotes, ...liveNote, typed, ...codeBlocks].join("\n\n").trim();
     if (!content || streaming) return "";
 
     let convId;
@@ -549,6 +551,15 @@ export default function Workspace({ mode = null }) {
     } catch (e) {
       toast.error(formatApiError(e));
       return "";
+    }
+    if (frame) {
+      try {
+        const fd = new FormData();
+        fd.append("file", new File([frame.blob], `${frame.source}-${Date.now()}.jpg`, { type: "image/jpeg" }));
+        fd.append("conversationId", convId);
+        const { data } = await api.post("/media", fd, { headers: { "Content-Type": "multipart/form-data" } });
+        images.push(data);
+      } catch { /* answer without the picture */ }
     }
 
     const imageIds = images.map((i) => i.id);
