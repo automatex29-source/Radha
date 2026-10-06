@@ -132,6 +132,28 @@ def _shorten(text: str, keep: int) -> str:
     return text if len(text) <= keep else text[:keep] + f"\n… [{len(text) - keep} chars omitted]"
 
 
+def _shorten_prompt(text: str, keep: int) -> str:
+    """Shorten a system prompt by trimming its longest paragraphs first, then dropping early general rules.
+
+    Cutting only the end silently dropped this turn's short instructions (memory, language, project
+    instructions, Think/Study/voice) on the free model; the long parts (the base rules, search results)
+    lose their tails instead."""
+    parts = text.split("\n\n")
+    excess = len(text) - keep
+    while excess > 0:
+        i = max(range(len(parts)), key=lambda k: len(parts[k]))
+        if len(parts[i]) <= 500:
+            # Still too long: drop the oldest general rules after the opening paragraph, keeping this
+            # turn's instructions at the end.
+            while len(parts) > 2 and len("\n\n".join(parts)) > keep:
+                del parts[1]
+            return _shorten("\n\n".join(parts), keep)
+        cut = min(excess + 40, len(parts[i]) - 400)  # leaves at least 400 chars, minus a ~30 char note
+        parts[i] = _shorten(parts[i], len(parts[i]) - cut)
+        excess = len("\n\n".join(parts)) - keep
+    return "\n\n".join(parts)
+
+
 def _compact_call(call: dict) -> dict:
     """Replace a large tool-call argument (e.g. a whole written file) with a placeholder."""
     args = call["function"].get("arguments") or ""
@@ -174,7 +196,8 @@ def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[d
         while len(rest) > 1 and rest[0]["role"] == "tool":
             rest = rest[1:]  # a tool result can't start the conversation
     if estimate_tokens(head + rest) > limit and head:
-        head = [{**head[0], "content": _shorten(head[0]["content"], max(1000, int(limit * _CHARS_PER_TOKEN * 0.5)))}]
+        keep = max(1000, int(limit * _CHARS_PER_TOKEN * 0.5))
+        head = [{**head[0], "content": _shorten_prompt(head[0]["content"], keep)}]
     return head + rest
 
 

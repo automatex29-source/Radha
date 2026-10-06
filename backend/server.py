@@ -11,6 +11,7 @@ import hashlib
 import os
 import re
 import secrets
+import time
 import uuid
 import logging
 import mimetypes
@@ -106,8 +107,9 @@ site_images.init(db)
 appcloud.init(db)
 apps.register_tools(tool_registry)
 
-# The web app owns /docs (the Docs writing space), so FastAPI's API pages live under /api.
-app = FastAPI(title="Krish AI API", docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
+# The web app owns /docs and the API owns /api/docs (both the Docs writing space), so FastAPI's own
+# API reference pages are turned off: at /api/docs they hid the Docs list and broke the Docs page.
+app = FastAPI(title="Krish AI API", docs_url=None, redoc_url=None, openapi_url=None)
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
@@ -299,12 +301,35 @@ async def register(body: RegisterIn):
     return {"token": token, "user": public_user(doc)}
 
 
+LOGIN_MAX_FAILURES = 10
+LOGIN_WINDOW_SECONDS = 15 * 60
+_login_failures: dict = {}  # email -> monotonic times of recent wrong passwords
+
+
+def _recent_failures(email: str) -> list:
+    cutoff = time.monotonic() - LOGIN_WINDOW_SECONDS
+    recent = [t for t in _login_failures.get(email, []) if t > cutoff]
+    if recent:
+        _login_failures[email] = recent
+    else:
+        _login_failures.pop(email, None)
+    return recent
+
+
 @api.post("/auth/login")
 async def login(body: LoginIn):
     email = body.email.lower()
+    # Stop password guessing: after 10 wrong passwords in 15 minutes the account waits (reset still works).
+    if len(_recent_failures(email)) >= LOGIN_MAX_FAILURES:
+        raise HTTPException(status_code=429, detail="Too many wrong passwords. Wait 15 minutes, or use "
+                                                    "\"Forgot password\" to set a new one.")
     doc = await db.users.find_one({"email": email})
     if not doc or not verify_password(body.password, doc.get("password_hash", "")):
+        _login_failures.setdefault(email, []).append(time.monotonic())
+        if len(_login_failures) > 50000:  # keep memory bounded under a flood of made-up emails
+            _login_failures.clear()
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    _login_failures.pop(email, None)
     token = create_access_token(doc["id"], email)
     return {"token": token, "user": public_user(doc)}
 
@@ -381,6 +406,7 @@ async def reset_password(body: ResetPasswordIn):
     await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.password), "updatedAt": now_iso()}})
     # Any other links sent earlier stop working too.
     await db.password_resets.update_many({"userId": user["id"], "usedAt": None}, {"$set": {"usedAt": now_iso()}})
+    _login_failures.pop(user["email"], None)
     return {"token": create_access_token(user["id"], user["email"]), "user": public_user(user)}
 
 
@@ -971,8 +997,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         raise
     except Exception as exc:  # surface provider errors to the client
         logger.exception("AI stream failed")
-        if steps and not related.split("".join(full))[0].strip():
-            # Keep a visible reason with the search steps instead of an empty answer.
+        if not related.split("".join(full))[0].strip():
+            # Keep a visible reason (with Regenerate) instead of leaving the question unanswered.
             full.append(STREAM_FAILED_NOTE)
             yield f"data: {_sse_json(STREAM_FAILED_NOTE)}\n\n"
         yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"

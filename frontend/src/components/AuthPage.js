@@ -66,7 +66,7 @@ export default function AuthPage() {
               Real conversations. Real reasoning. Persistent memory of everything you build. Krish AI is the foundation of EmpireX's AI platform.
             </p>
             <div className="mt-8 space-y-3 text-sm text-muted-foreground">
-              <Feature icon={Cpu} text="Powered by a real frontier reasoning model" />
+              <Feature icon={Cpu} text="Chat, web search, apps, decks and docs in one place" />
               <Feature icon={Database} text="Every conversation saved and reloadable" />
               <Feature icon={ShieldCheck} text="Private — your workspace is yours alone" />
             </div>

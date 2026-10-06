@@ -21,7 +21,7 @@ export default function DocsPage() {
   const [busy, setBusy] = useState("");
 
   useEffect(() => {
-    api.get("/docs").then(({ data }) => setDocs(data)).catch((e) => { toast.error(formatApiError(e)); setDocs([]); });
+    api.get("/docs").then(({ data }) => setDocs(Array.isArray(data) ? data : [])).catch((e) => { toast.error(formatApiError(e)); setDocs([]); });
   }, []);
 
   const create = async (withPrompt) => {
