@@ -196,6 +196,10 @@ class RegenerateIn(BaseModel):
     pro: bool = False
 
 
+class EditIn(RegenerateIn):
+    content: str = Field(min_length=1)
+
+
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     voice: Optional[str] = None
@@ -1254,6 +1258,26 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
     if remaining == 0:
         raise HTTPException(status_code=400, detail="Nothing to regenerate")
 
+    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
+                            focus=body.focus, pro=body.pro)
+
+
+@api.post("/conversations/{conv_id}/messages/{message_id}/edit")
+async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str = Depends(current_user_id)):
+    """Edit one of the user's earlier questions (like ChatGPT): everything after it is dropped and Krish answers
+    the new wording."""
+    conv = await _owned_conversation(conv_id, user_id)
+    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL)
+    if conv.get("appId"):
+        await limits.require(db, user_id, "build")
+    history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
+    index = next((i for i, m in enumerate(history_docs) if m["id"] == message_id), None)
+    if index is None or history_docs[index]["role"] != "user":
+        raise HTTPException(status_code=404, detail="That question isn't in this chat any more")
+    later = [m["id"] for m in history_docs[index + 1:]]
+    if later:
+        await db.messages.delete_many({"id": {"$in": later}})
+    await db.messages.update_one({"id": message_id}, {"$set": {"content": body.content, "editedAt": now_iso()}})
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
                             focus=body.focus, pro=body.pro)
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper } from "lucide-react";
+import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
@@ -210,8 +210,10 @@ function SpeakButton({ text, voice, id }) {
   );
 }
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit }) {
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
   const isUser = message.role === "user";
   // With the side panel, the files live there (like Claude's artifacts) and the chat keeps just the words.
   const webSources = useMemo(() => (message.sources || []).filter((s) => (s.type === "web" || s.type === "video") && s.url), [message.sources]);
@@ -242,9 +244,37 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
     setTimeout(() => setCopied(false), 1500);
   };
 
+  if (isUser && editing) {
+    const save = () => { const text = draft.trim(); if (!text) return; setEditing(false); if (text !== message.content) onEdit?.(text); };
+    return (
+      <div className="flex justify-end radha-fade-up" data-testid={`user-message-editing-${message.id}`}>
+        <div className="w-full max-w-[85%] rounded-2xl border border-primary/50 bg-card p-3 shadow-sm">
+          <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} dir="auto"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); save(); }
+              if (e.key === "Escape") setEditing(false);
+            }}
+            rows={Math.min(10, Math.max(2, draft.split("\n").length))} data-testid={`edit-message-input-${message.id}`}
+            className="w-full resize-none bg-transparent text-[0.95rem] leading-relaxed text-foreground outline-none" />
+          <div className="mt-2 flex justify-end gap-2">
+            <button onClick={() => setEditing(false)} data-testid={`edit-message-cancel-${message.id}`}
+              className="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+              Cancel
+            </button>
+            <button onClick={save} disabled={!draft.trim()} data-testid={`edit-message-send-${message.id}`}
+              className="rounded-full bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isUser) {
     return (
-      <div className="flex justify-end gap-3 radha-fade-up" data-testid={`user-message-item-${message.id}`}>
+      <div className="group flex flex-col items-end radha-fade-up" data-testid={`user-message-item-${message.id}`}>
+      <div className="flex w-full justify-end gap-3">
         <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-border bg-card px-4 py-3 text-[0.95rem] leading-relaxed text-foreground sm:px-5">
           {message.images?.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2" data-testid={`user-message-images-${message.id}`}>
@@ -269,6 +299,22 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border-strong bg-surface-strong">
           <User className="h-4 w-4 text-brand" />
         </div>
+      </div>
+        {message.content && (
+          <div className="mr-11 mt-1.5 flex items-center gap-3 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
+            <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`} aria-label="Copy"
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+              {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {onEdit && (
+              <button onClick={() => { setDraft(message.content); setEditing(true); }} data-testid={`edit-message-button-${message.id}`}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+                <Pencil className="h-3 w-3" /> Edit
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }

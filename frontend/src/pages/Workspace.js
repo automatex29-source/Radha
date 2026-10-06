@@ -584,6 +584,17 @@ export default function Workspace({ mode = null }) {
     await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts() }, activeId);
   };
 
+  // Edit an earlier question (like ChatGPT): the answers after it go, and Krish answers the new wording.
+  const editMessage = async (id, content) => {
+    const text = (content || "").trim();
+    if (!activeId || streaming || !text) return;
+    setMessages((m) => {
+      const i = m.findIndex((x) => x.id === id);
+      return i < 0 ? m : [...m.slice(0, i), { ...m[i], content: text }];
+    });
+    await runStream(`${API}/conversations/${activeId}/messages/${id}/edit`, { content: text, model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts() }, activeId);
+  };
+
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
@@ -676,6 +687,7 @@ export default function Workspace({ mode = null }) {
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
+                onEdit={!streaming && m.role === "user" && !String(m.id).startsWith("tmp-") ? (text) => editMessage(m.id, text) : undefined}
                 onAsk={i === messages.length - 1 && !streaming ? (q) => sendMessage(q) : undefined}
                 onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
                 codeActive={!!codePanel && panelMessage?.id === m.id} />)}
