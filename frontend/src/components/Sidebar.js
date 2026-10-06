@@ -12,7 +12,6 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import MemoryDialog from "@/components/MemoryDialog";
 import SettingsDialog from "@/components/SettingsDialog";
-import UpgradeButton from "@/components/UpgradeButton";
 import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
@@ -160,8 +159,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       </div>
 
       {/* User */}
-      <div className="space-y-2 p-3">
-        <UpgradeButton variant="card" />
+      <div className="p-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button data-testid="user-profile-menu-button" className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border">

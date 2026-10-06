@@ -3,7 +3,6 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy, FileText, Compass } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
 import { useT } from "@/lib/i18n";
-import UpgradeButton from "@/components/UpgradeButton";
 
 const ITEMS = [
   { icon: MessageSquare, label: "Chat", key: "chat", to: "/", match: (p) => p === "/" },
@@ -43,10 +42,8 @@ export default function IconRail({ mobileBar = true }) {
             );
           })}
         </nav>
-        <div className="mt-auto" />
-        <UpgradeButton variant="rail" />
         <button onClick={() => navigate("/help")} data-testid="nav-help" title={t("helpCenter")} aria-label={t("helpCenter")}
-          className={`mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
+          className={`mt-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
             pathname.startsWith("/help") ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
               : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
           }`}>
