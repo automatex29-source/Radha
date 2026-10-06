@@ -41,6 +41,7 @@ from agent import browser as agent_browser
 import appdata
 import site_images
 import github_push
+import limits
 
 router = APIRouter(prefix="/api")
 db = None  # set by init()
@@ -1172,6 +1173,7 @@ async def get_preview_token(app_id: str, user_id: str = Depends(current_user_id)
 @router.post("/apps/{app_id}/publish")
 async def publish_app(app_id: str, user_id: str = Depends(current_user_id)):
     app = await owned_app(app_id, user_id)
+    await limits.require_publish(db, user_id)
     head = await commit(app_id, "Publish", author="You") or public_commit(await head_commit(app_id))
     slug = (app.get("published") or {}).get("slug") or (
         (re.sub(r"[^a-z0-9]+", "-", app["name"].lower()).strip("-")[:30] or "app") + "-" + secrets.token_hex(3))

@@ -20,8 +20,12 @@ const SharedChat = lazy(() => import("@/pages/SharedChat"));
 const PageView = lazy(() => import("@/pages/PageView"));
 const DiscoverPage = lazy(() => import("@/pages/DiscoverPage"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
+const PlansPage = lazy(() => import("@/pages/PlansPage"));
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
+import { installPlanLimitToasts } from "@/lib/planLimits";
+
+installPlanLimitToasts();
 
 // A shared assistant link opened while signed out comes back after signing in.
 const AFTER_LOGIN = "krish.afterLogin";
@@ -78,6 +82,7 @@ function Gate() {
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/projects/:id" element={<ProjectView />} />
       <Route path="/apps" element={<AppsPage />} />
+      <Route path="/plans" element={<PlansPage />} />
       <Route path="/apps/:id" element={<AppBuilder />} />
       <Route path="/decks" element={<DecksPage />} />
       <Route path="/decks/:id" element={<DeckEditor />} />
