@@ -11,6 +11,8 @@ const DEFAULT_NAMES = {
   php: "index.php", ruby: "main.rb",
 };
 
+const SNIPPET_LINES = 12;
+
 function cleanName(name) {
   const n = name.replace(/^\.?\/+/, "").trim();
   return n && !n.split("/").includes("..") ? n : null;
@@ -42,7 +44,11 @@ export function extractFiles(markdown, partial = false) {
       const hit = before.length < 120 && before.match(FILE_RE);
       if (hit) name = hit[1];
     }
-    if (!name && DEFAULT_NAMES[lang]) name = DEFAULT_NAMES[lang];
+    // An unnamed block becomes a project file only when it is a page or picture, or long enough to be a
+    // program. A short example in an answer (`print('hello')`) stays in the chat as code, not "My App".
+    if (!name && DEFAULT_NAMES[lang] && (/^(html?|svg)$/.test(lang) || content.split("\n").length >= SNIPPET_LINES)) {
+      name = DEFAULT_NAMES[lang];
+    }
     name = name && cleanName(name);
     if (!name || !content.trim()) continue;
     const span = [m.index + m[1].length, re.lastIndex];

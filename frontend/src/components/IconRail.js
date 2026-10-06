@@ -66,7 +66,7 @@ export default function IconRail({ mobileBar = true }) {
                 <span className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${active ? "bg-surface-strong" : ""}`}>
                   <it.icon className="h-5 w-5" />
                 </span>
-                <span className="max-w-full truncate px-0.5">{t(it.short || it.key)}</span>
+                <span className="max-w-full truncate tracking-tight">{t(it.short || it.key)}</span>
               </button>
             );
           })}

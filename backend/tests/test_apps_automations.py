@@ -52,7 +52,7 @@ class TestAppVersions:
         async def scenario():
             await db.apps.insert_one({"id": "a", "userId": "u", "name": "My App!", "createdAt": "", "updatedAt": ""})
             await apps.write_file("a", "index.html", "<h1>v1</h1>\n")
-            first = await apps.commit("a", "First", author="RADHA")
+            first = await apps.commit("a", "First", author="Krish AI")
             assert await apps.commit("a", "noop") is None
             await apps.write_file("a", "index.html", "<h1>v2</h1>\n")
             await apps.write_file("a", "src/app.js", "x = 1\n")
@@ -102,7 +102,7 @@ class TestServing:
 
     def test_spa_fallback_and_404(self):
         files = {"index.html": "<p>home</p>", "app.js": "1"}
-        assert apps._serve(files, "dashboard/settings", False, "x").body == b"<p>home</p>"
+        assert apps._serve(files, "dashboard/settings", False, "x").body.endswith(b"<p>home</p>")  # after the injected shims
         assert apps._serve(files, "missing.js", False, "x").status_code == 404
         assert apps._serve(files, "app.js", False, "x").headers["content-type"].startswith("text/javascript")
 

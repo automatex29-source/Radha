@@ -403,7 +403,8 @@ export default function Workspace({ mode = null }) {
         }
       }
     } catch (e) {
-      if (e.name !== "AbortError") toast.error(e.message || "Something went wrong");
+      // When the reply already explains the failure (the server writes a note with Regenerate), no technical toast.
+      if (e.name !== "AbortError" && !streamTextRef.current.trim()) toast.error(e.message || "Something went wrong");
     } finally {
       const stopped = controller.signal.aborted;
       abortRef.current = null;
@@ -608,7 +609,7 @@ export default function Workspace({ mode = null }) {
       {/* Main */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header data-testid="chat-workspace-header" className="z-40 flex items-center justify-between gap-2 px-2 py-2 sm:px-6 sm:py-4">
+        <header data-testid="chat-workspace-header" className="@container z-40 flex items-center justify-between gap-2 px-2 py-2 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-1 sm:gap-3">
             <button onClick={() => setSidebarOpen(true)} data-testid="open-sidebar-button" aria-label="Show chats"
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
@@ -631,13 +632,13 @@ export default function Workspace({ mode = null }) {
               <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} data-testid="share-conversation-button"
                 className={`gap-1.5 hover:text-foreground ${activeConv.shareId ? "text-brand" : "text-muted-foreground"}`}>
                 <Link2 className="h-3.5 w-3.5" />
-                <span className="hidden text-xs sm:inline">{t(activeConv.shareId ? "shared" : "share")}</span>
+                <span className="hidden text-xs @2xl:inline">{t(activeConv.shareId ? "shared" : "share")}</span>
               </Button>
             )}
             {activeId && messages.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={exportConversation} data-testid="export-conversation-button" className="gap-1.5 text-muted-foreground hover:text-foreground max-sm:hidden">
+              <Button variant="ghost" size="sm" onClick={exportConversation} data-testid="export-conversation-button" className="gap-1.5 text-muted-foreground hover:text-foreground @max-xl:hidden">
                 <Download className="h-3.5 w-3.5" />
-                <span className="hidden text-xs sm:inline">{t("export")}</span>
+                <span className="hidden text-xs @2xl:inline">{t("export")}</span>
               </Button>
             )}
             {!counselling && <DropdownMenu>

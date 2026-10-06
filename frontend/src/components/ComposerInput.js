@@ -139,7 +139,7 @@ export default function ComposerInput({
           ))}
         </div>
       )}
-      <div {...dropProps} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
+      <div {...dropProps} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}@container rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
         <textarea
           ref={ref}
           data-testid="message-composer-textarea"
@@ -152,8 +152,8 @@ export default function ComposerInput({
           placeholder={rec.recording ? t("listening") : placeholder || t(agentMode && !narrowScreen() ? "askAnything" : "message")}
           className="radha-scroll max-h-[200px] w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
-        <div className="flex items-center justify-between px-1 pt-1">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between gap-1 px-1 pt-1">
+          <div className="flex min-w-0 items-center gap-1">
             {onAttach && (
               <>
                 <input ref={fileRef} type="file" multiple className="hidden" data-testid="composer-file-input"
@@ -201,23 +201,26 @@ export default function ComposerInput({
               </button>
             )}
             {value && !streaming && (
-              <button onClick={() => onChange("")} data-testid="clear-composer-button"
-                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">
-                <X className="h-3 w-3" /> Clear
+              <button onClick={() => onChange("")} data-testid="clear-composer-button" title="Clear" aria-label="Clear"
+                className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground @lg:px-2">
+                <X className="h-3 w-3" /><span className="@max-lg:hidden">Clear</span>
               </button>
             )}
-            <span className="ml-1 hidden text-[11px] text-muted-foreground md:inline">
+            <span className="ml-1 hidden whitespace-nowrap text-[11px] text-muted-foreground @2xl:inline">
               {t.parts("toSend", { enter: <span key="k" className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-primary/15 dark:text-brand">Enter</span> })}
             </span>
           </div>
           {streaming ? (
             <Button size="icon" onClick={onStop} onMouseDown={(e) => e.preventDefault()} data-testid="stop-generation-button" title="Stop (Esc)" aria-label="Stop the reply"
-              className="h-11 w-11 rounded-full bg-foreground text-background shadow-md transition-transform hover:scale-105 hover:bg-foreground/90 active:scale-95">
+              className="h-11 w-11 shrink-0 rounded-full bg-foreground text-background shadow-md transition-transform hover:scale-105 hover:bg-foreground/90 active:scale-95">
               <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
           ) : (
-            <Button size="icon" onClick={onSend} disabled={!canSend} data-testid="send-message-button"
-              className="h-11 w-11 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_8px_24px_rgba(99,102,241,0.45)] hover:from-indigo-500 hover:to-violet-600">
+            <Button size="icon" onClick={onSend} disabled={!canSend} data-testid="send-message-button" aria-label="Send"
+              // Keep the typing focus: on phones losing it brings back the tab bar, which moved this button
+              // away mid-tap so the tap landed on the tab bar and the message wasn't sent.
+              onMouseDown={(e) => e.preventDefault()}
+              className="h-11 w-11 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_8px_24px_rgba(99,102,241,0.45)] hover:from-indigo-500 hover:to-violet-600">
               <ArrowUp className="h-4 w-4" />
             </Button>
           )}
@@ -233,7 +236,7 @@ function ModeChip({ on, onClick, icon: Icon, label, title, testId }) {
     <button onClick={onClick} data-testid={testId} title={title} aria-pressed={!!on}
       className={`flex h-10 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors sm:h-8 sm:px-2.5 ${
         on ? "bg-primary/15 text-brand ring-1 ring-primary/50" : "text-muted-foreground hover:bg-surface hover:text-foreground"}`}>
-      <Icon className="h-4 w-4" /> <span className={on ? "" : "max-sm:hidden"}>{label}</span>
+      <Icon className="h-4 w-4" /> <span className={on ? "" : "@max-lg:hidden"}>{label}</span>
     </button>
   );
 }
@@ -256,7 +259,7 @@ function SearchChip({ on, onToggle, label, focus, onFocus, pro, onTogglePro }) {
       <button onClick={onToggle} data-testid="web-mode-toggle" aria-pressed={!!on}
         title={on ? "Search is on: every answer searches and shows its sources" : "Search the web and show sources for every answer"}
         className="flex h-full items-center gap-1.5 pl-2 pr-1 text-xs font-medium sm:pl-2.5">
-        <Icon className="h-4 w-4" /> <span className="max-sm:hidden">{name}</span>
+        <Icon className="h-4 w-4" /> <span className="@max-lg:hidden">{name}</span>
         {on && pro && <span data-testid="pro-search-badge" className="rounded bg-primary px-1 py-px text-[9px] font-bold uppercase tracking-wide text-primary-foreground">Pro</span>}
       </button>
       {onFocus && (

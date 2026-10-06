@@ -601,7 +601,7 @@ export default function DeckEditor() {
                       disabled={generating}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
                       className="min-h-0 resize-none border-0 bg-transparent p-1 text-sm shadow-none focus-visible:ring-0" />
-                    <Button size="icon" onClick={() => ask()} disabled={!input.trim() || thinking || generating} data-testid="deck-chat-send"><Send className="h-4 w-4" /></Button>
+                    <Button size="icon" onClick={() => ask()} onMouseDown={(e) => e.preventDefault()} disabled={!input.trim() || thinking || generating} data-testid="deck-chat-send"><Send className="h-4 w-4" /></Button>
                   </div>
                 </div>
               </>
