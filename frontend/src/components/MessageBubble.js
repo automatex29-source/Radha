@@ -12,6 +12,7 @@ import BrandMark from "@/components/BrandMark";
 import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
+import { modelLabel } from "@/lib/models";
 
 function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
   const [failed, setFailed] = useState(false);
@@ -326,8 +327,8 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         <div className="mb-1 flex items-center gap-2">
           <KrishWordmark className="text-[15px]" />
           {message.model && (
-            <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand">
-              {message.model}
+            <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 text-[10px] font-medium tracking-wide text-brand">
+              {modelLabel(message.model)}
             </span>
           )}
         </div>

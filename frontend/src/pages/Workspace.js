@@ -13,15 +13,14 @@ import { extractFiles } from "@/lib/codeFiles";
 import ShareDialog from "@/components/ShareDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, ChevronDown, Cpu, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import TopStories from "@/components/TopStories";
 import { useAuth } from "@/context/AuthContext";
 import UpgradeButton from "@/components/UpgradeButton";
+import ModelMenu from "@/components/ModelMenu";
+import { modelLabel } from "@/lib/models";
 import { showPlanLimit } from "@/lib/planLimits";
 import { useT } from "@/lib/i18n";
 
@@ -312,7 +311,7 @@ export default function Workspace({ mode = null }) {
     const title = activeConv?.title || "Krish AI conversation";
     const lines = [`# ${title}`, "", `_Exported from Krish AI by EmpireX_`, ""];
     messages.forEach((m) => {
-      lines.push(m.role === "user" ? "## You" : `## Krish AI${m.model ? ` (${m.model})` : ""}`);
+      lines.push(m.role === "user" ? "## You" : `## Krish AI${m.model ? ` (${modelLabel(m.model)})` : ""}`);
       lines.push("", m.content, "");
     });
     const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
@@ -652,23 +651,7 @@ export default function Workspace({ mode = null }) {
                 <span className="hidden text-xs @2xl:inline">{t("export")}</span>
               </Button>
             )}
-            {!counselling && <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="model-selector-dropdown" className="h-9 gap-2 rounded-full border-white/80 bg-white/80 px-3.5 shadow-sm backdrop-blur dark:border-border dark:bg-card sm:h-10">
-                <Cpu className="h-3.5 w-3.5 text-primary" />
-                <span className="max-w-[92px] truncate text-xs font-medium sm:max-w-none">{models.find((m) => m.id === model)?.label || t("model")}</span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {models.map((m) => (
-                <DropdownMenuItem key={m.id} data-testid={`model-option-${m.id}`} onClick={() => setModel(m.id)} className="flex-col items-start gap-0.5">
-                  <span className="text-sm font-medium">{m.label}</span>
-                  <span className="text-[11px] text-muted-foreground">{m.description}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>}
+            {!counselling && <ModelMenu models={models} model={model} setModel={setModel} caps={caps} label={t("model")} />}
             <button onClick={newConversation} data-testid="mobile-new-chat-button" aria-label={t(counselling ? "newSession" : "newChat")}
               className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <SquarePen className="h-5 w-5" />
