@@ -21,6 +21,7 @@ import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, L
 import Mascot from "@/components/Mascot";
 import TopStories from "@/components/TopStories";
 import { useAuth } from "@/context/AuthContext";
+import UpgradeButton from "@/components/UpgradeButton";
 import { useT } from "@/lib/i18n";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
@@ -619,6 +620,7 @@ export default function Workspace({ mode = null }) {
           </div>
 
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            {!counselling && <UpgradeButton />}
             {activeConv && messages.length > 0 && (
               <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} data-testid="share-conversation-button"
                 className={`gap-1.5 hover:text-foreground ${activeConv.shareId ? "text-brand" : "text-muted-foreground"}`}>
