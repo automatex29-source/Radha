@@ -67,14 +67,16 @@ db = client[os.environ.get("DB_NAME") or "radha"]
 
 # Emergent Universal Key (only used on Emergent). Elsewhere, set provider keys instead.
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
+# What people see in the model menu: Krish names and plain words, never the provider or its tier.
+# "pro" marks models only paid plans get (the frontend shows a Pro badge on them).
 AVAILABLE_MODELS = [
-    {"id": "claude-sonnet-5-5", "label": "Krish Omni", "provider": "anthropic", "description": "Deep reasoning · flagship"},
-    {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "provider": "anthropic", "description": "Fast · lightweight"},
-    {"id": "gpt-5.4", "label": "Krish Vision", "provider": "openai", "description": "Versatile · OpenAI"},
-    {"id": "gemini-3.5-flash-lite", "label": "Krish Flash", "provider": "gemini", "description": "Snappy · Google · free tier"},
-    {"id": "openai/gpt-oss-120b", "label": "Krish Open", "provider": "groq", "description": "Fast · Groq · free tier"},
-    {"id": "openai/gpt-oss-20b", "label": "Krish Open Fast", "provider": "groq", "description": "Quickest replies · free tier"},
-    {"id": "cerebras/gpt-oss-120b", "label": "Krish Open Max", "provider": "cerebras", "description": "Bigger memory · Cerebras · free tier"},
+    {"id": "gemini-3.5-flash-lite", "label": "Krish Spark", "description": "Smart and quick for everyday questions", "pro": False},
+    {"id": "openai/gpt-oss-120b", "label": "Krish Turbo", "description": "Lightning-fast answers and coding help", "pro": False},
+    {"id": "openai/gpt-oss-20b", "label": "Krish Mini", "description": "Instant replies for simple questions", "pro": False},
+    {"id": "cerebras/gpt-oss-120b", "label": "Krish Titan", "description": "Remembers more for long chats and big files", "pro": False},
+    {"id": "claude-sonnet-5-5", "label": "Krish Ultra", "description": "Our smartest, for deep thinking", "pro": True},
+    {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "description": "Quick and sharp for daily work", "pro": True},
+    {"id": "gpt-5.4", "label": "Krish Vision", "description": "A strong all-rounder for any task", "pro": True},
 ]
 # The App Builder's models: BUILDER_MODEL (any model above, the owner's choice for every user) wins;
 # otherwise free-tier builds (Groq or Gemini) move to Cerebras when its key is set, since it fits about 4x more per request.
