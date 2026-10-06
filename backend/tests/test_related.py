@@ -30,7 +30,15 @@ def test_fact_questions_search():
     assert live_search.needs_lookup("who is the ceo of tata motors")
     assert live_search.needs_lookup("best phones under 20000")
     assert live_search.needs_lookup("iphone 17 vs pixel 10")
-    assert not live_search.needs_lookup("write a story about a king")
+    # Every answer is searched now, except greetings, code and questions about Krish AI or EmpireX.
+    assert live_search.needs_lookup("write a story about a king")
+    assert live_search.needs_lookup("explain recursion in python")
+    assert not live_search.needs_lookup("hi krish!")
+    assert not live_search.needs_lookup("Thank you 🙏")
+    assert not live_search.needs_lookup("who is the owner of empirex")
+    assert not live_search.needs_lookup("who made you")
+    assert not live_search.needs_lookup("tumhe kisne banaya")
+    assert not live_search.needs_lookup("fix this ```print(1)```")
 
 
 def test_gather_returns_cards_and_cite_note(monkeypatch):
@@ -49,4 +57,4 @@ def test_gather_skips_without_force(monkeypatch):
     async def boom(*a, **k):
         raise AssertionError("should not search")
     monkeypatch.setattr(web, "search", boom)
-    assert asyncio.run(live_search.gather(["tell me about tata motors"]))["context"] is None
+    assert asyncio.run(live_search.gather(["hello"]))["context"] is None

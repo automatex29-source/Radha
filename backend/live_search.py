@@ -36,7 +36,6 @@ _QUESTION = re.compile(
     re.I,
 )
 _CURRENCY = web.CURRENCY
-MAX_QUESTION_CHARS = 300
 CITE_NOTE = (
     "These results were searched just now for this question: answer from them directly and don't call "
     "web_search again unless they clearly don't contain the answer. If the question has a typo, answer what "
@@ -47,7 +46,10 @@ CITE_NOTE = (
     "today's date and when it changed; a change that a result says takes effect on a date already passed has "
     "happened, so the newer person or number is current. "
     "Cite: after each sentence that uses a numbered web result, add its number in square brackets, like [1] or "
-    "[2][3]. Use only the numbers listed here. Don't add a separate list of sources or links; the app shows them."
+    "[2][3]. Use only the numbers listed here. Don't add a separate list of sources or links; the app shows them. "
+    "If the results don't relate to what the user asked (a story, a poem, code, a chat), ignore them and answer "
+    "normally, without citations. Facts about Krish AI and EmpireX come from your instructions, never from these "
+    "results: other companies share the EmpireX name."
 )
 
 
@@ -63,13 +65,32 @@ def _recent_user_text(user_messages: List[str]) -> str:
     return last
 
 
+# Questions about Krish AI or EmpireX itself are answered from the system prompt: the web has other,
+# unrelated companies called EmpireX, and their founders' names ended up in answers.
+_ABOUT_US = re.compile(
+    r"\b(krish ?ai|empire ?x|automatex)\b|\bwho (made|built|created|developed|owns|designed|trained) (you|krish)\b|"
+    r"\byour (owner|owners|founder|founders|creator|creators|maker|makers|company|ceo|developer|developers)\b|"
+    r"\b(who|which company) (is|are) (behind|your)\b|\b(tum|aap|tumhe|aapko|tujhe) ?(ko)? ?kisne\b",
+    re.I,
+)
+# Greetings and thanks get a friendly reply, not search results.
+_SMALL_TALK = re.compile(
+    r"^\s*(hi+|hello+|hey+|hii+|namaste|namaskar|good (morning|afternoon|evening|night)|thanks?|thank you|thx|ty|"
+    r"ok(ay)?|okk+|cool|nice|great|bye|good ?bye|yes|no|haan|ha|nahi|theek hai|thik hai|done|sure|hmm+)"
+    r"[\s!.,?🙏😊👍]*(krish|bro|dear|ji)?[\s!.,?🙏😊👍]*$",
+    re.I,
+)
+MAX_SEARCH_CHARS = 1500  # long pasted text (an essay, a log) isn't a search query
+
+
 def needs_lookup(text: str) -> bool:
-    if not text:
+    """Every answer is backed by a web search, except greetings, questions about Krish/EmpireX itself, code and
+    long pasted text (unless it asks about something current)."""
+    if not text or _ABOUT_US.search(text) or _SMALL_TALK.match(text):
         return False
     if _CURRENT.search(text) or _CURRENCY.search(text):
         return True
-    # A short fact question, not a request to write, code or translate something.
-    return len(text) <= MAX_QUESTION_CHARS and "```" not in text and bool(_QUESTION.search(text))
+    return len(text) <= MAX_SEARCH_CHARS and "```" not in text
 
 
 def domain_of(url: str) -> str:

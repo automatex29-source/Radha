@@ -13,8 +13,8 @@ def test_detects_questions_that_need_live_info():
     assert live_search.needs_lookup("WHAT IS DOLLAR RATE TODA")
     assert live_search.needs_lookup("latest news on the election")
     assert live_search.needs_lookup("can you do google search")
-    assert not live_search.needs_lookup("write a poem about the sea")
-    assert not live_search.needs_lookup("explain recursion in python")
+    assert not live_search.needs_lookup("good morning")
+    assert not live_search.needs_lookup("what is Krish AI")
 
 
 def test_short_follow_up_joins_previous_question():
@@ -27,7 +27,7 @@ def test_lookup_skips_ordinary_questions(monkeypatch):
     async def boom(*a, **k):
         raise AssertionError("should not search")
     monkeypatch.setattr(web, "search", boom)
-    assert asyncio.run(live_search.lookup(["write a poem"])) is None
+    assert asyncio.run(live_search.lookup(["thanks"])) is None
 
 
 def test_lookup_combines_rates_and_search(monkeypatch):
