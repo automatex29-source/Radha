@@ -11,9 +11,9 @@ function Row({ m, selected, ready, locked, onPick }) {
   const Icon = modelIcon(m.id);
   return (
     <DropdownMenuItem data-testid={`model-option-${m.id}`} disabled={!ready} onSelect={() => onPick(m)}
-      className={`group/model my-0.5 cursor-pointer gap-3 rounded-xl px-2.5 py-2 transition-all focus:bg-primary/[0.07] ${selected ? "bg-primary/[0.09] ring-1 ring-primary/25" : ""}`}>
+      className={`group/model my-0.5 cursor-pointer gap-3 rounded-xl px-2.5 py-2 transition-all focus:bg-[#F2650F]/[0.07] ${selected ? "bg-[#F2650F]/[0.09] ring-1 ring-[#F2650F]/25" : ""}`}>
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-transform duration-200 group-hover/model:scale-110 group-focus/model:scale-110 ${
-        selected ? "bg-primary text-primary-foreground shadow-sm shadow-primary/30" : "bg-primary/10 text-primary"}`}>
+        selected ? "bg-gradient-to-br from-[#FFB547] via-[#FF8A1E] to-[#F2650F] text-white shadow-sm shadow-[#FF8A1E]/40" : "bg-[#F2650F]/10 text-[#F2650F]"}`}>
         <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0 flex-1">
@@ -21,7 +21,7 @@ function Row({ m, selected, ready, locked, onPick }) {
           <span className="text-sm font-semibold text-foreground">{m.label}</span>
           {m.pro && ready && (
             <span className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-bold uppercase tracking-wide ${
-              locked ? "border border-primary/40 text-primary" : "bg-primary/15 text-primary"}`}>
+              locked ? "border border-[#F2650F]/40 text-[#F2650F]" : "bg-[#F2650F]/15 text-[#F2650F]"}`}>
               <Crown className="h-2.5 w-2.5" /> Pro
             </span>
           )}
@@ -29,7 +29,7 @@ function Row({ m, selected, ready, locked, onPick }) {
         </span>
         <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">{m.description}</span>
       </span>
-      <Check className={`h-4 w-4 shrink-0 text-primary transition-opacity ${selected ? "opacity-100" : "opacity-0"}`} />
+      <Check className={`h-4 w-4 shrink-0 text-[#F2650F] transition-opacity ${selected ? "opacity-100" : "opacity-0"}`} />
     </DropdownMenuItem>
   );
 }
@@ -49,8 +49,8 @@ export default function ModelMenu({ models, model, setModel, caps, label }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" data-testid="model-selector-dropdown"
-          className="group h-9 gap-2 rounded-full border-white/80 bg-white/80 pl-1.5 pr-3 shadow-sm backdrop-blur transition-all hover:border-primary/40 hover:shadow-md data-[state=open]:border-primary/50 data-[state=open]:ring-2 data-[state=open]:ring-primary/15 dark:border-border dark:bg-card sm:h-10">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/12 text-primary sm:h-7 sm:w-7">
+          className="group h-9 gap-2 rounded-full border-white/80 bg-white/80 pl-1.5 pr-3 shadow-sm backdrop-blur transition-all hover:border-[#F2650F]/40 hover:shadow-md data-[state=open]:border-[#F2650F]/50 data-[state=open]:ring-2 data-[state=open]:ring-[#F2650F]/15 dark:border-border dark:bg-card sm:h-10">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#F2650F]/12 text-[#F2650F] sm:h-7 sm:w-7">
             <Icon className="h-3.5 w-3.5" />
           </span>
           <span className="max-w-[92px] truncate text-xs font-semibold sm:max-w-none">{current?.label || label}</span>
