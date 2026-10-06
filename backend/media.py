@@ -54,7 +54,14 @@ def _client():
 #                 lifts the anonymous rate limit. Without a key we try the keyless endpoints.
 #   huggingface:  FLUX.1-schnell on HF inference with a free HF_TOKEN (small monthly allowance).
 POLLINATIONS_BASE = os.environ.get("POLLINATIONS_BASE_URL", "https://gen.pollinations.ai").rstrip("/")
-POLLINATIONS_IMAGE_MODEL = os.environ.get("POLLINATIONS_IMAGE_MODEL", "tongyi-mai/z-image-turbo")
+# Best first: Seedream 4.0 draws far more detailed, photo-like pictures (and real words on signs) than the fast
+# Z-Image Turbo. It spends the key's free daily Pollen; when that runs out or the model is busy, the next one answers.
+POLLINATIONS_IMAGE_MODELS = [m.strip() for m in (os.environ.get("POLLINATIONS_IMAGE_MODELS")
+                                                 or os.environ.get("POLLINATIONS_IMAGE_MODEL")
+                                                 or "bytedance/seedream-4.0,tongyi-mai/z-image-turbo").split(",")
+                             if m.strip()]
+# A better model that is slow today shouldn't keep the person waiting: it gets this long before the next one tries.
+BEST_IMAGE_TIMEOUT = float(os.environ.get("BEST_IMAGE_TIMEOUT_SECONDS", "60"))
 LEGACY_POLLINATIONS = "https://image.pollinations.ai/prompt"
 HF_IMAGE_MODEL = os.environ.get("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
 IMAGE_TIMEOUT = float(os.environ.get("IMAGE_TIMEOUT_SECONDS", "150"))
@@ -180,13 +187,23 @@ async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Opti
         url = f"{LEGACY_POLLINATIONS}/{quote(prompt[:1500], safe='')}"
         # No "enhance": it has a model rewrite the prompt first, which adds seconds; our prompts are already full.
         params.update({"model": "flux", "private": "true"})
-    else:
-        url = f"{POLLINATIONS_BASE}/image/{quote(prompt[:1500], safe='')}"
-        params["model"] = POLLINATIONS_IMAGE_MODEL
-        if os.environ.get("POLLINATIONS_API_KEY"):
-            headers["Authorization"] = f"Bearer {os.environ['POLLINATIONS_API_KEY']}"
-    async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT, follow_redirects=True) as client:
-        return _check_image(await client.get(url, params=params, headers=headers), size)
+        async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT, follow_redirects=True) as client:
+            return _check_image(await client.get(url, params=params, headers=headers), size)
+    url = f"{POLLINATIONS_BASE}/image/{quote(prompt[:1500], safe='')}"
+    if os.environ.get("POLLINATIONS_API_KEY"):
+        headers["Authorization"] = f"Bearer {os.environ['POLLINATIONS_API_KEY']}"
+    errors = []
+    for i, model in enumerate(POLLINATIONS_IMAGE_MODELS):
+        last = i == len(POLLINATIONS_IMAGE_MODELS) - 1
+        try:
+            async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT if last else BEST_IMAGE_TIMEOUT,
+                                         follow_redirects=True) as client:
+                return _check_image(await client.get(url, params={**params, "model": model}, headers=headers), size)
+        except Exception as exc:
+            if last:
+                raise ImageError("; ".join(errors + [f"{model}: {str(exc)[:160] or type(exc).__name__}"]))
+            logger.info("pollinations model %s failed, trying the next: %s", model, str(exc)[:200])
+            errors.append(f"{model}: {str(exc)[:120] or type(exc).__name__}")
 
 
 async def _huggingface(prompt: str, size: str) -> bytes:

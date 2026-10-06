@@ -74,6 +74,21 @@ class TestImages:
         assert req.url.host == "gen.pollinations.ai" and req.url.raw_path.startswith(b"/image/a%20red%20fox?")
         assert req.headers["authorization"] == "Bearer sk_test"
         assert req.url.params["width"] == "1536" and req.url.params["height"] == "1024"
+        assert req.url.params["model"] == "bytedance/seedream-4.0"  # the better model first
+
+    def test_out_of_free_pollen_uses_the_fast_model(self, monkeypatch):
+        monkeypatch.setenv("POLLINATIONS_API_KEY", "sk_test")
+        models = []
+
+        def handler(req):
+            models.append(req.url.params["model"])
+            if req.url.params["model"] == "bytedance/seedream-4.0":
+                return httpx.Response(402, json={"error": "Insufficient pollen balance"})
+            return httpx.Response(200, content=png(size=(768, 768)), headers={"content-type": "image/png"})
+
+        fake_http(monkeypatch, handler)
+        assert media.image_type(run(media.generate_image("a red fox"))) == "image/png"
+        assert models == ["bytedance/seedream-4.0", "tongyi-mai/z-image-turbo"]
 
     def test_placeholder_banner_is_rejected(self, monkeypatch):
         fake_http(monkeypatch, lambda req: httpx.Response(200, content=png("green", (400, 120))))
@@ -92,7 +107,7 @@ class TestImages:
 
         fake_http(monkeypatch, handler)
         assert run(media.generate_image("cat")) == png(size=(512, 512))
-        assert hosts == ["gen.pollinations.ai", "image.pollinations.ai"]
+        assert hosts == ["gen.pollinations.ai", "gen.pollinations.ai", "image.pollinations.ai"]  # both models, then keyless
 
     def test_all_fail_reports_errors(self, monkeypatch):
         fake_http(monkeypatch, lambda req: httpx.Response(200, text="<html>busy</html>",
