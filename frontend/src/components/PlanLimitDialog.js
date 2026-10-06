@@ -18,17 +18,20 @@ export default function PlanLimitDialog() {
 
   return (
     <Dialog open={!!message} onOpenChange={(o) => !o && setMessage(null)}>
-      <DialogContent className="max-w-sm" data-testid="plan-limit-dialog">
-        <DialogHeader>
-          <div className="mx-auto mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10">
-            <Crown className="h-5 w-5 text-primary" />
+      <DialogContent className="max-w-[22rem] rounded-3xl p-7 max-sm:w-[calc(100%-2rem)]" data-testid="plan-limit-dialog">
+        <DialogHeader className="items-center text-center sm:text-center">
+          <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_10px_30px_-8px_rgba(99,102,241,0.6)]">
+            <Crown className="h-6 w-6 text-white" />
           </div>
-          <DialogTitle className="text-center">You've reached your limit</DialogTitle>
-          <DialogDescription className="text-center">{message}</DialogDescription>
+          <DialogTitle className="text-[1.35rem] font-extrabold tracking-tight">You've reached your limit</DialogTitle>
+          <DialogDescription className="pt-1 text-[0.9rem] leading-relaxed">{message}</DialogDescription>
         </DialogHeader>
-        <div className="mt-2 flex flex-col gap-2">
-          <Button onClick={() => { setMessage(null); navigate("/plans"); }} data-testid="plan-limit-see-plans">See plans</Button>
-          <Button variant="ghost" onClick={() => setMessage(null)}>Maybe later</Button>
+        <div className="mt-3 flex flex-col gap-2">
+          <Button onClick={() => { setMessage(null); navigate("/plans"); }} data-testid="plan-limit-see-plans"
+            className="h-11 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 font-semibold text-white hover:opacity-95">
+            See plans
+          </Button>
+          <Button variant="ghost" onClick={() => setMessage(null)} className="h-10 rounded-xl text-muted-foreground">Maybe later</Button>
         </div>
       </DialogContent>
     </Dialog>
