@@ -953,6 +953,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                                     output=ev["output"], media=ev["media"])
                         produced.extend(ev["media"])
                         yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
+                    if ctx.limit_hit:
+                        yield f"event: plan_limit\ndata: {_sse_json(ctx.limit_hit)}\n\n"
+                        ctx.limit_hit = None
                     if len(sources) != shown_sources:
                         shown_sources = len(sources)
                         yield f"event: sources\ndata: {_sse_json(sources)}\n\n"

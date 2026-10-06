@@ -34,6 +34,7 @@ class ToolContext:
     # so the model's [n] citations point at real cards.
     sources: Optional[List[dict]] = None
     searches_left: Optional[int] = None  # None means no limit
+    limit_hit: Optional[str] = None  # set when a plan limit stopped a tool, so the app can offer an upgrade
 
 
 @dataclass
@@ -215,6 +216,7 @@ async def _allowance(ctx: ToolContext, kind: str = "picture"):
     try:
         await limits.use(ctx.db, ctx.user_id, kind)
     except limits.LimitReached as exc:
+        ctx.limit_hit = str(exc)
         raise ValueError(f"{exc} Tell the user this kindly, in one sentence, and that the Plans page "
                          "(menu with their name > Plans) shows Pro and Max.")
     try:

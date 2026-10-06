@@ -22,6 +22,7 @@ import Mascot from "@/components/Mascot";
 import TopStories from "@/components/TopStories";
 import { useAuth } from "@/context/AuthContext";
 import UpgradeButton from "@/components/UpgradeButton";
+import { showPlanLimit } from "@/lib/planLimits";
 import { useT } from "@/lib/i18n";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
@@ -346,6 +347,7 @@ export default function Workspace({ mode = null }) {
 
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({}));
+        if (res.status === 402) showPlanLimit(err.detail);
         throw new Error(err.detail || "Failed to reach Krish AI");
       }
 
@@ -371,6 +373,10 @@ export default function Workspace({ mode = null }) {
           if (eventName === "sources") {
             streamSourcesRef.current = JSON.parse(dataStr || "[]");
             setStreamSources(streamSourcesRef.current);
+            continue;
+          }
+          if (eventName === "plan_limit") {
+            showPlanLimit(JSON.parse(dataStr || '""'));
             continue;
           }
           if (eventName === "related") {
