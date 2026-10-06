@@ -748,7 +748,7 @@ function StarterCard({ s, i, onPick, testid, hideOnPhone }) {
   const t = TONES[s.tone] || TONES.indigo;
   return (
     <button data-testid={testid} onClick={() => onPick(s.prompt)}
-      className={`${hideOnPhone ? "max-sm:hidden " : ""}krish-card group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/70 bg-gradient-to-br ${t.card} to-white/70 p-3 text-left shadow-[0_8px_30px_rgba(99,102,241,0.08)] backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(99,102,241,0.16)] active:scale-[0.99] dark:border-white/5 dark:to-card/60 sm:block sm:px-5 sm:py-4`}
+      className={`${hideOnPhone ? "max-sm:hidden " : ""}krish-card group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/70 bg-gradient-to-br ${t.card} to-white/70 p-3 text-left shadow-[0_8px_30px_rgba(15,23,42,0.05)] backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(15,23,42,0.10)] active:scale-[0.99] dark:border-white/5 dark:to-card/60 sm:block sm:px-5 sm:py-4`}
       style={{ animationDelay: `${0.05 * i}s` }}>
       <svg viewBox="0 0 200 80" preserveAspectRatio="none" aria-hidden="true" className={`pointer-events-none absolute -bottom-1 right-0 h-16 w-3/4 ${t.wave}`}>
         <path d="M0 80 C 60 70, 110 20, 200 10 L200 80 Z" fill="currentColor" />
@@ -772,7 +772,7 @@ function EmptyState({ onPick }) {
     <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
       <div className="radha-fade-up relative flex items-center gap-4 max-md:flex-col-reverse md:gap-10">
         <div className="relative min-w-0 flex-1 max-md:text-center">
-          <Sparkle className="absolute -left-7 top-10 h-6 w-6 text-violet-500 max-md:hidden" />
+          <Sparkle className="absolute -left-7 top-10 h-6 w-6 text-[#FF8A1E] max-md:hidden" />
           <h2 className="text-[1.6rem] font-extrabold leading-[1.1] tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem]">
             {t.lang === "en" ? <>How can<br className="max-md:hidden" /> <span className="krish-gradient-text">Krish AI</span> help today?</>
               : t.parts("helpToday", { krish: <span key="k" className="krish-gradient-text">Krish AI</span> })}
@@ -782,7 +782,7 @@ function EmptyState({ onPick }) {
           </p>
         </div>
         <div className="relative shrink-0">
-          <p className="krish-hand absolute -left-28 top-4 -rotate-12 text-2xl text-indigo-500 max-lg:hidden dark:text-indigo-300">
+          <p className="krish-hand absolute -left-28 top-4 -rotate-12 text-2xl text-slate-500 max-lg:hidden dark:text-slate-400">
             Ideas<br /><span className="ml-5">to Impact</span>
             <svg viewBox="0 0 120 12" className="ml-4 mt-0.5 h-3 w-28" aria-hidden="true"><path d="M2 9 C 40 2, 80 2, 118 6" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" /></svg>
           </p>

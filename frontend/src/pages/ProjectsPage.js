@@ -137,7 +137,7 @@ export default function ProjectsPage() {
                 {projects.map((p) => (
                   <button key={p.id} data-testid={`project-card-${p.id}`} onClick={() => navigate(`/projects/${p.id}`)}
                     className="radha-lift group rounded-xl border border-border bg-card p-5 text-left hover:border-primary/50">
-                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-strong text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-strong text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
                       <FolderKanban className="h-5 w-5" />
                     </div>
                     <p className="truncate font-semibold tracking-tight">{p.name}</p>

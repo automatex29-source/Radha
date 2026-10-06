@@ -30,7 +30,7 @@ export default function SharedChat() {
         </a>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <a href="/" className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white">Try Krish AI</a>
+          <a href="/" className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">Try Krish AI</a>
         </div>
       </header>
 
