@@ -1,4 +1,5 @@
 import axios from "axios";
+import { rememberPlanLimit } from "@/lib/planLimits";
 
 // REACT_APP_BACKEND_URL is inlined by Vite only when it is set in frontend/.env.
 // Without it, `process` does not exist in the browser, so guard the lookup and
@@ -29,6 +30,11 @@ api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
+});
+
+api.interceptors.response.use((res) => res, (err) => {
+  if (err?.response?.status === 402) rememberPlanLimit(err.response.data?.detail);
+  return Promise.reject(err);
 });
 
 export function formatApiError(err) {

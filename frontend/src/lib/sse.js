@@ -1,4 +1,5 @@
 import { getToken } from "@/lib/api";
+import { rememberPlanLimit } from "@/lib/planLimits";
 
 /**
  * POST to an SSE endpoint and dispatch events as they arrive.
@@ -13,6 +14,7 @@ export async function streamSSE(url, body, { signal, onText, onEvent } = {}) {
   });
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({}));
+    if (res.status === 402) rememberPlanLimit(err.detail);
     throw new Error(err.detail || "Failed to reach Krish AI");
   }
   const reader = res.body.getReader();

@@ -206,6 +206,7 @@ def public_user(doc: dict) -> dict:
         "email": doc["email"],
         "name": doc["name"],
         "language": languages.normalize(doc.get("language")),
+        "plan": doc.get("plan") if doc.get("plan") in limits.PLANS else "basic",
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
     }
@@ -1062,8 +1063,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         if not doc or not (doc.get("contentType") or "").startswith("image/"):
             raise HTTPException(status_code=400, detail="Unknown image attachment")
         image_ids.append(mid)
-    if conv.get("mode") != counsellor.MODE:  # the Counsellor is always free
-        await limits.require(db, user_id, "chat")
+    if conv.get("appId"):  # chat is unlimited; App Builder messages count as app builds
+        await limits.require(db, user_id, "build")
 
     content, ready_reply = body.content, None
     if conv.get("appId"):
@@ -1183,8 +1184,8 @@ def _background(coro):
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL)
-    if conv.get("mode") != counsellor.MODE:
-        await limits.require(db, user_id, "chat")
+    if conv.get("appId"):  # chat is unlimited; App Builder messages count as app builds
+        await limits.require(db, user_id, "build")
 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     if not history_docs:

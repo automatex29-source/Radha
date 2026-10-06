@@ -210,22 +210,24 @@ async def _run_python(ctx: ToolContext, args: dict) -> ToolOutput:
 
 
 @contextlib.asynccontextmanager
-async def _picture_allowance(ctx: ToolContext):
-    """Count one free-plan picture, given back if making it fails."""
+async def _allowance(ctx: ToolContext, kind: str = "picture"):
+    """Count one picture or video for the user's plan, given back if making it fails."""
     try:
-        await limits.use(ctx.db, ctx.user_id, "picture")
+        await limits.use(ctx.db, ctx.user_id, kind)
     except limits.LimitReached as exc:
-        raise ValueError(f"{exc} Tell the user this kindly, in one sentence.")
+        raise ValueError(f"{exc} Tell the user this kindly, in one sentence, and that the Plans page "
+                         "(menu with their name > Plans) shows Pro and Max.")
     try:
         yield
     except BaseException:
-        await limits.refund(ctx.db, ctx.user_id, "picture")
+        await limits.refund(ctx.db, ctx.user_id, kind)
         raise
+
 
 
 async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
-    async with _picture_allowance(ctx):
+    async with _allowance(ctx):
         final = await prompt_boost.image_prompt(prompt, args.get("style") or "")
         data = await media.generate_image(final, args.get("size") or "1024x1024", args.get("quality"))
     ctype = media.image_type(data) or "image/png"
@@ -250,7 +252,7 @@ async def _edit_image(ctx: ToolContext, args: dict) -> ToolOutput:
     if quick:
         data = image_edit.quick_edit(data, quick)
     if instruction:  # quick fixes (crop, rotate...) are free; AI changes count as a picture
-        async with _picture_allowance(ctx):
+        async with _allowance(ctx):
             data = await image_edit.ai_edit(data, instruction)
     ctype = media.image_type(data) or "image/png"
     ext = {"image/jpeg": "jpg", "image/webp": "webp"}.get(ctype, "png")
@@ -365,8 +367,9 @@ async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
         seconds = int(float(args.get("seconds") or 12))
     except (TypeError, ValueError):
         seconds = 12
-    out = await video.generate(prompt, seconds, str(args.get("orientation") or "").lower(),
-                               args.get("quality"), scenes, args.get("style") or "", captions)
+    async with _allowance(ctx, "video"):
+        out = await video.generate(prompt, seconds, str(args.get("orientation") or "").lower(),
+                                   args.get("quality"), scenes, args.get("style") or "", captions)
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "video", "mp4")
     saved = await media.save_media(ctx.db, ctx.user_id, out["data"], out["contentType"], "generated", name=name,
                                    conversation_id=ctx.conversation_id)

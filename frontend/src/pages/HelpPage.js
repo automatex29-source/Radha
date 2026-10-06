@@ -11,7 +11,7 @@ import { Bug, CheckCircle2, LifeBuoy, Loader2, MessageSquareHeart, Search, Send,
 
 const FAQS = [
   { q: "What is Krish AI?", a: "Krish AI by EmpireX is your AI helper. Chat to ask anything, talk to the Counsellor when you feel low, make presentations in Decks, build small apps in Apps, and let Automations do tasks for you on a schedule." },
-  { q: "Is Krish AI free?", a: "Yes. Krish AI is free to use right now. Some premium AI models need a paid plan, which we will add later." },
+  { q: "Is Krish AI free?", a: "Yes. The Basic plan is free forever, and chat is unlimited on every plan. Basic includes a few app builds, pictures, decks and videos each day. Pro (₹299 a month) and Max (₹699 a month) give much more, let you publish apps, and add premium AI models. Open the menu with your name and choose Plans to compare them." },
   { q: "I forgot my password. What do I do?", a: "On the sign-in page, tap \"Forgot password?\" and enter your email. We'll send you a link to choose a new password. The link works once and expires soon, so use it right away. Check your spam folder if you don't see it." },
   { q: "Why is the AI slow, or why did it stop answering?", a: "The free AI models are shared, so they can be busy for a moment. Wait a few seconds and send your message again, or pick another model from the model menu above the chat box. If it keeps happening, report a bug here." },
   { q: "What is the Counsellor?", a: "The Counsellor is a warm friend to talk to when you're stressed, sad or confused. It listens, helps you feel better and shares wisdom from the Bhagavad Gita when it helps. It is not a doctor. In an emergency in India, call Tele-MANAS 14416 (free, 24x7) or 112." },

@@ -538,9 +538,15 @@ function HistoryTab({ appId, commits, pending, onRestored }) {
 
 /* --------------------------------------------------------------- publish */
 function PublishButton({ app, onChange }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [canPublish, setCanPublish] = useState(true);
   const url = app.published ? absoluteUrl(app.published.url) : null;
+
+  useEffect(() => {
+    if (open) api.get("/usage").then(({ data }) => setCanPublish(data.canPublish !== false)).catch(() => {});
+  }, [open]);
 
   const publish = async () => {
     setBusy(true);
@@ -588,8 +594,17 @@ function PublishButton({ app, onChange }) {
           ) : (
             <>
               <p className="text-sm font-semibold">Publish to the web</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">Saves your current files as a version and serves it at a public link anyone can open.</p>
-              <Button size="sm" onClick={publish} disabled={busy} data-testid="publish-button" className="mt-3 w-full">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish"}</Button>
+              {canPublish ? (
+                <>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Saves your current files as a version and serves it at a public link anyone can open.</p>
+                  <Button size="sm" onClick={publish} disabled={busy} data-testid="publish-button" className="mt-3 w-full">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish"}</Button>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1 text-[11px] text-muted-foreground" data-testid="publish-needs-plan">Publishing apps is part of the Pro and Max plans. You can still build, preview and download your app for free.</p>
+                  <Button size="sm" onClick={() => navigate("/plans")} className="mt-3 w-full">See plans</Button>
+                </>
+              )}
             </>
           )}
         </div>

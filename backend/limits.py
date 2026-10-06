@@ -1,35 +1,66 @@
-"""Free plan limits.
+"""Plan limits: Basic (free), Pro and Max.
 
-Chats, pictures and new decks are counted per user per day (the day resets at
-midnight India time). Automations are counted as the total the user has now, so
-deleting one frees a slot. Counsellor chats are never counted.
+Chat is never limited. The heavy features are: app builds (each message sent
+in the App Builder), pictures, new decks and videos, counted per user per day
+(the day resets at midnight India time). Automations are counted as the total
+the user has now, so deleting one frees a slot. Publishing apps is for Pro and
+Max only.
 
-A user whose account has plan "pro" has no limits. Set FREE_LIMITS=off to
-switch every limit off (for testing).
+A user's plan is the `plan` field on their account ("basic" when missing).
+Set FREE_LIMITS=off to switch every limit off (for testing).
 """
 import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
-DAILY = {"chat": 30, "picture": 3, "deck": 4}
-TOTAL = {"automation": 1}
+PLANS = {
+    "basic": {
+        "name": "Basic", "price": 0,
+        "daily": {"build": 5, "picture": 3, "deck": 4, "video": 1},
+        "total": {"automation": 1},
+        "publish": False, "premium": False,
+    },
+    "pro": {
+        "name": "Pro", "price": 299,
+        "daily": {"build": 30, "picture": 25, "deck": 15, "video": 5},
+        "total": {"automation": 10},
+        "publish": True, "premium": True,
+    },
+    "max": {
+        "name": "Max", "price": 699,
+        "daily": {"build": 100, "picture": 80, "deck": 50, "video": 20},
+        "total": {"automation": 30},
+        "publish": True, "premium": True,
+    },
+}
+ORDER = ["basic", "pro", "max"]
+DAILY_KINDS = ("build", "picture", "deck", "video")
+TOTAL_KINDS = ("automation",)
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-MESSAGES = {
-    "chat": "You've used your 30 free chats for today. They refill at midnight, see you then! "
-            "The Counsellor is always free.",
-    "picture": "You've made your 3 free pictures for today. You can make more after midnight.",
-    "deck": "You've made your 4 free decks for today. You can make more after midnight.",
-    "automation": "The free plan has 1 automation. Delete your current one to make a new one.",
-}
+WHAT = {"build": "app builds", "picture": "pictures", "deck": "new decks", "video": "videos"}
+PUBLISH_MESSAGE = "Publishing apps is part of the Pro and Max plans. You can still build, preview and download your app for free."
 
 
 class LimitReached(Exception):
-    def __init__(self, kind: str):
+    def __init__(self, kind: str, plan: str = "basic"):
         self.kind = kind
-        super().__init__(MESSAGES[kind])
+        self.plan = plan
+        super().__init__(message(kind, plan))
+
+
+def message(kind: str, plan: str) -> str:
+    info = PLANS[plan]
+    nxt = ORDER[ORDER.index(plan) + 1] if plan != ORDER[-1] else None
+    more = f" Upgrade to {PLANS[nxt]['name']} for more." if nxt else ""
+    if kind == "automation":
+        n = info["total"]["automation"]
+        return (f"The {info['name']} plan keeps {n} automation{'s' if n != 1 else ''}. "
+                f"Delete one to make a new one.{more}")
+    return (f"You've used today's {info['daily'][kind]} {WHAT[kind]} on the {info['name']} plan. "
+            f"They refill at midnight.{more} Chat is always unlimited.")
 
 
 def enabled() -> bool:
@@ -40,40 +71,40 @@ def today() -> str:
     return datetime.now(IST).strftime("%Y-%m-%d")
 
 
-async def _unlimited(db, user_id: str) -> bool:
-    if not enabled():
-        return True
+async def plan_of(db, user_id: str) -> str:
     user = await db.users.find_one({"id": user_id}, {"plan": 1})
-    return bool(user and user.get("plan") == "pro")
+    plan = (user or {}).get("plan") or "basic"
+    return plan if plan in PLANS else "basic"
 
 
 async def is_pro(db, user_id: str) -> bool:
-    """True for Pro accounts (paid models are theirs)."""
-    user = await db.users.find_one({"id": user_id}, {"plan": 1})
-    return bool(user and user.get("plan") == "pro")
+    """True for paid plans (Pro or Max), which get the premium AI models."""
+    return PLANS[await plan_of(db, user_id)]["premium"]
 
 
 async def use(db, user_id: str, kind: str) -> None:
-    """Count one chat, picture or deck for today. Raises LimitReached if the day's allowance is used up."""
-    if await _unlimited(db, user_id):
+    """Count one build, picture, deck or video for today. Raises LimitReached if the day's allowance is used up."""
+    if not enabled():
         return
+    plan = await plan_of(db, user_id)
     doc = await db.usage.find_one_and_update(
         {"_id": f"{user_id}:{today()}"},
         {"$inc": {kind: 1}, "$setOnInsert": {"userId": user_id, "day": today()}},
         upsert=True, return_document=True,
     )
-    if doc[kind] > DAILY[kind]:
+    if doc[kind] > PLANS[plan]["daily"][kind]:
         await refund(db, user_id, kind)
-        raise LimitReached(kind)
+        raise LimitReached(kind, plan)
 
 
 async def check_daily(db, user_id: str, kind: str) -> None:
     """Raise LimitReached if today's allowance is already used up, without counting a use."""
-    if await _unlimited(db, user_id):
+    if not enabled():
         return
+    plan = await plan_of(db, user_id)
     doc = await db.usage.find_one({"_id": f"{user_id}:{today()}"}) or {}
-    if doc.get(kind, 0) >= DAILY[kind]:
-        raise LimitReached(kind)
+    if doc.get(kind, 0) >= PLANS[plan]["daily"][kind]:
+        raise LimitReached(kind, plan)
 
 
 async def refund(db, user_id: str, kind: str) -> None:
@@ -84,26 +115,32 @@ async def refund(db, user_id: str, kind: str) -> None:
 
 
 async def check_total(db, user_id: str, kind: str) -> None:
-    """Raise LimitReached if the user already has as many automations as the free plan keeps."""
-    if await _unlimited(db, user_id):
+    """Raise LimitReached if the user already has as many automations as their plan keeps."""
+    if not enabled():
         return
+    plan = await plan_of(db, user_id)
     collection = {"automation": db.automations}[kind]
-    if await collection.count_documents({"userId": user_id}) >= TOTAL[kind]:
-        raise LimitReached(kind)
+    if await collection.count_documents({"userId": user_id}) >= PLANS[plan]["total"][kind]:
+        raise LimitReached(kind, plan)
 
 
+async def can_publish(db, user_id: str) -> bool:
+    return not enabled() or PLANS[await plan_of(db, user_id)]["publish"]
+
+
+# 402 tells the app this is a plan limit, so it can offer the plans page.
 def http_error(exc: LimitReached) -> HTTPException:
-    return HTTPException(status_code=429, detail=str(exc))
+    return HTTPException(status_code=402, detail=str(exc))
 
 
 async def require(db, user_id: str, kind: str, peek: bool = False) -> None:
-    """use() or check_total() for an endpoint: turns a reached limit into a friendly 429.
+    """use() or check_total() for an endpoint: turns a reached limit into a friendly 402.
 
     With peek=True a daily allowance is only checked, not used."""
     try:
-        if kind in DAILY and peek:
+        if kind in DAILY_KINDS and peek:
             await check_daily(db, user_id, kind)
-        elif kind in DAILY:
+        elif kind in DAILY_KINDS:
             await use(db, user_id, kind)
         else:
             await check_total(db, user_id, kind)
@@ -111,15 +148,22 @@ async def require(db, user_id: str, kind: str, peek: bool = False) -> None:
         raise http_error(exc)
 
 
+async def require_publish(db, user_id: str) -> None:
+    if not await can_publish(db, user_id):
+        raise HTTPException(status_code=402, detail=PUBLISH_MESSAGE)
+
+
+def public_plans() -> list:
+    return [{"id": p, **PLANS[p]} for p in ORDER]
+
+
 async def summary(db, user_id: str) -> dict:
-    """What the user has used and their limits, for the app to show."""
-    if await _unlimited(db, user_id):
-        return {"plan": "unlimited"}
+    """The user's plan, what they've used today and every plan, for the Plans page."""
+    plan = await plan_of(db, user_id)
     doc = await db.usage.find_one({"_id": f"{user_id}:{today()}"}) or {}
-    return {
-        "plan": "free",
-        "chats": {"used": doc.get("chat", 0), "limit": DAILY["chat"]},
-        "pictures": {"used": doc.get("picture", 0), "limit": DAILY["picture"]},
-        "decks": {"used": doc.get("deck", 0), "limit": DAILY["deck"]},
-        "automations": {"used": await db.automations.count_documents({"userId": user_id}), "limit": TOTAL["automation"]},
-    }
+    info = PLANS[plan]
+    used = {k: {"used": doc.get(k, 0), "limit": info["daily"][k]} for k in DAILY_KINDS}
+    used["automation"] = {"used": await db.automations.count_documents({"userId": user_id}),
+                          "limit": info["total"]["automation"]}
+    return {"plan": plan, "limitsOn": enabled(), "canPublish": await can_publish(db, user_id),
+            "usage": used, "plans": public_plans()}
