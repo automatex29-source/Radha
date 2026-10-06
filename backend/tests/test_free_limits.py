@@ -146,5 +146,6 @@ def test_picture_tool_refunds_on_failure_and_explains_the_limit(db, monkeypatch)
             await limits.use(db, "u", "picture")
         with pytest.raises(ValueError, match="3 pictures"):
             await tools._generate_image(ctx, {"prompt": "a cat"})
+        assert "3 pictures" in ctx.limit_hit  # streamed to the app, which pops up the upgrade message
 
     run(scenario())

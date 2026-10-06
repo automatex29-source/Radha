@@ -24,6 +24,7 @@ const PlansPage = lazy(() => import("@/pages/PlansPage"));
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import { installPlanLimitToasts } from "@/lib/planLimits";
+import PlanLimitDialog from "@/components/PlanLimitDialog";
 
 installPlanLimitToasts();
 
@@ -113,6 +114,7 @@ export default function App() {
                 <Route path="*" element={<Gate />} />
               </Routes>
             </Suspense>
+            <PlanLimitDialog />
           </BrowserRouter>
           <Toaster position="top-center" />
         </AuthProvider>
