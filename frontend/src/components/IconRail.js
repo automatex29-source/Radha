@@ -34,7 +34,7 @@ export default function IconRail({ mobileBar = true }) {
               <button key={it.to} onClick={() => navigate(it.to)} data-testid={`nav-${it.label.toLowerCase()}`}
                 title={t(it.key)}
                 className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
-                  active ? "bg-white text-foreground shadow-sm ring-1 ring-border dark:bg-surface-strong dark:ring-0"
+                  active ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
                     : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
                 }`}>
                 <it.icon className="h-5 w-5" />
@@ -44,7 +44,7 @@ export default function IconRail({ mobileBar = true }) {
         </nav>
         <button onClick={() => navigate("/help")} data-testid="nav-help" title={t("helpCenter")} aria-label={t("helpCenter")}
           className={`mt-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
-            pathname.startsWith("/help") ? "bg-white text-foreground shadow-sm ring-1 ring-border dark:bg-surface-strong dark:ring-0"
+            pathname.startsWith("/help") ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
               : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
           }`}>
           <LifeBuoy className="h-5 w-5" />
