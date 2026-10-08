@@ -74,9 +74,11 @@ def test_counsellor_uses_gita_prompt_without_tools_or_memory(client):
     client.delete("/api/memory")
     client.put("/api/memory/settings", json={"auto": True})
     cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    import counsellor
     call, body = _send(client, cid, "My name is Meera and I feel lost after failing my exam")
     system = call["messages"][0]["content"]
     assert "Bhagavad Gita" in system and "Tele-MANAS 14416" in system
+    assert system.endswith(counsellor.BRIEF)  # short replies by default
     assert not call.get("tools")
     assert "14416" not in body  # no crisis, no helpline block
     time.sleep(0.5)

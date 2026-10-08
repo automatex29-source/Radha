@@ -966,6 +966,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(extra_system)
     if voice and not app_id:
         system_parts.append(voice_prompt(voice_lang, settings_lang))
+    if counselling and not voice:
+        system_parts.append(counsellor.BRIEF)
     system_prompt = "\n\n".join(system_parts)
 
     shown = [s for s in sources if s not in quiet_cards]
