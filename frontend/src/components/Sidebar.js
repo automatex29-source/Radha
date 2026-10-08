@@ -39,7 +39,7 @@ const GROUP_KEYS = { Today: "today", Yesterday: "yesterday", "Previous 7 Days": 
 const GROUP_ICONS = { Today: Sun, Yesterday: Moon, "Previous 7 Days": CalendarDays, Older: Archive };
 const GroupIcon = ({ label }) => {
   const Icon = GROUP_ICONS[label] || CalendarDays;
-  return <Icon className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />;
+  return <Icon className="h-4 w-4 text-muted-foreground" />;
 };
 
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel, searchContent = false }) {
@@ -95,7 +95,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
 
       <div className="px-4">
         <button onClick={onNew} data-testid="new-chat-button"
-          className="flex h-11 w-full items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-indigo-500 to-violet-500 px-5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(99,102,241,0.35)] transition-all hover:shadow-[0_14px_36px_rgba(99,102,241,0.45)] active:scale-[0.99]">
+          className="flex h-11 w-full items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99]">
           <Plus className="h-4 w-4" /> {newLabel || t("newConversation")}
         </button>
       </div>
@@ -123,7 +123,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                 <div key={c.id} data-testid={`conversation-item-${c.id}`}
                   onClick={() => editingId !== c.id && onSelect(c.id)}
                   className={`group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm lg:py-1.5 lg:text-[13px] transition-colors ${
-                    activeId === c.id ? "bg-white text-foreground shadow-sm ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0" : "text-foreground/75 hover:bg-white/70 hover:text-foreground dark:text-muted-foreground dark:hover:bg-surface"
+                    activeId === c.id ? "bg-white text-foreground shadow-sm ring-1 ring-border dark:bg-surface-strong dark:ring-0" : "text-foreground/75 hover:bg-white/70 hover:text-foreground dark:text-muted-foreground dark:hover:bg-surface"
                   } cursor-pointer`}>
                   <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                   {editingId === c.id ? (
@@ -163,7 +163,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button data-testid="user-profile-menu-button" className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-sm font-bold text-white">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-sm font-bold text-white">
                 {user?.name?.[0]?.toUpperCase() || "U"}
               </div>
               <div className="min-w-0 flex-1 leading-tight">

@@ -139,7 +139,7 @@ export default function ComposerInput({
           ))}
         </div>
       )}
-      <div {...dropProps} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}@container rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
+      <div {...dropProps} data-testid="composer-box" className={`${dragging ? "ring-2 ring-ring " : ""}@container rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_8px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
         <textarea
           ref={ref}
           data-testid="message-composer-textarea"
@@ -190,13 +190,13 @@ export default function ComposerInput({
               aria-label="Speak your message"
               className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 disabled:opacity-40 ${
                 rec.recording ? "animate-pulse bg-rose-500 text-white shadow-[0_0_0_4px_rgba(244,63,94,0.25)]"
-                  : "bg-indigo-100 text-indigo-600 hover:bg-indigo-200 dark:bg-primary/20 dark:text-brand dark:hover:bg-primary/30"}`}>
+                  : "bg-secondary text-foreground hover:bg-surface-strong"}`}>
               {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
             </button>
             {onVoiceMode && (
               <button onClick={onVoiceMode} disabled={!voiceEnabled || streaming || disabled} data-testid="voice-mode-button"
                 title={voiceEnabled ? "Voice conversation" : voiceHint}
-                className="flex h-10 w-10 items-center justify-center rounded-full sm:h-8 sm:w-8 bg-violet-100 text-violet-600 transition-colors hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300 dark:hover:bg-violet-500/30 disabled:opacity-40">
+                className="flex h-10 w-10 items-center justify-center rounded-full sm:h-8 sm:w-8 bg-secondary text-foreground transition-colors hover:bg-surface-strong disabled:opacity-40">
                 <AudioLines className="h-4 w-4" />
               </button>
             )}
@@ -207,7 +207,7 @@ export default function ComposerInput({
               </button>
             )}
             <span className="ml-1 hidden whitespace-nowrap text-[11px] text-muted-foreground @2xl:inline">
-              {t.parts("toSend", { enter: <span key="k" className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-primary/15 dark:text-brand">Enter</span> })}
+              {t.parts("toSend", { enter: <span key="k" className="rounded-md bg-secondary px-1.5 py-0.5 text-[11px] font-semibold text-foreground">Enter</span> })}
             </span>
           </div>
           {streaming ? (
@@ -220,7 +220,7 @@ export default function ComposerInput({
               // Keep the typing focus: on phones losing it brings back the tab bar, which moved this button
               // away mid-tap so the tap landed on the tab bar and the message wasn't sent.
               onMouseDown={(e) => e.preventDefault()}
-              className="h-11 w-11 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_8px_24px_rgba(99,102,241,0.45)] hover:from-indigo-500 hover:to-violet-600">
+              className="h-11 w-11 shrink-0 rounded-full bg-primary text-primary-foreground shadow-sm hover:bg-primary/90">
               <ArrowUp className="h-4 w-4" />
             </Button>
           )}

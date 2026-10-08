@@ -241,11 +241,11 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
 
       <button onClick={onOrb} disabled={phase === "transcribing"} data-testid="voice-mode-orb"
         title={phase === "speaking" || phase === "thinking" ? "Interrupt" : phase === "listening" ? "Send now" : "Talk"}
-        className={`relative flex ${view ? "h-24 w-24" : "h-40 w-40"} items-center justify-center rounded-full bg-primary shadow-[0_0_80px_rgba(99,102,241,0.6)] transition-transform duration-100 disabled:opacity-80`}
+        className={`relative flex ${view ? "h-24 w-24" : "h-40 w-40"} items-center justify-center rounded-full bg-primary shadow-[0_0_60px_rgba(15,23,42,0.25)] transition-transform duration-100 disabled:opacity-80`}
         style={{ transform: `scale(${scale})` }}>
-        {phase === "speaking" ? <Volume2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-pulse text-white`} />
-          : busy ? <Loader2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-spin text-white`} />
-          : <Mic className={`${view ? "h-8 w-8" : "h-12 w-12"} ${phase === "idle" ? "text-white/80" : "text-white"}`} />}
+        {phase === "speaking" ? <Volume2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-pulse text-primary-foreground`} />
+          : busy ? <Loader2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-spin text-primary-foreground`} />
+          : <Mic className={`${view ? "h-8 w-8" : "h-12 w-12"} ${phase === "idle" ? "text-primary-foreground/80" : "text-primary-foreground"}`} />}
         {phase === "listening" && <span className="absolute inset-0 animate-ping rounded-full bg-primary/30" />}
       </button>
 
