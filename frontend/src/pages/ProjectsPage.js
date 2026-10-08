@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PageHero from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
@@ -66,13 +67,7 @@ export default function ProjectsPage() {
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter sm:text-3xl">Projects</h1>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                Group conversations, files and knowledge. Krish AI grounds answers in a project's documents.
-              </p>
-            </div>
+          <PageHero icon={FolderKanban} title="Projects" subtitle="Group conversations, files and knowledge. Krish AI grounds answers in a project's documents.">
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="new-project-button" className="gap-2 font-semibold"><Plus className="h-4 w-4" /> New project</Button>
@@ -103,7 +98,7 @@ export default function ProjectsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
+          </PageHero>
 
           <section className="mt-8" data-testid="assistant-templates">
             <h2 className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> Ready-made assistants</h2>

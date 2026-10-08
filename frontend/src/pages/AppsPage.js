@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PageHero from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
@@ -71,13 +72,7 @@ export default function AppsPage() {
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter sm:text-3xl">Apps</h1>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                Describe an app and Krish AI builds it — with live preview, tests, version history and one-click publishing.
-              </p>
-            </div>
+          <PageHero icon={AppWindow} title="Apps" subtitle="Describe an app and Krish AI builds it, with live preview, tests, version history and one-click publishing.">
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="new-app-button" className="gap-1.5"><Plus className="h-4 w-4" /> New app</Button>
@@ -120,7 +115,7 @@ export default function AppsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
+          </PageHero>
 
           {apps === null ? (
             <div className="mt-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>

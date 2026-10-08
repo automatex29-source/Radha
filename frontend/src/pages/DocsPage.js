@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PageHero from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
@@ -50,8 +51,7 @@ export default function DocsPage() {
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
-          <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter sm:text-3xl">Docs</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Write with Krish side by side. Select any part and ask Krish to change it, then download as Word or PDF.</p>
+          <PageHero icon={FileText} title="Docs" subtitle="Write with Krish side by side. Select any part and ask Krish to change it, then download as Word or PDF." />
 
           <div className="mt-6 rounded-2xl border border-border bg-card p-4" data-testid="doc-draft-box">
             <p className="flex items-center gap-1.5 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> What should Krish write?</p>
