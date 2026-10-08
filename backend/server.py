@@ -53,6 +53,7 @@ import counsellor
 import discover
 import help_center
 import writer
+import code_edit
 import limits
 import languages
 from agent import default_registry, run_agent, ToolContext
@@ -1178,8 +1179,13 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         _background(memory.learn(db, user_id, body.content, model))
 
     if ready_reply:
-        return StreamingResponse(_canned_turn(conv_id, ready_reply), media_type="text/event-stream",
+        return StreamingResponse(_canned_turn(conv_id, ready_reply, user_code=not conv.get("appId")),
+                                 media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    if not conv.get("appId") and conv.get("mode") != counsellor.MODE and not body.images:
+        edit = await _code_edit_ask(conv_id)
+        if edit:
+            return _code_edit_response(conv_id, model, *edit)
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study,
                             voice=body.voice, voice_lang=body.voiceLang, web=body.web,
                             focus=body.focus, pro=body.pro)
@@ -1205,6 +1211,7 @@ async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
 _SHOW_WORDS = set("""show preview run display open render view see test check this it my our the a an of in
 code html css js page file files website site app please pls plz just simply only same exactly as is it's its here
 me give output result how looks look like kindly can you do what i want to with without changes change any no
+and snd n
 """.split())
 _LANGS = {"htm": "html", "mjs": "js", "cjs": "js", "jsx": "jsx", "tsx": "tsx", "md": "markdown"}
 
@@ -1214,9 +1221,12 @@ def show_as_is(content: str) -> Optional[str]:
 
     Used when the message is pasted code (a whole HTML page, an HTML snippet, or fenced blocks that name
     their files) with no instructions beyond "show this". The reply repeats the files verbatim as named
-    code blocks, so the chat's side panel previews them exactly as given.
+    code blocks, under the names they came with, so the chat's side panel previews them exactly as given.
     """
-    files, rest = apps.split_pasted_code(content)
+    files = code_edit.code_files(content, raw_html=True)
+    rest = code_edit.without_code(content)
+    if not files:
+        files, rest = apps.split_pasted_code(content)
     text = (content or "").strip()
     if not files and text.startswith("<") and re.search(r"</[A-Za-z][\w-]*>\s*$", text):
         files, rest = {"index.html": text}, ""
@@ -1232,13 +1242,66 @@ def show_as_is(content: str) -> Optional[str]:
             "Tell me if you want any changes.\n\n" + "\n\n".join(blocks))
 
 
-async def _canned_turn(conv_id: str, text: str):
-    """A fixed assistant reply, streamed and saved like a model's (no AI call needed)."""
+async def _canned_turn(conv_id: str, text: str, user_code: bool = False):
+    """A fixed assistant reply, streamed and saved like a model's (no AI call needed).
+
+    `user_code` marks a reply that carries the user's own code, so a later "make it blue" edits that code.
+    """
     msg = {"id": str(uuid.uuid4()), "conversationId": conv_id, "role": "assistant", "content": text,
-           "model": None, "createdAt": now_iso()}
+           "model": None, "createdAt": now_iso(), **({"userCode": True} if user_code else {})}
     yield f"data: {_sse_json(text)}\n\n"
     await db.messages.insert_one(msg)
     await db.conversations.update_one({"id": conv_id}, {"$set": {"updatedAt": now_iso()}})
+    yield f"event: done\ndata: {_sse_json({'messageId': msg['id']})}\n\n"
+
+
+async def _code_edit_ask(conv_id: str):
+    """(files, the ask) when the latest message asks to change code the user gave in this chat, else None."""
+    recent = await db.messages.find({"conversationId": conv_id}).sort("createdAt", -1).to_list(code_edit.RECENT_MESSAGES)
+    return code_edit.should_edit(recent[::-1])
+
+
+def _code_edit_response(conv_id: str, model: str, files: dict, ask: str):
+    return _TurnResponse(_code_edit_turn(conv_id, model, files, ask), media_type="text/event-stream",
+                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+
+
+async def _code_edit_turn(conv_id: str, model: str, files: dict, ask: str):
+    """Change the user's own code in place with small edits (see code_edit.py) and reply with the whole file."""
+    model = code_edit.editing_model(model)
+    steps, text, failed = [], "", False
+    try:
+        async for ev in code_edit.run(model, files, ask):
+            if ev["type"] == "heartbeat":
+                yield ": keepalive\n\n"
+            elif ev["type"] == "part":
+                where = f" (part {ev['index']} of {ev['total']})" if ev["total"] > 1 else ""
+                steps.append({"id": str(uuid.uuid4()), "name": "edit_file", "label": "Editing your file",
+                              "args": {"path": ev["path"] + where}, "status": "running"})
+                yield f"event: tool\ndata: {_sse_json(steps[-1])}\n\n"
+            elif ev["type"] == "part_done":
+                n = ev["applied"]
+                steps[-1].update(status="done", summary=f"{n} change{'s' if n != 1 else ''}" if n else "Nothing to change here",
+                                 output="", media=[])
+                yield f"event: tool_result\ndata: {_sse_json(steps[-1])}\n\n"
+            elif ev["type"] == "result":
+                text = code_edit.reply_text(files, ev["files"], ev["applied"], ev["missed"], ev["summaries"])
+    except (asyncio.CancelledError, GeneratorExit):
+        raise
+    except Exception as exc:
+        logger.warning("code edit failed: %s", str(exc)[:300])
+        failed = True
+        text = ("Sorry, the AI model stopped before it could finish editing your file (it may be busy or out of "
+                "free requests for now), so I didn't change it. Tap Regenerate, or pick another model from the menu at the top.")
+    for step in steps:
+        if step["status"] == "running":
+            step.update(status="error", summary="Stopped", output="", media=[])
+    yield f"data: {_sse_json(text)}\n\n"
+    msg = {"id": str(uuid.uuid4()), "conversationId": conv_id, "role": "assistant", "content": text, "model": model,
+           "steps": steps or None, "userCode": not failed or None, "createdAt": now_iso()}
+    with anyio.CancelScope(shield=True):
+        await db.messages.insert_one(msg)
+        await db.conversations.update_one({"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": model}})
     yield f"event: done\ndata: {_sse_json({'messageId': msg['id']})}\n\n"
 
 
@@ -1270,6 +1333,10 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
     remaining = await db.messages.count_documents({"conversationId": conv_id})
     if remaining == 0:
         raise HTTPException(status_code=400, detail="Nothing to regenerate")
+    if not conv.get("appId") and conv.get("mode") != counsellor.MODE:
+        edit = await _code_edit_ask(conv_id)
+        if edit:
+            return _code_edit_response(conv_id, model, *edit)
 
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
                             focus=body.focus, pro=body.pro)

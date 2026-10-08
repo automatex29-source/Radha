@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vedang Cellular Services — Site Acceptance Audit Tool (VI)</title>
+<style>
+:root {
+  --bg: #0b1020;
+  --panel: #121a33;
+  --text: #e6e9f5;
+  --muted: #8a93b2;
+  --border: #26304f;
+  --accent: #3b82f6;
+}
+body { background: var(--bg); color: var(--text); font-family: Inter, sans-serif; }
+.card-1 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-2 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-3 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-4 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-5 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-6 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-7 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-8 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-9 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-10 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-11 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-12 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-13 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-14 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-15 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-16 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-17 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-18 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-19 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-20 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-21 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-22 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-23 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-24 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-25 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-26 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-27 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-28 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-29 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-30 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-31 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-32 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-33 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-34 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-35 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-36 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-37 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-38 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-39 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-40 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-41 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-42 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-43 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-44 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-45 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-46 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-47 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-48 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-49 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-50 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-51 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-52 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-53 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-54 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-55 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-56 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-57 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-58 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-59 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-60 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-61 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-62 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-63 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-64 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-65 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-66 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-67 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-68 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-69 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-70 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-71 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-72 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-73 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-74 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-75 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-76 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-77 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-78 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-79 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-80 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-81 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-82 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-83 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-84 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-85 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-86 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-87 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-88 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-89 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-90 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-91 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-92 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-93 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-94 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-95 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-96 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-97 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-98 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-99 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-100 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-101 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-102 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-103 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-104 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-105 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-106 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-107 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-108 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-109 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-110 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-111 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-112 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-113 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-114 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+.card-115 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 9px;
+}
+.card-116 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 10px;
+}
+.card-117 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 11px;
+}
+.card-118 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 12px;
+}
+.card-119 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 13px;
+}
+.card-120 {
+  background: #121a33;
+  border: 1px solid #26304f;
+  color: #e6e9f5;
+  padding: 8px;
+}
+</style>
+</head>
+<body>
+<header class="hero" style="background:#0f1730;color:#ffffff">
+  <h1>DCG Log → Audit Workbook</h1>
+  <p>Select the OEM and technology, upload the dump.</p>
+</header>
+<main>
+  <section class="card-1" id="step-1">
+    <h2>Check 1: Cell parameter group 1</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 1.</p>
+    <button onclick="runCheck(1)">Run check 1</button>
+  </section>
+  <section class="card-2" id="step-2">
+    <h2>Check 2: Cell parameter group 2</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 2.</p>
+    <button onclick="runCheck(2)">Run check 2</button>
+  </section>
+  <section class="card-3" id="step-3">
+    <h2>Check 3: Cell parameter group 3</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 3.</p>
+    <button onclick="runCheck(3)">Run check 3</button>
+  </section>
+  <section class="card-4" id="step-4">
+    <h2>Check 4: Cell parameter group 4</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 4.</p>
+    <button onclick="runCheck(4)">Run check 4</button>
+  </section>
+  <section class="card-5" id="step-5">
+    <h2>Check 5: Cell parameter group 5</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 5.</p>
+    <button onclick="runCheck(5)">Run check 5</button>
+  </section>
+  <section class="card-6" id="step-6">
+    <h2>Check 6: Cell parameter group 6</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 6.</p>
+    <button onclick="runCheck(6)">Run check 6</button>
+  </section>
+  <section class="card-7" id="step-7">
+    <h2>Check 7: Cell parameter group 7</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 7.</p>
+    <button onclick="runCheck(7)">Run check 7</button>
+  </section>
+  <section class="card-8" id="step-8">
+    <h2>Check 8: Cell parameter group 8</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 8.</p>
+    <button onclick="runCheck(8)">Run check 8</button>
+  </section>
+  <section class="card-9" id="step-9">
+    <h2>Check 9: Cell parameter group 9</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 9.</p>
+    <button onclick="runCheck(9)">Run check 9</button>
+  </section>
+  <section class="card-10" id="step-10">
+    <h2>Check 10: Cell parameter group 10</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 10.</p>
+    <button onclick="runCheck(10)">Run check 10</button>
+  </section>
+  <section class="card-11" id="step-11">
+    <h2>Check 11: Cell parameter group 11</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 11.</p>
+    <button onclick="runCheck(11)">Run check 11</button>
+  </section>
+  <section class="card-12" id="step-12">
+    <h2>Check 12: Cell parameter group 12</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 12.</p>
+    <button onclick="runCheck(12)">Run check 12</button>
+  </section>
+  <section class="card-13" id="step-13">
+    <h2>Check 13: Cell parameter group 13</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 13.</p>
+    <button onclick="runCheck(13)">Run check 13</button>
+  </section>
+  <section class="card-14" id="step-14">
+    <h2>Check 14: Cell parameter group 14</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 14.</p>
+    <button onclick="runCheck(14)">Run check 14</button>
+  </section>
+  <section class="card-15" id="step-15">
+    <h2>Check 15: Cell parameter group 15</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 15.</p>
+    <button onclick="runCheck(15)">Run check 15</button>
+  </section>
+  <section class="card-16" id="step-16">
+    <h2>Check 16: Cell parameter group 16</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 16.</p>
+    <button onclick="runCheck(16)">Run check 16</button>
+  </section>
+  <section class="card-17" id="step-17">
+    <h2>Check 17: Cell parameter group 17</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 17.</p>
+    <button onclick="runCheck(17)">Run check 17</button>
+  </section>
+  <section class="card-18" id="step-18">
+    <h2>Check 18: Cell parameter group 18</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 18.</p>
+    <button onclick="runCheck(18)">Run check 18</button>
+  </section>
+  <section class="card-19" id="step-19">
+    <h2>Check 19: Cell parameter group 19</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 19.</p>
+    <button onclick="runCheck(19)">Run check 19</button>
+  </section>
+  <section class="card-20" id="step-20">
+    <h2>Check 20: Cell parameter group 20</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 20.</p>
+    <button onclick="runCheck(20)">Run check 20</button>
+  </section>
+  <section class="card-21" id="step-21">
+    <h2>Check 21: Cell parameter group 21</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 21.</p>
+    <button onclick="runCheck(21)">Run check 21</button>
+  </section>
+  <section class="card-22" id="step-22">
+    <h2>Check 22: Cell parameter group 22</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 22.</p>
+    <button onclick="runCheck(22)">Run check 22</button>
+  </section>
+  <section class="card-23" id="step-23">
+    <h2>Check 23: Cell parameter group 23</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 23.</p>
+    <button onclick="runCheck(23)">Run check 23</button>
+  </section>
+  <section class="card-24" id="step-24">
+    <h2>Check 24: Cell parameter group 24</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 24.</p>
+    <button onclick="runCheck(24)">Run check 24</button>
+  </section>
+  <section class="card-25" id="step-25">
+    <h2>Check 25: Cell parameter group 25</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 25.</p>
+    <button onclick="runCheck(25)">Run check 25</button>
+  </section>
+  <section class="card-26" id="step-26">
+    <h2>Check 26: Cell parameter group 26</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 26.</p>
+    <button onclick="runCheck(26)">Run check 26</button>
+  </section>
+  <section class="card-27" id="step-27">
+    <h2>Check 27: Cell parameter group 27</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 27.</p>
+    <button onclick="runCheck(27)">Run check 27</button>
+  </section>
+  <section class="card-28" id="step-28">
+    <h2>Check 28: Cell parameter group 28</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 28.</p>
+    <button onclick="runCheck(28)">Run check 28</button>
+  </section>
+  <section class="card-29" id="step-29">
+    <h2>Check 29: Cell parameter group 29</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 29.</p>
+    <button onclick="runCheck(29)">Run check 29</button>
+  </section>
+  <section class="card-30" id="step-30">
+    <h2>Check 30: Cell parameter group 30</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 30.</p>
+    <button onclick="runCheck(30)">Run check 30</button>
+  </section>
+  <section class="card-31" id="step-31">
+    <h2>Check 31: Cell parameter group 31</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 31.</p>
+    <button onclick="runCheck(31)">Run check 31</button>
+  </section>
+  <section class="card-32" id="step-32">
+    <h2>Check 32: Cell parameter group 32</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 32.</p>
+    <button onclick="runCheck(32)">Run check 32</button>
+  </section>
+  <section class="card-33" id="step-33">
+    <h2>Check 33: Cell parameter group 33</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 33.</p>
+    <button onclick="runCheck(33)">Run check 33</button>
+  </section>
+  <section class="card-34" id="step-34">
+    <h2>Check 34: Cell parameter group 34</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 34.</p>
+    <button onclick="runCheck(34)">Run check 34</button>
+  </section>
+  <section class="card-35" id="step-35">
+    <h2>Check 35: Cell parameter group 35</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 35.</p>
+    <button onclick="runCheck(35)">Run check 35</button>
+  </section>
+  <section class="card-36" id="step-36">
+    <h2>Check 36: Cell parameter group 36</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 36.</p>
+    <button onclick="runCheck(36)">Run check 36</button>
+  </section>
+  <section class="card-37" id="step-37">
+    <h2>Check 37: Cell parameter group 37</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 37.</p>
+    <button onclick="runCheck(37)">Run check 37</button>
+  </section>
+  <section class="card-38" id="step-38">
+    <h2>Check 38: Cell parameter group 38</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 38.</p>
+    <button onclick="runCheck(38)">Run check 38</button>
+  </section>
+  <section class="card-39" id="step-39">
+    <h2>Check 39: Cell parameter group 39</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 39.</p>
+    <button onclick="runCheck(39)">Run check 39</button>
+  </section>
+  <section class="card-40" id="step-40">
+    <h2>Check 40: Cell parameter group 40</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 40.</p>
+    <button onclick="runCheck(40)">Run check 40</button>
+  </section>
+  <section class="card-41" id="step-41">
+    <h2>Check 41: Cell parameter group 41</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 41.</p>
+    <button onclick="runCheck(41)">Run check 41</button>
+  </section>
+  <section class="card-42" id="step-42">
+    <h2>Check 42: Cell parameter group 42</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 42.</p>
+    <button onclick="runCheck(42)">Run check 42</button>
+  </section>
+  <section class="card-43" id="step-43">
+    <h2>Check 43: Cell parameter group 43</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 43.</p>
+    <button onclick="runCheck(43)">Run check 43</button>
+  </section>
+  <section class="card-44" id="step-44">
+    <h2>Check 44: Cell parameter group 44</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 44.</p>
+    <button onclick="runCheck(44)">Run check 44</button>
+  </section>
+  <section class="card-45" id="step-45">
+    <h2>Check 45: Cell parameter group 45</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 45.</p>
+    <button onclick="runCheck(45)">Run check 45</button>
+  </section>
+  <section class="card-46" id="step-46">
+    <h2>Check 46: Cell parameter group 46</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 46.</p>
+    <button onclick="runCheck(46)">Run check 46</button>
+  </section>
+  <section class="card-47" id="step-47">
+    <h2>Check 47: Cell parameter group 47</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 47.</p>
+    <button onclick="runCheck(47)">Run check 47</button>
+  </section>
+  <section class="card-48" id="step-48">
+    <h2>Check 48: Cell parameter group 48</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 48.</p>
+    <button onclick="runCheck(48)">Run check 48</button>
+  </section>
+  <section class="card-49" id="step-49">
+    <h2>Check 49: Cell parameter group 49</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 49.</p>
+    <button onclick="runCheck(49)">Run check 49</button>
+  </section>
+  <section class="card-50" id="step-50">
+    <h2>Check 50: Cell parameter group 50</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 50.</p>
+    <button onclick="runCheck(50)">Run check 50</button>
+  </section>
+  <section class="card-51" id="step-51">
+    <h2>Check 51: Cell parameter group 51</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 51.</p>
+    <button onclick="runCheck(51)">Run check 51</button>
+  </section>
+  <section class="card-52" id="step-52">
+    <h2>Check 52: Cell parameter group 52</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 52.</p>
+    <button onclick="runCheck(52)">Run check 52</button>
+  </section>
+  <section class="card-53" id="step-53">
+    <h2>Check 53: Cell parameter group 53</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 53.</p>
+    <button onclick="runCheck(53)">Run check 53</button>
+  </section>
+  <section class="card-54" id="step-54">
+    <h2>Check 54: Cell parameter group 54</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 54.</p>
+    <button onclick="runCheck(54)">Run check 54</button>
+  </section>
+  <section class="card-55" id="step-55">
+    <h2>Check 55: Cell parameter group 55</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 55.</p>
+    <button onclick="runCheck(55)">Run check 55</button>
+  </section>
+  <section class="card-56" id="step-56">
+    <h2>Check 56: Cell parameter group 56</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 56.</p>
+    <button onclick="runCheck(56)">Run check 56</button>
+  </section>
+  <section class="card-57" id="step-57">
+    <h2>Check 57: Cell parameter group 57</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 57.</p>
+    <button onclick="runCheck(57)">Run check 57</button>
+  </section>
+  <section class="card-58" id="step-58">
+    <h2>Check 58: Cell parameter group 58</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 58.</p>
+    <button onclick="runCheck(58)">Run check 58</button>
+  </section>
+  <section class="card-59" id="step-59">
+    <h2>Check 59: Cell parameter group 59</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 59.</p>
+    <button onclick="runCheck(59)">Run check 59</button>
+  </section>
+  <section class="card-60" id="step-60">
+    <h2>Check 60: Cell parameter group 60</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 60.</p>
+    <button onclick="runCheck(60)">Run check 60</button>
+  </section>
+  <section class="card-61" id="step-61">
+    <h2>Check 61: Cell parameter group 61</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 61.</p>
+    <button onclick="runCheck(61)">Run check 61</button>
+  </section>
+  <section class="card-62" id="step-62">
+    <h2>Check 62: Cell parameter group 62</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 62.</p>
+    <button onclick="runCheck(62)">Run check 62</button>
+  </section>
+  <section class="card-63" id="step-63">
+    <h2>Check 63: Cell parameter group 63</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 63.</p>
+    <button onclick="runCheck(63)">Run check 63</button>
+  </section>
+  <section class="card-64" id="step-64">
+    <h2>Check 64: Cell parameter group 64</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 64.</p>
+    <button onclick="runCheck(64)">Run check 64</button>
+  </section>
+  <section class="card-65" id="step-65">
+    <h2>Check 65: Cell parameter group 65</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 65.</p>
+    <button onclick="runCheck(65)">Run check 65</button>
+  </section>
+  <section class="card-66" id="step-66">
+    <h2>Check 66: Cell parameter group 66</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 66.</p>
+    <button onclick="runCheck(66)">Run check 66</button>
+  </section>
+  <section class="card-67" id="step-67">
+    <h2>Check 67: Cell parameter group 67</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 67.</p>
+    <button onclick="runCheck(67)">Run check 67</button>
+  </section>
+  <section class="card-68" id="step-68">
+    <h2>Check 68: Cell parameter group 68</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 68.</p>
+    <button onclick="runCheck(68)">Run check 68</button>
+  </section>
+  <section class="card-69" id="step-69">
+    <h2>Check 69: Cell parameter group 69</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 69.</p>
+    <button onclick="runCheck(69)">Run check 69</button>
+  </section>
+  <section class="card-70" id="step-70">
+    <h2>Check 70: Cell parameter group 70</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 70.</p>
+    <button onclick="runCheck(70)">Run check 70</button>
+  </section>
+  <section class="card-71" id="step-71">
+    <h2>Check 71: Cell parameter group 71</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 71.</p>
+    <button onclick="runCheck(71)">Run check 71</button>
+  </section>
+  <section class="card-72" id="step-72">
+    <h2>Check 72: Cell parameter group 72</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 72.</p>
+    <button onclick="runCheck(72)">Run check 72</button>
+  </section>
+  <section class="card-73" id="step-73">
+    <h2>Check 73: Cell parameter group 73</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 73.</p>
+    <button onclick="runCheck(73)">Run check 73</button>
+  </section>
+  <section class="card-74" id="step-74">
+    <h2>Check 74: Cell parameter group 74</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 74.</p>
+    <button onclick="runCheck(74)">Run check 74</button>
+  </section>
+  <section class="card-75" id="step-75">
+    <h2>Check 75: Cell parameter group 75</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 75.</p>
+    <button onclick="runCheck(75)">Run check 75</button>
+  </section>
+  <section class="card-76" id="step-76">
+    <h2>Check 76: Cell parameter group 76</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 76.</p>
+    <button onclick="runCheck(76)">Run check 76</button>
+  </section>
+  <section class="card-77" id="step-77">
+    <h2>Check 77: Cell parameter group 77</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 77.</p>
+    <button onclick="runCheck(77)">Run check 77</button>
+  </section>
+  <section class="card-78" id="step-78">
+    <h2>Check 78: Cell parameter group 78</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 78.</p>
+    <button onclick="runCheck(78)">Run check 78</button>
+  </section>
+  <section class="card-79" id="step-79">
+    <h2>Check 79: Cell parameter group 79</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 79.</p>
+    <button onclick="runCheck(79)">Run check 79</button>
+  </section>
+  <section class="card-80" id="step-80">
+    <h2>Check 80: Cell parameter group 80</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 80.</p>
+    <button onclick="runCheck(80)">Run check 80</button>
+  </section>
+  <section class="card-81" id="step-81">
+    <h2>Check 81: Cell parameter group 81</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 81.</p>
+    <button onclick="runCheck(81)">Run check 81</button>
+  </section>
+  <section class="card-82" id="step-82">
+    <h2>Check 82: Cell parameter group 82</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 82.</p>
+    <button onclick="runCheck(82)">Run check 82</button>
+  </section>
+  <section class="card-83" id="step-83">
+    <h2>Check 83: Cell parameter group 83</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 83.</p>
+    <button onclick="runCheck(83)">Run check 83</button>
+  </section>
+  <section class="card-84" id="step-84">
+    <h2>Check 84: Cell parameter group 84</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 84.</p>
+    <button onclick="runCheck(84)">Run check 84</button>
+  </section>
+  <section class="card-85" id="step-85">
+    <h2>Check 85: Cell parameter group 85</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 85.</p>
+    <button onclick="runCheck(85)">Run check 85</button>
+  </section>
+  <section class="card-86" id="step-86">
+    <h2>Check 86: Cell parameter group 86</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 86.</p>
+    <button onclick="runCheck(86)">Run check 86</button>
+  </section>
+  <section class="card-87" id="step-87">
+    <h2>Check 87: Cell parameter group 87</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 87.</p>
+    <button onclick="runCheck(87)">Run check 87</button>
+  </section>
+  <section class="card-88" id="step-88">
+    <h2>Check 88: Cell parameter group 88</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 88.</p>
+    <button onclick="runCheck(88)">Run check 88</button>
+  </section>
+  <section class="card-89" id="step-89">
+    <h2>Check 89: Cell parameter group 89</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 89.</p>
+    <button onclick="runCheck(89)">Run check 89</button>
+  </section>
+  <section class="card-90" id="step-90">
+    <h2>Check 90: Cell parameter group 90</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 90.</p>
+    <button onclick="runCheck(90)">Run check 90</button>
+  </section>
+  <section class="card-91" id="step-91">
+    <h2>Check 91: Cell parameter group 91</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 91.</p>
+    <button onclick="runCheck(91)">Run check 91</button>
+  </section>
+  <section class="card-92" id="step-92">
+    <h2>Check 92: Cell parameter group 92</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 92.</p>
+    <button onclick="runCheck(92)">Run check 92</button>
+  </section>
+  <section class="card-93" id="step-93">
+    <h2>Check 93: Cell parameter group 93</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 93.</p>
+    <button onclick="runCheck(93)">Run check 93</button>
+  </section>
+  <section class="card-94" id="step-94">
+    <h2>Check 94: Cell parameter group 94</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 94.</p>
+    <button onclick="runCheck(94)">Run check 94</button>
+  </section>
+  <section class="card-95" id="step-95">
+    <h2>Check 95: Cell parameter group 95</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 95.</p>
+    <button onclick="runCheck(95)">Run check 95</button>
+  </section>
+  <section class="card-96" id="step-96">
+    <h2>Check 96: Cell parameter group 96</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 96.</p>
+    <button onclick="runCheck(96)">Run check 96</button>
+  </section>
+  <section class="card-97" id="step-97">
+    <h2>Check 97: Cell parameter group 97</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 97.</p>
+    <button onclick="runCheck(97)">Run check 97</button>
+  </section>
+  <section class="card-98" id="step-98">
+    <h2>Check 98: Cell parameter group 98</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 98.</p>
+    <button onclick="runCheck(98)">Run check 98</button>
+  </section>
+  <section class="card-99" id="step-99">
+    <h2>Check 99: Cell parameter group 99</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 99.</p>
+    <button onclick="runCheck(99)">Run check 99</button>
+  </section>
+  <section class="card-100" id="step-100">
+    <h2>Check 100: Cell parameter group 100</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 100.</p>
+    <button onclick="runCheck(100)">Run check 100</button>
+  </section>
+  <section class="card-101" id="step-101">
+    <h2>Check 101: Cell parameter group 101</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 101.</p>
+    <button onclick="runCheck(101)">Run check 101</button>
+  </section>
+  <section class="card-102" id="step-102">
+    <h2>Check 102: Cell parameter group 102</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 102.</p>
+    <button onclick="runCheck(102)">Run check 102</button>
+  </section>
+  <section class="card-103" id="step-103">
+    <h2>Check 103: Cell parameter group 103</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 103.</p>
+    <button onclick="runCheck(103)">Run check 103</button>
+  </section>
+  <section class="card-104" id="step-104">
+    <h2>Check 104: Cell parameter group 104</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 104.</p>
+    <button onclick="runCheck(104)">Run check 104</button>
+  </section>
+  <section class="card-105" id="step-105">
+    <h2>Check 105: Cell parameter group 105</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 105.</p>
+    <button onclick="runCheck(105)">Run check 105</button>
+  </section>
+  <section class="card-106" id="step-106">
+    <h2>Check 106: Cell parameter group 106</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 106.</p>
+    <button onclick="runCheck(106)">Run check 106</button>
+  </section>
+  <section class="card-107" id="step-107">
+    <h2>Check 107: Cell parameter group 107</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 107.</p>
+    <button onclick="runCheck(107)">Run check 107</button>
+  </section>
+  <section class="card-108" id="step-108">
+    <h2>Check 108: Cell parameter group 108</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 108.</p>
+    <button onclick="runCheck(108)">Run check 108</button>
+  </section>
+  <section class="card-109" id="step-109">
+    <h2>Check 109: Cell parameter group 109</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 109.</p>
+    <button onclick="runCheck(109)">Run check 109</button>
+  </section>
+  <section class="card-110" id="step-110">
+    <h2>Check 110: Cell parameter group 110</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 110.</p>
+    <button onclick="runCheck(110)">Run check 110</button>
+  </section>
+  <section class="card-111" id="step-111">
+    <h2>Check 111: Cell parameter group 111</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 111.</p>
+    <button onclick="runCheck(111)">Run check 111</button>
+  </section>
+  <section class="card-112" id="step-112">
+    <h2>Check 112: Cell parameter group 112</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 112.</p>
+    <button onclick="runCheck(112)">Run check 112</button>
+  </section>
+  <section class="card-113" id="step-113">
+    <h2>Check 113: Cell parameter group 113</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 113.</p>
+    <button onclick="runCheck(113)">Run check 113</button>
+  </section>
+  <section class="card-114" id="step-114">
+    <h2>Check 114: Cell parameter group 114</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 114.</p>
+    <button onclick="runCheck(114)">Run check 114</button>
+  </section>
+  <section class="card-115" id="step-115">
+    <h2>Check 115: Cell parameter group 115</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 115.</p>
+    <button onclick="runCheck(115)">Run check 115</button>
+  </section>
+  <section class="card-116" id="step-116">
+    <h2>Check 116: Cell parameter group 116</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 116.</p>
+    <button onclick="runCheck(116)">Run check 116</button>
+  </section>
+  <section class="card-117" id="step-117">
+    <h2>Check 117: Cell parameter group 117</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 117.</p>
+    <button onclick="runCheck(117)">Run check 117</button>
+  </section>
+  <section class="card-118" id="step-118">
+    <h2>Check 118: Cell parameter group 118</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 118.</p>
+    <button onclick="runCheck(118)">Run check 118</button>
+  </section>
+  <section class="card-119" id="step-119">
+    <h2>Check 119: Cell parameter group 119</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 119.</p>
+    <button onclick="runCheck(119)">Run check 119</button>
+  </section>
+  <section class="card-120" id="step-120">
+    <h2>Check 120: Cell parameter group 120</h2>
+    <p>Verifies RET, dnPrefix and FreqRel values for group 120.</p>
+    <button onclick="runCheck(120)">Run check 120</button>
+  </section>
+</main>
+<script>
+const results = {};
+function rule1(row) {
+  return row.value === 1 ? 'PASS' : 'FAIL';
+}
+function rule2(row) {
+  return row.value === 2 ? 'PASS' : 'FAIL';
+}
+function rule3(row) {
+  return row.value === 3 ? 'PASS' : 'FAIL';
+}
+function rule4(row) {
+  return row.value === 4 ? 'PASS' : 'FAIL';
+}
+function rule5(row) {
+  return row.value === 5 ? 'PASS' : 'FAIL';
+}
+function rule6(row) {
+  return row.value === 6 ? 'PASS' : 'FAIL';
+}
+function rule7(row) {
+  return row.value === 7 ? 'PASS' : 'FAIL';
+}
+function rule8(row) {
+  return row.value === 8 ? 'PASS' : 'FAIL';
+}
+function rule9(row) {
+  return row.value === 9 ? 'PASS' : 'FAIL';
+}
+function rule10(row) {
+  return row.value === 10 ? 'PASS' : 'FAIL';
+}
+function rule11(row) {
+  return row.value === 11 ? 'PASS' : 'FAIL';
+}
+function rule12(row) {
+  return row.value === 12 ? 'PASS' : 'FAIL';
+}
+function rule13(row) {
+  return row.value === 13 ? 'PASS' : 'FAIL';
+}
+function rule14(row) {
+  return row.value === 14 ? 'PASS' : 'FAIL';
+}
+function rule15(row) {
+  return row.value === 15 ? 'PASS' : 'FAIL';
+}
+function rule16(row) {
+  return row.value === 16 ? 'PASS' : 'FAIL';
+}
+function rule17(row) {
+  return row.value === 17 ? 'PASS' : 'FAIL';
+}
+function rule18(row) {
+  return row.value === 18 ? 'PASS' : 'FAIL';
+}
+function rule19(row) {
+  return row.value === 19 ? 'PASS' : 'FAIL';
+}
+function rule20(row) {
+  return row.value === 20 ? 'PASS' : 'FAIL';
+}
+function rule21(row) {
+  return row.value === 21 ? 'PASS' : 'FAIL';
+}
+function rule22(row) {
+  return row.value === 22 ? 'PASS' : 'FAIL';
+}
+function rule23(row) {
+  return row.value === 23 ? 'PASS' : 'FAIL';
+}
+function rule24(row) {
+  return row.value === 24 ? 'PASS' : 'FAIL';
+}
+function rule25(row) {
+  return row.value === 25 ? 'PASS' : 'FAIL';
+}
+function rule26(row) {
+  return row.value === 26 ? 'PASS' : 'FAIL';
+}
+function rule27(row) {
+  return row.value === 27 ? 'PASS' : 'FAIL';
+}
+function rule28(row) {
+  return row.value === 28 ? 'PASS' : 'FAIL';
+}
+function rule29(row) {
+  return row.value === 29 ? 'PASS' : 'FAIL';
+}
+function rule30(row) {
+  return row.value === 30 ? 'PASS' : 'FAIL';
+}
+function rule31(row) {
+  return row.value === 31 ? 'PASS' : 'FAIL';
+}
+function rule32(row) {
+  return row.value === 32 ? 'PASS' : 'FAIL';
+}
+function rule33(row) {
+  return row.value === 33 ? 'PASS' : 'FAIL';
+}
+function rule34(row) {
+  return row.value === 34 ? 'PASS' : 'FAIL';
+}
+function rule35(row) {
+  return row.value === 35 ? 'PASS' : 'FAIL';
+}
+function rule36(row) {
+  return row.value === 36 ? 'PASS' : 'FAIL';
+}
+function rule37(row) {
+  return row.value === 37 ? 'PASS' : 'FAIL';
+}
+function rule38(row) {
+  return row.value === 38 ? 'PASS' : 'FAIL';
+}
+function rule39(row) {
+  return row.value === 39 ? 'PASS' : 'FAIL';
+}
+function rule40(row) {
+  return row.value === 40 ? 'PASS' : 'FAIL';
+}
+function runCheck(n) {
+  const el = document.getElementById('step-' + n);
+  el.style.background = '#1a2342';
+  results[n] = true;
+}
+</script>
+</body>
+</html>
