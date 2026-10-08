@@ -41,7 +41,7 @@ export default function PageView() {
         <div className="flex items-center gap-2">
           <ThemeToggle />
           {page && <button onClick={copy} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold"><Link2 className="h-3.5 w-3.5" /> Copy link</button>}
-          <a href="/" className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">Try Krish AI</a>
+          <a href="/" className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white">Try Krish AI</a>
         </div>
       </header>
 
@@ -95,7 +95,7 @@ export default function PageView() {
             <div className="mt-12 rounded-2xl border border-border bg-card p-5 text-center">
               <p className="text-sm font-semibold">Have a question of your own?</p>
               <p className="mt-1 text-xs text-muted-foreground">Krish AI searches the web and answers with sources. Free to use.</p>
-              <a href="/" className="mt-3 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Ask Krish AI</a>
+              <a href="/" className="mt-3 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">Ask Krish AI</a>
             </div>
           </article>
         )}

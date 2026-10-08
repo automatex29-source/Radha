@@ -92,7 +92,7 @@ function SlidesView({ slides }) {
               <table className="mt-4 w-full text-[11px]">
                 <tbody>
                   {s.table.map((row, r) => (
-                    <tr key={r}>{row.map((c, i) => <td key={i} className={`border border-border-strong px-2 py-1 ${r === 0 ? "bg-primary font-semibold text-primary-foreground" : "text-foreground/90"}`}>{c}</td>)}</tr>
+                    <tr key={r}>{row.map((c, i) => <td key={i} className={`border border-border-strong px-2 py-1 ${r === 0 ? "bg-primary font-semibold text-white" : "text-foreground/90"}`}>{c}</td>)}</tr>
                   ))}
                 </tbody>
               </table>
