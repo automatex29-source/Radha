@@ -758,24 +758,93 @@ function greetingFor(name) {
   return name ? `${part}, ${name}` : part;
 }
 
+// Home screen topics: each tab shows four ready-made requests.
+const TOPICS = [
+  { id: "popular", label: "Popular", icon: Sparkles },
+  { id: "write", label: "Write", icon: PenLine, items: [
+    { icon: Mail, title: "Draft a professional email", hint: "Polite, clear and to the point.", prompt: "Write a polite, professional email asking my manager for a day off next Friday." },
+    { icon: PenLine, title: "Write a social media post", hint: "Catchy lines for any platform.", prompt: "Write a catchy LinkedIn post announcing the launch of my new startup, with 3 hashtags." },
+    { icon: Languages, title: "Translate and polish text", hint: "Natural, not word-for-word.", prompt: "Translate this into natural Hindi and English: 'Thank you for your support, we will reach out soon.'" },
+    { icon: FileText, title: "Summarise a long text", hint: "The key points in seconds.", prompt: "I'll paste a long article. Summarise it into 5 clear bullet points." },
+  ] },
+  { id: "code", label: "Code", icon: Braces, items: [
+    { icon: Bug, title: "Debug my code", hint: "Find and fix the problem fast.", prompt: "My JavaScript fetch call returns 'undefined'. Explain the common causes and how to fix them with async/await." },
+    { icon: Database, title: "Write an SQL query", hint: "Clear tables and queries.", prompt: "Write an SQL query to find the top 5 customers by total spend last month, and explain it." },
+    { icon: Braces, title: "Build a landing page", hint: "A ready-to-use web page.", prompt: "Build a modern, responsive landing page for a coffee shop with a menu and contact section." },
+    { icon: Network, title: "Explain a system design", hint: "Big ideas, made simple.", prompt: "Explain how a URL shortener like bit.ly works, with a simple system design diagram." },
+  ] },
+  { id: "learn", label: "Learn", icon: GraduationCap, items: [
+    { icon: GraduationCap, title: "Explain a topic simply", hint: "Learn anything, step by step.", prompt: "Explain how the stock market works in simple words, like I'm 15." },
+    { icon: Globe, title: "Research a topic", hint: "Latest facts from the web.", prompt: "Research the latest news on electric cars in India and summarise the key points with sources." },
+    { icon: BookOpen, title: "Quiz me", hint: "Practice with quick questions.", prompt: "Quiz me with 5 questions on Indian history, one at a time, and tell me if I'm right." },
+    { icon: Briefcase, title: "Prepare for an interview", hint: "Practice the questions that matter.", prompt: "Help me prepare for a marketing job interview. Ask me common questions one by one and give feedback." },
+  ] },
+  { id: "plan", label: "Plan", icon: ListChecks, items: [
+    { icon: ListChecks, title: "Make a to-do plan", hint: "Get your day under control.", prompt: "Help me turn my busy week into a simple, prioritised to-do plan. Ask me what I have on." },
+    { icon: Calculator, title: "Plan my monthly budget", hint: "Budget, savings and EMIs.", prompt: "Help me make a monthly budget for a ₹40,000 salary, with savings and an emergency fund." },
+    { icon: Plane, title: "Plan a trip", hint: "Day-by-day, on budget.", prompt: "Plan a 3-day budget trip to Jaipur with places to visit, food and costs." },
+    { icon: Dumbbell, title: "Make a workout plan", hint: "Simple routine, no gym needed.", prompt: "Make me a 4-week home workout plan for beginners, 30 minutes a day, no equipment." },
+  ] },
+  { id: "create", label: "Create", icon: Lightbulb, items: [
+    { icon: Sparkles, title: "Name my brand", hint: "Fresh names that stand out.", prompt: "Suggest 10 short, catchy brand names for a modern tea cafe, with a one-line reason for each." },
+    { icon: TrendingUp, title: "Brainstorm a business idea", hint: "Ideas, audience and first steps.", prompt: "Brainstorm 5 small business ideas I can start in India with under ₹50,000, with first steps." },
+    { icon: Lightbulb, title: "Create a picture", hint: "Describe it, Krish draws it.", prompt: "Create a picture of a cozy reading corner by a rainy window, warm light, realistic style." },
+    { icon: ChefHat, title: "Suggest a dinner recipe", hint: "Quick, healthy and tasty.", prompt: "Suggest a quick, healthy vegetarian dinner recipe I can make in 20 minutes." },
+  ] },
+];
+TOPICS[0].items = [TOPICS[2].items[1], TOPICS[3].items[0], TOPICS[1].items[0], TOPICS[5].items[0]];
+
+function TopicCard({ s, i, onPick }) {
+  return (
+    <button data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
+      className="krish-topic-card group relative flex items-center gap-3 overflow-hidden rounded-xl border border-border bg-card px-3.5 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_10px_30px_-12px_rgba(15,23,42,0.25)] active:translate-y-0 active:scale-[0.99]"
+      style={{ animationDelay: `${0.04 * i}s` }}>
+      <span className="absolute inset-y-0 left-0 w-0.5 origin-center scale-y-0 bg-[#FF8A1E] transition-transform duration-200 group-hover:scale-y-100" />
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-foreground/75 transition-colors group-hover:border-foreground/15 group-hover:bg-primary group-hover:text-primary-foreground">
+        <s.icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{s.title}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{s.hint}</p>
+      </div>
+      <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground transition-all duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-foreground" />
+    </button>
+  );
+}
+
 function EmptyState({ onPick }) {
   const t = useT();
   const { user } = useAuth();
   const first = (user?.name || "").trim().split(/\s+/)[0];
-  const starters = useMemo(pickStarters, []);
+  const [topic, setTopic] = useState("popular");
+  const items = TOPICS.find((x) => x.id === topic)?.items || [];
   return (
     <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col justify-center px-4 py-8 sm:px-6">
       <div className="radha-fade-up flex flex-col items-center text-center">
-        <BrandMark className="h-11 w-11 sm:h-12 sm:w-12" />
+        <div className="krish-logo-halo relative">
+          <BrandMark className="relative h-12 w-12 transition-transform duration-500 hover:rotate-[120deg] sm:h-14 sm:w-14" />
+        </div>
         {t.lang === "en" && <p className="mt-5 text-sm font-medium text-muted-foreground">{greetingFor(first)}</p>}
         <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-foreground sm:text-[2rem]">
           {t.lang === "en" ? "How can Krish AI help today?" : t.parts("helpToday", { krish: <span key="k">Krish AI</span> })}
         </h2>
       </div>
-      <div className="mt-8 grid w-full gap-2.5 sm:grid-cols-3 sm:gap-3">
-        {starters.map((s, i) => (
-          <StarterCard key={s.title} s={s} i={i} onPick={onPick} testid={`prompt-starter-card-${i}`} />
-        ))}
+
+      <div role="tablist" aria-label="Ideas" className="krish-no-scrollbar mt-7 flex gap-1.5 overflow-x-auto pb-1 sm:justify-center">
+        {TOPICS.map((x) => {
+          const on = x.id === topic;
+          return (
+            <button key={x.id} role="tab" aria-selected={on} data-testid={`topic-${x.id}`} onClick={() => setTopic(x.id)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-all duration-200 ${
+                on ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground"}`}>
+              <x.icon className="h-3.5 w-3.5" /> {x.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div key={topic} className="mt-3 grid w-full gap-2.5 sm:grid-cols-2">
+        {items.map((s, i) => <TopicCard key={s.title} s={s} i={i} onPick={onPick} />)}
       </div>
       <TopStories onAsk={onPick} />
     </div>
