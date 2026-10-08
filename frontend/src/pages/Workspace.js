@@ -812,6 +812,32 @@ function TopicCard({ s, i, onPick }) {
   );
 }
 
+// Lines the hero types out one after another, like a short looping video.
+const HERO_LINES = ["write your emails", "debug your code", "plan your week", "research any topic", "make slides and pictures", "explain anything simply"];
+
+function TypingLine() {
+  const [i, setI] = useState(0);
+  const [n, setN] = useState(0);
+  const [del, setDel] = useState(false);
+  useEffect(() => {
+    const word = HERO_LINES[i];
+    const done = !del && n === word.length;
+    const empty = del && n === 0;
+    const id = setTimeout(() => {
+      if (done) setDel(true);
+      else if (empty) { setDel(false); setI((i + 1) % HERO_LINES.length); }
+      else setN(n + (del ? -1 : 1));
+    }, done ? 1400 : empty ? 250 : del ? 35 : 65);
+    return () => clearTimeout(id);
+  }, [i, n, del]);
+  return (
+    <p className="mt-3 text-base text-muted-foreground sm:text-lg" aria-live="off">
+      Krish can <span className="font-semibold text-foreground">{HERO_LINES[i].slice(0, n)}</span>
+      <span className="krish-caret ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-[#FF8A1E]" />
+    </p>
+  );
+}
+
 function EmptyState({ onPick }) {
   const t = useT();
   const { user } = useAuth();
@@ -819,18 +845,26 @@ function EmptyState({ onPick }) {
   const [topic, setTopic] = useState("popular");
   const items = TOPICS.find((x) => x.id === topic)?.items || [];
   return (
-    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col justify-center px-4 py-8 sm:px-6">
-      <div className="radha-fade-up flex flex-col items-center text-center">
-        <div className="krish-logo-halo relative">
-          <BrandMark className="relative h-12 w-12 transition-transform duration-500 hover:rotate-[120deg] sm:h-14 sm:w-14" />
+    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-4xl flex-col justify-center px-4 py-6 sm:px-6">
+      <div className="krish-hero radha-fade-up relative overflow-hidden rounded-3xl border border-border bg-card/60 px-5 py-6 sm:px-10 sm:py-8">
+        <div className="krish-aurora" aria-hidden="true"><span /><span /><span /></div>
+        <div className="krish-hero-grid" aria-hidden="true" />
+        <div className="relative flex items-center gap-4 max-md:flex-col-reverse max-md:text-center md:gap-8">
+          <div className="min-w-0 flex-1">
+            {t.lang === "en" && <p className="text-sm font-medium text-muted-foreground">{greetingFor(first)}</p>}
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-[2.2rem] sm:leading-[1.15]">
+              {t.lang === "en" ? "How can Krish AI help today?" : t.parts("helpToday", { krish: <span key="k">Krish AI</span> })}
+            </h2>
+            {t.lang === "en" && <TypingLine />}
+          </div>
+          <div className="relative shrink-0">
+            <div className="krish-orbit" aria-hidden="true"><i /><i /><i /></div>
+            <Mascot className="krish-float relative h-28 w-auto sm:h-36 md:h-44" />
+          </div>
         </div>
-        {t.lang === "en" && <p className="mt-5 text-sm font-medium text-muted-foreground">{greetingFor(first)}</p>}
-        <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-foreground sm:text-[2rem]">
-          {t.lang === "en" ? "How can Krish AI help today?" : t.parts("helpToday", { krish: <span key="k">Krish AI</span> })}
-        </h2>
       </div>
 
-      <div role="tablist" aria-label="Ideas" className="krish-no-scrollbar mt-7 flex gap-1.5 overflow-x-auto pb-1 sm:justify-center">
+      <div role="tablist" aria-label="Ideas" className="krish-no-scrollbar mt-6 flex gap-1.5 overflow-x-auto pb-1 sm:justify-center">
         {TOPICS.map((x) => {
           const on = x.id === topic;
           return (

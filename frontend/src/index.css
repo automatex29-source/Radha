@@ -306,3 +306,26 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
   background: radial-gradient(circle, rgba(255, 138, 30, 0.18), transparent 65%); animation: krish-halo 3.2s ease-in-out infinite; }
 @keyframes krish-halo { 0%, 100% { opacity: 0.55; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.06); } }
 @media (prefers-reduced-motion: reduce) { .krish-topic-card, .krish-logo-halo::before { animation: none; } }
+
+/* Home hero: slowly drifting colour light, a faint grid, and dots circling the robot. */
+.krish-aurora { position: absolute; inset: 0; pointer-events: none; filter: blur(40px); opacity: 0.55; }
+.krish-aurora span { position: absolute; border-radius: 9999px; }
+.krish-aurora span:nth-child(1) { width: 45%; height: 80%; left: -10%; top: -30%; background: rgba(255, 138, 30, 0.35); animation: krish-drift-a 14s ease-in-out infinite; }
+.krish-aurora span:nth-child(2) { width: 40%; height: 75%; right: -8%; top: 10%; background: rgba(99, 140, 255, 0.30); animation: krish-drift-b 17s ease-in-out infinite; }
+.krish-aurora span:nth-child(3) { width: 35%; height: 70%; left: 35%; bottom: -45%; background: rgba(236, 72, 153, 0.20); animation: krish-drift-c 20s ease-in-out infinite; }
+.dark .krish-aurora { opacity: 0.35; }
+@keyframes krish-drift-a { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(30%, 25%) scale(1.15); } }
+@keyframes krish-drift-b { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-35%, -20%) scale(0.9); } }
+@keyframes krish-drift-c { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-25%, -30%) scale(1.2); } }
+.krish-hero-grid { position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+  background-image: radial-gradient(hsl(var(--foreground) / 0.10) 1px, transparent 1px); background-size: 18px 18px;
+  mask-image: radial-gradient(70% 80% at 70% 50%, #000 30%, transparent 75%); -webkit-mask-image: radial-gradient(70% 80% at 70% 50%, #000 30%, transparent 75%); }
+.krish-orbit { position: absolute; inset: 8% 4%; border-radius: 9999px; border: 1px dashed hsl(var(--foreground) / 0.12); animation: krish-spin 18s linear infinite; }
+.krish-orbit i { position: absolute; width: 8px; height: 8px; border-radius: 9999px; background: #FF8A1E; box-shadow: 0 0 12px rgba(255, 138, 30, 0.8); }
+.krish-orbit i:nth-child(1) { top: -4px; left: 50%; }
+.krish-orbit i:nth-child(2) { bottom: 10%; left: 2%; width: 6px; height: 6px; background: #638CFF; box-shadow: 0 0 10px rgba(99, 140, 255, 0.8); }
+.krish-orbit i:nth-child(3) { bottom: 18%; right: 0; width: 5px; height: 5px; background: #EC4899; box-shadow: 0 0 10px rgba(236, 72, 153, 0.7); }
+@keyframes krish-spin { to { transform: rotate(360deg); } }
+.krish-caret { animation: krish-blink 1s steps(1) infinite; }
+@keyframes krish-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .krish-aurora span, .krish-orbit, .krish-caret { animation: none; } }
