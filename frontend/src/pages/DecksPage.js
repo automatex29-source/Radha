@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PageHero from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
@@ -170,13 +171,8 @@ export default function DecksPage() {
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
           {step === "prompt" ? (
             <section className="mx-auto max-w-3xl text-center" data-testid="deck-create">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <Presentation className="h-6 w-6" />
-              </div>
-              <h1 className="radha-heading-gradient mt-4 text-3xl font-extrabold tracking-tighter sm:text-4xl">Presentations</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Start from a topic, your notes, a file, a web page or a YouTube video. Krish AI writes the outline, designs the slides, and you download a real PowerPoint.
-              </p>
+              <PageHero center icon={Presentation} title="Presentations"
+                subtitle="Start from a topic, your notes, a file, a web page or a YouTube video. Krish AI writes the outline, designs the slides, and you download a real PowerPoint." />
               <div className="mt-6 rounded-2xl border border-border bg-card p-3 text-left shadow-sm">
                 <div className="mb-2 flex flex-wrap gap-1" data-testid="deck-source-tabs">
                   {SOURCES.map(({ id, label, Icon }) => (

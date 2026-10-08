@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PageHero from "@/components/PageHero";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
@@ -55,13 +56,7 @@ export default function DiscoverPage() {
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10" data-testid="discover-page">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Compass className="h-6 w-6" /></div>
-            <div>
-              <h1 className="radha-heading-gradient text-3xl font-extrabold tracking-tighter">{t("discover")}</h1>
-              <p className="text-sm text-muted-foreground">Today's top stories. Tap one to read it, or ask Krish to explain.</p>
-            </div>
-          </div>
+          <PageHero icon={Compass} title={t("discover")} subtitle="Today's top stories. Tap one to read it, or ask Krish to explain." />
 
           <div className="radha-scroll -mx-4 mt-6 flex gap-2 overflow-x-auto px-4 pb-1" data-testid="discover-topics">
             {TOPICS.map((x) => (

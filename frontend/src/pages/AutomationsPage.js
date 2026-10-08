@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import PageHero from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -77,11 +78,10 @@ export default function AutomationsPage() {
       <IconRail />
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className={`radha-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5 max-md:max-w-none max-md:border-r-0 max-md:p-4 ${phoneDetail ? "max-md:hidden" : ""}`}>
-          <div className="flex items-center justify-between">
-            <h1 className="radha-heading-gradient text-2xl font-extrabold tracking-tighter">Automations</h1>
+          <PageHero compact icon={Workflow} title="Automations"
+            subtitle="Your own AI agents. Each one plans its steps, uses search, research, code, files and images, and sends you the result.">
             <Button size="sm" onClick={() => setEditing(blank())} data-testid="new-automation" className="gap-1.5"><Plus className="h-4 w-4" /> New</Button>
-          </div>
-          <p className="mt-1.5 text-sm text-muted-foreground">Your own AI agents. Each one plans its steps, uses search, research, code, files and images, remembers what it found last time, and sends you the result.</p>
+          </PageHero>
 
           {items === null ? <div className="mt-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : items.length === 0 ? (
             <div className="mt-6 space-y-2" data-testid="automation-examples">
