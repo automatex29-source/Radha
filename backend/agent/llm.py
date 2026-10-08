@@ -77,8 +77,10 @@ PLAIN_OUTPUT = 3000
 # instead of the user waiting up to a minute.
 _FALLBACK = {"openai/gpt-oss-120b": "openai/gpt-oss-20b", "cerebras/gpt-oss-120b": "openai/gpt-oss-120b"}
 # Gemini's free tier has a small daily allowance (and Google can block a key), so when it runs out
-# Groq answers instead of the user seeing an error.
+# Groq answers instead of the user seeing an error, then Cerebras if Groq can't either.
 _GEMINI_FALLBACK = "openai/gpt-oss-120b"
+_GEMINI_FALLBACKS = (_GEMINI_FALLBACK, "cerebras/gpt-oss-120b")
+_GEMINI_RETRY_PAUSE = 1.0
 # Google retires Gemini models for new keys; chats saved with an old name use the current one.
 _RENAMED = {"gemini-2.5-flash": "gemini-3.5-flash-lite"}
 # Gemini 3 wants each tool call sent back with the "thought signature" it came with. LiteLLM's streaming
@@ -92,10 +94,16 @@ def _has_images(messages: List[dict]) -> bool:
 
 
 def fallback_for(model: str, messages: List[dict]) -> Optional[str]:
-    """The model that answers when Gemini can't, or None."""
-    if gateway() or provider_for(model) != "gemini":
-        return None
-    return _GEMINI_FALLBACK if configured(_GEMINI_FALLBACK) and not _has_images(messages) else None
+    """The first model that answers when Gemini can't, or None."""
+    chain = fallbacks_for(model, messages)
+    return chain[0] if chain else None
+
+
+def fallbacks_for(model: str, messages: List[dict]) -> List[str]:
+    """The models that answer, in order, when Gemini can't (fails or says nothing). Pictures need Gemini."""
+    if gateway() or provider_for(model) != "gemini" or _has_images(messages):
+        return []
+    return [m for m in _GEMINI_FALLBACKS if configured(m)]
 
 
 def lean(model: str) -> bool:
@@ -299,26 +307,49 @@ def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: b
     return kwargs
 
 
+def _busy(exc: Exception) -> bool:
+    """A passing hiccup (busy, server error, timeout, dropped connection) that asking again usually fixes."""
+    import litellm
+
+    return isinstance(exc, (litellm.ServiceUnavailableError, litellm.InternalServerError, litellm.Timeout,
+                            litellm.APIConnectionError))
+
+
 async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: bool = False,
                        max_output: Optional[int] = None) -> AsyncIterator[dict]:
-    """One model call; Gemini hands over to Groq if it fails before saying anything."""
-    fallback = fallback_for(model, messages)
-    if not fallback:
+    """One model call. Gemini is asked again once when it is busy or says nothing, then hands over to Groq
+    (then Cerebras) if it still fails or stays silent, so the user gets an answer instead of an error."""
+    fallbacks = fallbacks_for(model, messages)
+    if provider_for(model) != "gemini" or gateway():
         async for event in _stream_model(model, messages, tools, think, max_output):
             yield event
         return
-    sent = False
-    try:
-        async for event in _stream_model(model, messages, tools, think, max_output, wait=False):
-            sent = sent or event["type"] != "heartbeat"
-            yield event
-    except Exception as exc:
-        # Out of free requests, busy (503), retired or a blocked key: Groq answers instead of an error.
-        if sent:
-            raise
-        logger.warning("%s failed (%s), answering with %s", model, str(exc)[:300], fallback)
-        async for event in _stream_model(fallback, messages, tools, think, max_output):
-            yield event
+    # Gemini, Gemini again (only for a hiccup or an empty reply), then each stand-in. Only the last one waits
+    # out a rate limit, so a busy model hands over at once.
+    plan = [model, model] + fallbacks
+    error: Optional[Exception] = None
+    for i, current in enumerate(plan):
+        if i == 1 and error is not None and not _busy(error):
+            continue  # out of requests or a blocked key: asking Gemini again won't help
+        if i == 1:
+            await asyncio.sleep(_GEMINI_RETRY_PAUSE)
+        last = i == len(plan) - 1
+        said = False
+        try:
+            async for event in _stream_model(current, messages, tools, think, max_output, wait=last):
+                if event["type"] == "tool_calls" or (event["type"] == "text" and event["text"].strip()):
+                    said = True
+                yield event
+        except Exception as exc:
+            if said or last:
+                raise
+            error = exc
+            logger.warning("%s failed (%s), trying %s", current, str(exc)[:300], plan[i + 1])
+            continue
+        if said or last:
+            return
+        error = None
+        logger.warning("%s sent an empty reply, trying %s", current, plan[i + 1])
 
 
 async def _stream_model(model: str, messages: List[dict], tools: List[dict], think: bool = False,
@@ -347,12 +378,14 @@ async def _stream_model(model: str, messages: List[dict], tools: List[dict], thi
                 pause -= _HEARTBEAT_SECONDS
                 yield {"type": "heartbeat"}
 
-    calls = {}
+    calls, wrote, finish = {}, False, None
     async for chunk in resp:
         if not chunk.choices:
             continue
+        finish = getattr(chunk.choices[0], "finish_reason", None) or finish
         delta = chunk.choices[0].delta
         if getattr(delta, "content", None):
+            wrote = wrote or bool(delta.content.strip())
             yield {"type": "text", "text": delta.content}
         for tc in getattr(delta, "tool_calls", None) or []:
             slot = calls.setdefault(tc.index if tc.index is not None else len(calls),
@@ -365,6 +398,8 @@ async def _stream_model(model: str, messages: List[dict], tools: List[dict], thi
                     slot["name"] = fn.name if fn.name.startswith(slot["name"]) else slot["name"] + fn.name
                 if fn.arguments:
                     slot["arguments"] += fn.arguments
+    if not wrote and not calls:
+        logger.warning("%s ended without an answer (finish_reason=%s)", kwargs["model"], finish)
     if calls:
         ordered = [calls[k] for k in sorted(calls)]
         for i, c in enumerate(ordered):

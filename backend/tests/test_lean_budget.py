@@ -189,11 +189,106 @@ def test_gemini_busy_mid_stream_falls_back_before_any_text(monkeypatch):
 
     async def acompletion(**kwargs):
         seen.append(kwargs)
-        return Busy() if len(seen) == 1 else FakeStream()
+        return Busy() if len(seen) == 1 else FakeStream() if len(seen) == 2 else Answer("Hello")
 
     monkeypatch.setattr(litellm, "acompletion", acompletion)
+    monkeypatch.setattr(llm, "_GEMINI_RETRY_PAUSE", 0)
+    events = run(collect(llm.stream_completion("gemini-3.5-flash-lite", [{"role": "user", "content": "hi"}], [])))
+    # Busy: Gemini is asked once more, and Groq answers when Gemini still has nothing.
+    assert [kw["model"] for kw in seen] == ["gemini/gemini-3.5-flash-lite", "gemini/gemini-3.5-flash-lite",
+                                            "groq/openai/gpt-oss-120b"]
+    assert events == [{"type": "text", "text": "Hello"}]
+
+
+class Answer:
+    """A stream that says `text`."""
+
+    def __init__(self, text):
+        self.chunks = [text]
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self.chunks:
+            raise StopAsyncIteration
+        delta = type("Delta", (), {"content": self.chunks.pop(), "tool_calls": None})()
+        choice = type("Choice", (), {"delta": delta, "finish_reason": "stop"})()
+        return type("Chunk", (), {"choices": [choice]})()
+
+
+def scripted(monkeypatch, replies):
+    """Each call gets the next reply: an exception to raise, or the text to answer ("" = empty reply)."""
+    seen = []
+
+    async def acompletion(**kwargs):
+        seen.append(kwargs["model"])
+        reply = replies[len(seen) - 1]
+        if isinstance(reply, Exception):
+            raise reply
+        return Answer(reply) if reply else FakeStream()
+
+    monkeypatch.setattr(litellm, "acompletion", acompletion)
+    monkeypatch.setattr(llm, "_GEMINI_RETRY_PAUSE", 0)
+    return seen
+
+
+def texts(events):
+    return "".join(e["text"] for e in events if e["type"] == "text")
+
+
+def test_gemini_empty_reply_is_asked_again(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    seen = scripted(monkeypatch, ["", "Hi there"])
+    events = run(collect(llm.stream_completion("gemini-3.5-flash-lite", [{"role": "user", "content": "hi"}], [])))
+    assert seen == ["gemini/gemini-3.5-flash-lite", "gemini/gemini-3.5-flash-lite"]
+    assert texts(events) == "Hi there"
+
+
+def test_gemini_silent_twice_hands_over_to_groq(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    seen = scripted(monkeypatch, [" ", "", "From Groq"])
+    events = run(collect(llm.stream_completion("gemini-3.5-flash-lite", [{"role": "user", "content": "hi"}], [])))
+    assert seen == ["gemini/gemini-3.5-flash-lite", "gemini/gemini-3.5-flash-lite", "groq/openai/gpt-oss-120b"]
+    assert texts(events).strip() == "From Groq"
+
+
+def test_gemini_out_of_requests_is_not_asked_again(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    quota = litellm.RateLimitError("You exceeded your current quota", "gemini", "gemini-3.5-flash-lite")
+    seen = scripted(monkeypatch, [quota, "From Groq"])
     run(collect(llm.stream_completion("gemini-3.5-flash-lite", [{"role": "user", "content": "hi"}], [])))
-    assert [kw["model"] for kw in seen] == ["gemini/gemini-3.5-flash-lite", "groq/openai/gpt-oss-120b"]
+    assert seen == ["gemini/gemini-3.5-flash-lite", "groq/openai/gpt-oss-120b"]
+
+
+def test_cerebras_answers_when_gemini_and_groq_cannot(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setenv("CEREBRAS_API_KEY", "x")
+    quota = litellm.RateLimitError("You exceeded your current quota", "gemini", "gemini-3.5-flash-lite")
+    groq_day = litellm.RateLimitError("Rate limit reached: tokens per day", "groq", GROQ)
+    seen = scripted(monkeypatch, [quota, groq_day, groq_day, "From Cerebras"])
+    events = run(collect(llm.stream_completion("gemini-3.5-flash-lite", [{"role": "user", "content": "hi"}], [])))
+    assert seen == ["gemini/gemini-3.5-flash-lite", "groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-20b",
+                    "cerebras/gpt-oss-120b"]
+    assert texts(events) == "From Cerebras"
+
+
+def test_gemini_with_pictures_is_asked_again_then_errors(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    busy = litellm.ServiceUnavailableError("model is experiencing high demand", "gemini", "gemini-3.5-flash-lite")
+    seen = scripted(monkeypatch, [busy, busy])
+    picture = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:x"}}]}]
+    try:
+        run(collect(llm.stream_completion("gemini-3.5-flash-lite", picture, [])))
+        raise AssertionError("expected the second failure to reach the chat")
+    except litellm.ServiceUnavailableError:
+        pass
+    assert seen == ["gemini/gemini-3.5-flash-lite", "gemini/gemini-3.5-flash-lite"]
 
 
 def test_gemini_tool_calls_are_sent_back_signed():
