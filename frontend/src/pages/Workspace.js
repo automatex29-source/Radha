@@ -797,10 +797,10 @@ TOPICS[0].items = [TOPICS[2].items[1], TOPICS[3].items[0], TOPICS[1].items[0], T
 function TopicCard({ s, i, onPick }) {
   return (
     <button data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
-      className="krish-topic-card group relative flex items-center gap-3 overflow-hidden rounded-xl border border-border bg-card px-3.5 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_10px_30px_-12px_rgba(15,23,42,0.25)] active:translate-y-0 active:scale-[0.99]"
+      className="krish-topic-card group relative flex items-center gap-3 overflow-hidden rounded-xl border border-border bg-card px-3.5 py-2.5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_10px_30px_-12px_rgba(15,23,42,0.25)] active:translate-y-0 active:scale-[0.99]"
       style={{ animationDelay: `${0.04 * i}s` }}>
       <span className="absolute inset-y-0 left-0 w-0.5 origin-center scale-y-0 bg-[#FF8A1E] transition-transform duration-200 group-hover:scale-y-100" />
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-foreground/75 transition-colors group-hover:border-foreground/15 group-hover:bg-primary group-hover:text-primary-foreground">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-foreground/75 transition-colors group-hover:border-foreground/15 group-hover:bg-primary group-hover:text-primary-foreground">
         <s.icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
@@ -831,7 +831,7 @@ function TypingLine() {
     return () => clearTimeout(id);
   }, [i, n, del]);
   return (
-    <p className="mt-3 text-base text-muted-foreground sm:text-lg" aria-live="off">
+    <p className="mt-1.5 text-sm text-muted-foreground sm:text-base" aria-live="off">
       Krish can <span className="font-semibold text-foreground">{HERO_LINES[i].slice(0, n)}</span>
       <span className="krish-caret ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-[#FF8A1E]" />
     </p>
@@ -845,26 +845,26 @@ function EmptyState({ onPick }) {
   const [topic, setTopic] = useState("popular");
   const items = TOPICS.find((x) => x.id === topic)?.items || [];
   return (
-    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-4xl flex-col justify-center px-4 py-6 sm:px-6">
-      <div className="krish-hero radha-fade-up relative overflow-hidden rounded-3xl border border-border bg-card/60 px-5 py-6 sm:px-10 sm:py-8">
+    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-4xl flex-col justify-center px-4 py-4 sm:px-6">
+      <div className="krish-hero radha-fade-up relative overflow-hidden rounded-3xl border border-border bg-card/60 px-5 py-4 sm:px-8 sm:py-5 [@media(max-height:760px)]:sm:py-3">
         <div className="krish-aurora" aria-hidden="true"><span /><span /><span /></div>
         <div className="krish-hero-grid" aria-hidden="true" />
-        <div className="relative flex items-center gap-4 max-md:flex-col-reverse max-md:text-center md:gap-8">
+        <div className="relative flex items-center gap-3 sm:gap-4 md:gap-8">
           <div className="min-w-0 flex-1">
             {t.lang === "en" && <p className="text-sm font-medium text-muted-foreground">{greetingFor(first)}</p>}
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-[2.2rem] sm:leading-[1.15]">
+            <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground sm:text-[1.75rem] sm:leading-[1.2]">
               {t.lang === "en" ? "How can Krish AI help today?" : t.parts("helpToday", { krish: <span key="k">Krish AI</span> })}
             </h2>
             {t.lang === "en" && <TypingLine />}
           </div>
           <div className="relative shrink-0">
             <div className="krish-orbit" aria-hidden="true"><i /><i /><i /></div>
-            <Mascot className="krish-float relative h-28 w-auto sm:h-36 md:h-44" />
+            <Mascot className="krish-float relative h-16 w-auto sm:h-24 md:h-28 [@media(max-height:760px)]:md:h-20" />
           </div>
         </div>
       </div>
 
-      <div role="tablist" aria-label="Ideas" className="krish-no-scrollbar mt-6 flex gap-1.5 overflow-x-auto pb-1 sm:justify-center">
+      <div role="tablist" aria-label="Ideas" className="krish-no-scrollbar mt-4 flex gap-1.5 overflow-x-auto pb-1 sm:justify-center">
         {TOPICS.map((x) => {
           const on = x.id === topic;
           return (
@@ -877,7 +877,7 @@ function EmptyState({ onPick }) {
         })}
       </div>
 
-      <div key={topic} className="mt-3 grid w-full gap-2.5 sm:grid-cols-2">
+      <div key={topic} className="mt-2.5 grid w-full gap-2 sm:grid-cols-2">
         {items.map((s, i) => <TopicCard key={s.title} s={s} i={i} onPick={onPick} />)}
       </div>
       <TopStories onAsk={onPick} />

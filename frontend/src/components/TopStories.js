@@ -41,7 +41,7 @@ export default function TopStories({ onAsk }) {
   }, []);
   if (!stories.length) return null;
   return (
-    <section className="relative mt-5 sm:mt-6" data-testid="top-stories">
+    <section className="relative mt-4 max-sm:hidden" data-testid="top-stories">
       <div className="mb-2 flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           <Newspaper className="h-3.5 w-3.5" /> Today's top stories
@@ -54,9 +54,9 @@ export default function TopStories({ onAsk }) {
       <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
         {stories.map((s) => (
           <button key={s.url} onClick={() => onAsk(askText(s))} title="Ask Krish about this"
-            className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-border bg-card/80 px-3.5 py-3 text-left transition-colors hover:border-primary/40 hover:bg-card">
+            className="flex min-w-0 flex-col gap-1 rounded-xl border border-border bg-card/80 px-3.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-card">
             <SourceLine story={s} />
-            <span className="line-clamp-2 text-[13.5px] font-medium leading-snug text-foreground">{s.title}</span>
+            <span className="line-clamp-2 text-[13.5px] font-medium sm:line-clamp-1 leading-snug text-foreground">{s.title}</span>
           </button>
         ))}
       </div>
