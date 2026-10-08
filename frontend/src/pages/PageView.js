@@ -9,17 +9,8 @@ import ThemeToggle from "@/components/ThemeToggle";
 import BrandMark from "@/components/BrandMark";
 import { LiveCards } from "@/components/LiveCards";
 import { linkCitations, faviconUrl } from "@/lib/citations";
+import SourceChip from "@/components/SourceChip";
 import { Link2, Loader2 } from "lucide-react";
-
-function Cite({ href, title, children }) {
-  if (title !== "cite") return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer"
-      className="krish-cite mx-0.5 inline-flex h-[1.15rem] min-w-[1.15rem] items-center justify-center rounded-full bg-surface-strong px-1.5 align-[0.1em] text-[10.5px] font-semibold leading-none no-underline">
-      {children}
-    </a>
-  );
-}
 
 /** A Page: one Krish answer published as a clean article anyone can read (like Perplexity Pages). */
 export default function PageView() {
@@ -78,7 +69,7 @@ export default function PageView() {
 
             <div className="mt-6"><LiveCards items={live} /></div>
             <div className="radha-prose mt-2 text-[1.02rem]" dir="auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: Cite }}>{linkCitations(page.content, sources)}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SourceChip }}>{linkCitations(page.content, sources)}</ReactMarkdown>
             </div>
 
             {sources.length > 0 && (

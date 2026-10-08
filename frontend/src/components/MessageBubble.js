@@ -10,6 +10,7 @@ import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
+import SourceChip from "@/components/SourceChip";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { modelLabel } from "@/lib/models";
@@ -107,19 +108,6 @@ function VideoResults({ items, id }) {
         </a>
       ))}
     </div>
-  );
-}
-
-// [1] in the answer: a small pill that opens that source.
-function Citation({ href, title, children, ...rest }) {
-  if (title !== "cite") return <a href={href} title={title} target="_blank" rel="noopener noreferrer" {...rest}>{children}</a>;
-  let domain = "";
-  try { domain = new URL(href).hostname.replace(/^www\./, ""); } catch { /* keep the number only */ }
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer" title={domain} data-testid="citation-link"
-      className="krish-cite mx-0.5 inline-flex h-[1.15rem] min-w-[1.15rem] items-center justify-center rounded-full bg-surface-strong px-1.5 align-[0.1em] text-[10.5px] font-semibold leading-none text-muted-foreground no-underline transition-colors hover:bg-primary hover:text-primary-foreground">
-      {children}
-    </a>
   );
 }
 
@@ -338,7 +326,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
         <div dir="auto" className="radha-prose min-w-0">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: Citation }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: SourceChip }}>
             {shown}
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
