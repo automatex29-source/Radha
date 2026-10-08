@@ -6,6 +6,7 @@ a local MongoDB without Atlas Vector Search.
 """
 import asyncio
 import logging
+import os
 import re
 import time
 from functools import lru_cache
@@ -16,6 +17,38 @@ import numpy as np
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 DIMENSIONS = 384
 
+
+SMALL_SERVER_MB = 1024  # below this the model (~400MB while embedding) would get the server killed mid-upload
+BATCH_SIZE = 16  # fastembed's default of 256 chunks at once costs hundreds of MB more at its peak
+
+
+def _memory_limit_mb():
+    """The container's memory limit in MB, or None when there isn't one we can read."""
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            raw = open(path).read().strip()
+        except OSError:
+            continue
+        if raw.isdigit() and int(raw) < 1 << 60:
+            return int(raw) // (1024 * 1024)
+    return None
+
+
+def _enabled() -> bool:
+    """EMBEDDINGS=1/0 decides; otherwise on, except on small servers (e.g. Render's free 512MB plan).
+
+    Files are still read and found by keyword search when it is off.
+    """
+    setting = os.environ.get("EMBEDDINGS", "").strip().lower()
+    if setting in ("0", "false", "off", "no"):
+        return False
+    if setting in ("1", "true", "on", "yes"):
+        return True
+    limit = _memory_limit_mb()
+    return limit is None or limit >= SMALL_SERVER_MB
+
+
+ENABLED = _enabled()
 
 _RETRY_AFTER = 600  # seconds to wait before trying to load a model that failed to load
 _failed_at = 0.0
@@ -41,7 +74,9 @@ def _load():
 def embed_texts(texts: List[str]) -> List[List[float]]:
     if not texts:
         return []
-    vectors = list(_model().embed(texts))
+    if not ENABLED:
+        raise RuntimeError("Embedding model is off on this server")
+    vectors = list(_model().embed(texts, batch_size=BATCH_SIZE))
     return [v.tolist() for v in vectors]
 
 
@@ -92,8 +127,11 @@ def keyword_rank(query: str, candidates: List[dict], top_k: int = 5):
 async def rank(query: str, candidates: List[dict], top_k: int = 5, threshold: float = 0.2):
     """Chunks most related to the query: by meaning when possible, else by shared words."""
     try:
-        qvec = await asyncio.to_thread(embed_query, query)
-        ranked = cosine_rank(qvec, candidates, top_k=top_k, threshold=threshold)
+        if not ENABLED:
+            ranked = []
+        else:
+            qvec = await asyncio.to_thread(embed_query, query)
+            ranked = cosine_rank(qvec, candidates, top_k=top_k, threshold=threshold)
     except Exception:
         logging.getLogger("radha.embeddings").exception("Embedding the question failed; using keyword search")
         ranked = []
