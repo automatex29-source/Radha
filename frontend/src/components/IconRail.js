@@ -6,14 +6,14 @@ import { useT } from "@/lib/i18n";
 
 const ITEMS = [
   { icon: MessageSquare, label: "Chat", key: "chat", to: "/", match: (p) => p === "/" },
-  // Phones reach Discover from the chat home ("Today's top stories"), so the tab bar stays at 7.
-  { icon: Compass, label: "Discover", key: "discover", to: "/discover", match: (p) => p.startsWith("/discover"), desktopOnly: true },
   { icon: HeartHandshake, label: "Counsellor", key: "counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
   { icon: FolderKanban, label: "Projects", key: "projects", to: "/projects", match: (p) => p.startsWith("/projects") },
   { icon: AppWindow, label: "Apps", key: "apps", to: "/apps", match: (p) => p.startsWith("/apps") },
   { icon: FileText, label: "Docs", key: "docs", to: "/docs", match: (p) => p.startsWith("/docs") },
   { icon: Presentation, label: "Decks", key: "decks", to: "/decks", match: (p) => p.startsWith("/decks") },
   { icon: Workflow, label: "Automations", key: "automations", short: "automate", to: "/automations", match: (p) => p.startsWith("/automations") },
+  // Phones reach Discover from the chat home ("Today's top stories"), so the tab bar stays at 7.
+  { icon: Compass, label: "Discover", key: "discover", to: "/discover", match: (p) => p.startsWith("/discover"), desktopOnly: true },
 ];
 
 /** Side rail on tablets and desktops; a bottom tab bar on phones (unless mobileBar is false).
