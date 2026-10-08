@@ -1477,7 +1477,10 @@ async def _process_file(file_id: str, user_id: str, project_id, data: bytes, ext
         chunks = extractor.chunk_text(text)
         if chunks:
             try:
-                vectors = await asyncio.to_thread(embeddings.embed_texts, chunks)
+                if not embeddings.ENABLED:  # small server: keyword search only
+                    vectors = [None] * len(chunks)
+                else:
+                    vectors = await asyncio.to_thread(embeddings.embed_texts, chunks)
             except Exception:
                 # The embedding model couldn't load (download blocked, low memory): keep the text,
                 # which is still found by keyword search.
@@ -1995,6 +1998,8 @@ async def startup():
             logger.error(f"Storage init failed: {exc}")
     else:
         logger.info("Storing uploaded files in MongoDB")
+    if not embeddings.ENABLED:
+        logger.info("Small server: files are searched by keyword (set EMBEDDINGS=1 to load the embedding model)")
     logger.info("Krish AI backend ready")
 
 

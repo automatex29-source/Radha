@@ -48,3 +48,7 @@ services:
       # The free plan has 512 MB of memory; a headless Chrome would exceed it.
       - key: BROWSER_TOOL
         value: "0"
+      # The document-search model needs ~400MB while reading a file; on 512 MB the server was killed
+      # mid-upload (502). Files are still read and found by keyword search.
+      - key: EMBEDDINGS
+        value: "0"
