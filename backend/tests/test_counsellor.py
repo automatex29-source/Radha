@@ -79,6 +79,7 @@ def test_counsellor_uses_gita_prompt_without_tools_or_memory(client):
     system = call["messages"][0]["content"]
     assert "Bhagavad Gita" in system and "Tele-MANAS 14416" in system
     assert system.endswith(counsellor.BRIEF)  # short replies by default
+    assert "Never call anyone \"bestie\"" in system
     assert not call.get("tools")
     assert "14416" not in body  # no crisis, no helpline block
     time.sleep(0.5)
