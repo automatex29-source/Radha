@@ -54,6 +54,7 @@ import discover
 import help_center
 import writer
 import code_edit
+import code_check
 import limits
 import languages
 from agent import default_registry, run_agent, ToolContext
@@ -591,7 +592,11 @@ SYSTEM_PROMPT = (
     "When the user asks you to build an app, website, game, tool or page, build the complete, working thing right "
     "away. Put each file in its own fenced code block whose info string is the language followed by the file name, "
     "for example ```html index.html and ```javascript app.js, and link them from index.html by those names. "
-    "Say in one line what you built before "
+    "For a site, game or tool, prefer one complete index.html with its CSS in <style> and its JavaScript in "
+    "<script>, unless the user asks for separate files or it is large. Write working code, not placeholders: every "
+    "button and form does what it says, every id the script uses exists in the HTML, every function it calls is "
+    "defined, it works on phones as well as computers, and data the user adds is kept in localStorage when it "
+    "should survive a reload. Say in one line what you built before "
     "the files. Krish AI shows the user a live preview, a Download ZIP button and an Open in App Builder button for "
     "those files automatically. Never output base64, never pretend to attach or encode a ZIP or any other archive, "
     "and never tell the user to decode anything. When the user gives you their own code or file and asks for a "
@@ -1056,6 +1061,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             note = "\n\n" + note
             full.append(note)
             yield f"data: {_sse_json(note)}\n\n"
+        if not app_id and not counselling:
+            async for event in _check_code_reply(model, full, steps):
+                yield event
     finally:
         content = "".join(full).strip()
         follow_ups = []
@@ -1095,6 +1103,51 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 )
             if not stopped:
                 yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"
+
+
+async def _check_code_reply(model: str, full: list, steps: list):
+    """Check the app or site a chat reply just wrote and fix what would break it (see code_check.py).
+
+    The fixed files replace the broken ones in `full`, so the saved reply, which the chat reloads when the
+    stream ends, previews the working version.
+    """
+    text = "".join(full)
+    files, cut = code_check.web_files(text)
+    if not files:
+        return
+    try:
+        found = await code_check.problems(files, cut)
+    except Exception as exc:  # a check that can't run never costs the user their answer
+        logger.warning("code check failed: %s", str(exc)[:300])
+        return
+    if not found:
+        return
+    step = {"id": str(uuid.uuid4()), "name": "check_preview", "label": "Checking and fixing your app",
+            "args": {"path": next(p for p in files if p.endswith((".html", ".htm")))}, "status": "running"}
+    steps.append(step)
+    yield f"event: tool\ndata: {_sse_json(step)}\n\n"
+    result = None
+    try:
+        async for ev in code_check.repair(code_edit.editing_model(model), files, found):
+            if ev["type"] == "heartbeat":
+                yield ": keepalive\n\n"
+            elif ev["type"] == "result":
+                result = ev
+    except Exception as exc:
+        logger.warning("code repair failed: %s", str(exc)[:300])
+    fixed = (result or {}).get("fixed") or []
+    if fixed:
+        content = code_edit.replace_blocks(code_edit.close_fence(text)[0], result["files"])
+        n = len(fixed)
+        note = (f"\n\nI tested the preview and fixed {n} problem{'s' if n != 1 else ''} before handing it over "
+                f"({'; '.join(f.split(' (')[0].rstrip('.') for f in fixed[:3])}).")
+        tail = related._LINE.search(content)  # the note goes before the Related questions line, which is cut off
+        full[:] = [content[:tail.start()].rstrip() + note + "\n\n" + content[tail.start():] if tail else content + note]
+        yield f"data: {_sse_json(note)}\n\n"
+        step.update(status="done", summary=f"Fixed {n} problem{'s' if n != 1 else ''}", output="\n".join(fixed), media=[])
+    else:
+        step.update(status="done", summary="Checked; some problems are still there", output="\n".join(found), media=[])
+    yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
 
 
 class _TurnResponse(StreamingResponse):

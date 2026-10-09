@@ -30,7 +30,17 @@ _EDIT_WORDS = re.compile(
 _ASKS_ABOUT = re.compile(r"^\s*(what|why|explain|describe|summari[sz]e|review|is|are|does|which|who|when|where|"
                          r"tell me (?:about|what)|can you explain)\b", re.IGNORECASE)
 
-BIG_CODE = 20000      # characters; past this no free model can write the code back in one reply
+# ...or a new thing to build ("make a gym website", "now create another game").
+_NEW_BUILD = re.compile(
+    r"\b(make|create|build|generate|design|write|code|bana(?:o|do)?)\s+(?:me\s+|us\s+)?(?:a|an|another|new|one|ek)\s+"
+    r"(?:\w+\s+){0,4}?(website|site|web\s*site|app|game|tool|landing|portfolio|dashboard|calculator|clone|"
+    r"web\s*app|application|program|project)\b"
+    r"|\b(?:ek|new|naya|nayi|another)\s+(?:\w+\s+){0,3}?(?:website|site|app|game|tool|portfolio|dashboard)\s+"
+    r"(?:bana\w*|create|make|build)\b", re.IGNORECASE)
+
+# Past this, code Krish wrote is changed with edits too: free models only see the first 2,000 characters of an
+# earlier reply, so asked to "make it blue" they rewrote the page from memory and lost parts of it.
+BIG_CODE = 3000
 RECENT_MESSAGES = 8   # how far back a follow-up ("now make the buttons blue") may refer to the code
 _MAX_PART = 40000     # characters per request, so one part's edits fit in one reply
 _OUTPUT = 8000        # tokens of edits a request may write
@@ -44,6 +54,18 @@ SYSTEM = ("You are Krish AI, an expert code editor. The user gave you their own 
           "layout) as it is. You never replace their file with a new or shorter one.")
 
 
+def _block_name(info: str, code: str) -> Optional[str]:
+    """The file a fenced block holds, from its info line ("html index.html"), or None for a snippet."""
+    lang = (info.split() or [""])[0].lower()
+    named = _FILE_RE.search(info)
+    name = named.group(1).lstrip("./") if named else None
+    if not name and (lang in ("html", "htm") or re.match(r"\s*(<!doctype|<html)", code, re.I)):
+        name = "index.html"
+    elif not name and lang in _DEFAULT_NAMES and code.count("\n") >= 30:
+        name = _DEFAULT_NAMES[lang]
+    return name if name and code.strip() and ".." not in name.split("/") else None
+
+
 def code_files(text: str, raw_html: bool = False) -> Dict[str, str]:
     """{name: code} for the fenced code blocks in a message that are files (named, or a whole page).
 
@@ -51,21 +73,61 @@ def code_files(text: str, raw_html: bool = False) -> Dict[str, str]:
     """
     files: Dict[str, str] = {}
     for m in _FENCE_RE.finditer(text or ""):
-        info, code = m.group(2).strip(), m.group(3)
-        lang = (info.split() or [""])[0].lower()
-        named = _FILE_RE.search(info)
-        name = named.group(1).lstrip("./") if named else None
-        if not name and lang in ("html", "htm") or (not name and re.match(r"\s*(<!doctype|<html)", code, re.I)):
-            name = "index.html"
-        elif not name and lang in _DEFAULT_NAMES and code.count("\n") >= 30:
-            name = _DEFAULT_NAMES[lang]
-        if name and code.strip() and ".." not in name.split("/"):
-            files[name] = code
+        name = _block_name(m.group(2).strip(), m.group(3))
+        if name:
+            files[name] = m.group(3)
     if not files and raw_html:
         m = _HTML_DOC_RE.search(text or "")
         if m:
             files["index.html"] = m.group(1).strip()
     return files
+
+
+def fence_for(code: str) -> str:
+    """Backticks that fence `code` safely: one more than the longest run inside it."""
+    return "`" * max([3] + [len(t) + 1 for t in re.findall(r"`{3,}", code)])
+
+
+def block(path: str, code: str) -> str:
+    ext = path.rsplit(".", 1)[-1].lower()
+    fence = fence_for(code)
+    return f"{fence}{_LANGS.get(ext, ext)} {path}\n{code.rstrip()}\n{fence}"
+
+
+def close_fence(text: str) -> Tuple[str, Optional[str]]:
+    """(text with a code block that was cut off mid-way closed, the fence that was missing or None).
+
+    A reply that ran out of room stops inside its last file; closing the fence lets that file be read.
+    """
+    open_ticks = None
+    for line in (text or "").split("\n"):
+        m = re.match(r"[ \t]*(`{3,})(.*)$", line)
+        if not m:
+            continue
+        if open_ticks is None:
+            open_ticks = m.group(1)
+        elif m.group(1) == open_ticks and not m.group(2).strip():
+            open_ticks = None
+    if open_ticks is None:
+        return text, None
+    return text.rstrip("\n") + "\n" + open_ticks, open_ticks
+
+
+def replace_blocks(text: str, files: Dict[str, str]) -> str:
+    """`text` with each named file's code block swapped for the new code; files it doesn't have are added at the end."""
+    done = set()
+
+    def swap(m):
+        name = _block_name(m.group(2).strip(), m.group(3))
+        if name in files and name not in done:
+            done.add(name)
+            lead = m.group(0)[:len(m.group(0)) - len(m.group(0).lstrip("\n"))]
+            return lead + block(name, files[name])
+        return m.group(0)
+
+    out = _FENCE_RE.sub(swap, text or "")
+    extra = [block(p, c) for p, c in files.items() if p not in done]
+    return out.rstrip() + ("\n\n" + "\n\n".join(extra) if extra else "")
 
 
 def without_code(text: str) -> str:
@@ -75,9 +137,10 @@ def without_code(text: str) -> str:
 
 
 def wants_edit(words: str) -> bool:
-    """True when the words ask for a change to the code rather than a question about it."""
+    """True when the words ask for a change to the code rather than a question about it or something new."""
     words = (words or "").strip()
-    return bool(words) and bool(_EDIT_WORDS.search(words)) and not _ASKS_ABOUT.match(words)
+    return (bool(words) and bool(_EDIT_WORDS.search(words)) and not _ASKS_ABOUT.match(words)
+            and not _NEW_BUILD.search(words))
 
 
 def find_target(history: List[dict]) -> Tuple[Optional[Dict[str, str]], Optional[dict]]:
@@ -262,10 +325,4 @@ def reply_text(original: Dict[str, str], edited: Dict[str, str], applied: int, m
     lines = sum(c.count("\n") + 1 for c in edited.values())
     head = (f"Done. I edited your {names} in place ({applied} change{'s' if applied != 1 else ''}: {what[0].lower() + what[1:]}) "
             f"and kept everything else exactly as it was. The full file ({lines} lines) is below and in the preview.")
-    blocks = []
-    for path, code in edited.items():
-        ext = path.rsplit(".", 1)[-1].lower()
-        ticks = max([3] + [len(t) + 1 for t in re.findall(r"`{3,}", code)])
-        fence = "`" * ticks
-        blocks.append(f"{fence}{_LANGS.get(ext, ext)} {path}\n{code.rstrip()}\n{fence}")
-    return head + "\n\n" + "\n\n".join(blocks)
+    return head + "\n\n" + "\n\n".join(block(p, c) for p, c in edited.items())
