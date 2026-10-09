@@ -64,6 +64,7 @@ def _fake_agent(monkeypatch, server, files, rounds):
 
     monkeypatch.setattr(server, "run_agent", run_agent)
     monkeypatch.setattr(server.apps, "snapshot", snapshot)
+    monkeypatch.setattr(server.agent_browser, "available", lambda: False)  # browser tests: see test_builder_smoke.py
     return calls
 
 
@@ -89,9 +90,10 @@ def test_broken_build_gets_a_repair_round(monkeypatch):
 def test_unfixed_problem_is_told_to_the_user(monkeypatch):
     server = _server()
     files = {}
-    _fake_agent(monkeypatch, server, files, [({"index.html": CAKE_HTML, "app.js": CAKE_JS}, ""), (None, "")])
+    calls = _fake_agent(monkeypatch, server, files, [({"index.html": CAKE_HTML, "app.js": CAKE_JS}, ""), (None, ""), (None, "")])
     out = _texts(server, server.ToolContext(None, "u", app_id="a1"))
     assert "still has a problem" in out and "#cart-btn" in out
+    assert len(calls) == 1 + server.REPAIR_ROUNDS
 
 
 def test_no_repair_when_nothing_changed_or_no_app(monkeypatch):
