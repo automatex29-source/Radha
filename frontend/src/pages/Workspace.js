@@ -637,7 +637,7 @@ export default function Workspace({ mode = null }) {
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <PanelLeft className="h-5 w-5" />
             </button>
-            <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight">
+            <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight max-sm:hidden">
               {activeConv ? activeConv.title : t(counselling ? "counsellor" : "newConversation")}
             </h1>
             {project && (
