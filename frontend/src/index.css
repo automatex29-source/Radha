@@ -214,15 +214,15 @@
 .radha-prose > :last-child { margin-bottom: 0; }
 .radha-prose p { margin: 0.8em 0; }
 .radha-prose strong { font-weight: 600; color: hsl(var(--foreground)); }
-.radha-prose h1, .radha-prose h2, .radha-prose h3, .radha-prose h4 { font-weight: 650; line-height: 1.3; margin: 1.5em 0 0.5em; letter-spacing: -0.018em; color: hsl(var(--foreground)); }
+.radha-prose h1, .radha-prose h2, .radha-prose h3, .radha-prose h4 { font-family: var(--font-heading); font-weight: 600; line-height: 1.3; margin: 1.4em 0 0.45em; letter-spacing: -0.018em; color: hsl(var(--foreground)); }
 .radha-prose h1 { font-size: 1.4em; }
-.radha-prose h2 { font-size: 1.22em; }
-.radha-prose h3 { font-size: 1.08em; }
+.radha-prose h2 { font-size: 1.12em; }
+.radha-prose h3 { font-size: 1.02em; }
 .radha-prose h4 { font-size: 1em; }
 .radha-prose ul, .radha-prose ol { margin: 0.7em 0; padding-left: 1.5em; }
-.radha-prose li { margin: 0.35em 0; padding-left: 0.2em; }
+.radha-prose li { margin: 0.25em 0; padding-left: 0.2em; }
 .radha-prose li > p { margin: 0.3em 0; }
-.radha-prose li::marker { color: hsl(var(--muted-foreground)); }
+.radha-prose li::marker { color: hsl(var(--primary) / 0.7); }
 .radha-prose ol > li::marker { font-weight: 600; }
 .radha-prose ul { list-style: disc; }
 .radha-prose ol { list-style: decimal; }
@@ -234,9 +234,12 @@
 .radha-prose code { font-family: var(--font-mono); font-size: 0.86em; background: hsl(var(--sunken)); border: 1px solid hsl(var(--border)); border-radius: 5px; padding: 0.1em 0.35em; color: hsl(var(--brand-soft)); }
 .radha-prose pre { font-size: 0.92em; line-height: 1.6; background: hsl(var(--sunken)) !important; border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 0.9rem 1rem; overflow-x: auto; margin: 0.9em 0; }
 .radha-prose pre code { font-size: inherit; background: transparent; border: none; padding: 0; color: hsl(var(--foreground) / 0.9); }
-.radha-prose table { width: 100%; border-collapse: collapse; margin: 0.9em 0; font-size: 0.9em; line-height: 1.5; }
-.radha-prose th, .radha-prose td { border: 1px solid hsl(var(--border)); padding: 0.5em 0.75em; text-align: left; vertical-align: top; }
-.radha-prose th { background: hsl(var(--sunken)); font-weight: 600; color: hsl(var(--foreground)); }
+.radha-prose table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0.9em 0; font-size: 0.9em; line-height: 1.5; border: 1px solid hsl(var(--border)); border-radius: 12px; overflow: hidden; background: hsl(var(--card)); }
+.radha-prose th, .radha-prose td { border-bottom: 1px solid hsl(var(--border)); padding: 0.55em 0.85em; text-align: left; vertical-align: top; }
+.radha-prose th + th, .radha-prose td + td { border-left: 1px solid hsl(var(--border)); }
+.radha-prose tbody tr:last-child td { border-bottom: 0; }
+.radha-prose tbody tr:nth-child(even) td { background: hsl(var(--primary) / 0.035); }
+.radha-prose th { background: hsl(var(--primary) / 0.08); font-weight: 600; color: hsl(var(--foreground)); }
 
 /* Krish AI wordmark: chunky Bricolage with a glowing "AI" */
 .krish-wordmark { font-family: 'Bricolage Grotesque', 'Plus Jakarta Sans', sans-serif; font-weight: 800; letter-spacing: -0.035em; white-space: nowrap; }

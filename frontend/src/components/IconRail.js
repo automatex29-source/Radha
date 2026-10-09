@@ -34,8 +34,8 @@ export default function IconRail({ mobileBar = true }) {
               <button key={it.to} onClick={() => navigate(it.to)} data-testid={`nav-${it.label.toLowerCase()}`}
                 title={t(it.key)}
                 className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
-                  active ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
-                    : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
+                  active ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_8px_22px_rgba(99,102,241,0.45)]"
+                    : "text-muted-foreground hover:-translate-y-0.5 hover:bg-white/80 hover:text-primary hover:shadow-sm dark:hover:bg-surface"
                 }`}>
                 <it.icon className="h-5 w-5" />
               </button>
@@ -44,8 +44,8 @@ export default function IconRail({ mobileBar = true }) {
         </nav>
         <button onClick={() => navigate("/help")} data-testid="nav-help" title={t("helpCenter")} aria-label={t("helpCenter")}
           className={`mt-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
-            pathname.startsWith("/help") ? "bg-white text-primary shadow-[0_6px_20px_rgba(99,102,241,0.22)] ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0"
-              : "text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-surface"
+            pathname.startsWith("/help") ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_8px_22px_rgba(99,102,241,0.45)]"
+              : "text-muted-foreground hover:-translate-y-0.5 hover:bg-white/80 hover:text-primary hover:shadow-sm dark:hover:bg-surface"
           }`}>
           <LifeBuoy className="h-5 w-5" />
         </button>
@@ -63,7 +63,7 @@ export default function IconRail({ mobileBar = true }) {
                 className={`flex min-w-0 flex-1 flex-col items-center gap-1 pb-1.5 pt-2 text-[10px] font-semibold transition-colors ${
                   active ? "text-primary" : "text-muted-foreground active:text-foreground"
                 }`}>
-                <span className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${active ? "bg-surface-strong" : ""}`}>
+                <span className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${active ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_4px_12px_rgba(99,102,241,0.4)]" : ""}`}>
                   <it.icon className="h-5 w-5" />
                 </span>
                 <span className="max-w-full truncate tracking-tight">{t(it.short || it.key)}</span>

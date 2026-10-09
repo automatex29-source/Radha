@@ -111,7 +111,12 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       {/* List */}
       <div className="radha-scroll flex-1 overflow-y-auto px-3 pb-2">
         {filtered.length === 0 && (
-          <p className="px-2 py-8 text-center text-xs text-muted-foreground">{t(query.trim() ? "noMatch" : "noConversations")}</p>
+          <div className="flex flex-col items-center px-4 py-10 text-center">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 text-primary dark:from-indigo-500/20 dark:to-violet-500/20">
+              {query.trim() ? <Search className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
+            </span>
+            <p className="mt-3 text-xs text-muted-foreground">{t(query.trim() ? "noMatch" : "noConversations")}</p>
+          </div>
         )}
         {Object.entries(groups).map(([label, items]) =>
           items.length ? (
