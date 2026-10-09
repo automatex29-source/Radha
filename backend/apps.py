@@ -641,6 +641,85 @@ async def check_preview(files: Dict[str, str], path: str = "index.html", app_id:
         await context.close()
 
 
+_CLICKABLE = "button, [role=button], input[type=button], input[type=submit]"
+_SMOKE_CLICKS = 8
+# Console noise that isn't the app's fault.
+_NOISE_RE = re.compile(r"favicon\.ico|cdn\.tailwindcss\.com should not be used in production|DevTools|"
+                       r"Download the React DevTools|net::ERR_|ERR_BLOCKED|Failed to load resource", re.IGNORECASE)
+
+
+async def smoke_test(files: Dict[str, str], path: str = "index.html", app_id: Optional[str] = None) -> List[str]:
+    """Open the app in headless Chromium the way a person would: load it, then press its buttons one by one.
+
+    Returns the errors that broke something, each said in a line the model can act on: uncaught errors and
+    console errors on load and after each click (with the button that caused them), and the app's own
+    files that failed to load. Static checks (check_app) can't see these: "x is not defined", a typo in a
+    method name, a CDN import that doesn't exist.
+    """
+    browser = await agent_browser.manager._ensure_browser()
+    context = await browser.new_context(viewport={"width": 1280, "height": 800}, accept_downloads=False)
+    allowed: dict = {}
+    errors: List[str] = []
+    stage = ["on load"]
+
+    async def handler(route):
+        url = route.request.url
+        if url.startswith(PREVIEW_ORIGIN + "api/"):
+            await route.abort("blockedbyclient")  # never reach the real backend from a test
+        elif url.startswith(PREVIEW_ORIGIN):
+            rel = unquote(urlparse(url).path.lstrip("/"))
+            resp = _serve(files, rel, bridge=False, cache="no-store", app_id=app_id)
+            await route.fulfill(status=resp.status_code, body=resp.body,
+                                headers={"Content-Type": resp.media_type or "text/plain"})
+        else:
+            await agent_browser.manager._guard(route, allowed)
+
+    def note(kind: str, text: str):
+        text = " ".join(str(text).split())[:220]
+        if text and not _NOISE_RE.search(text):
+            line = f"{kind} {stage[0]}: {text}"
+            if line not in errors:
+                errors.append(line)
+
+    try:
+        await context.route("**/*", handler)
+        page = await context.new_page()
+        page.on("pageerror", lambda e: note("Uncaught error", e))
+        page.on("console", lambda m: note("Console error", m.text) if m.type == "error" else None)
+        page.on("dialog", lambda d: asyncio.ensure_future(d.dismiss()))
+        page.on("response", lambda r: note("Missing file", f"{r.url[len(PREVIEW_ORIGIN):]} returned {r.status}")
+                if r.status >= 400 and r.url.startswith(PREVIEW_ORIGIN) and "favicon" not in r.url else None)
+        await page.goto(PREVIEW_ORIGIN + clean_path(path), wait_until="domcontentloaded", timeout=30_000)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
+        await page.wait_for_timeout(600)
+        buttons = page.locator(_CLICKABLE)
+        count = min(await buttons.count(), 40)
+        clicked = 0
+        for i in range(count):
+            if clicked >= _SMOKE_CLICKS or len(errors) >= 6:
+                break
+            button = buttons.nth(i)
+            try:
+                if not await button.is_visible() or not await button.is_enabled():
+                    continue
+                label = " ".join(((await button.inner_text(timeout=500)) or await button.get_attribute("aria-label")
+                                  or await button.get_attribute("value") or "").split())[:40] or f"button {i + 1}"
+                stage[0] = f"after clicking “{label}”"
+                await button.click(timeout=1500, no_wait_after=True)
+                clicked += 1
+                await page.wait_for_timeout(350)
+            except Exception:
+                continue  # covered, detached or moved away: not the app's error
+            if not page.url.startswith(PREVIEW_ORIGIN):
+                break
+        return errors[:6]
+    finally:
+        await context.close()
+
+
 # ------------------------------------------------------------- agent tools
 _ID_DEF_RE = re.compile(r"""\bid\s*=\s*["'`]([\w\-:.]+)["'`]|\.id\s*=\s*["'`]([\w\-:.]+)["'`]|setAttribute\(\s*["']id["']\s*,\s*["'`]([\w\-:.]+)""")
 _ID_USE_RE = re.compile(r"""getElementById\(\s*["'`]([\w\-:.]+)["'`]\s*\)|querySelector(?:All)?\(\s*["'`]#([\w\-]+)["'`]\s*\)|\$\(\s*["'`]#([\w\-]+)["'`]\s*\)""")
@@ -905,16 +984,29 @@ async def _t_edit(ctx, args):
     doc = await db.app_files.find_one({"appId": ctx.app_id, "path": path})
     if not doc:
         return _tool_output(f"{path} does not exist.", f"{path} not found", ok=False)
-    old, new = args.get("old_text"), args.get("new_text", "")
-    if not old:
-        raise ValueError("'old_text' is required")
-    start, end, problem = locate_snippet(doc["content"], old)
-    if problem:
-        return _tool_output(problem, "Edit didn't match; retrying", ok=False)
-    if _strip_line_numbers(new) != new and _strip_line_numbers(old) != old:
-        new = _strip_line_numbers(new)
-    await write_file(ctx.app_id, path, doc["content"][:start] + new + doc["content"][end:])
-    return _tool_output(await _with_problems(ctx.app_id, f"Edited {path}."), f"Edited {path}")
+    # One change (old_text, new_text), or several in one call (edits), so a change that touches many places
+    # doesn't use up a builder turn's steps. They apply in order, all or none.
+    edits = args.get("edits") if isinstance(args.get("edits"), list) else []
+    if args.get("old_text"):
+        edits = [{"old_text": args["old_text"], "new_text": args.get("new_text", "")}] + edits
+    if not edits:
+        raise ValueError("'old_text' (or 'edits') is required")
+    content = doc["content"]
+    for n, edit in enumerate(edits, 1):
+        old, new = (edit or {}).get("old_text"), (edit or {}).get("new_text", "") or ""
+        if not old:
+            return _tool_output(f"Edit {n} has no old_text. Nothing was changed.", "Edit didn't match; retrying", ok=False)
+        start, end, problem = locate_snippet(content, old)
+        if problem:
+            which = f"Edit {n} of {len(edits)}: " if len(edits) > 1 else ""
+            done = " Nothing was changed; send the edits again with this one fixed." if len(edits) > 1 else ""
+            return _tool_output(which + problem + done, "Edit didn't match; retrying", ok=False)
+        if _strip_line_numbers(new) != new and _strip_line_numbers(old) != old:
+            new = _strip_line_numbers(new)
+        content = content[:start] + new + content[end:]
+    await write_file(ctx.app_id, path, content)
+    made = f" ({len(edits)} changes)" if len(edits) > 1 else ""
+    return _tool_output(await _with_problems(ctx.app_id, f"Edited {path}{made}."), f"Edited {path}{made}")
 
 
 async def _t_delete(ctx, args):
@@ -977,9 +1069,14 @@ def register_tools(registry):
         ("append_file", "Write file", "Add content to the end of a file (creates it if missing). Use it to write a long "
          "file in parts: write_file with the first part, then append_file with each next part.",
          {"path": path_param, "content": {"type": "string"}}, ["path", "content"], _t_append),
-        ("edit_file", "Edit file", "Replace one exact, unique snippet of text in a file.",
-         {"path": path_param, "old_text": {"type": "string"}, "new_text": {"type": "string"}},
-         ["path", "old_text", "new_text"], _t_edit),
+        ("edit_file", "Edit file", "Replace an exact, unique snippet of text in a file (old_text with new_text). "
+         "For several changes in the same file, pass them all at once in edits instead; they apply in order.",
+         {"path": path_param, "old_text": {"type": "string"}, "new_text": {"type": "string"},
+          "edits": {"type": "array", "description": "Several changes in this file, applied in order",
+                    "items": {"type": "object", "properties": {"old_text": {"type": "string"},
+                                                               "new_text": {"type": "string"}},
+                              "required": ["old_text", "new_text"]}}},
+         ["path"], _t_edit),
         ("delete_file", "Delete file", "Delete a file from the app.", {"path": path_param}, ["path"], _t_delete),
         ("run_command", "Terminal", "Run a shell command (sh) in a sandboxed copy of the app files: e.g. `node --test`, "
          "`python3 -m unittest`, `node script.js`. No network. File changes made by the command are not saved.",

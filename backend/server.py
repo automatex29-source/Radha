@@ -810,12 +810,40 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
 
 _FILE_TOOLS = ("write_file", "append_file", "edit_file", "delete_file")
 REPAIR_STEPS = 5
+SMOKE_TIMEOUT = 60  # seconds for the browser test of an app
+REPAIR_ROUNDS = 2  # rounds of automatic fixes after a builder turn leaves the app broken
+
+
+async def _app_problems(app_id: str):
+    """Static problems (apps.check_app), then, when there are none, what a real browser hits when it opens the
+    app and presses its buttons (apps.smoke_test). Yields test-step events; the last event is {"type": "problems"}."""
+    files = await apps.snapshot(app_id)
+    problems = await apps.check_app(files)
+    # Apps on Krish's backend (RADHA.db, .ai, .notify...) aren't pressed: a click could email the owner or change
+    # real data, and the browser test has no signed-in user. Their static checks still run.
+    if problems or not agent_browser.available() or any("RADHA." in c for c in files.values()):
+        yield {"type": "problems", "problems": problems}
+        return
+    step_id = f"smoke-{uuid.uuid4().hex[:8]}"
+    yield {"type": "tool_start", "id": step_id, "name": "check_preview", "label": "Testing the app",
+           "args": {"path": "index.html"}}
+    try:
+        problems = await asyncio.wait_for(apps.smoke_test(files, app_id=app_id), SMOKE_TIMEOUT)
+    except Exception as exc:  # no browser on this server: the static checks stand
+        logger.warning("app smoke test failed: %s", str(exc)[:300])
+        yield {"type": "tool_end", "id": step_id, "name": "check_preview", "ok": True, "summary": "Skipped (no browser)", "output": "", "media": []}
+        yield {"type": "problems", "problems": []}
+        return
+    n = len(problems)
+    yield {"type": "tool_end", "id": step_id, "name": "check_preview", "ok": not problems, "output": "\n".join(problems), "media": [],
+           "summary": f"{n} error{'s' if n != 1 else ''} found" if problems else "Opened it and pressed every button: no errors"}
+    yield {"type": "problems", "problems": problems}
 
 
 async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: list, use_tools: bool, max_steps: int):
-    """The agent's events. In the App Builder, when the turn changed files and the app is left with
-    problems that crash or blank the page (see apps.app_problems), the model gets one more round to fix
-    them, and anything still wrong is told to the user instead of ending silently."""
+    """The agent's events. In the App Builder, when the turn changed files, the app is checked (missing files and
+    elements, scripts that don't parse) and opened in a real browser that presses its buttons. Anything that
+    breaks gets up to two rounds of fixes, and anything still wrong is told to the user instead of ending silently."""
     said, changed = [], False
     async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=use_tools,
                               max_steps=max_steps):
@@ -826,21 +854,30 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
         yield ev
     if not (ctx.app_id and use_tools and changed):
         return
-    problems = await apps.check_app(await apps.snapshot(ctx.app_id))
-    if not problems:
-        return
-    yield {"type": "text", "text": "\n\nChecking the app… I found a problem and I'm fixing it.\n\n"}
-    llm_messages.append({"role": "assistant", "content": "".join(said).strip() or "I wrote the files."})
-    llm_messages.append({"role": "user", "content": (
-        "Automatic check of the app found these problems:\n- " + "\n- ".join(problems)
-        + "\nFix every one now (read the files, then edit_file or write_file the missing parts so the whole app "
-        "works), then say in one short line what you fixed.")})
-    async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
-                              max_steps=REPAIR_STEPS):
-        yield ev
-    left = await apps.check_app(await apps.snapshot(ctx.app_id))
-    if left:
-        yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + left[0].split(" The file looks cut off")[0]
+    problems = []
+    for repair_round in range(REPAIR_ROUNDS + 1):
+        async for ev in _app_problems(ctx.app_id):
+            if ev["type"] == "problems":
+                problems = ev["problems"]
+            else:
+                yield ev
+        if not problems or repair_round == REPAIR_ROUNDS:
+            break
+        if repair_round == 0:
+            yield {"type": "text", "text": "\n\nChecking the app… I found a problem and I'm fixing it.\n\n"}
+        llm_messages.append({"role": "assistant", "content": "".join(said).strip() or "I wrote the files."})
+        llm_messages.append({"role": "user", "content": (
+            "Automatic test of the app found these problems:\n- " + "\n- ".join(problems)
+            + "\nFix every one now (read the files, then edit_file or write_file the missing parts so the whole app "
+            "works), then say in one short line what you fixed.")})
+        said = []
+        async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
+                                  max_steps=REPAIR_STEPS):
+            if ev["type"] == "text":
+                said.append(ev["text"])
+            yield ev
+    if problems:
+        yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + problems[0].split(" The file looks cut off")[0]
                + " Tap “Fix errors with AI” under the preview, or reply “fix it”."}
 
 
