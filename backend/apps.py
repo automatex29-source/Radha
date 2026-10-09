@@ -704,11 +704,57 @@ def _is_module(path: str, files: Dict[str, str]) -> bool:
     return tagged or bool(re.search(r"^\s*(?:import\s|export\s)", files[path], re.MULTILINE))
 
 
+_INLINE_SCRIPT_RE = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.IGNORECASE | re.DOTALL)
+_SCRIPT_TYPE_RE = re.compile(r"""\btype\s*=\s*["']?([\w/+.-]+)""", re.IGNORECASE)
+
+
+def _inline_scripts(html: str) -> List[tuple]:
+    """(first line, code, is_module) for each script written inside a page, not loaded from a file."""
+    out = []
+    for m in _INLINE_SCRIPT_RE.finditer(html):
+        attrs, code = m.group(1), m.group(2)
+        if re.search(r"\bsrc\s*=", attrs, re.IGNORECASE) or not code.strip():
+            continue
+        kind = (_SCRIPT_TYPE_RE.search(attrs) or [None, ""])[1].lower()
+        if kind not in ("", "text/javascript", "application/javascript", "module"):
+            continue  # JSON, templates, Babel/JSX: not plain JavaScript
+        out.append((html.count("\n", 0, m.start(2)) + 1, code, kind == "module"))
+    return out
+
+
+async def _inline_syntax_errors(files: Dict[str, str], node: str, tmp: str) -> List[str]:
+    """Scripts inside HTML pages that don't parse, so the page's buttons and features do nothing."""
+    problems = []
+    for path, html in files.items():
+        if not path.endswith((".html", ".htm")):
+            continue
+        for n, (first, code, module) in enumerate(_inline_scripts(html)[:6]):
+            target = os.path.join(tmp, f"inline{n}_" + re.sub(r"[^\w.-]", "_", path) + (".mjs" if module else ".cjs"))
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write(code)
+            try:
+                proc = await asyncio.create_subprocess_exec(node, "--check", target, stdout=asyncio.subprocess.DEVNULL,
+                                                            stderr=asyncio.subprocess.PIPE)
+                _, err = await asyncio.wait_for(proc.communicate(), timeout=10)
+            except (asyncio.TimeoutError, OSError):
+                continue
+            if proc.returncode:
+                lines = [l for l in err.decode("utf-8", "replace").splitlines() if l.strip()]
+                where = next((l.rsplit(":", 1)[-1] for l in lines if target in l and ":" in l), "")
+                error = next((l for l in lines if "Error" in l), "a syntax error")
+                line = f" near line {first + int(where) - 1}" if where.isdigit() else ""
+                problems.append(f"{path} has a JavaScript syntax error in a <script>{line} ({error.strip()[:160]}), "
+                                "so none of that script runs.")
+    return problems
+
+
 async def _syntax_errors(files: Dict[str, str]) -> List[str]:
-    """JavaScript files that don't parse (usually a file cut off mid-way), checked with `node --check`."""
+    """JavaScript that doesn't parse (usually a file cut off mid-way), in .js files and in pages' own <script>
+    tags, checked with `node --check`."""
     scripts = [p for p in files if p.endswith((".js", ".mjs"))]
     node = shutil.which("node")
-    if not scripts or not node:
+    pages = any(p.endswith((".html", ".htm")) for p in files)
+    if not (scripts or pages) or not node:
         return []
     problems = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -731,6 +777,7 @@ async def _syntax_errors(files: Dict[str, str]) -> List[str]:
                     if at_end or "end of input" in error or "Unterminated" in error else ""
                 problems.append(f"{path} has a syntax error{f' near line {where}' if where.isdigit() else ''} "
                                 f"({error.strip()[:160]}), so none of it runs.{cut}")
+        problems += await _inline_syntax_errors(files, node, tmp)
     return problems
 
 
