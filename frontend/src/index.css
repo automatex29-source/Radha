@@ -282,10 +282,10 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 }
 .dark .krish-canvas {
   background-image:
-    radial-gradient(45% 40% at 22% 0%, rgba(99, 102, 241, 0.16), transparent 70%),
-    radial-gradient(40% 45% at 100% 8%, rgba(56, 189, 248, 0.08), transparent 70%),
-    radial-gradient(45% 45% at 0% 100%, rgba(236, 72, 153, 0.09), transparent 70%),
-    radial-gradient(45% 45% at 100% 100%, rgba(139, 92, 246, 0.12), transparent 70%);
+    radial-gradient(50% 45% at 20% 0%, rgba(99, 102, 241, 0.30), transparent 70%),
+    radial-gradient(40% 45% at 100% 10%, rgba(56, 189, 248, 0.16), transparent 70%),
+    radial-gradient(45% 45% at 0% 100%, rgba(236, 72, 153, 0.16), transparent 70%),
+    radial-gradient(45% 45% at 100% 100%, rgba(139, 92, 246, 0.22), transparent 70%);
 }
 .krish-glass { background: rgba(255, 255, 255, 0.55); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 .dark .krish-glass { background: hsl(var(--sunken) / 0.72); }
