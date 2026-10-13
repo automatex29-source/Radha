@@ -9,8 +9,7 @@ import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, Database, Cpu
 import { api } from "@/lib/api";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
-
-const HERO = "https://images.unsplash.com/photo-1637946175559-22c4fe13fc54?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400";
+import Mascot from "@/components/Mascot";
 
 export default function AuthPage() {
   const { login, register, formatApiError } = useAuth();
@@ -44,11 +43,9 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="grid min-h-dvh w-full lg:grid-cols-2">
+    <div className="krish-canvas grid min-h-dvh w-full lg:grid-cols-2">
       {/* Showcase panel */}
-      <div className="relative hidden overflow-hidden border-r border-border lg:block">
-        <img src={HERO} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-tr from-background via-background/80 to-transparent" />
+      <div className="relative hidden overflow-hidden lg:block">
         <div className="relative z-10 flex h-full flex-col justify-between p-12">
           <div className="flex items-center gap-2.5">
             <BrandMark className="h-9 w-9" />
@@ -59,16 +56,17 @@ export default function AuthPage() {
           </div>
 
           <div className="max-w-md">
-            <h1 className="text-4xl font-extrabold leading-tight tracking-tighter text-foreground sm:text-5xl">
-              The intelligent workspace for serious work.
+            <Mascot className="krish-float -ml-2 mb-6 h-32 w-auto" />
+            <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-foreground xl:text-5xl">
+              Meet <span className="krish-gradient-text">Krish AI</span>, your smart helper.
             </h1>
             <p className="mt-4 text-base text-muted-foreground">
-              Real conversations. Real reasoning. Persistent memory of everything you build. Krish AI is the foundation of EmpireX's AI platform.
+              Ask anything, write, code, study and plan. All your chats are saved for you.
             </p>
-            <div className="mt-8 space-y-3 text-sm text-muted-foreground">
-              <Feature icon={Cpu} text="Chat, web search, apps, decks and docs in one place" />
-              <Feature icon={Database} text="Every conversation saved and reloadable" />
-              <Feature icon={ShieldCheck} text="Private — your workspace is yours alone" />
+            <div className="mt-8 space-y-3 text-sm text-foreground/80">
+              <Feature icon={Cpu} tone="bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300" text="Chat, apps, decks and docs in one place" />
+              <Feature icon={Database} tone="bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300" text="Every conversation saved" />
+              <Feature icon={ShieldCheck} tone="bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300" text="Private: your chats are yours alone" />
             </div>
           </div>
 
@@ -78,10 +76,9 @@ export default function AuthPage() {
 
       {/* Form panel */}
       <div className="relative flex items-center justify-center overflow-hidden px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:p-10">
-        <div className="radha-orb -top-20 left-1/2 h-64 w-64 -translate-x-1/2 bg-indigo-600/25 lg:hidden" />
         <ThemeToggle className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10" />
-        <div className="relative w-full max-w-sm radha-fade-up">
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
+        <div className="krish-glass relative w-full max-w-md rounded-3xl border border-white/70 p-6 shadow-[0_20px_60px_rgba(99,102,241,0.12)] radha-fade-up dark:border-white/5 sm:p-8">
+          <div className="mb-6 flex items-center gap-3 lg:hidden">
             <BrandMark className="h-11 w-11" />
             <div className="leading-none">
               <p className="text-3xl leading-none"><KrishWordmark /></p>
@@ -95,13 +92,13 @@ export default function AuthPage() {
           ) : (<>
 
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            {tab === "login" ? "Sign in to Krish AI" : "Create your workspace"}
+            {tab === "login" ? "Welcome back" : "Create your account"}
           </h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {tab === "login" ? "Enter your credentials to continue." : "Start building with Krish AI in seconds."}
+            {tab === "login" ? "Sign in to continue to Krish AI." : "It takes less than a minute."}
           </p>
 
-          <div className="mt-6 flex rounded-lg border border-border bg-card p-1">
+          <div className="mt-6 flex rounded-xl border border-border bg-card p-1">
             <TabBtn active={tab === "login"} onClick={() => setTab("login")} testId="auth-tab-login">Login</TabBtn>
             <TabBtn active={tab === "register"} onClick={() => setTab("register")} testId="auth-tab-register">Register</TabBtn>
           </div>
@@ -110,12 +107,12 @@ export default function AuthPage() {
             {tab === "register" && (
               <div className="space-y-1.5">
                 <Label htmlFor="name">Name</Label>
-                <Input id="name" data-testid="register-name-input" placeholder="Ada Lovelace" value={form.name} onChange={upd("name")} required autoComplete="name" className="h-11 bg-card" />
+                <Input id="name" data-testid="register-name-input" placeholder="Ada Lovelace" value={form.name} onChange={upd("name")} required autoComplete="name" className="h-11 rounded-xl bg-card" />
               </div>
             )}
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" data-testid={tab === "login" ? "login-email-input" : "register-email-input"} placeholder="you@company.com" value={form.email} onChange={upd("email")} required autoComplete="email" inputMode="email" className="h-11 bg-card" />
+              <Input id="email" type="email" data-testid={tab === "login" ? "login-email-input" : "register-email-input"} placeholder="you@company.com" value={form.email} onChange={upd("email")} required autoComplete="email" inputMode="email" className="h-11 rounded-xl bg-card" />
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -128,14 +125,14 @@ export default function AuthPage() {
                 )}
               </div>
               <div className="relative">
-                <Input id="password" type={showPw ? "text" : "password"} data-testid={tab === "login" ? "login-password-input" : "register-password-input"} placeholder="••••••••" value={form.password} onChange={upd("password")} required minLength={6} autoComplete={tab === "login" ? "current-password" : "new-password"} className="h-11 bg-card pr-11" />
+                <Input id="password" type={showPw ? "text" : "password"} data-testid={tab === "login" ? "login-password-input" : "register-password-input"} placeholder="At least 6 characters" value={form.password} onChange={upd("password")} required minLength={6} autoComplete={tab === "login" ? "current-password" : "new-password"} className="h-11 rounded-xl bg-card pr-11" />
                 <button type="button" onClick={() => setShowPw((s) => !s)} aria-label={showPw ? "Hide password" : "Show password"} className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground" data-testid="toggle-password-visibility">
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            <Button type="submit" disabled={busy} data-testid={tab === "login" ? "login-submit-button" : "register-submit-button"} className="group h-11 w-full font-semibold">
+            <Button type="submit" disabled={busy} data-testid={tab === "login" ? "login-submit-button" : "register-submit-button"} className="group h-11 w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 font-semibold shadow-[0_8px_24px_rgba(99,102,241,0.35)] hover:from-indigo-500 hover:to-violet-600">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : (
                 <>{tab === "login" ? "Sign in" : "Create account"}<ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" /></>
               )}
@@ -184,7 +181,7 @@ function ForgotPassword({ email, onEmail, busy, sent, onSubmit, onBack, onRetry 
             <div className="space-y-1.5">
               <Label htmlFor="reset-email">Email</Label>
               <Input id="reset-email" type="email" autoComplete="email" inputMode="email" autoFocus data-testid="forgot-email-input"
-                placeholder="you@company.com" value={email} onChange={onEmail} required className="h-11 bg-card" />
+                placeholder="you@company.com" value={email} onChange={onEmail} required className="h-11 rounded-xl bg-card" />
             </div>
             <Button type="submit" disabled={busy} data-testid="send-reset-link-button" className="h-11 w-full font-semibold">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send reset link"}
@@ -196,16 +193,16 @@ function ForgotPassword({ email, onEmail, busy, sent, onSubmit, onBack, onRetry 
   );
 }
 
-const Feature = ({ icon: Icon, text }) => (
+const Feature = ({ icon: Icon, text, tone }) => (
   <div className="flex items-center gap-3">
-    <Icon className="h-4 w-4 text-primary" />
+    <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${tone}`}><Icon className="h-4 w-4" /></span>
     <span>{text}</span>
   </div>
 );
 
 const TabBtn = ({ active, onClick, children, testId }) => (
   <button type="button" onClick={onClick} data-testid={testId}
-    className={`flex-1 rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${active ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"}`}>
+    className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${active ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
     {children}
   </button>
 );
