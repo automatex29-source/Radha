@@ -340,13 +340,22 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 @keyframes krish-blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .krish-aurora span, .krish-orbit, .krish-caret { animation: none; } }
 
-/* Krish chakra mark: black blade (white in dark mode), orange hub. Turns a little on hover, spins while Krish writes. */
+/* Krish chakra mark: black blade (white in dark mode), glowing orange hub.
+   Gives a quick turn on its own every few seconds, turns on hover, spins while Krish writes. */
 .krish-chakra { color: #111111; overflow: visible; }
 .dark .krish-chakra { color: #F5F5F5; }
-.krish-chakra-blade { transform-origin: 50px 50px; transition: transform 0.7s cubic-bezier(0.3, 1.3, 0.5, 1); }
-.krish-chakra-hub { transform-origin: 50px 50px; }
+.krish-chakra-blade, .krish-chakra-idle, .krish-chakra-hub, .krish-chakra-glow { transform-origin: 50px 50px; }
+.krish-chakra-blade { transition: transform 0.7s cubic-bezier(0.3, 1.3, 0.5, 1); }
+.krish-chakra-idle { animation: krish-chakra-idle 7s cubic-bezier(0.55, 0, 0.25, 1) infinite; }
+.krish-chakra-glow { opacity: 0; animation: krish-chakra-flash 7s ease-out infinite; }
 .krish-chakra:hover .krish-chakra-blade { transform: rotate(60deg); }
+.krish-chakra.is-thinking .krish-chakra-idle { animation: none; }
 .krish-chakra.is-thinking .krish-chakra-blade { animation: krish-spin 1.8s linear infinite; }
 .krish-chakra.is-thinking .krish-chakra-hub { animation: krish-chakra-breathe 1.8s ease-in-out infinite; }
-@keyframes krish-chakra-breathe { 50% { transform: scale(0.78); } }
-@media (prefers-reduced-motion: reduce) { .krish-chakra-blade, .krish-chakra-hub { animation: none !important; transition: none; } }
+.krish-chakra.is-thinking .krish-chakra-glow { animation: krish-chakra-glow 1.8s ease-in-out infinite; }
+/* 120° is four teeth, so the jump back to 0 is invisible. */
+@keyframes krish-chakra-idle { 0%, 84% { transform: rotate(0deg); } 100% { transform: rotate(120deg); } }
+@keyframes krish-chakra-flash { 0%, 82% { opacity: 0; transform: scale(0.8); } 92% { opacity: 0.35; transform: scale(1.5); } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes krish-chakra-glow { 0%, 100% { opacity: 0.15; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.5); } }
+@keyframes krish-chakra-breathe { 50% { transform: scale(0.8); } }
+@media (prefers-reduced-motion: reduce) { .krish-chakra-blade, .krish-chakra-idle, .krish-chakra-hub, .krish-chakra-glow { animation: none !important; transition: none; } }
