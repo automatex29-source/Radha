@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&family=JetBrains+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Caveat:wght@600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&family=JetBrains+Mono:wght@400;500;600&family=Caveat:wght@600&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -241,8 +241,8 @@
 .radha-prose tbody tr:nth-child(even) td { background: hsl(var(--primary) / 0.035); }
 .radha-prose th { background: hsl(var(--primary) / 0.08); font-weight: 600; color: hsl(var(--foreground)); }
 
-/* Krish AI wordmark: chunky Bricolage with a glowing "AI" */
-.krish-wordmark { font-family: 'Bricolage Grotesque', var(--font-sans); font-weight: 800; letter-spacing: -0.035em; white-space: nowrap; }
+/* Krish AI wordmark: clean Inter bold with the orange "AI" of the logo */
+.krish-wordmark { font-family: var(--font-sans); font-weight: 700; letter-spacing: -0.03em; white-space: nowrap; }
 .krish-wordmark-ai { background: linear-gradient(100deg, #FFB547 0%, #FF8A1E 55%, #F2650F 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 /* --- Phones and touch screens --- */

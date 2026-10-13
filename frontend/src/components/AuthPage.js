@@ -51,7 +51,7 @@ export default function AuthPage() {
             <BrandMark className="h-9 w-9" />
             <div className="leading-none">
               <p className="text-2xl leading-none"><KrishWordmark /></p>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by EmpireX</p>
+              <p className="mt-1 text-xs font-medium text-muted-foreground">by EmpireX</p>
             </div>
           </div>
 
@@ -82,7 +82,7 @@ export default function AuthPage() {
             <BrandMark className="h-11 w-11" />
             <div className="leading-none">
               <p className="text-3xl leading-none"><KrishWordmark /></p>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by EmpireX</p>
+              <p className="mt-1 text-xs font-medium text-muted-foreground">by EmpireX</p>
             </div>
           </div>
 
