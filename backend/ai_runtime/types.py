@@ -24,6 +24,7 @@ class AIRequest:
     system: Optional[str] = None
     session_id: str = "radha-session"
     max_tokens: int = 4096
+    think: object = False  # how hard a reasoning model thinks (agent.llm.reasoning_effort)
 
 
 @dataclass

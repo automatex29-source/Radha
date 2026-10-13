@@ -239,6 +239,11 @@ class TestStudyAndThink:
         assert llm.reasoning_effort("openai/gpt-oss-120b", True) == "medium"
         assert llm.reasoning_effort("claude-sonnet-4-6", True) == "high"
         assert llm.reasoning_effort("claude-sonnet-4-6", False) is None
+        # a hard question without Think: the free models think as hard as Think lets them; paid ones are unchanged
+        assert llm.reasoning_effort("openai/gpt-oss-120b", llm.DEEPER) == "medium"
+        assert llm.reasoning_effort("cerebras/gpt-oss-120b", llm.DEEPER) == "high"
+        assert llm.reasoning_effort("claude-sonnet-4-6", llm.DEEPER) is None
+        assert llm.reasoning_effort("gemini-3.5-flash-lite", llm.DEEPER) is None
 
     def test_matplotlib_chart_is_returned_without_cache_files(self):
         pytest.importorskip("matplotlib")
