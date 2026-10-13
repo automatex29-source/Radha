@@ -310,7 +310,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
 
   return (
     <div className="group flex gap-3 radha-fade-up" data-testid={`ai-message-item-${message.id}`}>
-      <BrandMark className="mt-0.5 h-8 w-8 shrink-0" />
+      <BrandMark className="mt-0.5 h-8 w-8 shrink-0" thinking={streaming} />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
           <KrishWordmark className="text-[15px]" />

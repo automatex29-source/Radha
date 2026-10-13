@@ -71,7 +71,7 @@
 @layer base {
   /* Light theme (Daylight Studio) */
   :root {
-    --background: 246 60% 98.5%;   /* #F8F7FE soft lavender white */
+    --background: 0 0% 100%;       /* plain white */
     --foreground: 224 32% 12%;     /* #151A28 */
     --card: 0 0% 100%;
     --card-foreground: 224 32% 12%;
@@ -102,7 +102,7 @@
     --scrollbar: 222 14% 80%;
     --scrollbar-hover: 222 12% 68%;
     --grid-line: rgba(15, 23, 42, 0.05);
-    --glow: rgba(99, 102, 241, 0.08);
+    --glow: transparent;
     --heading-gradient: linear-gradient(170deg, #0F172A 0%, #3730A3 70%, #6366F1 130%);
   }
 
@@ -241,9 +241,11 @@
 .radha-prose tbody tr:nth-child(even) td { background: hsl(var(--primary) / 0.035); }
 .radha-prose th { background: hsl(var(--primary) / 0.08); font-weight: 600; color: hsl(var(--foreground)); }
 
-/* Krish AI wordmark: chunky Bricolage with a glowing "AI" */
-.krish-wordmark { font-family: 'Bricolage Grotesque', 'Plus Jakarta Sans', sans-serif; font-weight: 800; letter-spacing: -0.035em; white-space: nowrap; }
-.krish-wordmark-ai { background: linear-gradient(100deg, #FFB547 0%, #FF8A1E 55%, #F2650F 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Krish AI wordmark: geometric Sora in the text colour; the i's dot and "AI" share the chakra's orange */
+.krish-wordmark { font-family: 'Sora', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.045em; white-space: nowrap; color: hsl(var(--foreground)); }
+.krish-wordmark-i { position: relative; }
+.krish-wordmark-i::after { content: ""; position: absolute; left: 50%; top: 0.02em; width: 0.21em; height: 0.21em; border-radius: 9999px; background: #FF8A1E; transform: translateX(-50%); }
+.krish-wordmark-ai { color: #FF8A1E; margin-left: 0.04em; }
 
 /* --- Phones and touch screens --- */
 html { -webkit-text-size-adjust: 100%; }
@@ -271,15 +273,7 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 .krish-fade-in { animation: krish-fade-in 0.2s ease both; }
 
 /* --- Refreshed look: soft pastel canvas, glass panels, colourful cards --- */
-.krish-canvas {
-  background-color: hsl(var(--background));
-  background-image:
-    radial-gradient(45% 40% at 22% 0%, rgba(214, 205, 255, 0.55), transparent 70%),
-    radial-gradient(40% 45% at 100% 8%, rgba(196, 226, 255, 0.55), transparent 70%),
-    radial-gradient(45% 45% at 0% 100%, rgba(255, 196, 222, 0.5), transparent 70%),
-    radial-gradient(40% 40% at 55% 105%, rgba(255, 219, 196, 0.45), transparent 70%),
-    radial-gradient(45% 45% at 100% 100%, rgba(203, 188, 255, 0.5), transparent 70%);
-}
+.krish-canvas { background-color: hsl(var(--background)); }
 .dark .krish-canvas {
   background-image:
     radial-gradient(50% 45% at 20% 0%, rgba(99, 102, 241, 0.30), transparent 70%),
@@ -329,6 +323,7 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 .krish-aurora span:nth-child(2) { width: 40%; height: 75%; right: -8%; top: 10%; background: rgba(99, 140, 255, 0.30); animation: krish-drift-b 17s ease-in-out infinite; }
 .krish-aurora span:nth-child(3) { width: 35%; height: 70%; left: 35%; bottom: -45%; background: rgba(236, 72, 153, 0.20); animation: krish-drift-c 20s ease-in-out infinite; }
 .dark .krish-aurora { opacity: 0.35; }
+html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none; } /* light theme stays plain white */
 @keyframes krish-drift-a { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(30%, 25%) scale(1.15); } }
 @keyframes krish-drift-b { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-35%, -20%) scale(0.9); } }
 @keyframes krish-drift-c { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-25%, -30%) scale(1.2); } }
@@ -344,3 +339,23 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 .krish-caret { animation: krish-blink 1s steps(1) infinite; }
 @keyframes krish-blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .krish-aurora span, .krish-orbit, .krish-caret { animation: none; } }
+
+/* Krish chakra mark: black blade (white in dark mode), glowing orange hub.
+   Gives a quick turn on its own every few seconds, turns on hover, spins while Krish writes. */
+.krish-chakra { color: #111111; overflow: visible; }
+.dark .krish-chakra { color: #F5F5F5; }
+.krish-chakra-blade, .krish-chakra-idle, .krish-chakra-hub, .krish-chakra-glow { transform-origin: 50px 50px; }
+.krish-chakra-blade { transition: transform 0.7s cubic-bezier(0.3, 1.3, 0.5, 1); }
+.krish-chakra-idle { animation: krish-chakra-idle 7s cubic-bezier(0.55, 0, 0.25, 1) infinite; }
+.krish-chakra-glow { opacity: 0; animation: krish-chakra-flash 7s ease-out infinite; }
+.krish-chakra:hover .krish-chakra-blade { transform: rotate(60deg); }
+.krish-chakra.is-thinking .krish-chakra-idle { animation: none; }
+.krish-chakra.is-thinking .krish-chakra-blade { animation: krish-spin 1.8s linear infinite; }
+.krish-chakra.is-thinking .krish-chakra-hub { animation: krish-chakra-breathe 1.8s ease-in-out infinite; }
+.krish-chakra.is-thinking .krish-chakra-glow { animation: krish-chakra-glow 1.8s ease-in-out infinite; }
+/* 120° is four teeth, so the jump back to 0 is invisible. */
+@keyframes krish-chakra-idle { 0%, 84% { transform: rotate(0deg); } 100% { transform: rotate(120deg); } }
+@keyframes krish-chakra-flash { 0%, 82% { opacity: 0; transform: scale(0.8); } 92% { opacity: 0.35; transform: scale(1.5); } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes krish-chakra-glow { 0%, 100% { opacity: 0.15; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.5); } }
+@keyframes krish-chakra-breathe { 50% { transform: scale(0.8); } }
+@media (prefers-reduced-motion: reduce) { .krish-chakra-blade, .krish-chakra-idle, .krish-chakra-hub, .krish-chakra-glow { animation: none !important; transition: none; } }
