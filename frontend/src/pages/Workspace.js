@@ -704,7 +704,9 @@ export default function Workspace({ mode = null }) {
                   onOpenCode={() => setCodePanel("live")} codeActive={panelLive} />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
-                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1"
+                  // Keep the typing focus so the phone tab bar doesn't reappear and move these buttons mid-tap.
+                  onMouseDown={(e) => e.preventDefault()}>
                   {messages[messages.length - 1].webHint && !webMode && (
                     <Button size="sm" onClick={searchWebNow} data-testid="web-hint-button"
                       title="This answer may change over time. Turn on web search for the latest."

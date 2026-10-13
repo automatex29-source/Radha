@@ -139,7 +139,9 @@ export default function ComposerInput({
           ))}
         </div>
       )}
-      <div {...dropProps} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}@container rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
+      {/* Tapping a button here keeps the typing focus: on phones losing it brings back the tab bar, which
+          moved the button away mid-tap so the tap landed on the tab bar instead. */}
+      <div {...dropProps} onMouseDown={(e) => { if (e.target.closest?.("button")) e.preventDefault(); }} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}@container rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
         <textarea
           ref={ref}
           data-testid="message-composer-textarea"
@@ -214,9 +216,6 @@ export default function ComposerInput({
             </Button>
           ) : (
             <Button size="icon" onClick={onSend} onMouseDown={(e) => e.preventDefault()} disabled={!canSend} data-testid="send-message-button" aria-label="Send"
-              // Keep the typing focus: on phones losing it brings back the tab bar, which moved this button
-              // away mid-tap so the tap landed on the tab bar and the message wasn't sent.
-              onMouseDown={(e) => e.preventDefault()}
               className="h-11 w-11 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_8px_24px_rgba(99,102,241,0.45)] hover:from-indigo-500 hover:to-violet-600">
               <ArrowUp className="h-4 w-4" />
             </Button>
