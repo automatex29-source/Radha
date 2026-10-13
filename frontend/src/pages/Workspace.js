@@ -137,7 +137,7 @@ export default function Workspace({ mode = null }) {
   const [study, setStudy] = useState(() => readFlag("krish.study"));
   const toggleThink = () => setThink((v) => { saveFlag("krish.think", !v); return !v; });
   const toggleStudy = () => setStudy((v) => { saveFlag("krish.study", !v); return !v; });
-  // Search: every question searches the web and cites its sources (Perplexity-style).
+  // Web search is off unless turned on; when on, every question searches the web and cites its sources.
   const [webMode, setWebMode] = useState(() => readFlag("krish.web"));
   const toggleWeb = () => setWebMode((v) => { saveFlag("krish.web", !v); return !v; });
   // Where Search looks (Web, Academic, Social, Video) and Pro search (several searches, reads the pages).
@@ -153,6 +153,11 @@ export default function Workspace({ mode = null }) {
     if (!v && !webMode) { setWebMode(true); saveFlag("krish.web", true); }
     return !v;
   });
+  // Krish suggested the web for this answer: turn web search on and answer again with it.
+  const searchWebNow = () => {
+    if (!webMode) { setWebMode(true); saveFlag("krish.web", true); }
+    regenerate({ withWeb: true });
+  };
   const searchOpts = () => (webMode && !counselling ? { web: true, focus, pro } : { web: false });
 
   const scrollRef = useRef(null);
@@ -160,6 +165,7 @@ export default function Workspace({ mode = null }) {
   const streamTextRef = useRef("");
   const streamSourcesRef = useRef([]);
   const streamRelatedRef = useRef([]);
+  const streamWebHintRef = useRef(false);
   const streamStepsRef = useRef([]);
 
   // Chat always uses Krish AI's tools (web search, code, files) whenever the model supports them; no mode switch.
@@ -333,6 +339,7 @@ export default function Workspace({ mode = null }) {
     streamTextRef.current = "";
     streamSourcesRef.current = [];
     streamRelatedRef.current = [];
+    streamWebHintRef.current = false;
     streamStepsRef.current = [];
     const controller = new AbortController();
     abortRef.current = controller;
@@ -379,6 +386,10 @@ export default function Workspace({ mode = null }) {
             showPlanLimit(JSON.parse(dataStr || '""'));
             continue;
           }
+          if (eventName === "web_hint") {
+            streamWebHintRef.current = true;
+            continue;
+          }
           if (eventName === "related") {
             streamRelatedRef.current = JSON.parse(dataStr || "[]");
             continue;
@@ -416,6 +427,7 @@ export default function Workspace({ mode = null }) {
       if (finalText || steps.length) {
         setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model, stopped,
           sources: streamSourcesRef.current.length ? streamSourcesRef.current : null, related: streamRelatedRef.current,
+          webHint: streamWebHintRef.current,
           steps, media: steps.flatMap((s) => s.media || []) }]);
       }
       setStreamText("");
@@ -585,14 +597,15 @@ export default function Workspace({ mode = null }) {
   const sendRef = useRef(sendMessage);
   sendRef.current = sendMessage;
 
-  const regenerate = async () => {
+  const regenerate = async ({ withWeb = false } = {}) => {
     if (!activeId || streaming) return;
     setMessages((m) => {
       const copy = [...m];
       if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
       return copy;
     });
-    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts() }, activeId);
+    const search = withWeb ? { web: true, focus, pro } : searchOpts();
+    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...search }, activeId);
   };
 
   // Edit an earlier question (like ChatGPT): the answers after it go, and Krish answers the new wording.
@@ -692,8 +705,15 @@ export default function Workspace({ mode = null }) {
                   onOpenCode={() => setCodePanel("live")} codeActive={panelLive} />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
-                <div className="flex justify-center pt-1">
-                  <Button variant="outline" size="sm" onClick={regenerate} data-testid="regenerate-button"
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  {messages[messages.length - 1].webHint && !webMode && (
+                    <Button size="sm" onClick={searchWebNow} data-testid="web-hint-button"
+                      title="This answer may change over time. Turn on web search for the latest."
+                      className="gap-1.5 rounded-full bg-primary text-primary-foreground shadow-sm hover:bg-primary/90">
+                      <Globe className="h-3.5 w-3.5" /> Get the latest from the web
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => regenerate()} data-testid="regenerate-button"
                     className="gap-1.5 border-border bg-card text-muted-foreground hover:text-foreground">
                     <RefreshCw className="h-3.5 w-3.5" /> Regenerate
                   </Button>
