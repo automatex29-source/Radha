@@ -17,7 +17,6 @@ import { toast } from "sonner";
 import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import BrandMark from "@/components/BrandMark";
-import TopStories from "@/components/TopStories";
 import { useAuth } from "@/context/AuthContext";
 import UpgradeButton from "@/components/UpgradeButton";
 import ModelMenu from "@/components/ModelMenu";
@@ -650,7 +649,7 @@ export default function Workspace({ mode = null }) {
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <PanelLeft className="h-5 w-5" />
             </button>
-            <h1 data-testid="active-conversation-title" className="krish-tab-title truncate text-sm font-semibold tracking-tight max-sm:hidden">
+            <h1 data-testid="active-conversation-title" className={`krish-tab-title truncate text-sm font-semibold tracking-tight max-sm:hidden ${!activeConv && !counselling ? "invisible" : ""}`}>
               {activeConv ? activeConv.title : t(counselling ? "counsellor" : "newConversation")}
             </h1>
             {project && (
@@ -838,7 +837,7 @@ function TopicCard({ s, i, onPick }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">{s.title}</p>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">{s.hint}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground max-sm:hidden">{s.hint}</p>
       </div>
       <ArrowUpRight className={`h-4 w-4 shrink-0 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 ${t.arrow}`} />
     </button>
@@ -878,7 +877,7 @@ function EmptyState({ onPick }) {
   const [topic, setTopic] = useState("popular");
   const items = TOPICS.find((x) => x.id === topic)?.items || [];
   return (
-    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-4xl flex-col justify-center px-4 py-4 sm:px-6">
+    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col justify-center px-3 py-4 sm:px-4">
       <div className="krish-hero radha-fade-up relative overflow-hidden rounded-3xl border border-border bg-card/60 px-5 py-4 sm:px-8 sm:py-5 [@media(max-height:760px)]:sm:py-3">
         <div className="krish-aurora" aria-hidden="true"><span /><span /><span /></div>
         <div className="krish-hero-grid" aria-hidden="true" />
@@ -910,11 +909,10 @@ function EmptyState({ onPick }) {
         })}
       </div>
 
-      <div key={topic} className="mt-2.5 grid w-full gap-2 sm:grid-cols-2">
+      <div key={topic} className="mt-2.5 grid w-full gap-2 sm:grid-cols-2 max-sm:[&>*:nth-child(4)]:hidden">
         {items.map((s, i) => <TopicCard key={s.title} s={s} i={i} onPick={onPick} />)}
       </div>
-      <TopStories onAsk={onPick} />
-    </div>
+          </div>
   );
 }
 
