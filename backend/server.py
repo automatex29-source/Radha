@@ -281,6 +281,7 @@ def public_message(doc: dict) -> dict:
         "model": doc.get("model"),
         "sources": doc.get("sources"),
         "related": doc.get("related") or [],
+        "webHint": bool(doc.get("webHint")),
         "images": doc.get("images") or [],
         "steps": doc.get("steps") or [],
         "media": doc.get("media") or [],
@@ -619,6 +620,11 @@ NO_RESULTS_NOTE_PLAIN = (
 )
 STREAM_FAILED_NOTE = ("Sorry, the AI model stopped before writing the answer (it may be busy or out of free "
                       "requests for now). Tap Regenerate, or pick another model from the menu at the top.")
+WEB_OFF_NOTE = (
+    "Web search is off for this answer (the user turns it on with the Web button). Answer from what you know and "
+    "never say you searched. If the answer depends on facts that change (news, prices, who holds a job), add one "
+    "short line that it may be out of date. Live exchange rates, weather or stock data given below are current."
+)
 MAX_WEB_SEARCHES = 3  # per answer, when nothing was searched before the model started
 
 AGENT_PROMPT = (
@@ -976,6 +982,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         agent = True  # the app builder always works with its tools
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
+    # Web search runs only when the user turns it on (or asks for a search in words); automations and the app
+    # builder keep it. Otherwise a question that needs fresh facts gets a "Search the web" suggestion.
+    asked = live_search.asks_for_search(last_user or "")
+    searching = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked
+    web = web or asked
+    web_hint = not searching and not counselling and not voice and live_search.suggests_web(last_user or "")
+    if not searching and not counselling:
+        system_parts.append(WEB_OFF_NOTE)
     # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
     if not app_id and not counselling:
         user_texts = [m["content"] for m in history_docs if m["role"] == "user"]
@@ -983,14 +997,15 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             pro_step = {"id": "pro-search", "name": "pro_search", "label": "Pro search",
                         "args": {"query": (last_user or "")[:200]}, "status": "running"}
             yield f"event: tool\ndata: {_sse_json(pro_step)}\n\n"
-        found = await live_search.gather(user_texts, force=web, focus=focus, pro=pro, model=model)
+        found = await live_search.gather(user_texts, search=searching, force=web, focus=focus, pro=pro, model=model)
         if found["context"]:
             system_parts.append(found["context"])
+            web_hint = web_hint and searching  # a live rates, weather or stock card already answered it
         if (web or pro) and not any(c.get("type") in ("web", "video") for c in found["sources"]):
             system_parts.append(NO_RESULTS_NOTE if agent else NO_RESULTS_NOTE_PLAIN)
         sources = sources + found["sources"]
         if not (web or pro or focus != "web"):
-            # The automatic search runs on every answer, but its source cards only show when the answer cites them.
+            # Automations search on their own; those source cards only show when the answer cites them.
             quiet_cards = [c for c in found["sources"] if c.get("type") in ("web", "video")]
         if pro:
             pages = sum(1 for s in found["sources"] if s.get("type") in ("web", "video", "weather", "stock"))
@@ -1040,7 +1055,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             searched = any(s.get("type") in ("web", "video") for s in sources)
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model, sources=None if app_id else sources,
-                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES))
+                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching)
             stream_fn = functools.partial(agent_llm.stream_completion, think=think)
             async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS):
                 if ev["type"] == "text":
@@ -1108,6 +1123,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             content, follow_ups = related.split(content)
             if follow_ups and not stopped:
                 yield f"event: related\ndata: {_sse_json(follow_ups)}\n\n"
+        if web_hint and not stopped:
+            yield "event: web_hint\ndata: true\n\n"
         if quiet_cards:
             if _CITATION.search(content):
                 if not stopped:
@@ -1127,6 +1144,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 "model": model,
                 "sources": sources or None,
                 "related": follow_ups or None,
+                "webHint": web_hint or None,
                 "steps": steps or None,
                 "media": produced or None,
                 "stopped": stopped or None,

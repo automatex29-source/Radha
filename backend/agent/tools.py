@@ -34,6 +34,7 @@ class ToolContext:
     # so the model's [n] citations point at real cards.
     sources: Optional[List[dict]] = None
     searches_left: Optional[int] = None  # None means no limit
+    web: bool = True  # False when the user hasn't turned web search on: web_search and deep_research are hidden
     limit_hit: Optional[str] = None  # set when a plan limit stopped a tool, so the app can offer an upgrade
 
 
@@ -57,11 +58,14 @@ class Tool:
     label: str = ""
     available: Callable[[], bool] = lambda: True
     scope: str = "general"  # "app" tools are only offered inside an app-builder conversation
+    needs_web: bool = False  # searches the web, so only offered when web search is on
 
     def usable(self, ctx: Optional[ToolContext]) -> bool:
         if self.scope == "app" and not (ctx and ctx.app_id):
             return False
         if self.scope != "app" and ctx and ctx.app_id and ctx.focused:
+            return False
+        if self.needs_web and ctx and not ctx.web:
             return False
         return self.available()
 
@@ -406,7 +410,7 @@ def default_registry() -> ToolRegistry:
                 "query": {"type": "string", "description": "Search query"},
                 "max_results": {"type": "integer", "description": "1-10, default 6"},
             }, "required": ["query"]},
-            handler=_web_search))
+            handler=_web_search, needs_web=True))
         .register(Tool(
             name="fetch_url", label="Read web page",
             description="Fetch a public web page and return its readable text and main links.",
@@ -540,7 +544,7 @@ def default_registry() -> ToolRegistry:
                 "format": {"type": "string", "description": "pdf (default) or docx"},
                 "filename": {"type": "string", "description": "Short file name without extension"},
             }, "required": ["question"]},
-            handler=_deep_research))
+            handler=_deep_research, needs_web=True))
         .register(Tool(
             name="create_html", label="Create web page",
             description="Create a self-contained HTML page (inline CSS/JS; CDN scripts allowed) that the user can "

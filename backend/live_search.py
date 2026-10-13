@@ -1,10 +1,8 @@
-"""Automatic live web lookups for plain chat.
+"""Live web lookups for chat.
 
-Plain chat has no tools, so without this the model answers questions about
-today's rates, news or prices from stale training data. When a question looks
-like it needs current information, RADHA searches the web (DuckDuckGo, no key
-needed) and, for currency questions, pulls live exchange rates from a free API,
-then hands the results to the model as context.
+Web search runs only when the user turns it on (the Web button) or asks for it in words ("search the web
+for..."). Otherwise only the quick live cards run (exchange rates, weather, stocks), and a question that needs
+fresh facts gets a suggestion to turn web search on (see suggests_web).
 """
 import asyncio
 import logging
@@ -80,6 +78,21 @@ _SMALL_TALK = re.compile(
     r"[\s!.,?🙏😊👍]*(krish|bro|dear|ji)?[\s!.,?🙏😊👍]*$",
     re.I,
 )
+# The user asked for a search in words, so it runs even with the Web button off.
+_ASKS_SEARCH = re.compile(
+    r"\b(search|google|browse|web ?search|look (it |this |that )?up)\b|\b(on|from|in) the (web|internet|net)\b|"
+    r"\b(internet|online|net) (pe|par|se)\b|\bsearch (karo|kar|kro)\b",
+    re.I,
+)
+# Questions whose answer changes over time: with web search off, Krish suggests turning it on.
+_FRESH = re.compile(
+    r"\b(today|todays|tonight|right now|current(ly)?|latest|recent(ly)?|this (week|month|year)|yesterday|"
+    r"news|headlines?|price|prices|rate|rates|score|scores|stock|share price|sensex|nifty|bitcoin|btc|"
+    r"crypto|gold|silver|petrol|diesel|election|results?|who won|who is the|20[2-9]\d|best(?! (way|practices?|of luck))|top \d+|vs\.?|"
+    r"versus|compare|cheapest|release date|launch(ed)?|ceo|founder|president|prime minister|net worth|"
+    r"population|salary|near me|aaj|abhi|taaza|khabar)\b",
+    re.I,
+)
 MAX_SEARCH_CHARS = 1500  # long pasted text (an essay, a log) isn't a search query
 
 
@@ -91,6 +104,18 @@ def needs_lookup(text: str) -> bool:
     if _CURRENT.search(text) or _CURRENCY.search(text):
         return True
     return len(text) <= MAX_SEARCH_CHARS and "```" not in text
+
+
+def asks_for_search(text: str) -> bool:
+    """True when the user asked in words for a web search."""
+    return bool(text) and len(text) <= MAX_SEARCH_CHARS and bool(_ASKS_SEARCH.search(text))
+
+
+def suggests_web(text: str) -> bool:
+    """True when the answer likely depends on fresh facts, so turning web search on would help."""
+    if not text or len(text) > MAX_SEARCH_CHARS or "```" in text or _ABOUT_US.search(text) or _SMALL_TALK.match(text):
+        return False
+    return bool(_FRESH.search(text) or _CURRENCY.search(text))
 
 
 def domain_of(url: str) -> str:
