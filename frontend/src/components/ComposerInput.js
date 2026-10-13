@@ -206,9 +206,6 @@ export default function ComposerInput({
                 <X className="h-3 w-3" /><span className="@max-lg:hidden">Clear</span>
               </button>
             )}
-            <span className="ml-1 hidden whitespace-nowrap text-[11px] text-muted-foreground @2xl:inline">
-              {t.parts("toSend", { enter: <span key="k" className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-primary/15 dark:text-brand">Enter</span> })}
-            </span>
           </div>
           {streaming ? (
             <Button size="icon" onClick={onStop} onMouseDown={(e) => e.preventDefault()} data-testid="stop-generation-button" title="Stop (Esc)" aria-label="Stop the reply"
@@ -216,7 +213,7 @@ export default function ComposerInput({
               <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
           ) : (
-            <Button size="icon" onClick={onSend} disabled={!canSend} data-testid="send-message-button" aria-label="Send"
+            <Button size="icon" onClick={onSend} onMouseDown={(e) => e.preventDefault()} disabled={!canSend} data-testid="send-message-button" aria-label="Send"
               // Keep the typing focus: on phones losing it brings back the tab bar, which moved this button
               // away mid-tap so the tap landed on the tab bar and the message wasn't sent.
               onMouseDown={(e) => e.preventDefault()}

@@ -838,7 +838,7 @@ function TopicCard({ s, i, onPick }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">{s.title}</p>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">{s.hint}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground max-sm:hidden">{s.hint}</p>
       </div>
       <ArrowUpRight className={`h-4 w-4 shrink-0 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 ${t.arrow}`} />
     </button>
@@ -910,10 +910,10 @@ function EmptyState({ onPick }) {
         })}
       </div>
 
-      <div key={topic} className="mt-2.5 grid w-full gap-2 sm:grid-cols-2">
+      <div key={topic} className="mt-2.5 grid w-full gap-2 sm:grid-cols-2 max-sm:[&>*:nth-child(4)]:hidden">
         {items.map((s, i) => <TopicCard key={s.title} s={s} i={i} onPick={onPick} />)}
       </div>
-      <TopStories onAsk={onPick} />
+      <div className="max-sm:hidden [@media(max-height:700px)]:hidden"><TopStories onAsk={onPick} /></div>
     </div>
   );
 }
