@@ -338,9 +338,9 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 @keyframes krish-blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .krish-aurora span, .krish-orbit, .krish-caret { animation: none; } }
 
-/* Krish chakra mark: indigo blade, orange hub. Turns a little on hover, spins while Krish writes. */
-.krish-chakra { color: #4F46E5; overflow: visible; }
-.dark .krish-chakra { color: #8B8DFF; }
+/* Krish chakra mark: black blade (white in dark mode), orange hub. Turns a little on hover, spins while Krish writes. */
+.krish-chakra { color: #111111; overflow: visible; }
+.dark .krish-chakra { color: #F5F5F5; }
 .krish-chakra-blade { transform-origin: 50px 50px; transition: transform 0.7s cubic-bezier(0.3, 1.3, 0.5, 1); }
 .krish-chakra-hub { transform-origin: 50px 50px; }
 .krish-chakra:hover .krish-chakra-blade { transform: rotate(60deg); }
