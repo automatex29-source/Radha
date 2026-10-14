@@ -138,6 +138,11 @@ export default function AuthPage() {
               )}
             </Button>
           </form>
+          <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground" data-testid="legal-links">
+            {tab === "register" ? "By creating an account you agree to the " : "By continuing you agree to the "}
+            <a href="/terms" className="font-medium text-foreground hover:underline">Terms</a> and{" "}
+            <a href="/privacy" className="font-medium text-foreground hover:underline">Privacy Policy</a>.
+          </p>
           </>)}
         </div>
       </div>

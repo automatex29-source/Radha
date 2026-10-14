@@ -210,6 +210,10 @@ export default function HelpPage() {
             )}
             {section !== "faq" && <ReportForm key={section} kind={section} onSent={loadReports} />}
           </div>
+          <p className="mt-6 flex justify-center gap-4 text-xs text-muted-foreground" data-testid="help-legal-links">
+            <a href="/privacy" className="hover:underline">Privacy Policy</a>
+            <a href="/terms" className="hover:underline">Terms of Service</a>
+          </p>
 
           {reports.length > 0 && (
             <section className="mt-8" data-testid="help-my-reports">

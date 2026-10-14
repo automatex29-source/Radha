@@ -149,6 +149,10 @@ class ResetPasswordIn(BaseModel):
     password: str = Field(min_length=6, max_length=128)
 
 
+class DeleteAccountIn(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
 class ConversationIn(BaseModel):
     title: Optional[str] = None
     projectId: Optional[str] = None
@@ -421,6 +425,34 @@ async def reset_password(body: ResetPasswordIn):
 
 @api.post("/auth/logout")
 async def logout():
+    return {"ok": True}
+
+
+@api.post("/auth/delete-account")
+async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_user_id)):
+    """Delete the account and everything in it (chats, files, projects, apps, decks, docs, automations, memory).
+    Asks for the password again so a borrowed, signed-in phone can't do it by accident."""
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    if not verify_password(body.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=403, detail="That password isn't right.")
+    for app in await db.apps.find({"userId": user_id}, {"id": 1}).to_list(None):
+        await apps.delete_app(app["id"], user_id)
+    for auto in await db.automations.find({"userId": user_id}, {"id": 1}).to_list(None):
+        await automations.delete_automation(auto["id"], user_id)
+    async for f in db.files.find({"userId": user_id}, {"storage_path": 1}):
+        if f.get("storage_path"):
+            await storage.delete_object(f["storage_path"])
+    conv_ids = [c["id"] async for c in db.conversations.find({"userId": user_id}, {"id": 1})]
+    await db.messages.delete_many({"conversationId": {"$in": conv_ids}})
+    await media.delete_media(db, {"userId": user_id})
+    for name in ("conversations", "files", "chunks", "memories", "projects", "decks", "docs", "pages",
+                 "help_reports", "password_resets"):
+        await db[name].delete_many({"userId": user_id})
+    await db.usage.delete_many({"_id": {"$regex": f"^{re.escape(user_id)}:"}})
+    await db.users.delete_one({"id": user_id})
+    _login_failures.pop(user["email"], None)
     return {"ok": True}
 
 
@@ -2123,7 +2155,10 @@ if (FRONTEND_DIST / "index.html").is_file():
                 media_type = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
                 return FileResponse(packed, media_type=media_type, headers={**headers, "Content-Encoding": "gzip"})
             return FileResponse(candidate, headers=headers)
-        return FileResponse(FRONTEND_DIST / "index.html", headers={"Cache-Control": "no-cache"})
+        # Link previews (WhatsApp, X, LinkedIn) need the share picture as a full address.
+        page = (FRONTEND_DIST / "index.html").read_text(encoding="utf-8")
+        page = page.replace('content="/og-image.png"', f'content="{_app_url(request)}/og-image.png"')
+        return Response(page, media_type="text/html", headers={"Cache-Control": "no-cache"})
 
 app.add_middleware(
     CORSMiddleware,
@@ -2132,6 +2167,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class SecurityHeaders:
+    """Browsers must not guess file types (an uploaded file can't run as a script), and links to other
+    sites don't carry the page address (share links stay private). Plain ASGI, so streamed replies and
+    Stop are untouched."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        https = scope.get("scheme") == "https"
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                names = {k.lower() for k, _ in headers}
+                extra = [(b"x-content-type-options", b"nosniff"),
+                         (b"referrer-policy", b"strict-origin-when-cross-origin")]
+                if https:
+                    extra.append((b"strict-transport-security", b"max-age=31536000"))
+                headers += [(k, v) for k, v in extra if k not in names]
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(SecurityHeaders)
 
 
 async def _ensure_auth_secret():

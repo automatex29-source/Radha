@@ -89,6 +89,14 @@ async def put_object(path: str, data: bytes, content_type: str) -> dict:
     return {"path": path, "size": len(data)}
 
 
+async def delete_object(path: str) -> None:
+    """Remove a stored file (the hosted storage keeps its copy; it has no delete)."""
+    if USE_EMERGENT:
+        return
+    await db.storage_chunks.delete_many({"path": path})
+    await db.storage_objects.delete_one({"path": path})
+
+
 async def get_object(path: str) -> tuple[bytes, str]:
     if USE_EMERGENT:
         return await asyncio.to_thread(_emergent_get, path)
