@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import re
-from typing import AsyncIterator, List, Optional
+from typing import AsyncIterator, List, Optional, Union
 
 _PROVIDER_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY",
                  "groq": "GROQ_API_KEY", "cerebras": "CEREBRAS_API_KEY"}
@@ -223,12 +223,12 @@ def _bad_tool_call(exc: Exception) -> bool:
 
 
 async def stream_completion(model: str, messages: List[dict], tools: List[dict],
-                            think: bool = False, max_output: Optional[int] = None) -> AsyncIterator[dict]:
+                            think: Union[bool, str] = False, max_output: Optional[int] = None) -> AsyncIterator[dict]:
     """Yield {"type": "text", "text"} deltas, then one {"type": "tool_calls", "calls"} if the model called tools.
 
     While waiting out a rate limit it yields {"type": "heartbeat"} so the stream stays open. A rejected tool
     call is retried (up to _TOOL_CALL_RETRIES times) as long as nothing but heartbeats was sent yet.
-    `think` (the Think button) asks reasoning models to reason longer before answering.
+    `think` (the Think button, or DEEPER for a hard question) asks reasoning models to reason longer before answering.
     `max_output` caps the reply on Groq's free tier, which counts the room asked for against the minute's budget.
     """
     for attempt in range(_TOOL_CALL_RETRIES + 1):
@@ -245,15 +245,22 @@ async def stream_completion(model: str, messages: List[dict], tools: List[dict],
             logger.warning("model sent an invalid tool call, asking again: %s", str(exc)[:300])
 
 
-def reasoning_effort(model: str, think: bool) -> Optional[str]:
-    """How hard a reasoning model should think. Groq's free budget counts reasoning, so Think there is "medium"."""
+# `think` for a question that looks hard (maths, code, reasoning, a long ask) when the Think button is off.
+DEEPER = "deeper"
+
+
+def reasoning_effort(model: str, think) -> Optional[str]:
+    """How hard a reasoning model should think. Groq's free budget counts reasoning, so Think there is "medium".
+
+    `think` is True (the Think button), DEEPER (a hard question: the free gpt-oss models, which otherwise answer at
+    their lightest setting, reason as much as Think gives them) or False."""
     if lean(model):
         if "gpt-oss" not in model:
             return None
         if provider_for(model) == "cerebras":  # a bigger budget leaves room to think
             return "high" if think else "medium"
         return "medium" if think else "low"
-    return "high" if think else None
+    return "high" if think is True else None
 
 
 def _cached_system(messages: List[dict]) -> List[dict]:
@@ -283,7 +290,7 @@ def _signed_calls(messages: List[dict]) -> List[dict]:
     return out
 
 
-def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: bool = False,
+def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: Union[bool, str] = False,
                    max_output: Optional[int] = None) -> dict:
     """LiteLLM arguments for one request, trimmed to the model's token budget when it has one."""
     kwargs = {"model": litellm_model(model), "messages": messages, "stream": True, "max_tokens": output_room(model)}
@@ -315,7 +322,7 @@ def _busy(exc: Exception) -> bool:
                             litellm.APIConnectionError))
 
 
-async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: bool = False,
+async def _stream_once(model: str, messages: List[dict], tools: List[dict], think: Union[bool, str] = False,
                        max_output: Optional[int] = None) -> AsyncIterator[dict]:
     """One model call. Gemini is asked again once when it is busy or says nothing, then hands over to Groq
     (then Cerebras) if it still fails or stays silent, so the user gets an answer instead of an error."""
@@ -352,7 +359,7 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
         logger.warning("%s sent an empty reply, trying %s", current, plan[i + 1])
 
 
-async def _stream_model(model: str, messages: List[dict], tools: List[dict], think: bool = False,
+async def _stream_model(model: str, messages: List[dict], tools: List[dict], think: Union[bool, str] = False,
                         max_output: Optional[int] = None, wait: bool = True) -> AsyncIterator[dict]:
     import litellm
 

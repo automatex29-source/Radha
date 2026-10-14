@@ -610,7 +610,18 @@ SYSTEM_PROMPT = (
     "Sound warm and direct, and when you can't be sure, say so plainly and why. End with one short, specific "
     "offer that keeps the chat going, naming what the user could send or ask next (\"If you **send a photo of "
     "the back of the case**, I can tell you the exact model.\"); skip it for greetings, thanks and one-word "
-    "answers. "
+    "answers.\n\n"
+    "Get it right before you write it. Answer the question the user actually asked, and every part of it when "
+    "they ask several things. Be specific: real names, numbers, prices in \u20b9 for Indian users, steps and "
+    "examples that fit their situation, not generic advice anyone could give. Work out maths, logic, dates and "
+    "unit conversions step by step before you write the answer, check the result (plug it back in, estimate, or "
+    "count again), and show the short working when it helps the user follow. For code, write it so it runs: "
+    "correct imports, real APIs for the version they use, edge cases handled, and say in one line how to run it. "
+    "If the question rests on a wrong fact, say so kindly and answer the real question. If it could mean two "
+    "different things, answer the likeliest one and say in a few words which one you took. Never invent facts, "
+    "quotes, studies, laws, links or numbers; when you aren't sure, say what you do know and what to check. "
+    "For advice on health, money or law, give the useful specifics first, then one line on when to see a "
+    "professional. Keep the friendly, short style above: careful thinking, not longer answers.\n\n"
     "Krish AI can search the web: when live web results or rates are included below, answer from them, "
     "give the number or fact directly, and name the source briefly. Never say you cannot browse or "
     "access live data. If a word looks like a misspelled currency, place or name, assume the closest match, "
@@ -682,10 +693,30 @@ AGENT_PROMPT = (
 
 
 THINK_PROMPT = (
-    "Think mode is on: the user wants your most careful answer. Work through the problem step by step before "
-    "answering, check facts with web_search when they matter, double-check any numbers or code, and point out "
-    "anything you are unsure of. Still lead with the answer, then the key reasoning."
+    "Think mode is on: the user wants your most careful answer. Before you write, work out what they really need, "
+    "solve it step by step, and look for the traps: a wrong assumption, a missed case, a unit or date mistake, an "
+    "outdated fact. Check your answer a second way (redo the sum differently, test the code in your head on a "
+    "tricky input, ask what an expert would object to) and fix anything that doesn't hold. Check facts with "
+    "web_search when they matter and you can. Then lead with the answer, give the key reasoning in a few short "
+    "steps, and say plainly what you are unsure of. Think mode may be longer than a usual reply, but never padded."
 )
+
+# Questions where a free reasoning model answers better when it thinks harder (see agent_llm.DEEPER): maths and
+# numbers, code, "why"/"how"/"compare" questions, plans and puzzles. Long asks count too.
+_HARD_ASK = re.compile(
+    r"\d\s*[-+*/x\u00d7\u00f7^%]\s*\d|\b\d{1,2}:\d{2}\b|\bhow (?:many|much|long|far)\b|"
+    r"\b(solve|calculate|calculation|compute|prove|derive|equation|formula|integral|derivative|probability|"
+    r"speed|distance|percent|percentage|interest|emi|loan|profit|loss|ratio|average|tax|gst|why|how does|"
+    r"how do|how is|how are|how can|explain|compare|comparison|difference between|vs|versus|pros and cons|"
+    r"should i|which is better|best way|plan|strategy|analy[sz]e|analysis|debug|error|bug|code|function|"
+    r"algorithm|sql|regex|riddle|puzzle|logic|kyu|kyon|kaise)\b", re.IGNORECASE)
+HARD_ASK_CHARS = 280
+
+
+def _hard_ask(text: str) -> bool:
+    """True when the user's message looks like it needs real reasoning (see _HARD_ASK)."""
+    return len(text or "") >= HARD_ASK_CHARS or bool(_HARD_ASK.search(text or ""))
+
 
 VOICE_LANG_NAMES = {"hi": "Hindi", "en": "English", "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati",
                     "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "ur": "Urdu",
@@ -1061,6 +1092,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(STUDY_PROMPT)
     if think and not counselling:
         system_parts.append(THINK_PROMPT)
+    # Without Think, a hard question still gets more reasoning from the free models (never in voice, the app
+    # builder or a counselling chat, where a quick reply matters more).
+    reasoning = think or (agent_llm.DEEPER if not (voice or app_id or counselling or extra_system)
+                          and _hard_ask(last_user or "") else False)
     if extra_system:
         system_parts.append(extra_system)
     if voice and not app_id:
@@ -1088,7 +1123,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model, sources=None if app_id else sources,
                               searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching)
-            stream_fn = functools.partial(agent_llm.stream_completion, think=think)
+            stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
             async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS):
                 if ev["type"] == "text":
                     full.append(ev["text"])
@@ -1115,7 +1150,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         else:
             if not uses_emergent(AI_API_KEY) and not agent_llm.configured(model):
                 raise RuntimeError(agent_llm.missing_key_message(model))
-            ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id)
+            ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id,
+                                   think=reasoning)
             async for delta in model_router.stream(ai_request):
                 full.append(delta)
                 yield f"data: {_sse_json(delta)}\n\n"
