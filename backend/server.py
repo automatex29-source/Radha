@@ -31,7 +31,8 @@ from auth import (
     get_user_id_from_request,
     decode_token,
 )
-from ai_runtime import ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, GroqProvider, AIRequest, ChatMessage
+from ai_runtime import (ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, GroqProvider, OpenRouterProvider,
+                        AIRequest, ChatMessage)
 from ai_runtime._backend import uses_emergent
 import storage
 import embeddings
@@ -69,6 +70,9 @@ db = client[os.environ.get("DB_NAME") or "radha"]
 
 # Emergent Universal Key (only used on Emergent). Elsewhere, set provider keys instead.
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
+# A free model made for code (OpenRouter's free tier, OPENROUTER_API_KEY). Coding questions asked of a free model go
+# to it when it's set up; CODER_MODEL picks another one if this one is retired.
+CODER_MODEL = os.environ.get("CODER_MODEL", "").strip() or "openrouter/qwen/qwen3-coder:free"
 # What people see in the model menu: Krish names and plain words, never the provider or its tier.
 # "pro" marks models only paid plans get (the frontend shows a Pro badge on them).
 AVAILABLE_MODELS = [
@@ -76,6 +80,7 @@ AVAILABLE_MODELS = [
     {"id": "openai/gpt-oss-120b", "label": "Krish Turbo", "description": "Lightning-fast answers and coding help", "pro": False},
     {"id": "openai/gpt-oss-20b", "label": "Krish Mini", "description": "Instant replies for simple questions", "pro": False},
     {"id": "cerebras/gpt-oss-120b", "label": "Krish Titan", "description": "Remembers more for long chats and big files", "pro": False},
+    {"id": CODER_MODEL, "label": "Krish Coder", "description": "Free coding expert: writes, fixes and explains code", "pro": False},
     {"id": "claude-sonnet-5-5", "label": "Krish Ultra", "description": "Our smartest, for deep thinking", "pro": True},
     {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "description": "Quick and sharp for daily work", "pro": True},
     {"id": "gpt-5.4", "label": "Krish Vision", "description": "A strong all-rounder for any task", "pro": True},
@@ -100,6 +105,7 @@ model_router = (
     .register(OpenAIProvider(AI_API_KEY))
     .register(GeminiProvider(AI_API_KEY))
     .register(GroqProvider())
+    .register(OpenRouterProvider())
 )
 
 
@@ -770,6 +776,16 @@ def _ideas_ask(text: str) -> bool:
     return bool(_IDEAS_ASK.search(text or "")) and not _code_ask(text)
 
 
+def _to_coder(model: str, conv: Optional[dict], text: Optional[str], history_docs: list, special: bool) -> bool:
+    """True when a free model was asked a coding question and the free coding model should answer instead."""
+    if special or (conv or {}).get("appId") or model == CODER_MODEL or agent_llm.paid(model):
+        return False
+    if not agent_llm.configured(CODER_MODEL) or agent_llm.gateway() or not _code_ask(text or ""):
+        return False
+    recent = [m for m in history_docs if m["role"] == "user"][-1:]
+    return not any(m.get("images") for m in recent)  # pictures need a model that can see them
+
+
 VOICE_LANG_NAMES = {"hi": "Hindi", "en": "English", "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati",
                     "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "ur": "Urdu",
                     "es": "Spanish", "fr": "French", "de": "German", "ar": "Arabic", "pa": "Punjabi"}
@@ -1041,12 +1057,15 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs if m["content"]]
 
+    chosen = model  # the model the user picked, kept for the chat even when the coding model answers
+    last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
+    if _to_coder(model, conv, last_user, history_docs, counselling or voice or bool(extra_system)):
+        model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
     system_parts = [base, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
-    last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
     # Memory (user-global + project) — real, user-controlled facts.
     settings_lang = None
@@ -1280,7 +1299,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             with anyio.CancelScope(shield=True):
                 await db.messages.insert_one(assistant_msg)
                 await db.conversations.update_one(
-                    {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": model}}
+                    {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": chosen}}
                 )
             if not stopped:
                 yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"

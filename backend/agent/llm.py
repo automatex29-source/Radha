@@ -4,7 +4,7 @@ The Emergent chat integration streams plain text only, so agent turns and
 messages with images go through LiteLLM, which speaks one OpenAI-style
 interface (tools + image parts) for Anthropic, OpenAI, Gemini and Groq.
 
-Keys: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / CEREBRAS_API_KEY, or route everything
+Keys: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / CEREBRAS_API_KEY / OPENROUTER_API_KEY, or route everything
 through an OpenAI-compatible gateway with LLM_GATEWAY_URL + LLM_GATEWAY_KEY.
 """
 import asyncio
@@ -15,12 +15,14 @@ import re
 from typing import AsyncIterator, List, Optional, Union
 
 _PROVIDER_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY",
-                 "groq": "GROQ_API_KEY", "cerebras": "CEREBRAS_API_KEY"}
+                 "groq": "GROQ_API_KEY", "cerebras": "CEREBRAS_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
 # Free providers with a small per-minute token budget; their requests are trimmed to fit.
 _FREE = ("groq", "cerebras")
 
 
 def provider_for(model: str) -> str:
+    if model.startswith("openrouter/"):
+        return "openrouter"
     if model.startswith("cerebras/"):
         return "cerebras"
     if model.startswith("claude"):
@@ -50,7 +52,7 @@ def supports_images(model: str) -> bool:
     """False for text-only models (Groq's gpt-oss and qwen); their images are sent as text instead."""
     if gateway():
         return True
-    if provider_for(model) == "cerebras":
+    if provider_for(model) in ("cerebras", "openrouter"):
         return False
     return provider_for(model) != "groq" or "llama-4" in model or "vision" in model
 
@@ -99,9 +101,15 @@ def fallback_for(model: str, messages: List[dict]) -> Optional[str]:
     return chain[0] if chain else None
 
 
+def _handed_over(model: str) -> bool:
+    """Free models with a small daily allowance (Gemini, OpenRouter's free models) that hand over when it runs out."""
+    return provider_for(model) in ("gemini", "openrouter") and not gateway()
+
+
 def fallbacks_for(model: str, messages: List[dict]) -> List[str]:
-    """The models that answer, in order, when Gemini can't (fails or says nothing). Pictures need Gemini."""
-    if gateway() or provider_for(model) != "gemini" or _has_images(messages):
+    """The models that answer, in order, when Gemini or a free OpenRouter model can't (fails or says nothing).
+    Pictures need Gemini."""
+    if not _handed_over(model) or (provider_for(model) == "gemini" and _has_images(messages)):
         return []
     return [m for m in _GEMINI_FALLBACKS if configured(m)]
 
@@ -260,6 +268,8 @@ def reasoning_effort(model: str, think) -> Optional[str]:
         if provider_for(model) == "cerebras":  # a bigger budget leaves room to think
             return "high" if think else "medium"
         return "medium" if think else "low"
+    if provider_for(model) == "openrouter":
+        return None  # Krish Coder answers straight away; it has no reasoning setting
     return "high" if think is True else None
 
 
@@ -327,7 +337,7 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
     """One model call. Gemini is asked again once when it is busy or says nothing, then hands over to Groq
     (then Cerebras) if it still fails or stays silent, so the user gets an answer instead of an error."""
     fallbacks = fallbacks_for(model, messages)
-    if provider_for(model) != "gemini" or gateway():
+    if not _handed_over(model):
         async for event in _stream_model(model, messages, tools, think, max_output):
             yield event
         return
