@@ -24,6 +24,16 @@ def test_prompts_ask_for_careful_answers():
     assert "a second way" in server.THINK_PROMPT
 
 
+def test_prompts_ask_for_spaced_highlighted_answers():
+    server = _server()
+    import counsellor
+    assert "Never send one long block of text" in server.SYSTEM_PROMPT
+    assert "meaningful or personal questions" in server.SYSTEM_PROMPT
+    for text in (counsellor.PROMPT, counsellor.BRIEF):
+        assert "never one dense paragraph" in text and "**bold**" in text
+    assert "Deep questions" in counsellor.PROMPT
+
+
 def reasoning_for(monkeypatch, question, **kw):
     """The `think` level a plain chat turn asks the model for."""
     server = _server()
