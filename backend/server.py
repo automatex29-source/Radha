@@ -718,6 +718,58 @@ def _hard_ask(text: str) -> bool:
     return len(text or "") >= HARD_ASK_CHARS or bool(_HARD_ASK.search(text or ""))
 
 
+# Coding questions (writing, fixing or explaining code) get CODE_PROMPT on top of the chat prompt.
+_CODE_ASK = re.compile(
+    r"```|\btraceback\b|(?-i:\b[A-Z][A-Za-z]*(?:Error|Exception)\b)|\bfunctions? (?:to|that|which|in)\b|"
+    r"(?<!pin )(?<!promo )(?<!coupon )(?<!zip )(?<!dress )(?<!qr )(?<!otp )(?<!referral )\bcode\b|"
+    r"\b(coding|programming|script|bug|debug|exception|stack ?trace|compile|compiler|syntax error|refactor|"
+    r"algorithm|leetcode|dsa|api|endpoint|regex|sql|python|javascript|typescript|kotlin|golang|c\+\+|php|"
+    r"react|next\.?js|node\.?js|django|flask|fastapi|flutter|html|css|tailwind|bash|"
+    r"github|docker|npm|pip install|unit tests?|pytest|jest)\b", re.IGNORECASE)
+
+CODE_PROMPT = (
+    "This is a coding question. Answer like a senior engineer pairing with the user:\n"
+    "- For a bug or error, read the error and the code first, name the root cause in one sentence, then give the "
+    "fix. Change what is broken; don't rewrite working code or switch libraries unless that is the real fix.\n"
+    "- Before writing new code, settle the approach in a sentence or two (data structures, edge cases, and time "
+    "complexity when it matters), then write it.\n"
+    "- Give complete, runnable code: every import, no \"...\" or placeholder comments, nothing left for the user "
+    "to fill in. For a small change to a long file, show the changed part with a few lines around it and say where "
+    "it goes.\n"
+    "- Use the language, framework and version the user uses. Only call functions, options and packages that "
+    "really exist; if an API differs between versions, say which version you wrote for.\n"
+    "- Handle the edge cases (empty input, missing values, bad user input, network failures) and keep it safe: "
+    "no secrets in code, parameterised SQL, validated input.\n"
+    "- After the code, say in one line how to run it and show one example input and its output, or a short test.\n"
+    "- If you have the run_python tool and the code is Python (or its logic can be checked in Python), run it on "
+    "a small test before you answer and fix anything that fails. Don't paste the test run unless it helps.\n"
+    "- Explain what isn't obvious in a few short lines; explain line by line only if the user is learning or asks."
+)
+
+# Requests for ideas (brainstorming, names, business or content ideas) get IDEAS_PROMPT.
+_IDEAS_ASK = re.compile(
+    r"(?<!any )\b(ideas?|brainstorm\w*|names? for|name ideas|startup|side hustle|captions?|taglines?|slogans?|"
+    r"ways to (?:earn|make money|grow|promote|market)|how (?:can|could|do) i (?:grow|earn|make money|get more)|"
+    r"sujhav)\b", re.IGNORECASE)
+
+IDEAS_PROMPT = (
+    "The user wants ideas. Give 5-8 ideas that are really different from each other, not variations of one. Mix "
+    "safe and bold ones, and include at least one non-obvious idea most people wouldn't think of. Make each one "
+    "specific to the user's situation (India, budget in \u20b9, their audience and skills when known): a bold name "
+    "or one-line summary, then a line on why it works and the first concrete step. Then pick your top idea and say "
+    "why in two sentences. If key facts are missing (budget, audience, skills, goal), assume sensible ones, say "
+    "what you assumed in a few words, and offer to tailor the list."
+)
+
+
+def _code_ask(text: str) -> bool:
+    return bool(_CODE_ASK.search(text or ""))
+
+
+def _ideas_ask(text: str) -> bool:
+    return bool(_IDEAS_ASK.search(text or "")) and not _code_ask(text)
+
+
 VOICE_LANG_NAMES = {"hi": "Hindi", "en": "English", "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati",
                     "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "ur": "Urdu",
                     "es": "Spanish", "fr": "French", "de": "German", "ar": "Arabic", "pa": "Punjabi"}
@@ -1090,12 +1142,18 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(AGENT_PROMPT)
     if study and not app_id and not counselling:
         system_parts.append(STUDY_PROMPT)
+    # How to answer this kind of question well: code, or ideas (not in the app builder, voice or counselling).
+    if not (app_id or counselling or voice or extra_system):
+        if _code_ask(last_user or ""):
+            system_parts.append(CODE_PROMPT)
+        elif _ideas_ask(last_user or ""):
+            system_parts.append(IDEAS_PROMPT)
     if think and not counselling:
         system_parts.append(THINK_PROMPT)
     # Without Think, a hard question still gets more reasoning from the free models (never in voice, the app
     # builder or a counselling chat, where a quick reply matters more).
     reasoning = think or (agent_llm.DEEPER if not (voice or app_id or counselling or extra_system)
-                          and _hard_ask(last_user or "") else False)
+                          and (_hard_ask(last_user or "") or _code_ask(last_user or "")) else False)
     if extra_system:
         system_parts.append(extra_system)
     if voice and not app_id:
