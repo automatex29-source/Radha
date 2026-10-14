@@ -31,7 +31,8 @@ from auth import (
     get_user_id_from_request,
     decode_token,
 )
-from ai_runtime import ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, GroqProvider, AIRequest, ChatMessage
+from ai_runtime import (ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, GroqProvider, OpenRouterProvider,
+                        AIRequest, ChatMessage)
 from ai_runtime._backend import uses_emergent
 import storage
 import embeddings
@@ -69,6 +70,9 @@ db = client[os.environ.get("DB_NAME") or "radha"]
 
 # Emergent Universal Key (only used on Emergent). Elsewhere, set provider keys instead.
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
+# A free model made for code (OpenRouter's free tier, OPENROUTER_API_KEY). Coding questions asked of a free model go
+# to it when it's set up; CODER_MODEL picks another one if this one is retired.
+CODER_MODEL = os.environ.get("CODER_MODEL", "").strip() or "openrouter/qwen/qwen3-coder:free"
 # What people see in the model menu: Krish names and plain words, never the provider or its tier.
 # "pro" marks models only paid plans get (the frontend shows a Pro badge on them).
 AVAILABLE_MODELS = [
@@ -76,6 +80,7 @@ AVAILABLE_MODELS = [
     {"id": "openai/gpt-oss-120b", "label": "Krish Turbo", "description": "Lightning-fast answers and coding help", "pro": False},
     {"id": "openai/gpt-oss-20b", "label": "Krish Mini", "description": "Instant replies for simple questions", "pro": False},
     {"id": "cerebras/gpt-oss-120b", "label": "Krish Titan", "description": "Remembers more for long chats and big files", "pro": False},
+    {"id": CODER_MODEL, "label": "Krish Coder", "description": "Free coding expert: writes, fixes and explains code", "pro": False},
     {"id": "claude-sonnet-5-5", "label": "Krish Ultra", "description": "Our smartest, for deep thinking", "pro": True},
     {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "description": "Quick and sharp for daily work", "pro": True},
     {"id": "gpt-5.4", "label": "Krish Vision", "description": "A strong all-rounder for any task", "pro": True},
@@ -100,6 +105,7 @@ model_router = (
     .register(OpenAIProvider(AI_API_KEY))
     .register(GeminiProvider(AI_API_KEY))
     .register(GroqProvider())
+    .register(OpenRouterProvider())
 )
 
 
@@ -718,6 +724,68 @@ def _hard_ask(text: str) -> bool:
     return len(text or "") >= HARD_ASK_CHARS or bool(_HARD_ASK.search(text or ""))
 
 
+# Coding questions (writing, fixing or explaining code) get CODE_PROMPT on top of the chat prompt.
+_CODE_ASK = re.compile(
+    r"```|\btraceback\b|(?-i:\b[A-Z][A-Za-z]*(?:Error|Exception)\b)|\bfunctions? (?:to|that|which|in)\b|"
+    r"(?<!pin )(?<!promo )(?<!coupon )(?<!zip )(?<!dress )(?<!qr )(?<!otp )(?<!referral )\bcode\b|"
+    r"\b(coding|programming|script|bug|debug|exception|stack ?trace|compile|compiler|syntax error|refactor|"
+    r"algorithm|leetcode|dsa|api|endpoint|regex|sql|python|javascript|typescript|kotlin|golang|c\+\+|php|"
+    r"react|next\.?js|node\.?js|django|flask|fastapi|flutter|html|css|tailwind|bash|"
+    r"github|docker|npm|pip install|unit tests?|pytest|jest)\b", re.IGNORECASE)
+
+CODE_PROMPT = (
+    "This is a coding question. Answer like a senior engineer pairing with the user:\n"
+    "- For a bug or error, read the error and the code first, name the root cause in one sentence, then give the "
+    "fix. Change what is broken; don't rewrite working code or switch libraries unless that is the real fix.\n"
+    "- Before writing new code, settle the approach in a sentence or two (data structures, edge cases, and time "
+    "complexity when it matters), then write it.\n"
+    "- Give complete, runnable code: every import, no \"...\" or placeholder comments, nothing left for the user "
+    "to fill in. For a small change to a long file, show the changed part with a few lines around it and say where "
+    "it goes.\n"
+    "- Use the language, framework and version the user uses. Only call functions, options and packages that "
+    "really exist; if an API differs between versions, say which version you wrote for.\n"
+    "- Handle the edge cases (empty input, missing values, bad user input, network failures) and keep it safe: "
+    "no secrets in code, parameterised SQL, validated input.\n"
+    "- After the code, say in one line how to run it and show one example input and its output, or a short test.\n"
+    "- If you have the run_python tool and the code is Python (or its logic can be checked in Python), run it on "
+    "a small test before you answer and fix anything that fails. Don't paste the test run unless it helps.\n"
+    "- Explain what isn't obvious in a few short lines; explain line by line only if the user is learning or asks."
+)
+
+# Requests for ideas (brainstorming, names, business or content ideas) get IDEAS_PROMPT.
+_IDEAS_ASK = re.compile(
+    r"(?<!any )\b(ideas?|brainstorm\w*|names? for|name ideas|startup|side hustle|captions?|taglines?|slogans?|"
+    r"ways to (?:earn|make money|grow|promote|market)|how (?:can|could|do) i (?:grow|earn|make money|get more)|"
+    r"sujhav)\b", re.IGNORECASE)
+
+IDEAS_PROMPT = (
+    "The user wants ideas. Give 5-8 ideas that are really different from each other, not variations of one. Mix "
+    "safe and bold ones, and include at least one non-obvious idea most people wouldn't think of. Make each one "
+    "specific to the user's situation (India, budget in \u20b9, their audience and skills when known): a bold name "
+    "or one-line summary, then a line on why it works and the first concrete step. Then pick your top idea and say "
+    "why in two sentences. If key facts are missing (budget, audience, skills, goal), assume sensible ones, say "
+    "what you assumed in a few words, and offer to tailor the list."
+)
+
+
+def _code_ask(text: str) -> bool:
+    return bool(_CODE_ASK.search(text or ""))
+
+
+def _ideas_ask(text: str) -> bool:
+    return bool(_IDEAS_ASK.search(text or "")) and not _code_ask(text)
+
+
+def _to_coder(model: str, conv: Optional[dict], text: Optional[str], history_docs: list, special: bool) -> bool:
+    """True when a free model was asked a coding question and the free coding model should answer instead."""
+    if special or (conv or {}).get("appId") or model == CODER_MODEL or agent_llm.paid(model):
+        return False
+    if not agent_llm.configured(CODER_MODEL) or agent_llm.gateway() or not _code_ask(text or ""):
+        return False
+    recent = [m for m in history_docs if m["role"] == "user"][-1:]
+    return not any(m.get("images") for m in recent)  # pictures need a model that can see them
+
+
 VOICE_LANG_NAMES = {"hi": "Hindi", "en": "English", "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati",
                     "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "ur": "Urdu",
                     "es": "Spanish", "fr": "French", "de": "German", "ar": "Arabic", "pa": "Punjabi"}
@@ -989,12 +1057,15 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     messages = [ChatMessage(role=m["role"], content=m["content"]) for m in history_docs if m["content"]]
 
+    chosen = model  # the model the user picked, kept for the chat even when the coding model answers
+    last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
+    if _to_coder(model, conv, last_user, history_docs, counselling or voice or bool(extra_system)):
+        model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
     system_parts = [base, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
-    last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
 
     # Memory (user-global + project) — real, user-controlled facts.
     settings_lang = None
@@ -1090,12 +1161,18 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(AGENT_PROMPT)
     if study and not app_id and not counselling:
         system_parts.append(STUDY_PROMPT)
+    # How to answer this kind of question well: code, or ideas (not in the app builder, voice or counselling).
+    if not (app_id or counselling or voice or extra_system):
+        if _code_ask(last_user or ""):
+            system_parts.append(CODE_PROMPT)
+        elif _ideas_ask(last_user or ""):
+            system_parts.append(IDEAS_PROMPT)
     if think and not counselling:
         system_parts.append(THINK_PROMPT)
     # Without Think, a hard question still gets more reasoning from the free models (never in voice, the app
     # builder or a counselling chat, where a quick reply matters more).
     reasoning = think or (agent_llm.DEEPER if not (voice or app_id or counselling or extra_system)
-                          and _hard_ask(last_user or "") else False)
+                          and (_hard_ask(last_user or "") or _code_ask(last_user or "")) else False)
     if extra_system:
         system_parts.append(extra_system)
     if voice and not app_id:
@@ -1222,7 +1299,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             with anyio.CancelScope(shield=True):
                 await db.messages.insert_one(assistant_msg)
                 await db.conversations.update_one(
-                    {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": model}}
+                    {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": chosen}}
                 )
             if not stopped:
                 yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"

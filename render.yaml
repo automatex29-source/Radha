@@ -22,6 +22,10 @@ services:
       # Optional, free (no card): a stronger App Builder. Get a key at https://cloud.cerebras.ai
       - key: CEREBRAS_API_KEY
         sync: false
+      # Optional, free (no card): Krish Coder, a model made for code; coding questions go to it.
+      # Get a key at https://openrouter.ai/keys
+      - key: OPENROUTER_API_KEY
+        sync: false
       # Optional: the App Builder's model for everyone, e.g. claude-sonnet-5-5 (with ANTHROPIC_API_KEY, paid).
       - key: BUILDER_MODEL
         sync: false
