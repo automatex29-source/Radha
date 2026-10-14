@@ -232,6 +232,21 @@ tbody tr:last-child td{border-bottom:0}tbody tr:hover td{background:var(--surfac
 th{position:sticky;top:0;background:var(--surface-2);cursor:pointer;user-select:none;color:var(--ink-2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 th:hover{color:var(--ink)}th .arrow{color:var(--brand)}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+body{background:radial-gradient(900px 500px at 10% -10%,color-mix(in srgb,var(--brand) 10%,transparent),transparent 60%),
+radial-gradient(800px 500px at 110% 10%,color-mix(in srgb,var(--brand-2) 9%,transparent),transparent 60%),var(--bg);background-attachment:fixed}
+.card{border-radius:18px;background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 100%,#fff 0%),var(--surface));
+box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 1px 1px rgba(18,22,42,.04),0 4px 8px rgba(18,22,42,.04),0 18px 36px -12px rgba(48,40,140,.16);
+transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(0);transition:transform .25s ease,box-shadow .25s ease;will-change:transform}
+.dark .card{box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 1px 1px rgba(0,0,0,.3),0 4px 8px rgba(0,0,0,.25),0 22px 40px -14px rgba(0,0,0,.6)}
+.card.lift{box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 2px 4px rgba(18,22,42,.05),0 12px 20px rgba(18,22,42,.06),0 30px 50px -16px rgba(48,40,140,.24)}
+.dark .card.lift{box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 4px rgba(0,0,0,.3),0 14px 24px rgba(0,0,0,.3),0 34px 60px -18px rgba(0,0,0,.7)}
+.kpi:first-child{box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 18px 36px -12px color-mix(in srgb,var(--brand) 55%,transparent)}
+.kpi:first-child:after{content:"";position:absolute;inset:0;background:radial-gradient(260px 120px at 85% -20%,rgba(255,255,255,.35),transparent 70%);pointer-events:none}
+.smart{display:flex;gap:7px;align-items:flex-start;margin:-4px 0 12px;font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.smart:before{content:"✦";flex-shrink:0;width:18px;height:18px;border-radius:6px;display:grid;place-items:center;font-size:10px;color:#fff;
+background:linear-gradient(135deg,var(--brand),var(--brand-2));margin-top:-1px}
+.auto{font-size:11px;font-weight:600;color:var(--brand);background:var(--brand-soft);padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:2px}
+@media (hover:none),(prefers-reduced-motion:reduce){.card{transform:none!important}}
 @media (max-width:860px){.chartcard{grid-column:span 12}}
 @media (max-width:560px){.kpis{grid-template-columns:1fr 1fr;gap:10px}.kpi{padding:14px}.kpi .value{font-size:22px}.spark{display:none}
 .kpi .note{display:none}main{padding:0 14px 32px}header{margin:0 -14px 4px;padding:24px 14px 18px}.grid{gap:12px}}
@@ -269,7 +284,8 @@ function drawKpis() {
   const box = $("kpis"); box.innerHTML = "";
   if (!D.kpis.length) { box.hidden = true; return; }
   D.kpis.forEach((k, i) => {
-    const c = el("div", "card kpi"); c.style.animationDelay = (i * 60) + "ms";
+    const c = el("div", "card kpi"); c.style.animationDelay = (i * 60) + "ms"; tilt(c);
+    if (!k.change && k.trend && k.trend.length > 1) { k.change = signed(pct(k.trend[0], k.trend[k.trend.length - 1])); k.note = k.note || "over the period"; }
     c.append(el("div", "label", k.label));
     const row = el("div", "row"); row.append(el("div", "value", k.value));
     const sp = k.trend && sparkline(k.trend, i === 0 ? "#fff" : css("--s1")); if (sp) row.append(sp);
@@ -283,6 +299,98 @@ function drawKpis() {
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const compact = (v) => typeof v !== "number" ? v : Math.abs(v) >= 1e7 ? (v / 1e6).toFixed(1).replace(/\\.0$/, "") + "M"
   : Math.abs(v) >= 1e4 ? (v / 1e3).toFixed(1).replace(/\\.0$/, "") + "K" : v.toLocaleString();
+// ---- Smart reading of the data: trends, peaks, leaders and unusual jumps, worked out on the page.
+const pct = (a, b) => (a ? Math.round(((b - a) / Math.abs(a)) * 1000) / 10 : 0);
+const signed = (p) => (p > 0 ? "+" : "") + p + "%";
+function analyse(ch) {
+  const notes = [], fmt = (v) => compact(v) + (ch.unit ? " " + ch.unit : "");
+  const s0 = ch.series[0], vals = s0.values.map((v) => (typeof v === "number" ? v : null));
+  const known = vals.map((v, i) => [v, i]).filter((p) => p[0] !== null);
+  if (known.length < 2) return notes;
+  const max = known.reduce((a, b) => (b[0] > a[0] ? b : a)), min = known.reduce((a, b) => (b[0] < a[0] ? b : a));
+  if (ch.type === "pie" || ch.type === "doughnut") {
+    const total = known.reduce((a, p) => a + p[0], 0) || 1, share = Math.round((max[0] / total) * 100);
+    notes.push(`${ch.labels[max[1]]} is the biggest share at ${share}%` + (known.length > 2 ? `, ${ch.labels[min[1]]} the smallest at ${Math.round((min[0] / total) * 100)}%.` : "."));
+    return notes;
+  }
+  if (ch.type === "line" || ch.type === "area") {
+    const first = known[0], last = known[known.length - 1], change = pct(first[0], last[0]);
+    notes.push(`${s0.name} ${change >= 0 ? "rose" : "fell"} ${signed(change)} from ${ch.labels[first[1]]} to ${ch.labels[last[1]]}, peaking at ${fmt(max[0])} in ${ch.labels[max[1]]}.`);
+    const steps = known.slice(1).map((p, i) => [pct(known[i][0], p[0]), p[1]]);
+    if (steps.length >= 4) {
+      const mean = steps.reduce((a, s) => a + s[0], 0) / steps.length;
+      const sd = Math.sqrt(steps.reduce((a, s) => a + (s[0] - mean) ** 2, 0) / steps.length);
+      const odd = steps.filter((s) => sd > 0 && Math.abs(s[0] - mean) > 2 * sd).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0]))[0];
+      if (odd) notes.push(`Unusual ${odd[0] > 0 ? "jump" : "drop"} in ${ch.labels[odd[1]]} (${signed(odd[0])}).`);
+    }
+    if (ch.series[1]) { const other = ch.series[1].values, a = vals[last[1]], b = other[last[1]];
+      if (typeof b === "number") notes.push(`${s0.name} is ${signed(pct(b, a))} vs ${ch.series[1].name} at ${ch.labels[last[1]]}.`); }
+    return notes;
+  }
+  if (ch.series[1]) {
+    const later = ch.series[ch.series.length - 1], earlier = ch.series[ch.series.length - 2];
+    const growth = ch.labels.map((l, i) => [pct(earlier.values[i], later.values[i]), l]).filter((g) => isFinite(g[0]));
+    const best = growth.reduce((a, b) => (b[0] > a[0] ? b : a)), worst = growth.reduce((a, b) => (b[0] < a[0] ? b : a));
+    notes.push(`${best[1]} grew most (${signed(best[0])} ${earlier.name} to ${later.name})` + (worst[0] < 0 ? `; ${worst[1]} fell ${signed(worst[0])}.` : "."));
+  } else {
+    const ratio = min[0] > 0 ? Math.round((max[0] / min[0]) * 10) / 10 : 0;
+    notes.push(`${ch.labels[max[1]]} leads with ${fmt(max[0])}` + (ratio >= 1.5 ? `, ${ratio}× ${ch.labels[min[1]]}.` : "."));
+  }
+  return notes;
+}
+// ---- 3D drawing for Chart.js: extruded bars and doughnuts, glowing lines with a fading fill, a marked peak.
+function shade(hex, amt) { const n = parseInt(hex.slice(1), 16); const f = (c) => Math.max(0, Math.min(255, Math.round(c + (amt < 0 ? c : 255 - c) * amt)));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; }
+const DEPTH = 7;
+const depth3d = { id: "depth3d",
+  beforeDatasetDraw(chart, args) {
+    const meta = args.meta, ds = chart.data.datasets[args.index], ctx = chart.ctx;
+    if (meta.type === "doughnut" || meta.type === "pie") {
+      meta.data.forEach((arc, j) => { const base = ds.baseColors[j], o = arc.options.backgroundColor;
+        ctx.save(); arc.options.backgroundColor = shade(base, -0.35);
+        for (let k = DEPTH + 3; k > 0; k--) { ctx.translate(0, 1); arc.draw(ctx); }
+        ctx.restore(); arc.options.backgroundColor = o; });
+    }
+    if (meta.type === "line") { ctx.save(); ctx.shadowColor = ds.borderColor + "66"; ctx.shadowBlur = 14; ctx.shadowOffsetY = 8; }
+  },
+  afterDatasetDraw(chart, args) {
+    const meta = args.meta, ds = chart.data.datasets[args.index], ctx = chart.ctx, d = DEPTH;
+    if (meta.type === "line") { ctx.restore();
+      if (args.index === 0 && ds.peak != null && meta.data[ds.peak]) { const p = meta.data[ds.peak];
+        ctx.save(); ctx.fillStyle = ds.borderColor; ctx.strokeStyle = chart.options.surface; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        const label = "Peak " + ds.peakLabel; ctx.font = "600 11px Inter, sans-serif"; const w = ctx.measureText(label).width + 14;
+        const x = Math.min(Math.max(p.x - w / 2, chart.chartArea.left), chart.chartArea.right - w), y = Math.max(p.y - 32, chart.chartArea.top - 6);
+        ctx.fillStyle = chart.options.ink; ctx.beginPath(); ctx.roundRect(x, y, w, 20, 6); ctx.fill();
+        ctx.fillStyle = chart.options.surface; ctx.textBaseline = "middle"; ctx.fillText(label, x + 7, y + 10.5); ctx.restore(); }
+    }
+    if (meta.type !== "bar") return;
+    const horizontal = chart.options.indexAxis === "y";
+    meta.data.forEach((bar, j) => { if (bar.hidden) return; const c = ds.baseColor;
+      const p = bar.getProps(["x", "y", "base", "width", "height"], true);
+      ctx.save();
+      if (!horizontal) { const l = p.x - p.width / 2, r = p.x + p.width / 2, t = Math.min(p.y, p.base), b = Math.max(p.y, p.base);
+        ctx.fillStyle = shade(c, -0.3); ctx.beginPath(); ctx.moveTo(r, t); ctx.lineTo(r + d, t - d); ctx.lineTo(r + d, b - d); ctx.lineTo(r, b); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = shade(c, 0.35); ctx.beginPath(); ctx.moveTo(l, t); ctx.lineTo(l + d, t - d); ctx.lineTo(r + d, t - d); ctx.lineTo(r, t); ctx.closePath(); ctx.fill();
+      } else { const t = p.y - p.height / 2, b = p.y + p.height / 2, l = Math.min(p.x, p.base), r = Math.max(p.x, p.base);
+        ctx.fillStyle = shade(c, 0.35); ctx.beginPath(); ctx.moveTo(l, t); ctx.lineTo(l + d, t - d); ctx.lineTo(r + d, t - d); ctx.lineTo(r, t); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = shade(c, -0.3); ctx.beginPath(); ctx.moveTo(r, t); ctx.lineTo(r + d, t - d); ctx.lineTo(r + d, b - d); ctx.lineTo(r, b); ctx.closePath(); ctx.fill(); }
+      ctx.restore(); });
+  } };
+function frontGradient(chart, color, horizontal) {
+  const a = chart.chartArea; if (!a) return color;
+  const g = horizontal ? chart.ctx.createLinearGradient(a.left, 0, a.right, 0) : chart.ctx.createLinearGradient(0, a.bottom, 0, a.top);
+  g.addColorStop(0, shade(color, -0.12)); g.addColorStop(1, shade(color, 0.12)); return g;
+}
+function fadeFill(chart, color) { const a = chart.chartArea; if (!a) return color + "22";
+  const g = chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, color + "55"); g.addColorStop(1, color + "00"); return g; }
+// ---- Cards tilt a little towards the pointer, for depth.
+function tilt(card) {
+  card.addEventListener("pointermove", (e) => { if (e.pointerType !== "mouse") return; const r = card.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5, k = card.classList.contains("chartcard") ? 2 : 5;
+    card.style.setProperty("--ry", (x * k).toFixed(2) + "deg"); card.style.setProperty("--rx", (-y * k).toFixed(2) + "deg"); card.classList.add("lift"); });
+  card.addEventListener("pointerleave", () => { card.style.setProperty("--ry", "0deg"); card.style.setProperty("--rx", "0deg"); card.classList.remove("lift"); });
+}
 function drawCharts() {
   charts.forEach((c) => c.destroy()); charts.length = 0;
   const box = $("charts"); box.innerHTML = "";
@@ -299,28 +407,32 @@ function drawCharts() {
     if (names.length > 1) { const lg = el("div", "legend");
       names.slice(0, 8).forEach((nm, i) => { const s = el("span"); const sw = el("i"); sw.style.background = palette[i % 8]; s.append(sw, document.createTextNode(nm)); lg.append(s); });
       head.append(lg); }
-    c.append(head);
+    c.append(head); tilt(c);
+    const notes = analyse(ch); ch.notes = notes; if (notes.length) c.append(el("p", "smart", notes.join(" ")));
     const box2 = el("div", "chart"); const cv = document.createElement("canvas"); box2.append(cv); c.append(box2); box.append(c);
     if (!window.Chart) { box2.textContent = "Charts need an internet connection."; return; }
     if (round) { const total = ch.series[0].values.reduce((a, b) => a + (b || 0), 0);
       const mid = el("div", "center"); mid.append(el("b", "", compact(total) + (ch.unit ? " " + ch.unit : "")), el("small", "", "Total")); box2.append(mid); }
     const type = ch.type === "area" ? "line" : ch.type === "hbar" ? "bar" : ch.type;
-    const datasets = ch.series.map((s, i) => ({
+    const peakIdx = ch.series[0].values.reduce((m, v, i, a) => (typeof v === "number" && (m < 0 || v > a[m]) ? i : m), -1);
+    const datasets = ch.series.map((s, i) => ({ baseColor: palette[i % 8], baseColors: ch.labels.map((_, j) => palette[j % 8]),
+      peak: i === 0 && peakIdx >= 0 ? peakIdx : null, peakLabel: peakIdx >= 0 ? compact(ch.series[0].values[peakIdx]) + (ch.unit ? " " + ch.unit : "") : "",
       label: s.name, data: s.values, borderWidth: type === "bar" ? 0 : 2, tension: .35, spanGaps: true,
       pointRadius: 0, pointHoverRadius: 5, pointHoverBorderWidth: 2, pointHoverBorderColor: surface, pointBackgroundColor: palette[i % 8],
       fill: ch.type === "area" ? "origin" : false, borderColor: round ? surface : palette[i % 8],
-      backgroundColor: round ? ch.labels.map((_, j) => palette[j % 8]) : ch.type === "area" ? palette[i % 8] + "1f" : palette[i % 8],
-      borderRadius: type === "bar" ? { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 } : 0,
-      borderSkipped: "start", maxBarThickness: 24, categoryPercentage: .7, barPercentage: .85,
+      backgroundColor: round ? ch.labels.map((_, j) => palette[j % 8])
+        : ch.type === "area" ? (ctx) => fadeFill(ctx.chart, palette[i % 8])
+        : type === "bar" ? (ctx) => frontGradient(ctx.chart, palette[i % 8], ch.type === "hbar") : palette[i % 8],
+      borderRadius: 0, borderSkipped: "start", maxBarThickness: 26, categoryPercentage: .62, barPercentage: .8,
       hoverOffset: round ? 4 : 0, spacing: round ? 2 : 0,
     }));
-    if (ch.type === "hbar") datasets.forEach((d) => { d.borderRadius = { topRight: 4, bottomRight: 4, topLeft: 0, bottomLeft: 0 }; });
     const fmt = (v) => compact(v) + (ch.unit ? " " + ch.unit : "");
     const tooltip = { backgroundColor: css("--ink"), titleColor: surface, bodyColor: surface, padding: 10, cornerRadius: 10, boxPadding: 4,
       usePointStyle: true, titleFont: { family: "Inter", weight: "600" }, bodyFont: { family: "Inter" },
       callbacks: { label: (x) => ` ${round ? x.label : x.dataset.label}: ${fmt(x.raw)}` } };
     const axis = { ticks: { color: ink3, font: { family: "Inter", size: 12 }, maxRotation: 0, autoSkipPadding: 12 }, border: { display: false } };
-    charts.push(new Chart(cv, { type, data: { labels: ch.labels, datasets }, options: {
+    charts.push(new Chart(cv, { type, data: { labels: ch.labels, datasets }, plugins: [depth3d], options: {
+      surface, ink: css("--ink"), layout: { padding: { top: round ? 4 : 14, right: 10, bottom: round ? 12 : 0 } },
       responsive: true, maintainAspectRatio: false, indexAxis: ch.type === "hbar" ? "y" : "x", cutout: ch.type === "doughnut" ? "70%" : 0,
       interaction: round ? {} : { mode: "index", intersect: false }, animation: { duration: 700 },
       plugins: { legend: { display: false }, tooltip },
@@ -330,8 +442,15 @@ function drawCharts() {
              ticks: ch.type === "hbar" ? { ...axis.ticks, padding: 8 } : { ...axis.ticks, padding: 8, callback: fmt } } } } }));
   });
 }
-if (D.insights.length) { $("insights").hidden = false;
-  D.insights.forEach((t, i) => { const li = el("li"); li.append(el("b", "", String(i + 1)), el("span", "", t)); $("insightlist").append(li); }); }
+function drawInsights() {
+  const list = $("insightlist"); list.innerHTML = "";
+  let items = D.insights.slice(), auto = false;
+  if (!items.length) { items = D.charts.map((ch) => (ch.notes || [])[0]).filter(Boolean).slice(0, 4); auto = true; }
+  if (!items.length) return;
+  $("insights").hidden = false; const h = $("insights").querySelector("h2"); h.textContent = "Key takeaways";
+  if (auto) h.append(el("span", "auto", "Spotted automatically"));
+  items.forEach((t, i) => { const li = el("li"); li.append(el("b", "", String(i + 1)), el("span", "", t)); list.append(li); });
+}
 if (D.table) {
   const t = D.table; $("tablecard").hidden = false; $("tabletitle").textContent = t.title || "Data";
   const clean = (x) => String(x == null ? "" : x).replace(/[,₹$€£%\\s]/g, "");
@@ -350,7 +469,7 @@ if (D.table) {
   };
   $("search").oninput = draw; draw();
 }
-function applyTheme() { document.documentElement.classList.toggle("dark", dark); $("theme").textContent = dark ? "Light mode" : "Dark mode"; drawKpis(); drawCharts(); }
+function applyTheme() { document.documentElement.classList.toggle("dark", dark); $("theme").textContent = dark ? "Light mode" : "Dark mode"; drawKpis(); drawCharts(); drawInsights(); }
 $("theme").onclick = () => { dark = !dark; try { localStorage.setItem("krish-dash-theme", dark ? "dark" : "light"); } catch (e) {} applyTheme(); };
 applyTheme();
 </script></body></html>"""

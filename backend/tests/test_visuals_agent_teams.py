@@ -41,6 +41,12 @@ class TestDashboard:
         assert "<title>Sales &lt;Q3&gt;</title>" in page and visuals.CHART_JS in page
         assert page_data(page)["title"] == "Sales <Q3>"
 
+    def test_page_has_3d_charts_and_smart_notes(self):
+        page = visuals.build_dashboard(visuals.clean_dashboard({"title": "x", "kpis": [{"label": "a", "value": "1",
+                                                                                         "trend": [1, "2", "x", 3]}]}))
+        assert "depth3d" in page and "function analyse" in page and "Spotted automatically" in page
+        assert page_data(page)["kpis"][0]["trend"] == [1, 2.0, 3]
+
     def test_script_tags_in_data_cannot_break_out(self):
         page = visuals.build_dashboard(visuals.clean_dashboard({"title": "x", "insights": ["</script><b>"],
                                                                 "kpis": [{"label": "a", "value": "1"}]}))
