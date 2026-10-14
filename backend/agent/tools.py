@@ -15,7 +15,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 import image_edit
 import limits
 import media
-from . import browser, documents, flashcards, prompt_boost, research, sandbox, styles, video, web
+from . import browser, documents, flashcards, prompt_boost, research, sandbox, styles, video, visuals, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -59,6 +59,7 @@ class Tool:
     available: Callable[[], bool] = lambda: True
     scope: str = "general"  # "app" tools are only offered inside an app-builder conversation
     needs_web: bool = False  # searches the web, so only offered when web search is on
+    roomy: bool = False  # a big schema: hidden from free models with a small per-minute token budget
 
     def usable(self, ctx: Optional[ToolContext]) -> bool:
         if self.scope == "app" and not (ctx and ctx.app_id):
@@ -67,11 +68,18 @@ class Tool:
             return False
         if self.needs_web and ctx and not ctx.web:
             return False
+        if self.roomy and ctx and ctx.model and _tight(ctx.model):
+            return False
         return self.available()
 
     def schema(self) -> dict:
         return {"type": "function", "function": {
             "name": self.name, "description": self.description, "parameters": self.parameters}}
+
+
+def _tight(model: str) -> bool:
+    from . import llm
+    return llm.lean(model) and llm.token_budget(model) <= 16000
 
 
 class ToolRegistry:
@@ -342,6 +350,31 @@ async def _create_flashcards(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Made {len(cards)} flashcards", media=[saved])
 
 
+async def _create_dashboard(ctx: ToolContext, args: dict) -> ToolOutput:
+    spec = visuals.clean_dashboard(args)
+    saved = await _save_file(ctx, visuals.build_dashboard(spec).encode("utf-8"), "html", args.get("filename") or spec["title"])
+    return ToolOutput(content=f"Created the dashboard {saved['name']} ({len(spec['kpis'])} numbers, {len(spec['charts'])} "
+                              "charts). The user sees it live in the preview; give two or three takeaways, don't repeat "
+                              "the data.", summary=f"Built dashboard {saved['name']}", media=[saved])
+
+
+async def _create_story(ctx: ToolContext, args: dict) -> ToolOutput:
+    spec = visuals.clean_story(args)
+    saved = await _save_file(ctx, visuals.build_story(spec).encode("utf-8"), "html", args.get("filename") or spec["title"])
+    return ToolOutput(content=f"Created the animated story {saved['name']} with {len(spec['scenes'])} scenes. It plays in "
+                              "the preview; describe it in one line.", summary=f"Made animated story ({len(spec['scenes'])} scenes)",
+                      media=[saved])
+
+
+async def _create_prototype(ctx: ToolContext, args: dict) -> ToolOutput:
+    spec = visuals.clean_prototype(args)
+    saved = await _save_file(ctx, visuals.build_prototype(spec).encode("utf-8"), "html", args.get("filename") or spec["title"])
+    names = ", ".join(s["name"] for s in spec["screens"])
+    return ToolOutput(content=f"Created the clickable {spec['device']} prototype {saved['name']} with screens: {names}. "
+                              "The user can click through it in the preview.",
+                      summary=f"Designed {len(spec['screens'])}-screen prototype", media=[saved])
+
+
 async def _create_file(ctx: ToolContext, args: dict) -> ToolOutput:
     name, ctype = documents.text_file(_require(args, "filename"))
     content = args.get("content")
@@ -554,6 +587,55 @@ def default_registry() -> ToolRegistry:
                 "html": {"type": "string", "description": "Complete HTML document"},
             }, "required": ["filename", "html"]},
             handler=_create_html))
+        .register(Tool(
+            name="create_dashboard", label="Build dashboard",
+            description="Build an interactive data dashboard (number tiles, charts, sortable table) from data you "
+                        "have or calculated. Use it whenever the user wants data visualised, a dashboard or a report "
+                        "with charts.",
+            parameters={"type": "object", "properties": {
+                "title": {"type": "string"}, "subtitle": {"type": "string"},
+                "kpis": {"type": "array", "description": "Headline numbers",
+                         "items": {"type": "object", "properties": {"label": {"type": "string"}, "value": {"type": "string"},
+                                   "change": {"type": "string", "description": "e.g. +12% or -3%"}, "note": {"type": "string"}}}},
+                "charts": {"type": "array", "items": {"type": "object", "properties": {
+                    "title": {"type": "string"}, "type": {"type": "string", "enum": list(visuals.CHART_TYPES)},
+                    "labels": {"type": "array", "items": {"type": "string"}}, "unit": {"type": "string"},
+                    "series": {"type": "array", "items": {"type": "object", "properties": {
+                        "name": {"type": "string"}, "values": {"type": "array", "items": {"type": "number"}}}}}}}},
+                "table": {"type": "object", "properties": {"title": {"type": "string"},
+                          "columns": {"type": "array", "items": {"type": "string"}},
+                          "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}}}},
+                "insights": {"type": "array", "items": {"type": "string"}, "description": "2-5 short takeaways"},
+            }, "required": ["title"]},
+            handler=_create_dashboard, roomy=True))
+        .register(Tool(
+            name="create_story", label="Make animated story",
+            description="Make an animated, auto-playing story (motion graphics) that explains a topic, results or "
+                        "data in 4-10 scenes: explainers, recaps, pitches, data stories.",
+            parameters={"type": "object", "properties": {
+                "title": {"type": "string"},
+                "scenes": {"type": "array", "items": {"type": "object", "properties": {
+                    "type": {"type": "string", "enum": list(visuals.SCENE_TYPES)},
+                    "heading": {"type": "string"}, "text": {"type": "string"},
+                    "value": {"type": "string", "description": "stat scenes: the big number, e.g. 72% or ₹4.2 Cr"},
+                    "items": {"type": "array", "items": {"type": "string"}},
+                    "chart": {"type": "object", "description": "chart scenes: {labels, values}"}}}},
+                "theme": {"type": "string", "enum": ["dark", "light", "warm"]},
+                "seconds_per_scene": {"type": "number"},
+            }, "required": ["title", "scenes"]},
+            handler=_create_story, roomy=True))
+        .register(Tool(
+            name="create_prototype", label="Design prototype",
+            description="Design a clickable UI prototype (app or website mock-up) of 1-8 screens. Each screen is "
+                        "HTML styled with Tailwind classes (bg-brand = accent colour); add data-go=\"Screen name\" to "
+                        "buttons and links to move between screens. Use real-looking content, not lorem ipsum.",
+            parameters={"type": "object", "properties": {
+                "title": {"type": "string"}, "device": {"type": "string", "enum": ["phone", "desktop"]},
+                "accent": {"type": "string", "description": "hex colour"},
+                "screens": {"type": "array", "items": {"type": "object", "properties": {
+                    "name": {"type": "string"}, "html": {"type": "string"}}}},
+            }, "required": ["title", "screens"]},
+            handler=_create_prototype, roomy=True))
         .register(Tool(
             name="create_flashcards", label="Make flashcards",
             description="Make interactive revision flashcards (flip, Got it / Again) from a topic, notes or a file.",

@@ -3,7 +3,8 @@
 Chat with Claude, GPT and Gemini, plus agent tools (web search, browser, code
 execution), images and video, voice, Excel/PowerPoint/Word/PDF creation with
 previews, an app builder with live preview, publishing and git history, and
-scheduled automations.
+scheduled automations that can work as a team of agents, plus live dashboards, animated
+stories and clickable design prototypes made from your data.
 
 ## Try it in your browser (no install)
 

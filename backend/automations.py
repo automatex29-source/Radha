@@ -4,7 +4,10 @@ Each run creates its own conversation (hidden from the main chat list), runs a
 full agent turn with every tool available, and records the outcome in
 `automation_runs`. Runs work as an autonomous agent: they plan first, get a
 larger step budget, can see what the previous run found (memory), and can
-deliver the result by email or to a Discord/Slack webhook. The scheduler claims due automations atomically in MongoDB,
+deliver the result by email or to a Discord/Slack webhook. An automation can also be a team of agents: a
+list of stages run one after another in the same conversation, each stage handing its result to the next,
+with a failed stage retried once. It can stay quiet when nothing changed since the last run, and hand its
+result to another automation when it finishes (a chain). The scheduler claims due automations atomically in MongoDB,
 so several backend processes can run without double-firing.
 """
 import asyncio
@@ -17,7 +20,7 @@ import secrets
 import socket
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -47,6 +50,15 @@ STEPS_NORMAL = 12
 STEPS_THOROUGH = 20
 MEMORY_CHARS = 1500
 MAX_RUN_STEPS_SHOWN = 30
+MAX_STAGES = 6
+MAX_STAGE_CHARS = 1500
+MAX_CHAIN_DEPTH = 3
+RETRY_DELAY_SECONDS = 5
+NOTHING_NEW = "NOTHING NEW"
+QUIET_INSTRUCTIONS = (
+    f"Only report news: if, compared with the previous run's result, nothing new or worth telling happened, make "
+    f"the very first line of your answer exactly '{NOTHING_NEW}' followed by one short sentence, and stop."
+)
 
 AGENT_INSTRUCTIONS = (
     "You are running as an autonomous agent for a saved automation. Nobody is watching, so never ask questions: "
@@ -64,7 +76,9 @@ PLAN_SYSTEM = (
     'tools to use, what to look for, the output format and which files to create", "schedule": {"type": '
     '"daily|weekly|interval|manual", "time": "HH:MM", "weekday": 0-6 (0 = Monday), "minutes": 15-10080}}. '
     "Pick the schedule the goal implies (daily at 08:00 when it says every day, manual when no timing is given). "
-    "Write the task in the same language as the goal, 60-180 words."
+    "Write the task in the same language as the goal, 60-180 words. When the job has clearly separate phases "
+    "(for example research, then analysis, then writing a report), also add \"stages\": 2-4 short instructions, "
+    "one per agent, run in order, each building on the previous one's result."
 )
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
@@ -163,18 +177,24 @@ def describe_schedule(s: dict) -> str:
 
 
 # ------------------------------------------------------------------ running
-async def start_run(auto: dict, trigger: str, payload: Optional[str] = None) -> dict:
+async def start_run(auto: dict, trigger: str, payload: Optional[str] = None, depth: int = 0) -> dict:
     """Create a run record and execute it in the background."""
     ts = _now()
     conv = {"id": str(uuid.uuid4()), "userId": auto["userId"], "automationId": auto["id"],
             "title": f"{auto['name']} — {ts.strftime('%b %d, %H:%M UTC')}", "model": auto.get("model") or default_model,
             "projectId": None, "createdAt": _iso(ts), "updatedAt": _iso(ts)}
     prompt = auto["prompt"]
-    if payload:
+    if payload and trigger == "chain":
+        prompt += f"\n\nThis run was started by another automation, which handed over its result:\n---\n{payload[:MAX_PAYLOAD_CHARS]}\n---"
+    elif payload:
         prompt += f"\n\nThis run was triggered by a webhook with this payload:\n```\n{payload[:MAX_PAYLOAD_CHARS]}\n```"
+    stages = clean_stages(auto.get("stages"))
+    if stages:
+        prompt += f"\n\nYou are agent 1 of a team of {len(stages)}. Your part: {stages[0]}"
     run = {"id": uuid.uuid4().hex[:12], "automationId": auto["id"], "userId": auto["userId"], "trigger": trigger,
            "status": "running", "conversationId": conv["id"], "startedAt": _iso(ts), "finishedAt": None,
-           "output": None, "error": None, "media": []}
+           "output": None, "error": None, "media": [], "depth": depth,
+           "stages": [{"task": t, "status": "waiting"} for t in stages]}
     await db.conversations.insert_one(conv)
     await db.messages.insert_one({"id": str(uuid.uuid4()), "conversationId": conv["id"], "role": "user",
                                   "content": prompt, "model": None, "createdAt": _iso(ts)})
@@ -188,7 +208,9 @@ async def start_run(auto: dict, trigger: str, payload: Optional[str] = None) -> 
 async def _agent_context(auto: dict) -> str:
     """The agent instructions, plus what the last successful run produced when memory is on."""
     parts = [AGENT_INSTRUCTIONS]
-    if auto.get("memory", True):
+    if auto.get("onlyIfNew"):
+        parts.append(QUIET_INSTRUCTIONS)
+    if auto.get("memory", True) or auto.get("onlyIfNew"):
         last = await db.automation_runs.find_one({"automationId": auto["id"], "status": "succeeded"},
                                                  sort=[("startedAt", -1)])
         if last and last.get("output"):
@@ -203,28 +225,95 @@ def _step_view(step: dict) -> dict:
             "status": step.get("status"), "summary": (step.get("summary") or "")[:200]}
 
 
-async def _execute(auto: dict, run: dict, conv: dict, context: str = ""):
+def clean_stages(stages) -> list:
+    if not isinstance(stages, list):
+        return []
+    return [str(t).strip()[:MAX_STAGE_CHARS] for t in stages if str(t or "").strip()][:MAX_STAGES]
+
+
+async def _turn(conv: dict, context: str, steps: int) -> Optional[str]:
+    """One agent turn in the run's conversation; returns the error, or None when it finished."""
     error = None
+    try:
+        async for chunk in run_turn(conv["id"], conv["model"], agent=True, extra_system=context or None,
+                                    max_steps=steps):
+            if chunk.startswith("event: error"):
+                error = json.loads(chunk.split("data: ", 1)[1])
+    except Exception as exc:
+        logger.exception("Automation run failed")
+        error = str(exc)
+    return error
+
+
+async def _last_reply(conv_id: str) -> Optional[dict]:
+    return await db.messages.find_one({"conversationId": conv_id, "role": "assistant"}, sort=[("createdAt", -1)])
+
+
+async def _turn_with_retry(conv: dict, context: str, steps: int) -> tuple:
+    """Run a turn, and once more if it fails (APIs and websites often fail only for a moment)."""
+    before = await _last_reply(conv["id"])
+    error = await _turn(conv, context, steps)
+    reply = await _last_reply(conv["id"])
+    if not error and reply and reply != before:
+        return None, reply, 0
+    await asyncio.sleep(RETRY_DELAY_SECONDS)
+    error = await _turn(conv, context, steps)
+    reply = await _last_reply(conv["id"])
+    reply = reply if reply and reply != before else None
+    if not error and not reply:
+        error = "The agent didn't answer"
+    return error, reply, 1
+
+
+async def _execute(auto: dict, run: dict, conv: dict, context: str = ""):
     steps = STEPS_THOROUGH if auto.get("thorough") else STEPS_NORMAL
+    stages = run.get("stages") or [{"task": None}]
+    retries, error, reply, merged_media, all_steps = 0, None, None, [], []
     async with _semaphore:
-        try:
-            async for chunk in run_turn(conv["id"], conv["model"], agent=True, extra_system=context or None,
-                                        max_steps=steps):
-                if chunk.startswith("event: error"):
-                    error = json.loads(chunk.split("data: ", 1)[1])
-        except Exception as exc:
-            logger.exception("Automation run failed")
-            error = str(exc)
-    reply = await db.messages.find_one({"conversationId": conv["id"], "role": "assistant"}, sort=[("createdAt", -1)])
+        for i, stage in enumerate(stages):
+            if i:
+                await db.messages.insert_one({
+                    "id": str(uuid.uuid4()), "conversationId": conv["id"], "role": "user", "createdAt": _iso(_now()),
+                    "model": None, "content": f"You are agent {i + 1} of {len(stages)}. The previous agent's result is "
+                                              f"above; build on it. Your part: {stage['task']}"})
+            if stage.get("task"):
+                await db.automation_runs.update_one({"id": run["id"]}, {"$set": {f"stages.{i}.status": "running"}})
+            error, reply, retried = await _turn_with_retry(conv, context, steps)
+            retries += retried
+            if reply:
+                merged_media += [m for m in reply.get("media") or [] if m not in merged_media]
+                all_steps += reply.get("steps") or []
+            if stage.get("task"):
+                await db.automation_runs.update_one({"id": run["id"]}, {"$set": {
+                    f"stages.{i}.status": "failed" if error else "done"}})
+            if error:
+                break
     status = "failed" if error or not reply else "succeeded"
-    update = {"status": status, "finishedAt": _iso(_now()), "error": error,
-              "output": (reply or {}).get("content", "")[:MAX_OUTPUT_CHARS] or None,
-              "media": (reply or {}).get("media") or [],
-              "steps": [_step_view(s) for s in ((reply or {}).get("steps") or [])[:MAX_RUN_STEPS_SHOWN]]}
-    update["delivery"] = await _deliver(auto, {**run, **update})
+    output = (reply or {}).get("content", "")[:MAX_OUTPUT_CHARS] or None
+    quiet = status == "succeeded" and bool(auto.get("onlyIfNew")) and (output or "").lstrip().upper().startswith(NOTHING_NEW)
+    update = {"status": status, "finishedAt": _iso(_now()), "error": error, "output": output, "quiet": quiet,
+              "retries": retries, "media": merged_media,
+              "steps": [_step_view(s) for s in all_steps[:MAX_RUN_STEPS_SHOWN]]}
+    update["delivery"] = [] if quiet else await _deliver(auto, {**run, **update})
     await db.automation_runs.update_one({"id": run["id"]}, {"$set": update})
     await db.automations.update_one({"id": auto["id"]}, {"$set": {
         "lastRunAt": update["finishedAt"], "lastStatus": status, "lockedUntil": None}})
+    if status == "succeeded" and not quiet:
+        await _chain(auto, run, output or "")
+
+
+async def _chain(auto: dict, run: dict, output: str):
+    """Hand the result to the next automation, when one is set (never loops forever)."""
+    nxt_id = auto.get("thenRun")
+    depth = (run.get("depth") or 0) + 1
+    if not nxt_id or depth > MAX_CHAIN_DEPTH:
+        return
+    nxt = await db.automations.find_one({"id": nxt_id, "userId": auto["userId"], "enabled": True})
+    if nxt and nxt["id"] != auto["id"]:
+        try:
+            await start_run(nxt, "chain", f"From '{auto['name']}':\n{output}", depth=depth)
+        except Exception:
+            logger.exception("Couldn't start the chained automation")
 
 
 # ----------------------------------------------------------------- delivery
@@ -355,6 +444,9 @@ class AutomationIn(BaseModel):
     thorough: bool = False  # a bigger step budget for long multi-step jobs
     emailResult: bool = False
     notifyUrl: Optional[str] = Field(default=None, max_length=500)  # Discord/Slack/any webhook
+    stages: List[str] = Field(default_factory=list, max_length=MAX_STAGES)  # a team of agents, run in order
+    onlyIfNew: bool = False  # stay quiet (no email/webhook, no chain) when nothing changed
+    thenRun: Optional[str] = None  # another automation to hand the result to
 
 
 class AutomationPatch(BaseModel):
@@ -367,6 +459,9 @@ class AutomationPatch(BaseModel):
     thorough: Optional[bool] = None
     emailResult: Optional[bool] = None
     notifyUrl: Optional[str] = Field(default=None, max_length=500)  # "" removes it
+    stages: Optional[List[str]] = Field(default=None, max_length=MAX_STAGES)  # [] removes them
+    onlyIfNew: Optional[bool] = None
+    thenRun: Optional[str] = None  # "" removes it
 
 
 class PlanIn(BaseModel):
@@ -381,6 +476,7 @@ def public_automation(doc: dict) -> dict:
         "lastStatus": doc.get("lastStatus"),
         "memory": doc.get("memory", True), "thorough": bool(doc.get("thorough")),
         "emailResult": bool(doc.get("emailResult")), "notifyUrl": doc.get("notifyUrl"),
+        "stages": clean_stages(doc.get("stages")), "onlyIfNew": bool(doc.get("onlyIfNew")), "thenRun": doc.get("thenRun"),
         "webhookUrl": f"/api/hooks/{doc['webhookSecret']}" if doc.get("webhookSecret") else None,
         "createdAt": doc["createdAt"],
     }
@@ -389,7 +485,7 @@ def public_automation(doc: dict) -> dict:
 def public_run(doc: dict) -> dict:
     return {k: doc.get(k) for k in ("id", "automationId", "trigger", "status", "conversationId", "startedAt",
                                     "finishedAt", "output", "error", "media", "steps",
-                                    "delivery")}
+                                    "delivery", "stages", "quiet", "retries")}
 
 
 async def _owned(aid: str, user_id: str) -> dict:
@@ -413,6 +509,17 @@ async def _clean_notify_url(url: Optional[str]) -> Optional[str]:
         return await check_notify_url(url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+async def _clean_then_run(target: Optional[str], user_id: str, own_id: Optional[str]) -> Optional[str]:
+    target = (target or "").strip()
+    if not target:
+        return None
+    if target == own_id:
+        raise HTTPException(status_code=400, detail="An automation can't hand its result to itself")
+    if not await db.automations.find_one({"id": target, "userId": user_id}):
+        raise HTTPException(status_code=400, detail="The automation to run next wasn't found")
+    return target
 
 
 @router.get("/automations/options")
@@ -453,7 +560,11 @@ def parse_plan(data: dict, goal: str) -> dict:
         schedule["minutes"] = min(60 * 24 * 7, max(MIN_INTERVAL_MINUTES, int(raw.get("minutes", 60))))
     except (TypeError, ValueError):
         schedule["minutes"] = 60
-    return {"name": name, "prompt": task, "schedule": schedule}
+    plan = {"name": name, "prompt": task, "schedule": schedule}
+    stages = clean_stages(data.get("stages"))
+    if len(stages) >= 2:
+        plan["stages"] = stages[:4]
+    return plan
 
 
 @router.post("/automations")
@@ -465,6 +576,8 @@ async def create_automation(body: AutomationIn, user_id: str = Depends(current_u
            "schedule": schedule, "model": body.model, "enabled": body.enabled,
            "memory": body.memory, "thorough": body.thorough, "emailResult": body.emailResult,
            "notifyUrl": await _clean_notify_url(body.notifyUrl),
+           "stages": clean_stages(body.stages), "onlyIfNew": body.onlyIfNew,
+           "thenRun": await _clean_then_run(body.thenRun, user_id, None),
            "nextRunAt": _iso(next_run(schedule, now)) if body.enabled else None,
            "lastRunAt": None, "lastStatus": None, "lockedUntil": None, "webhookSecret": None, "createdAt": _iso(now)}
     await db.automations.insert_one(doc)
@@ -482,6 +595,10 @@ async def update_automation(aid: str, body: AutomationPatch, user_id: str = Depe
     updates = body.model_dump(exclude_none=True)
     if body.notifyUrl is not None:
         updates["notifyUrl"] = await _clean_notify_url(body.notifyUrl)
+    if body.stages is not None:
+        updates["stages"] = clean_stages(body.stages)
+    if body.thenRun is not None:
+        updates["thenRun"] = await _clean_then_run(body.thenRun, user_id, aid)
     if body.schedule:
         updates["schedule"] = validate_schedule(body.schedule).model_dump()
     merged = {**doc, **updates}
