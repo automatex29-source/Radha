@@ -596,7 +596,8 @@ def default_registry() -> ToolRegistry:
                 "title": {"type": "string"}, "subtitle": {"type": "string"},
                 "kpis": {"type": "array", "description": "Headline numbers",
                          "items": {"type": "object", "properties": {"label": {"type": "string"}, "value": {"type": "string"},
-                                   "change": {"type": "string", "description": "e.g. +12% or -3%"}, "note": {"type": "string"}}}},
+                                   "change": {"type": "string", "description": "e.g. +12% or -3%"}, "note": {"type": "string"},
+                                   "trend": {"type": "array", "items": {"type": "number"}, "description": "optional recent values for a sparkline"}}}},
                 "charts": {"type": "array", "items": {"type": "object", "properties": {
                     "title": {"type": "string"}, "type": {"type": "string", "enum": list(visuals.CHART_TYPES)},
                     "labels": {"type": "array", "items": {"type": "string"}}, "unit": {"type": "string"},

@@ -81,7 +81,8 @@ def clean_dashboard(args: dict) -> dict:
     for k in _list(args.get("kpis"))[:MAX_KPIS]:
         if isinstance(k, dict) and _text(k.get("label")):
             kpis.append({"label": _text(k.get("label"), 60), "value": _text(k.get("value"), 30),
-                         "change": _text(k.get("change"), 20), "note": _text(k.get("note"), 80)})
+                         "change": _text(k.get("change"), 20), "note": _text(k.get("note"), 80),
+                         "trend": [v for v in (_num(x) for x in _list(k.get("trend"))[:40]) if v is not None]})
     charts = [c for c in (_clean_chart(c) for c in _list(args.get("charts"))[:MAX_CHARTS]) if c]
     table = None
     t = args.get("table")
@@ -159,89 +160,199 @@ def build_prototype(spec: dict) -> str:
 _DASHBOARD = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
 <script src="__CHARTJS__"></script>
 <style>
-:root{--bg:#f6f7fb;--card:#fff;--fg:#151a28;--muted:#667085;--line:#e6e8f0;--up:#12805c;--down:#c0392b;
---c1:#4f46e5;--c2:#0ea5a4;--c3:#f59e0b;--c4:#e11d74;--c5:#6366f1;--c6:#64748b}
-@media (prefers-color-scheme:dark){:root{--bg:#0e1120;--card:#171b2e;--fg:#eceefa;--muted:#9aa1bd;--line:#272c45;
---up:#4ade80;--down:#f87171;--c1:#8b8cff;--c2:#2dd4bf;--c3:#fbbf24;--c4:#f472b6;--c5:#a5b4fc;--c6:#94a3b8}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:1180px;margin:0 auto;padding:28px 18px 40px}
-h1{font-size:24px;margin:0;letter-spacing:-.01em}.sub{color:var(--muted);margin:4px 0 0}
-.grid{display:grid;gap:14px;margin-top:20px}.kpis{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
-.charts{grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr))}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
-.kpi .label{font-size:13px;color:var(--muted)}.kpi .value{font-size:28px;font-weight:700;margin-top:4px;letter-spacing:-.02em}
-.kpi .change{font-size:13px;font-weight:600}.up{color:var(--up)}.down{color:var(--down)}.kpi .note{font-size:12px;color:var(--muted)}
-.card h2{font-size:15px;margin:0 0 10px}.chart{position:relative;height:280px}
-.insights{margin:20px 0 0;padding:16px 16px 16px 34px}.insights li{margin:4px 0}
-.tablewrap{overflow:auto;max-height:520px}table{border-collapse:collapse;width:100%;font-size:13.5px}
-th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
-th{position:sticky;top:0;background:var(--card);cursor:pointer;user-select:none;color:var(--muted);font-weight:600}
-th:hover{color:var(--fg)}td.num{text-align:right;font-variant-numeric:tabular-nums}
-.search{width:100%;max-width:280px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;margin-bottom:10px}
-.kpi{animation:rise .5s ease both}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+:root{color-scheme:light;--bg:#f5f6fb;--surface:#ffffff;--surface-2:#f7f8fc;--ink:#12162a;--ink-2:#4b5167;--ink-3:#7c8299;
+--line:#eceef5;--grid:#eff1f6;--brand:#5b4ff0;--brand-2:#9b5cf6;--brand-soft:#efedff;
+--up:#0f7a4f;--up-bg:#e3f5ec;--down:#c2332f;--down-bg:#fdebea;
+--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#6250d6;--s8:#e34948;
+--shadow:0 1px 2px rgba(18,22,42,.04),0 8px 24px rgba(18,22,42,.06)}
+.dark{color-scheme:dark;--bg:#0d0f1a;--surface:#161a2b;--surface-2:#1b2034;--ink:#eef0fa;--ink-2:#b4b9cf;--ink-3:#868ca6;
+--line:#252a40;--grid:#21263a;--brand:#8b80ff;--brand-2:#b98bff;--brand-soft:#221f45;
+--up:#4ad391;--up-bg:#0f2e22;--down:#ff8a84;--down-bg:#3a1a1c;
+--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;
+--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.5 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:1200px;margin:0 auto;padding:0 20px 44px}
+header{position:relative;margin:0 -20px 4px;padding:30px 20px 26px;overflow:hidden}
+header:before{content:"";position:absolute;inset:0;background:radial-gradient(600px 220px at 0% 0%,color-mix(in srgb,var(--brand) 16%,transparent),transparent 70%),
+radial-gradient(500px 200px at 100% 0%,color-mix(in srgb,var(--brand-2) 12%,transparent),transparent 70%);pointer-events:none}
+.head{position:relative;display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--brand);background:var(--brand-soft);
+padding:3px 10px;border-radius:999px;margin-bottom:10px}
+.eyebrow:before{content:"";width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,var(--brand),var(--brand-2))}
+h1{font:800 clamp(24px,3.4vw,32px)/1.15 "Plus Jakarta Sans",Inter,sans-serif;margin:0;letter-spacing:-.025em}
+.sub{color:var(--ink-2);margin:6px 0 0;max-width:720px;font-size:15px}
+.grow{flex:1;min-width:240px}
+.theme{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:10px;height:36px;padding:0 12px;
+font:500 13px Inter,sans-serif;cursor:pointer;box-shadow:var(--shadow)}
+.theme:hover{color:var(--ink)}
+.grid{display:grid;gap:16px;margin-top:16px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.charts{grid-template-columns:repeat(12,1fr)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;min-width:0;box-shadow:var(--shadow)}
+.kpi{position:relative;overflow:hidden;animation:rise .45s ease both}
+.kpi .label{font-size:13px;font-weight:500;color:var(--ink-2)}
+.kpi .row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:8px}
+.kpi .value{font:700 30px/1.05 "Plus Jakarta Sans",Inter,sans-serif;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .meta{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px}
+.pill.up{color:var(--up);background:var(--up-bg)}.pill.down{color:var(--down);background:var(--down-bg)}
+.pill.flat{color:var(--ink-2);background:var(--surface-2)}
+.kpi .note{font-size:12px;color:var(--ink-3)}
+.spark{width:92px;height:34px;flex-shrink:0}
+.kpi:first-child{background:linear-gradient(135deg,var(--brand),var(--brand-2));border-color:transparent;color:#fff}
+.kpi:first-child .label,.kpi:first-child .note{color:rgba(255,255,255,.82)}
+.kpi:first-child .pill{background:rgba(255,255,255,.18);color:#fff}
+.chartcard{grid-column:span 6}.chartcard.wide{grid-column:span 12}
+.chead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
+.chead h2{font:700 15px/1.3 "Plus Jakarta Sans",Inter,sans-serif;margin:0;letter-spacing:-.01em}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.chart{position:relative;height:290px}.round .chart{height:250px}
+.center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.center b{font:700 22px "Plus Jakarta Sans",Inter,sans-serif;letter-spacing:-.02em}.center small{font-size:12px;color:var(--ink-3)}
+.insights h2{font:700 15px "Plus Jakarta Sans",Inter,sans-serif;margin:0 0 12px}
+.insights ol{list-style:none;margin:0;padding:0;display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.insights li{display:flex;gap:10px;align-items:flex-start;padding:12px;border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:14px}
+.insights li b{flex-shrink:0;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:12px;color:#fff;
+background:linear-gradient(135deg,var(--brand),var(--brand-2))}
+.tbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}.tbar h2{flex:1;margin:0;font:700 15px "Plus Jakarta Sans",Inter,sans-serif}
+.count{font-size:12px;color:var(--ink-3)}
+.search{width:240px;max-width:100%;padding:8px 12px 8px 32px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2) no-repeat 10px center;
+background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%237c8299' stroke-width='2' stroke-linecap='round' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+color:var(--ink);font:inherit;outline:none}.search:focus{border-color:var(--brand)}
+.tablewrap{overflow:auto;max-height:540px;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:10px 14px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}tbody tr:hover td{background:var(--surface-2)}
+th{position:sticky;top:0;background:var(--surface-2);cursor:pointer;user-select:none;color:var(--ink-2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+th:hover{color:var(--ink)}th .arrow{color:var(--brand)}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (max-width:860px){.chartcard{grid-column:span 12}}
+@media (max-width:560px){.kpis{grid-template-columns:1fr 1fr;gap:10px}.kpi{padding:14px}.kpi .value{font-size:22px}.spark{display:none}
+.kpi .note{display:none}main{padding:0 14px 32px}header{margin:0 -14px 4px;padding:24px 14px 18px}.grid{gap:12px}}
 @media (prefers-reduced-motion:reduce){.kpi{animation:none}}
 </style></head><body><main>
-<h1 id="title"></h1><p class="sub" id="subtitle"></p>
+<header><div class="head"><div class="grow"><div class="eyebrow">Dashboard</div><h1 id="title"></h1><p class="sub" id="subtitle"></p></div>
+<button class="theme" id="theme" type="button">Dark mode</button></div></header>
 <section class="grid kpis" id="kpis"></section>
 <section class="grid charts" id="charts"></section>
-<ul class="card insights" id="insights" hidden></ul>
-<section class="card" id="tablecard" style="margin-top:14px" hidden><h2 id="tabletitle"></h2>
-<input class="search" id="search" placeholder="Filter rows" aria-label="Filter rows"><div class="tablewrap"><table id="table"></table></div></section>
+<section class="card insights" id="insights" style="margin-top:16px" hidden><h2>Key takeaways</h2><ol id="insightlist"></ol></section>
+<section class="card" id="tablecard" style="margin-top:16px" hidden><div class="tbar"><h2 id="tabletitle"></h2><span class="count" id="count"></span>
+<input class="search" id="search" placeholder="Search rows" aria-label="Search rows"></div><div class="tablewrap"><table id="table"></table></div></section>
 </main><script>
 const D = __DATA__;
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-$("title").textContent = D.title; $("subtitle").textContent = D.subtitle || ""; document.title = D.title;
-D.kpis.forEach((k, i) => {
-  const c = el("div", "card kpi"); c.style.animationDelay = (i * 60) + "ms";
-  c.append(el("div", "label", k.label), el("div", "value", k.value));
-  if (k.change) c.append(el("div", "change " + (/^\\s*[-−▼↓]/.test(k.change) ? "down" : "up"), k.change));
-  if (k.note) c.append(el("div", "note", k.note));
-  $("kpis").append(c);
-});
-if (!D.kpis.length) $("kpis").remove();
-if (D.insights.length) { const ul = $("insights"); ul.hidden = false; D.insights.forEach((t) => ul.append(el("li", "", t))); }
-const css = getComputedStyle(document.documentElement);
-const palette = ["--c1", "--c2", "--c3", "--c4", "--c5", "--c6"].map((v) => css.getPropertyValue(v).trim());
-const muted = css.getPropertyValue("--muted").trim(), line = css.getPropertyValue("--line").trim();
-const fmt = (u) => (v) => (typeof v === "number" ? v.toLocaleString() : v) + (u ? " " + u : "");
-D.charts.forEach((ch) => {
-  const c = el("div", "card"); c.append(el("h2", "", ch.title));
-  const box = el("div", "chart"); const cv = document.createElement("canvas"); box.append(cv); c.append(box); $("charts").append(c);
-  if (!window.Chart) { box.textContent = "Charts need an internet connection."; return; }
-  const round = ch.type === "pie" || ch.type === "doughnut";
-  const type = ch.type === "area" ? "line" : ch.type === "hbar" ? "bar" : ch.type;
-  const datasets = ch.series.map((s, i) => ({
-    label: s.name, data: s.values, borderWidth: round ? 1 : 2, tension: .3, pointRadius: ch.labels.length > 40 ? 0 : 3,
-    fill: ch.type === "area", borderColor: round ? css.getPropertyValue("--card").trim() : palette[i % 6],
-    backgroundColor: round ? ch.labels.map((_, j) => palette[j % 6]) : ch.type === "area" ? palette[i % 6] + "33" : palette[i % 6],
-    borderRadius: type === "bar" ? 6 : 0, maxBarThickness: 46,
-  }));
-  new Chart(cv, { type, data: { labels: ch.labels, datasets }, options: {
-    responsive: true, maintainAspectRatio: false, indexAxis: ch.type === "hbar" ? "y" : "x",
-    plugins: { legend: { display: round || datasets.length > 1, labels: { color: muted, boxWidth: 12 } },
-      tooltip: { callbacks: { label: (x) => `${x.dataset.label}: ${fmt(ch.unit)(x.raw)}` } } },
-    scales: round ? {} : { x: { ticks: { color: muted }, grid: { display: false } },
-      y: { ticks: { color: muted, callback: fmt(ch.unit) }, grid: { color: line } } } } });
-});
-if (!D.charts.length) $("charts").remove();
+const svg = (tag, attrs) => { const e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+let dark = matchMedia("(prefers-color-scheme: dark)").matches;
+try { const saved = localStorage.getItem("krish-dash-theme"); if (saved) dark = saved === "dark"; } catch (e) {}
+$("title").textContent = D.title; document.title = D.title;
+if (D.subtitle) $("subtitle").textContent = D.subtitle; else $("subtitle").remove();
+const charts = [];
+function trendOf(change) { const c = String(change || "").trim(); if (!c) return "";
+  if (/^[-−▼↓]/.test(c)) return "down"; if (/^(0+([.,]0+)?%?|±.*|flat|no change)$/i.test(c)) return "flat"; return "up"; }
+function sparkline(values, color) {
+  const v = values.filter((x) => typeof x === "number"); if (v.length < 2) return null;
+  const w = 92, h = 34, min = Math.min(...v), max = Math.max(...v), span = max - min || 1;
+  const pts = v.map((x, i) => [(i / (v.length - 1)) * (w - 6) + 3, h - 4 - ((x - min) / span) * (h - 8)]);
+  const s = svg("svg", { viewBox: `0 0 ${w} ${h}`, class: "spark", "aria-hidden": "true" });
+  s.append(svg("polyline", { points: pts.map((p) => p.join(",")).join(" "), fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  const last = pts[pts.length - 1]; s.append(svg("circle", { cx: last[0], cy: last[1], r: 3, fill: color }));
+  return s;
+}
+function drawKpis() {
+  const box = $("kpis"); box.innerHTML = "";
+  if (!D.kpis.length) { box.hidden = true; return; }
+  D.kpis.forEach((k, i) => {
+    const c = el("div", "card kpi"); c.style.animationDelay = (i * 60) + "ms";
+    c.append(el("div", "label", k.label));
+    const row = el("div", "row"); row.append(el("div", "value", k.value));
+    const sp = k.trend && sparkline(k.trend, i === 0 ? "#fff" : css("--s1")); if (sp) row.append(sp);
+    c.append(row);
+    if (k.change || k.note) { const m = el("div", "meta"); const t = trendOf(k.change);
+      if (k.change) m.append(el("span", "pill " + t, (t === "up" ? "▲ " : t === "down" ? "▼ " : "") + k.change.replace(/^[▲▼↑↓]\\s*/, "")));
+      if (k.note) m.append(el("span", "note", k.note)); c.append(m); }
+    box.append(c);
+  });
+}
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const compact = (v) => typeof v !== "number" ? v : Math.abs(v) >= 1e7 ? (v / 1e6).toFixed(1).replace(/\\.0$/, "") + "M"
+  : Math.abs(v) >= 1e4 ? (v / 1e3).toFixed(1).replace(/\\.0$/, "") + "K" : v.toLocaleString();
+function drawCharts() {
+  charts.forEach((c) => c.destroy()); charts.length = 0;
+  const box = $("charts"); box.innerHTML = "";
+  if (!D.charts.length) { box.hidden = true; return; }
+  const palette = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s7", "--s8"].map(css);
+  const ink2 = css("--ink-2"), ink3 = css("--ink-3"), grid = css("--grid"), surface = css("--surface");
+  // Two charts per row; with an odd count the first line or bar chart gets the full width.
+  const wideAt = D.charts.length % 2 ? Math.max(0, D.charts.findIndex((c) => !["pie", "doughnut"].includes(c.type))) : -1;
+  D.charts.forEach((ch, n) => {
+    const round = ch.type === "pie" || ch.type === "doughnut";
+    const c = el("div", "card chartcard" + (round ? " round" : "") + (n === wideAt ? " wide" : ""));
+    const head = el("div", "chead"); head.append(el("h2", "", ch.title || "Chart"));
+    const names = round ? ch.labels : ch.series.map((s) => s.name);
+    if (names.length > 1) { const lg = el("div", "legend");
+      names.slice(0, 8).forEach((nm, i) => { const s = el("span"); const sw = el("i"); sw.style.background = palette[i % 8]; s.append(sw, document.createTextNode(nm)); lg.append(s); });
+      head.append(lg); }
+    c.append(head);
+    const box2 = el("div", "chart"); const cv = document.createElement("canvas"); box2.append(cv); c.append(box2); box.append(c);
+    if (!window.Chart) { box2.textContent = "Charts need an internet connection."; return; }
+    if (round) { const total = ch.series[0].values.reduce((a, b) => a + (b || 0), 0);
+      const mid = el("div", "center"); mid.append(el("b", "", compact(total) + (ch.unit ? " " + ch.unit : "")), el("small", "", "Total")); box2.append(mid); }
+    const type = ch.type === "area" ? "line" : ch.type === "hbar" ? "bar" : ch.type;
+    const datasets = ch.series.map((s, i) => ({
+      label: s.name, data: s.values, borderWidth: type === "bar" ? 0 : 2, tension: .35, spanGaps: true,
+      pointRadius: 0, pointHoverRadius: 5, pointHoverBorderWidth: 2, pointHoverBorderColor: surface, pointBackgroundColor: palette[i % 8],
+      fill: ch.type === "area" ? "origin" : false, borderColor: round ? surface : palette[i % 8],
+      backgroundColor: round ? ch.labels.map((_, j) => palette[j % 8]) : ch.type === "area" ? palette[i % 8] + "1f" : palette[i % 8],
+      borderRadius: type === "bar" ? { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 } : 0,
+      borderSkipped: "start", maxBarThickness: 24, categoryPercentage: .7, barPercentage: .85,
+      hoverOffset: round ? 4 : 0, spacing: round ? 2 : 0,
+    }));
+    if (ch.type === "hbar") datasets.forEach((d) => { d.borderRadius = { topRight: 4, bottomRight: 4, topLeft: 0, bottomLeft: 0 }; });
+    const fmt = (v) => compact(v) + (ch.unit ? " " + ch.unit : "");
+    const tooltip = { backgroundColor: css("--ink"), titleColor: surface, bodyColor: surface, padding: 10, cornerRadius: 10, boxPadding: 4,
+      usePointStyle: true, titleFont: { family: "Inter", weight: "600" }, bodyFont: { family: "Inter" },
+      callbacks: { label: (x) => ` ${round ? x.label : x.dataset.label}: ${fmt(x.raw)}` } };
+    const axis = { ticks: { color: ink3, font: { family: "Inter", size: 12 }, maxRotation: 0, autoSkipPadding: 12 }, border: { display: false } };
+    charts.push(new Chart(cv, { type, data: { labels: ch.labels, datasets }, options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: ch.type === "hbar" ? "y" : "x", cutout: ch.type === "doughnut" ? "70%" : 0,
+      interaction: round ? {} : { mode: "index", intersect: false }, animation: { duration: 700 },
+      plugins: { legend: { display: false }, tooltip },
+      scales: round ? {} : {
+        x: { ...axis, grid: { display: ch.type === "hbar", color: grid }, ticks: ch.type === "hbar" ? { ...axis.ticks, callback: fmt } : axis.ticks },
+        y: { ...axis, beginAtZero: type === "bar", grid: { display: ch.type !== "hbar", color: grid, drawTicks: false },
+             ticks: ch.type === "hbar" ? { ...axis.ticks, padding: 8 } : { ...axis.ticks, padding: 8, callback: fmt } } } } }));
+  });
+}
+if (D.insights.length) { $("insights").hidden = false;
+  D.insights.forEach((t, i) => { const li = el("li"); li.append(el("b", "", String(i + 1)), el("span", "", t)); $("insightlist").append(li); }); }
 if (D.table) {
-  const t = D.table, card = $("tablecard"); card.hidden = false; $("tabletitle").textContent = t.title || "Data";
-  const numeric = (t.columns.length ? t.columns : t.rows[0]).map((_, i) => t.rows.every((r) => r[i] === "" || r[i] == null || !isNaN(parseFloat(String(r[i]).replace(/[,₹$€£%\\s]/g, "")))));
+  const t = D.table; $("tablecard").hidden = false; $("tabletitle").textContent = t.title || "Data";
+  const clean = (x) => String(x == null ? "" : x).replace(/[,₹$€£%\\s]/g, "");
+  const numeric = (t.columns.length ? t.columns : t.rows[0]).map((_, i) => t.rows.some((r) => clean(r[i]) !== "") && t.rows.every((r) => clean(r[i]) === "" || !isNaN(parseFloat(clean(r[i])))));
   let rows = t.rows.slice(), sortCol = -1, asc = true;
-  const val = (r, i) => numeric[i] ? parseFloat(String(r[i]).replace(/[,₹$€£%\\s]/g, "")) || 0 : String(r[i] || "").toLowerCase();
+  const val = (r, i) => numeric[i] ? parseFloat(clean(r[i])) || 0 : String(r[i] || "").toLowerCase();
   const draw = () => {
     const q = $("search").value.toLowerCase(), table = $("table"); table.innerHTML = "";
-    if (t.columns.length) { const tr = el("tr"); t.columns.forEach((c, i) => { const th = el("th", "", c + (i === sortCol ? (asc ? " ▲" : " ▼") : ""));
-      th.onclick = () => { asc = sortCol === i ? !asc : true; sortCol = i; rows.sort((a, b) => (val(a, i) > val(b, i) ? 1 : -1) * (asc ? 1 : -1)); draw(); }; tr.append(th); });
+    if (t.columns.length) { const tr = el("tr"); t.columns.forEach((c, i) => { const th = el("th", numeric[i] ? "num" : "", c);
+      if (i === sortCol) th.append(el("span", "arrow", asc ? " ↑" : " ↓"));
+      th.onclick = () => { asc = sortCol === i ? !asc : !numeric[i]; sortCol = i; rows.sort((a, b) => (val(a, i) > val(b, i) ? 1 : val(a, i) < val(b, i) ? -1 : 0) * (asc ? 1 : -1)); draw(); }; tr.append(th); });
       const th = el("thead"); th.append(tr); table.append(th); }
-    const tb = el("tbody"); rows.filter((r) => !q || r.join(" ").toLowerCase().includes(q)).forEach((r) => {
-      const tr = el("tr"); r.forEach((v, i) => tr.append(el("td", numeric[i] ? "num" : "", v))); tb.append(tr); }); table.append(tb);
+    const shown = rows.filter((r) => !q || r.join(" ").toLowerCase().includes(q));
+    const tb = el("tbody"); shown.forEach((r) => { const tr = el("tr"); r.forEach((v, i) => tr.append(el("td", numeric[i] ? "num" : "", v))); tb.append(tr); }); table.append(tb);
+    $("count").textContent = shown.length === rows.length ? `${rows.length} rows` : `${shown.length} of ${rows.length} rows`;
   };
   $("search").oninput = draw; draw();
 }
+function applyTheme() { document.documentElement.classList.toggle("dark", dark); $("theme").textContent = dark ? "Light mode" : "Dark mode"; drawKpis(); drawCharts(); }
+$("theme").onclick = () => { dark = !dark; try { localStorage.setItem("krish-dash-theme", dark ? "dark" : "light"); } catch (e) {} applyTheme(); };
+applyTheme();
 </script></body></html>"""
 
 _STORY = """<!doctype html>
