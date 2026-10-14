@@ -477,78 +477,143 @@ applyTheme();
 _STORY = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0b0d1a;--bg2:#1c1f4a;--fg:#f4f5ff;--muted:#b8bce0;--accent:#8b8cff;--accent2:#2dd4bf}
-.light{--bg:#f7f7fb;--bg2:#e4e6ff;--fg:#141833;--muted:#555b7d;--accent:#4f46e5;--accent2:#0d9488}
-.warm{--bg:#1d0f0a;--bg2:#4a1f12;--fg:#fff6ef;--muted:#f0c9b4;--accent:#ffb454;--accent2:#ff7a59}
+:root{--bg:#070914;--bg2:#1b1650;--fg:#f5f6ff;--muted:#b9bde3;--accent:#8b80ff;--accent2:#2dd4bf;--accent3:#f472b6;--glass:rgba(255,255,255,.07);--edge:rgba(255,255,255,.14)}
+.light{--bg:#eef0fb;--bg2:#d9dcff;--fg:#12162a;--muted:#4c5274;--accent:#5b4ff0;--accent2:#0d9488;--accent3:#db2777;--glass:rgba(255,255,255,.65);--edge:rgba(20,25,60,.1)}
+.warm{--bg:#140805;--bg2:#4a1a0e;--fg:#fff6ef;--muted:#f2cdb8;--accent:#ffb454;--accent2:#ff7a59;--accent3:#ffd166;--glass:rgba(255,255,255,.07);--edge:rgba(255,255,255,.14)}
 *{box-sizing:border-box}html,body{height:100%;margin:0}
-body{background:radial-gradient(1200px 700px at 20% 10%,var(--bg2),var(--bg));color:var(--fg);
-font:18px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;user-select:none}
-.bars{position:fixed;top:12px;left:12px;right:12px;display:flex;gap:5px;z-index:3}
-.bars div{flex:1;height:4px;border-radius:2px;background:color-mix(in srgb,var(--fg) 22%,transparent);overflow:hidden}
-.bars span{display:block;height:100%;width:0;background:var(--fg)}
-.stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:64px 28px 80px}
-.scene{max-width:820px;width:100%;text-align:center}
-.scene>*{opacity:0;transform:translateY(18px);animation:in .7s cubic-bezier(.2,.7,.2,1) forwards}
-.scene>*:nth-child(2){animation-delay:.15s}.scene>*:nth-child(3){animation-delay:.3s}.scene>*:nth-child(4){animation-delay:.45s}
+body{background:radial-gradient(1100px 700px at 50% 120%,var(--bg2),var(--bg) 70%);color:var(--fg);overflow:hidden;user-select:none;
+font:18px/1.5 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+/* 3D world: floating orbs and a moving grid floor */
+.orb{position:fixed;border-radius:50%;filter:blur(60px);opacity:.55;animation:float 14s ease-in-out infinite alternate;pointer-events:none}
+.o1{width:380px;height:380px;background:var(--accent);top:-120px;left:-80px}.o2{width:320px;height:320px;background:var(--accent2);bottom:-100px;right:-60px;animation-delay:-5s}
+.o3{width:220px;height:220px;background:var(--accent3);top:30%;right:18%;opacity:.3;animation-delay:-9s}
+@keyframes float{to{transform:translate(60px,40px) scale(1.15)}}
+.floor{position:fixed;left:-50%;right:-50%;bottom:-10%;height:55%;perspective:420px;pointer-events:none;opacity:.5}
+.floor div{position:absolute;inset:0;transform:rotateX(72deg);transform-origin:bottom;
+background-image:linear-gradient(var(--edge) 1px,transparent 1px),linear-gradient(90deg,var(--edge) 1px,transparent 1px);background-size:60px 60px;
+animation:roll 4s linear infinite;mask-image:linear-gradient(to top,#000 10%,transparent 85%);-webkit-mask-image:linear-gradient(to top,#000 10%,transparent 85%)}
+@keyframes roll{to{background-position:0 60px}}
+.bars{position:fixed;top:14px;left:16px;right:16px;display:flex;gap:6px;z-index:3}
+.bars div{flex:1;height:4px;border-radius:2px;background:color-mix(in srgb,var(--fg) 20%,transparent);overflow:hidden}
+.bars span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.top{position:fixed;top:28px;left:18px;right:18px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);z-index:3;font-weight:500}
+.stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:70px 24px 90px;perspective:1200px}
+.scene{max-width:880px;width:100%;text-align:center;transform-style:preserve-3d;animation:enter .9s cubic-bezier(.2,.8,.2,1) both}
+@keyframes enter{from{opacity:0;transform:translateZ(-260px) rotateX(14deg)}to{opacity:1;transform:none}}
+.scene>*{opacity:0;transform:translateY(22px);animation:in .8s cubic-bezier(.2,.7,.2,1) forwards}
+.scene>*:nth-child(2){animation-delay:.18s}.scene>*:nth-child(3){animation-delay:.34s}.scene>*:nth-child(4){animation-delay:.5s}
 @keyframes in{to{opacity:1;transform:none}}
-h1{font-size:clamp(34px,7vw,68px);line-height:1.05;margin:0 0 16px;letter-spacing:-.03em}
-h2{font-size:clamp(26px,4.6vw,44px);line-height:1.15;margin:0 0 14px;letter-spacing:-.02em}
-p{color:var(--muted);font-size:clamp(17px,2.3vw,22px);margin:0 auto;max-width:640px}
-.big{font-size:clamp(64px,15vw,150px);font-weight:800;letter-spacing:-.04em;line-height:1;margin:0 0 12px;
-background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
-blockquote{font-size:clamp(24px,4vw,38px);line-height:1.3;margin:0 0 16px;font-style:italic}
-ul{list-style:none;padding:0;margin:18px auto 0;max-width:600px;text-align:left}
-li{padding:12px 16px;margin:8px 0;border-radius:12px;background:color-mix(in srgb,var(--fg) 8%,transparent);opacity:0;
-transform:translateX(-14px);animation:in .5s ease forwards}
-.chart{display:flex;align-items:flex-end;gap:10px;height:min(42vh,300px);margin:22px auto 0;max-width:700px}
-.col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
-.bar{width:100%;max-width:64px;border-radius:8px 8px 3px 3px;background:linear-gradient(180deg,var(--accent),var(--accent2));
-height:0;transition:height 1.1s cubic-bezier(.2,.7,.2,1)}
-.col small{font-size:12px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.col b{font-size:13px;margin-bottom:4px;opacity:0;transition:opacity .4s .9s}
-.controls{position:fixed;bottom:18px;left:0;right:0;display:flex;justify-content:center;gap:10px;z-index:3}
-button{font:600 14px system-ui,sans-serif;color:var(--fg);background:color-mix(in srgb,var(--fg) 12%,transparent);
-border:1px solid color-mix(in srgb,var(--fg) 20%,transparent);border-radius:999px;padding:9px 16px;cursor:pointer}
+.kicker{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+h1{font:800 clamp(38px,7.5vw,78px)/1.02 "Plus Jakarta Sans",Inter,sans-serif;margin:0 0 18px;letter-spacing:-.035em;
+background:linear-gradient(100deg,var(--fg) 30%,var(--accent) 50%,var(--fg) 70%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+animation:in .8s forwards,sweep 3.5s 1s ease-in-out forwards}
+@keyframes sweep{from{background-position:100% 0}to{background-position:0 0}}
+h2{font:800 clamp(28px,4.8vw,48px)/1.12 "Plus Jakarta Sans",Inter,sans-serif;margin:0 0 14px;letter-spacing:-.025em}
+p{color:var(--muted);font-size:clamp(17px,2.2vw,21px);margin:0 auto;max-width:660px}
+.glass{background:var(--glass);border:1px solid var(--edge);border-radius:28px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+box-shadow:0 40px 80px -30px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.18)}
+.statcard{display:inline-flex;flex-direction:column;align-items:center;padding:34px 48px 28px;margin-bottom:18px;transform:rotateX(8deg);transform-style:preserve-3d}
+.big{font:800 clamp(68px,15vw,150px)/1 "Plus Jakarta Sans",Inter,sans-serif;letter-spacing:-.045em;
+background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent;
+filter:drop-shadow(0 18px 30px color-mix(in srgb,var(--accent) 45%,transparent))}
+.ring{width:150px;height:150px;margin:0 auto 6px}.ring circle{fill:none;stroke-width:12}.ring .track{stroke:var(--edge)}
+.ring .fill{stroke:url(#rg);stroke-linecap:round;transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.2,1)}
+blockquote{font:700 clamp(24px,3.8vw,38px)/1.3 "Plus Jakarta Sans",Inter,sans-serif;margin:0;padding:44px 40px 30px;position:relative;letter-spacing:-.015em}
+blockquote:before{content:"“";position:absolute;top:-34px;left:24px;font-size:120px;line-height:1;color:var(--accent);opacity:.8}
+.who{margin-top:16px;font-size:16px}
+ul{list-style:none;padding:0;margin:22px auto 0;max-width:620px;text-align:left;perspective:900px}
+li{display:flex;gap:14px;align-items:center;padding:15px 18px;margin:10px 0;opacity:0;transform:rotateX(-70deg);transform-origin:top;animation:flip .6s cubic-bezier(.2,.8,.2,1) forwards}
+li b{flex-shrink:0;width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:14px;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+@keyframes flip{to{opacity:1;transform:none}}
+.chart{display:flex;align-items:flex-end;justify-content:center;gap:clamp(14px,3vw,30px);height:min(40vh,300px);margin:28px auto 0;max-width:760px;
+padding:0 18px 0 6px;transform:rotateX(10deg);transform-style:preserve-3d}
+.col{flex:1;max-width:70px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.bar3d{position:relative;width:100%;height:0;transition:height 1.2s cubic-bezier(.2,.7,.2,1);background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 55%,var(--accent2)))}
+.bar3d:before{content:"";position:absolute;left:0;right:0;top:-12px;height:12px;transform:skewX(-45deg);transform-origin:bottom left;
+background:color-mix(in srgb,var(--accent) 60%,#fff)}
+.bar3d:after{content:"";position:absolute;top:0;bottom:0;right:-12px;width:12px;transform:skewY(-45deg);transform-origin:top left;
+background:color-mix(in srgb,var(--accent) 55%,#000)}
+.col.top1 .bar3d{background:linear-gradient(180deg,var(--accent2),color-mix(in srgb,var(--accent2) 60%,var(--accent)))}
+.col.top1 .bar3d:before{background:color-mix(in srgb,var(--accent2) 60%,#fff)}.col.top1 .bar3d:after{background:color-mix(in srgb,var(--accent2) 55%,#000)}
+.col small{font-size:12px;color:var(--muted);margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.col b{font-size:13px;margin-bottom:18px;opacity:0;transition:opacity .4s 1s}
+.smart{display:inline-flex;gap:8px;align-items:center;margin-top:26px;padding:9px 16px;border-radius:999px;font-size:15px;color:var(--fg)}
+.smart:before{content:"✦";color:var(--accent2)}
+.controls{position:fixed;bottom:20px;left:0;right:0;display:flex;justify-content:center;gap:10px;z-index:3}
+button{font:600 14px Inter,system-ui,sans-serif;color:var(--fg);background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:999px;
+padding:10px 18px;cursor:pointer;min-width:44px}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.tap{position:fixed;top:0;bottom:70px;width:30%;z-index:2}.tap.l{left:0}.tap.r{right:0}
-@media (prefers-reduced-motion:reduce){.scene>*,li{animation:none;opacity:1;transform:none}.bar{transition:none}}
+.tap{position:fixed;top:40px;bottom:80px;width:30%;z-index:2}.tap.l{left:0}.tap.r{right:0}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.scene>*,li{opacity:1;transform:none}}
 </style></head><body>
-<div class="bars" id="bars"></div><div class="stage"><div class="scene" id="scene" aria-live="polite"></div></div>
+<div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div><div class="floor"><div></div></div>
+<div class="bars" id="bars"></div><div class="top"><span id="name"></span><span id="pos"></span></div>
+<div class="stage"><div class="scene" id="scene" aria-live="polite"></div></div>
 <div class="tap l" id="prev" aria-hidden="true"></div><div class="tap r" id="next" aria-hidden="true"></div>
 <div class="controls"><button id="back" aria-label="Previous">‹</button><button id="play">Pause</button>
-<button id="fwd" aria-label="Next">›</button></div>
+<button id="fwd" aria-label="Next">›</button><button id="full" aria-label="Full screen">⤢</button></div>
 <script>
 const D = __DATA__;
 document.body.className = D.theme === "dark" ? "" : D.theme; document.title = D.title;
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+$("name").textContent = D.title;
 const bars = D.scenes.map(() => { const d = el("div"); const s = el("span"); d.append(s); $("bars").append(d); return s; });
-let i = 0, playing = true, start = 0, elapsed = 0, raf = 0;
+let i = 0, playing = true, start = 0, elapsed = 0;
 const ms = D.seconds * 1000;
 function countUp(node, target) {
   const m = String(target).match(/^(\\D*)(-?[\\d,]*\\.?\\d+)(.*)$/);
   if (!m || reduce) { node.textContent = target; return; }
   const end = parseFloat(m[2].replace(/,/g, "")), dec = (m[2].split(".")[1] || "").length, t0 = performance.now();
-  const step = (t) => { const p = Math.min(1, (t - t0) / 1200), e = 1 - Math.pow(1 - p, 3);
+  const step = (t) => { const p = Math.min(1, (t - t0) / 1400), e = 1 - Math.pow(1 - p, 3);
     node.textContent = m[1] + (end * e).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec }) + m[3];
     if (p < 1) requestAnimationFrame(step); };
   requestAnimationFrame(step);
 }
+// A one-line reading of a chart scene, worked out from its numbers.
+function smartNote(c) {
+  const v = c.values.map((x) => (typeof x === "number" ? x : 0)); if (v.length < 2) return "";
+  const maxI = v.indexOf(Math.max(...v)), first = v[0], last = v[v.length - 1];
+  const rising = v.every((x, j) => j === 0 || x >= v[j - 1]);
+  const change = first ? Math.round(((last - first) / Math.abs(first)) * 100) : 0;
+  if (rising && change) return `Up ${change}% from ${c.labels[0]} to ${c.labels[v.length - 1]}, every step higher`;
+  if (change) return `${change > 0 ? "Up" : "Down"} ${Math.abs(change)}% overall, highest in ${c.labels[maxI]}`;
+  return `Highest in ${c.labels[maxI]}`;
+}
 function render() {
   const s = D.scenes[i], box = $("scene"); box.innerHTML = "";
-  const head = s.type === "title" ? "h1" : "h2";
-  if (s.type === "stat" && s.value) { const big = el("div", "big"); box.append(big); countUp(big, s.value); }
-  if (s.type === "quote") { box.append(el("blockquote", "", "“" + (s.text || s.heading) + "”")); if (s.text && s.heading) box.append(el("p", "", "— " + s.heading)); }
-  else { if (s.heading) box.append(el(head, "", s.heading)); if (s.text) box.append(el("p", "", s.text)); }
-  if (s.items.length) { const ul = el("ul"); s.items.forEach((t, j) => { const li = el("li", "", t); li.style.animationDelay = (0.35 + j * 0.25) + "s"; ul.append(li); }); box.append(ul); }
+  box.style.animation = "none"; void box.offsetWidth; box.style.animation = "";
+  $("pos").textContent = `${i + 1} / ${D.scenes.length}`;
+  if (s.type === "title") { box.append(el("span", "kicker", D.title === s.heading ? "Story" : D.title)); if (s.heading) box.append(el("h1", "", s.heading)); if (s.text) box.append(el("p", "", s.text)); }
+  else if (s.type === "stat") {
+    const card = el("div", "glass statcard"), pctMatch = /^\\s*(\\d{1,3}(\\.\\d+)?)\\s*%\\s*$/.exec(s.value || "");
+    if (pctMatch && +pctMatch[1] <= 100) {
+      const ns = "http://www.w3.org/2000/svg", sv = document.createElementNS(ns, "svg"); sv.setAttribute("viewBox", "0 0 150 150"); sv.setAttribute("class", "ring");
+      sv.innerHTML = '<defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent2)"/></linearGradient></defs><circle class="track" cx="75" cy="75" r="62"/><circle class="fill" cx="75" cy="75" r="62"/>';
+      const f = sv.querySelector(".fill"), len = 2 * Math.PI * 62; f.style.strokeDasharray = len; f.style.strokeDashoffset = len;
+      setTimeout(() => { f.style.strokeDashoffset = len * (1 - pctMatch[1] / 100); }, 250); card.append(sv);
+    }
+    const big = el("div", "big"); card.append(big); countUp(big, s.value || "");
+    box.append(card); if (s.heading) box.append(el("h2", "", s.heading)); if (s.text) box.append(el("p", "", s.text));
+  } else if (s.type === "quote") {
+    const q = el("div", "glass"); const bq = el("blockquote", "", s.text || s.heading); q.append(bq);
+    if (s.text && s.heading) q.append(el("p", "who", "— " + s.heading)); q.style.paddingBottom = "26px"; box.append(q);
+  } else {
+    if (s.heading) box.append(el("h2", "", s.heading)); if (s.text) box.append(el("p", "", s.text));
+  }
+  if (s.items.length) { const ul = el("ul"); s.items.forEach((t, j) => { const li = el("li", "glass"); li.style.borderRadius = "16px";
+    li.style.animationDelay = (0.35 + j * 0.22) + "s"; li.append(el("b", "", String(j + 1)), el("span", "", t)); ul.append(li); }); box.append(ul); }
   if (s.chart) {
-    const c = el("div", "chart"), vals = s.chart.values.map((v) => v || 0), max = Math.max(...vals, 1);
-    s.chart.labels.forEach((l, j) => { const col = el("div", "col"), b = el("b", "", (vals[j] || 0).toLocaleString() + (s.chart.unit ? " " + s.chart.unit : "")),
-      bar = el("div", "bar"); col.append(b, bar, el("small", "", l)); c.append(col);
-      setTimeout(() => { bar.style.height = Math.max(2, vals[j] / max * 88) + "%"; b.style.opacity = 1; }, 300 + j * 90); });
+    const c = el("div", "chart"), vals = s.chart.values.map((v) => v || 0), max = Math.max(...vals, 1), top = vals.indexOf(Math.max(...vals));
+    s.chart.labels.forEach((l, j) => { const col = el("div", "col" + (j === top ? " top1" : "")), b = el("b", "", (vals[j] || 0).toLocaleString() + (s.chart.unit ? " " + s.chart.unit : "")),
+      bar = el("div", "bar3d"); col.append(b, bar, el("small", "", l)); c.append(col);
+      setTimeout(() => { bar.style.height = Math.max(2, vals[j] / max * 82) + "%"; b.style.opacity = 1; }, 350 + j * 110); });
     box.append(c);
+    const note = smartNote(s.chart); if (note && !s.text) box.append(el("div", "glass smart", note));
   }
   bars.forEach((b, j) => { b.style.width = j < i ? "100%" : "0"; });
   elapsed = 0; start = performance.now();
@@ -556,41 +621,53 @@ function render() {
 function tick(t) {
   if (playing) { const p = Math.min(1, (elapsed + t - start) / ms); bars[i].style.width = p * 100 + "%";
     if (p >= 1) { if (i < D.scenes.length - 1) { i++; render(); } else { setPlaying(false); bars[i].style.width = "100%"; $("play").textContent = "Replay"; } } }
-  raf = requestAnimationFrame(tick);
+  requestAnimationFrame(tick);
 }
 function setPlaying(on) { if (on === playing) return; if (on) start = performance.now(); else elapsed += performance.now() - start;
   playing = on; $("play").textContent = on ? "Pause" : "Play"; }
 const go = (d) => { i = Math.max(0, Math.min(D.scenes.length - 1, i + d)); render(); };
 $("next").onclick = $("fwd").onclick = () => go(1); $("prev").onclick = $("back").onclick = () => go(-1);
 $("play").onclick = () => { if ($("play").textContent === "Replay") { i = 0; render(); setPlaying(true); } else setPlaying(!playing); };
+$("full").onclick = () => { try { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); } catch (e) {} };
 addEventListener("keydown", (e) => { if (e.key === "ArrowRight") go(1); else if (e.key === "ArrowLeft") go(-1);
   else if (e.key === " ") { e.preventDefault(); $("play").click(); } });
-render(); raf = requestAnimationFrame(tick);
+render(); requestAnimationFrame(tick);
 </script></body></html>"""
 
 _PROTOTYPE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="__TAILWIND__"></script>
-<script>try { tailwind.config = { theme: { extend: { colors: { brand: "__ACCENT__" } } } }; } catch (e) {}</script>
+<script>try { tailwind.config = { theme: { extend: { colors: { brand: "__ACCENT__" }, fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] } } } }; } catch (e) {}</script>
 <style>
-body{margin:0;background:#eef0f6;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#151a28}
-.shell{display:flex;gap:20px;padding:20px;min-height:100vh;align-items:flex-start;justify-content:center}
+body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#151a28;min-height:100vh;
+background:radial-gradient(900px 600px at 70% 0%,color-mix(in srgb,__ACCENT__ 14%,transparent),transparent 65%),radial-gradient(700px 500px at 0% 100%,rgba(99,102,241,.10),transparent 60%),#eef0f7}
+.shell{display:flex;gap:28px;padding:28px 20px;min-height:100vh;align-items:flex-start;justify-content:center;perspective:1800px}
 .nav{width:190px;flex-shrink:0;position:sticky;top:20px}
-.nav h1{font-size:15px;margin:0 0 10px}.nav button{display:block;width:100%;text-align:left;padding:8px 10px;margin:2px 0;border-radius:8px;
+.nav h1{font-size:16px;font-weight:700;margin:0 0 10px}.nav button{display:block;width:100%;text-align:left;padding:8px 10px;margin:2px 0;border-radius:8px;
 border:0;background:transparent;font:500 13px inherit;font-family:inherit;color:#475069;cursor:pointer}
-.nav button.on{background:#fff;color:#151a28;box-shadow:0 1px 3px rgba(20,25,50,.12)}
+.nav button.on{background:#fff;color:#151a28;box-shadow:0 1px 3px rgba(20,25,50,.12),0 6px 16px -6px rgba(20,25,50,.18)}
+.nav button.on:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:__ACCENT__;margin-right:8px;vertical-align:2px}
+.view{display:flex;gap:4px;margin-top:14px}.view button{width:auto;flex:1;text-align:center;border:1px solid #dfe2ec;background:#fff8;font-size:12px}
 .nav p{font-size:11px;color:#7a8199;margin:12px 4px 0}
-.device{background:#fff;overflow:hidden;position:relative;box-shadow:0 30px 70px rgba(20,25,60,.18),0 0 0 1px rgba(20,25,60,.06)}
-.phone{width:390px;height:780px;border-radius:44px;border:10px solid #111}
-.desktop{width:min(1100px,100%);height:700px;border-radius:12px;padding-top:34px}
-.desktop:before{content:"";position:absolute;top:0;left:0;right:0;height:34px;background:#f3f4f8;border-bottom:1px solid #e3e5ee}
-.desktop:after{content:"";position:absolute;top:12px;left:14px;width:10px;height:10px;border-radius:50%;background:#ff5f57;box-shadow:16px 0 #febc2e,32px 0 #28c840}
+.device{background:#fff;overflow:hidden;position:relative;transition:transform .6s cubic-bezier(.2,.7,.2,1);transform-style:preserve-3d;
+box-shadow:0 2px 4px rgba(20,25,60,.06),0 30px 60px -20px rgba(20,25,60,.35),0 70px 120px -40px rgba(60,50,160,.35)}
+.device.tilt{transform:rotateY(-18deg) rotateX(8deg) rotateZ(1deg)}
+.phone{width:390px;height:800px;border-radius:52px;border:11px solid #0d0f17;padding-top:44px;padding-bottom:22px;
+box-shadow:0 0 0 2px #2a2e3c,0 2px 4px rgba(20,25,60,.06),0 30px 60px -20px rgba(20,25,60,.35),0 70px 120px -40px rgba(60,50,160,.35)}
+.statusbar{position:absolute;top:0;left:0;right:0;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font:600 14px Inter,sans-serif;z-index:5;background:inherit}
+.island{position:absolute;top:10px;left:50%;width:110px;height:30px;margin-left:-55px;border-radius:20px;background:#0d0f17;z-index:6}
+.homebar{position:absolute;bottom:7px;left:50%;width:130px;height:5px;margin-left:-65px;border-radius:3px;background:#151a28;opacity:.85;z-index:6}
+.desktop{width:min(1100px,100%);height:700px;border-radius:14px;padding-top:38px}
+.desktop:before{content:"";position:absolute;top:0;left:0;right:0;height:38px;background:#f3f4f8;border-bottom:1px solid #e3e5ee}
+.desktop:after{content:"";position:absolute;top:14px;left:16px;width:10px;height:10px;border-radius:50%;background:#ff5f57;box-shadow:16px 0 #febc2e,32px 0 #28c840}
 .screen{height:100%;overflow:auto;display:none}.screen.on{display:block;animation:fade .25s ease}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 [data-go]{cursor:pointer}
 @media (max-width:720px){.shell{flex-direction:column;align-items:center;padding:12px}.nav{width:100%;position:static;display:flex;flex-wrap:wrap;gap:4px}
-.nav h1,.nav p{width:100%}.nav button{width:auto}.phone{width:min(390px,100%);height:720px}.desktop{height:620px}}
+.nav h1,.nav p{width:100%}.nav button{width:auto}.phone{width:min(390px,100%);height:740px}.device.tilt{transform:none}.view{display:none}.desktop{height:620px}}
 </style></head><body>
 <div class="shell"><nav class="nav" id="nav" aria-label="Screens"></nav><div class="device" id="device"></div></div>
 <script>
@@ -604,7 +681,15 @@ D.screens.forEach((s, i) => {
   const b = document.createElement("button"); b.textContent = s.name; b.onclick = () => show(i); nav.append(b); buttons.push(b);
   const sc = document.createElement("div"); sc.className = "screen"; sc.innerHTML = s.html; dev.append(sc); screens.push(sc);
 });
-const tip = document.createElement("p"); tip.textContent = "Click buttons and links inside the screen to move between screens."; nav.append(tip);
+if (D.device === "phone") {
+  const bar = document.createElement("div"); bar.className = "statusbar"; bar.innerHTML = "<span>9:41</span><span>●●● ▮</span>";
+  const island = document.createElement("div"); island.className = "island"; const home = document.createElement("div"); home.className = "homebar";
+  dev.append(bar, island, home);
+}
+const view = document.createElement("div"); view.className = "view";
+[["Flat", false], ["3D view", true]].forEach(([label, on]) => { const b = document.createElement("button"); b.textContent = label;
+  b.onclick = () => dev.classList.toggle("tilt", on); view.append(b); });
+const tip = document.createElement("p"); tip.textContent = "Click buttons and links inside the screen to move between screens."; nav.append(tip, view);
 function show(i) { screens.forEach((s, j) => s.classList.toggle("on", j === i)); buttons.forEach((b, j) => b.classList.toggle("on", j === i));
   screens[i].scrollTop = 0; }
 dev.addEventListener("click", (e) => {
