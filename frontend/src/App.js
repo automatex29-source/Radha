@@ -21,10 +21,12 @@ const PageView = lazy(() => import("@/pages/PageView"));
 const DiscoverPage = lazy(() => import("@/pages/DiscoverPage"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const PlansPage = lazy(() => import("@/pages/PlansPage"));
+const LegalPage = lazy(() => import("@/pages/LegalPage"));
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import { installPlanLimitToasts } from "@/lib/planLimits";
 import PlanLimitDialog from "@/components/PlanLimitDialog";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 installPlanLimitToasts();
 
@@ -102,6 +104,7 @@ export default function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem storageKey="radha-theme" disableTransitionOnChange>
       <div className="App">
+        <ErrorBoundary>
         <AuthProvider>
           <BrowserRouter>
             {/* Pages other than chat load when first opened, so the app itself starts faster. */}
@@ -111,6 +114,8 @@ export default function App() {
                 <Route path="/share/:shareId" element={<SharedChat />} />
                 <Route path="/page/:pageId" element={<PageView />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+                <Route path="/terms" element={<LegalPage kind="terms" />} />
                 <Route path="*" element={<Gate />} />
               </Routes>
             </Suspense>
@@ -118,6 +123,7 @@ export default function App() {
           </BrowserRouter>
           <Toaster position="top-center" />
         </AuthProvider>
+        </ErrorBoundary>
       </div>
     </ThemeProvider>
   );

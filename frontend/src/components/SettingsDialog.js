@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/context/AuthContext";
 import { LANGUAGES, translate, useT } from "@/lib/i18n";
-import { formatApiError } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Check, Languages, Loader2, Settings } from "lucide-react";
+import { Check, Languages, Loader2, Settings, Trash2 } from "lucide-react";
 
-/** Settings: for now the app language, which Krish replies in and the app's text follows. */
+/** Settings: the app language, which Krish replies in and the app's text follows, and deleting the account. */
 export default function SettingsDialog({ open, onOpenChange }) {
   const { setLanguage } = useAuth();
   const t = useT();
@@ -51,7 +53,53 @@ export default function SettingsDialog({ open, onOpenChange }) {
             })}
           </div>
         </div>
+        <DeleteAccount />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Deletes the account and everything in it, after the password is typed again. */
+function DeleteAccount() {
+  const { logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.post("/auth/delete-account", { password });
+      toast.success("Your account and everything in it was deleted.");
+      await logout();
+    } catch (err) {
+      toast.error(formatApiError(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-border pt-4" data-testid="delete-account-section">
+      <p className="flex items-center gap-2 text-sm font-semibold"><Trash2 className="h-4 w-4 text-destructive" /> Delete account</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        Permanently removes your account, chats, files, projects, apps, decks, docs, automations and memory. This can't be undone.
+      </p>
+      {!open ? (
+        <Button type="button" variant="outline" onClick={() => setOpen(true)} data-testid="delete-account-start"
+          className="mt-3 h-9 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive">
+          Delete my account
+        </Button>
+      ) : (
+        <form onSubmit={submit} className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <Input type="password" autoComplete="current-password" autoFocus required value={password}
+            onChange={(e) => setPassword(e.target.value)} placeholder="Type your password to confirm"
+            data-testid="delete-account-password" className="h-9 flex-1" />
+          <Button type="submit" variant="destructive" disabled={busy || !password} data-testid="delete-account-confirm" className="h-9">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete forever"}
+          </Button>
+        </form>
+      )}
+    </div>
   );
 }
