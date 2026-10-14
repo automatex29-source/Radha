@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper } from "lucide-react";
+import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
 import CodeProject from "@/components/CodeProject";
+import CodeRunner, { runnableKind } from "@/components/CodeRunner";
 import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
@@ -158,20 +159,33 @@ function RelatedQuestions({ items, onAsk, id }) {
 // Only fenced code gets the box and copy button; `inline code` stays in the sentence.
 function CodeBlock({ node, children }) {
   const [copied, setCopied] = useState(false);
+  const [running, setRunning] = useState(0); // bumped on each Run so the snippet starts fresh
   const text = (node?.children?.[0]?.children || []).map((c) => c.value || "").join("").replace(/\n$/, "");
+  const lang = ((node?.children?.[0]?.properties?.className || []).find((c) => String(c).startsWith("language-")) || "")
+    .toString().slice(9).toLowerCase();
+  const runKind = runnableKind(lang, text);
   const copy = () => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+  const chip = "flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground";
   return (
     <div className="group/code relative">
-      <button onClick={copy} data-testid="copy-code-button"
-        className="absolute right-2 top-2 flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/code:opacity-100">
-        {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <div className="absolute right-2 top-2 flex gap-1.5">
+        {runKind && (
+          <button onClick={() => setRunning((n) => (runKind === "preview" && n ? 0 : n + 1))} data-testid="run-code-button" className={chip}>
+            {runKind === "preview" ? <Eye className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+            {runKind === "preview" ? (running ? "Hide preview" : "Preview") : running ? "Run again" : "Run"}
+          </button>
+        )}
+        <button onClick={copy} data-testid="copy-code-button" className={`${chip} opacity-0 transition-opacity group-hover/code:opacity-100`}>
+          {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
       <pre className="max-h-[28rem] overflow-auto">{children}</pre>
+      {runKind && running > 0 && <CodeRunner key={running} kind={runKind} code={text} />}
     </div>
   );
 }

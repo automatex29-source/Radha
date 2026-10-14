@@ -2,12 +2,13 @@ import { useState } from "react";
 import { mediaUrl } from "@/lib/api";
 import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, CheckCircle2, XCircle, ChevronRight, FileDown,
   FileSpreadsheet, Presentation, FileText, Clapperboard, MousePointerClick, Eye, FilePen, FileSearch, FileX,
-  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree, CircleStop } from "lucide-react";
+  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree, CircleStop, LayoutDashboard, Film, PenTool } from "lucide-react";
 import { fileKind, KIND_META } from "@/components/PreviewPanel";
 
 const ICONS = {
   web_search: Search, pro_search: Search, fetch_url: Globe, run_python: Code2, generate_image: ImagePlus, generate_video: Clapperboard,
   create_spreadsheet: FileSpreadsheet, create_presentation: Presentation, create_document: FileText, create_html: Globe,
+  create_dashboard: LayoutDashboard, create_story: Film, create_prototype: PenTool,
   browser: MousePointerClick,
   write_file: FilePen, edit_file: FilePen, read_file: FileSearch, delete_file: FileX, list_files: FolderTree,
   run_command: SquareTerminal, check_preview: MonitorCheck, commit: GitCommitHorizontal,
@@ -21,7 +22,7 @@ function argPreview(step) {
   if (step.name === "generate_image") return a.prompt;
   if (step.name === "run_python") return (a.code || "").split("\n").find((l) => l.trim()) || "";
   if (step.name === "generate_video") return a.prompt;
-  if (step.name.startsWith("create_")) return a.filename;
+  if (step.name.startsWith("create_")) return a.filename || a.title;
   if (["write_file", "append_file", "edit_file", "read_file", "delete_file"].includes(step.name)) return a.path;
   if (step.name === "run_command") return a.command;
   if (step.name === "commit") return a.message;

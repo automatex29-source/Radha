@@ -18,7 +18,7 @@ import {
 import { toast } from "sonner";
 import {
   Workflow, Plus, Loader2, Play, Webhook, Clock, Copy, Trash2, CheckCircle2, XCircle, MessageSquare, Pencil, ArrowLeft,
-  Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp,
+  Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp, Users, BellOff, Link2, X, RotateCcw, Circle,
 } from "lucide-react";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -28,12 +28,13 @@ const EXAMPLES = [
   { name: "Competitor price watch", prompt: "1. Search the web for the current prices and offers of the top 5 AI chat apps in India.\n2. Open their pricing pages to confirm.\n3. Compare with last time and point out any change.\n4. Create an Excel sheet with app, plan, price in INR and notes, plus a bar chart.", schedule: { type: "weekly", time: "09:00", weekday: 0 } },
   { name: "Weekly social media pack", prompt: "1. Search for this week's trending topics about AI and small businesses.\n2. Write 5 ready-to-post LinkedIn and Instagram captions with hashtags.\n3. Generate one eye-catching image for the best post.\n4. Put the captions in a Word document.", schedule: { type: "weekly", time: "10:00", weekday: 0 } },
   { name: "Lead research", prompt: "1. Find 10 small companies in Mumbai that could use AI automation (web search).\n2. For each: name, website, what they do, and why they might need AI.\n3. Don't repeat companies from last time.\n4. Create an Excel sheet with the list.", schedule: { type: "weekly", time: "09:30", weekday: 2 } },
+  { name: "Weekly market report (agent team)", prompt: "Make a weekly report on the Indian EV market for a small dealer.", stages: ["Research: search the web for this week's EV sales, prices, launches and policy news in India, with sources.", "Analyse: compare with last week, pick the 5 changes that matter most to a dealer and why.", "Report: build a dashboard of the key numbers and write a one-page PDF summary with source links."], schedule: { type: "weekly", time: "09:00", weekday: 0 }, onlyIfNew: false },
   { name: "Handle incoming webhook", prompt: "A webhook sent you an event. Summarise what happened in two sentences and list any follow-up actions.", schedule: { type: "manual" } },
 ];
 const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } };
 const blank = () => ({
   name: "", prompt: "", schedule: { type: "daily", time: "08:00", weekday: 0, minutes: 60, timezone: localTz() }, model: "",
-  memory: true, thorough: false, emailResult: false, notifyUrl: "",
+  memory: true, thorough: false, emailResult: false, notifyUrl: "", stages: [], onlyIfNew: false, thenRun: "",
 });
 
 export default function AutomationsPage() {
@@ -118,7 +119,8 @@ export default function AutomationsPage() {
         </div>
         <div className={`min-w-0 flex-1 ${phoneDetail ? "" : "max-md:hidden"}`}>
           {current ? <AutomationDetail key={current.id} automation={current} onChanged={load} onBack={() => setPhoneDetail(false)}
-            onEdit={() => setEditing({ ...current, schedule: { ...blank().schedule, ...current.schedule }, model: current.model || "", notifyUrl: current.notifyUrl || "" })} /> : (
+            onEdit={() => setEditing({ ...current, schedule: { ...blank().schedule, ...current.schedule }, model: current.model || "", notifyUrl: current.notifyUrl || "", stages: current.stages || [], thenRun: current.thenRun || "" })}
+            others={items.filter((x) => x.id !== current.id)} /> : (
             <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
               <Workflow className="h-10 w-10 text-primary" />
               <p className="mt-3 text-sm">Create an automation to see its runs here.</p>
@@ -126,7 +128,7 @@ export default function AutomationsPage() {
           )}
         </div>
       </div>
-      {editing && <AutomationDialog form={editing} models={models} options={options} onClose={() => setEditing(null)}
+      {editing && <AutomationDialog form={editing} models={models} options={options} others={(items || []).filter((x) => x.id !== editing.id)} onClose={() => setEditing(null)}
         onSaved={(a) => { setEditing(null); setSelected(a.id); setPhoneDetail(true); load(); }} />}
     </div>
   );
@@ -138,7 +140,7 @@ function StatusBadge({ status }) {
   return <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400"><XCircle className="h-3 w-3" /> Failed</span>;
 }
 
-function AutomationDialog({ form: initial, models, options, onClose, onSaved }) {
+function AutomationDialog({ form: initial, models, options, others, onClose, onSaved }) {
   const [form, setForm] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [goal, setGoal] = useState("");
@@ -156,6 +158,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
     const body = {
       name: form.name, prompt: form.prompt, schedule, model: form.model || null,
       memory: form.memory, thorough: form.thorough, emailResult: form.emailResult, notifyUrl: form.notifyUrl.trim(),
+      stages: form.stages.map((t) => t.trim()).filter(Boolean), onlyIfNew: form.onlyIfNew, thenRun: form.thenRun || "",
     };
     try {
       const { data } = form.id ? await api.patch(`/automations/${form.id}`, body) : await api.post("/automations", body);
@@ -172,7 +175,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
     setPlanning(true);
     try {
       const { data } = await api.post("/automations/plan", { goal });
-      setForm((f) => ({ ...f, name: data.name, prompt: data.prompt, schedule: { ...f.schedule, ...data.schedule } }));
+      setForm((f) => ({ ...f, name: data.name, prompt: data.prompt, schedule: { ...f.schedule, ...data.schedule }, stages: data.stages || f.stages }));
       toast.success("Steps written. Check them, then save.");
     } catch (e) {
       toast.error(formatApiError(e));
@@ -210,6 +213,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
             <Textarea rows={6} value={form.prompt} onChange={(e) => set({ prompt: e.target.value })} data-testid="automation-prompt" className="bg-card"
               placeholder={"1. Search the web for…\n2. Compare with last time…\n3. Create a PDF report…"} />
           </div>
+          <StagesEditor stages={form.stages} onChange={(stages) => set({ stages })} />
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>When</Label>
@@ -255,6 +259,8 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
               checked={form.memory} onChange={(v) => set({ memory: v })} testid="opt-memory" />
             <OptionRow icon={Gauge} title="Thorough mode" hint="More steps for long jobs such as research plus several files."
               checked={form.thorough} onChange={(v) => set({ thorough: v })} testid="opt-thorough" />
+            <OptionRow icon={BellOff} title="Only tell me when something's new" hint="Stays quiet (no email, post or next automation) when nothing changed since last time."
+              checked={form.onlyIfNew} onChange={(v) => set({ onlyIfNew: v })} testid="opt-only-new" />
             <OptionRow icon={Mail} title="Email me the result"
               hint={options.email ? "Sent to your account email after each run." : "Email isn't set up on the server yet."}
               checked={form.emailResult} disabled={!options.email && !form.emailResult} onChange={(v) => set({ emailResult: v })} testid="opt-email" />
@@ -264,6 +270,16 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
                 placeholder="https://discord.com/api/webhooks/…" />
               <p className="text-[11px] text-muted-foreground">Paste a channel webhook link and every result is posted there.</p>
             </div>
+            {others.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-sm"><Link2 className="h-3.5 w-3.5 text-primary" /> When it finishes, start (optional)</Label>
+                <select value={form.thenRun || ""} onChange={(e) => set({ thenRun: e.target.value })} className={`${field} bg-background`} data-testid="opt-then-run">
+                  <option value="">Nothing</option>
+                  {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+                <p className="text-[11px] text-muted-foreground">The next automation gets this one's result to work with.</p>
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter>
@@ -274,6 +290,34 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function StagesEditor({ stages, onChange }) {
+  const setAt = (i, v) => onChange(stages.map((t, j) => (j === i ? v : t)));
+  if (!stages.length) {
+    return (
+      <button onClick={() => onChange(["", ""])} data-testid="add-team" className="flex items-center gap-1.5 text-xs text-brand hover:underline">
+        <Users className="h-3.5 w-3.5" /> Split the work between a team of agents
+      </button>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-xl border border-border bg-card p-3" data-testid="team-editor">
+      <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-primary" /> Team of agents</Label>
+      <p className="text-[11px] text-muted-foreground">Each agent does one part, in order, and hands its result to the next. A part that fails is tried again once.</p>
+      {stages.map((t, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="w-5 shrink-0 text-center text-xs font-semibold text-muted-foreground">{i + 1}</span>
+          <Input value={t} onChange={(e) => setAt(i, e.target.value)} className="bg-background" data-testid={`team-stage-${i}`}
+            placeholder={["Research: find the latest numbers", "Analyse: compare and pick the key points", "Write: create the PDF report"][i] || "What this agent does"} />
+          <button onClick={() => onChange(stages.filter((_, j) => j !== i))} title="Remove" className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+        </div>
+      ))}
+      {stages.length < 6 && (
+        <button onClick={() => onChange([...stages, ""])} className="flex items-center gap-1 text-xs text-brand hover:underline"><Plus className="h-3 w-3" /> Add an agent</button>
+      )}
+    </div>
   );
 }
 
@@ -303,6 +347,23 @@ function RunCard({ run: r, onOpen, onPreview }) {
           <MessageSquare className="h-3 w-3" /> Open conversation
         </button>
       </div>
+      {(r.quiet || r.retries > 0) && (
+        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+          {r.quiet && <span className="flex items-center gap-1"><BellOff className="h-3 w-3" /> Nothing new, so nothing was sent</span>}
+          {r.retries > 0 && <span className="flex items-center gap-1"><RotateCcw className="h-3 w-3" /> Retried after a hiccup</span>}
+        </div>
+      )}
+      {(r.stages || []).length > 0 && (
+        <ol className="mt-3 flex flex-wrap gap-1.5" data-testid="run-stages">
+          {r.stages.map((s, i) => (
+            <li key={i} title={s.task} className="flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px]">
+              {s.status === "done" ? <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" /> : s.status === "failed" ? <XCircle className="h-3 w-3 shrink-0 text-rose-500" />
+                : s.status === "running" ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-amber-500" /> : <Circle className="h-3 w-3 shrink-0 text-muted-foreground" />}
+              <span className="truncate">Agent {i + 1}: {s.task}</span>
+            </li>
+          ))}
+        </ol>
+      )}
       {steps.length > 0 && (
         <ol className="mt-3 space-y-1 border-l border-border pl-3" data-testid="run-steps">
           {steps.map((s, i) => (
@@ -341,7 +402,7 @@ function RunCard({ run: r, onOpen, onPreview }) {
   );
 }
 
-function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
+function AutomationDetail({ automation: a, others = [], onChanged, onEdit, onBack }) {
   const navigate = useNavigate();
   const [runs, setRuns] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -409,6 +470,9 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
               {a.thorough && <Feature icon={Gauge} text="Thorough" />}
               {a.emailResult && <Feature icon={Mail} text="Emails you" />}
               {a.notifyUrl && <Feature icon={Send} text="Posts to webhook" />}
+              {a.stages?.length > 0 && <Feature icon={Users} text={`Team of ${a.stages.length} agents`} />}
+              {a.onlyIfNew && <Feature icon={BellOff} text="Only when something's new" />}
+              {a.thenRun && <Feature icon={Link2} text={`Then starts ${others.find((o) => o.id === a.thenRun)?.name || "another automation"}`} />}
             </div>
           </div>
           <Button size="sm" variant="outline" onClick={onEdit} className="gap-1.5 border-border bg-card"><Pencil className="h-3.5 w-3.5" /> Edit</Button>
@@ -416,6 +480,13 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
           <button onClick={remove} title="Delete" className="rounded-md p-2 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
         </div>
         <p className="mt-4 whitespace-pre-wrap rounded-xl border border-border bg-card p-4 text-sm">{a.prompt}</p>
+        {a.stages?.length > 0 && (
+          <ol className="mt-2 space-y-1.5 rounded-xl border border-border bg-card p-4 text-sm" data-testid="automation-team">
+            {a.stages.map((t, i) => (
+              <li key={i} className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">{i + 1}</span>{t}</li>
+            ))}
+          </ol>
+        )}
 
         <div className="mt-4 rounded-xl border border-border bg-card p-4">
           <p className="flex items-center gap-1.5 text-sm font-semibold"><Webhook className="h-4 w-4 text-primary" /> Webhook trigger</p>
