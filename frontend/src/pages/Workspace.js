@@ -181,11 +181,20 @@ export default function Workspace({ mode = null }) {
 
   const activeConv = conversations.find((c) => c.id === activeId);
 
+  // The chat follows the newest text only while the reader is at the bottom; once they
+  // scroll up to read, new text and the end of a reply leave them where they are.
+  const followRef = useRef(true);
+  const onChatScroll = () => {
+    const el = scrollRef.current;
+    if (el) followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
       const el = scrollRef.current;
+      if (!el) return;
       // The welcome screen starts at its top; a conversation follows its newest message.
-      if (el) el.scrollTop = el.querySelector("[data-testid=message-list-container]") ? el.scrollHeight : 0;
+      if (!el.querySelector("[data-testid=message-list-container]")) el.scrollTop = 0;
+      else if (followRef.current) el.scrollTop = el.scrollHeight;
     });
   }, []);
 
@@ -253,6 +262,7 @@ export default function Workspace({ mode = null }) {
   const openConversation = async (id) => {
     leaveChat();
     const seq = chatSeq.current;
+    followRef.current = true;
     setActiveId(id);
     setSidebarOpen(false);
     setLoadingConv(true);
@@ -354,6 +364,7 @@ export default function Workspace({ mode = null }) {
     const controller = new AbortController();
     abortRef.current = controller;
     const seq = chatSeq.current;
+    followRef.current = true;
 
     try {
       const res = await fetch(url, {
@@ -591,6 +602,7 @@ export default function Workspace({ mode = null }) {
     }
 
     const imageIds = images.map((i) => i.id);
+    followRef.current = true;
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
     return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
@@ -700,7 +712,7 @@ export default function Workspace({ mode = null }) {
         </header>
 
         {/* Messages */}
-        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
+        <div ref={scrollRef} onScroll={onChatScroll} className={`radha-scroll flex-1 overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
           {loadingConv ? (
             <div className="flex h-full items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
