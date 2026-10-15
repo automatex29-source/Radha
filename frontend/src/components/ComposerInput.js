@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck, Lightbulb, GraduationCap, Globe, ChevronDown, BookOpenText, MessagesSquare, PlaySquare, Sparkles, Check, Plus, Camera, Image as ImageIcon } from "lucide-react";
+import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck, Lightbulb, GraduationCap, Globe, ChevronDown, BookOpenText, MessagesSquare, PlaySquare, Sparkles, Check } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
@@ -8,8 +8,6 @@ import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
 import { transcribe } from "@/lib/voice";
 import { useT } from "@/lib/i18n";
-import BottomSheet from "@/components/BottomSheet";
-import { usePhone } from "@/hooks/usePhone";
 
 
 const narrowScreen = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 639px)").matches;
@@ -30,10 +28,6 @@ export default function ComposerInput({
   const t = useT();
   const [transcribing, setTranscribing] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const phone = usePhone();
-  const cameraRef = useRef(null);
-  const photoRef = useRef(null);
 
   // One after another, so the first file's upload creates the chat before the next one needs it.
   const attachAll = async (files) => {
@@ -105,8 +99,8 @@ export default function ComposerInput({
     }
   };
 
-  const previews = (
-    <>
+  return (
+    <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-1 sm:px-4 sm:pb-5">
       {images.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" data-testid="composer-images">
           {groupImages(images).map((img) => img.videoGroup ? (
@@ -145,19 +139,6 @@ export default function ComposerInput({
           ))}
         </div>
       )}
-    </>
-  );
-
-  if (phone) return (
-    <PhoneComposer {...{ value, onChange, onSend, onStop, streaming, disabled, onAttach, uploading, thinkMode, onToggleThink,
-      studyMode, onToggleStudy, webMode, onToggleWeb, searchFocus, onSearchFocus, proSearch, onTogglePro, voiceEnabled,
-      voiceHint, onVoiceMode, placeholder, rec, transcribing, toggleMic, canSend, onKeyDown, onPaste, previews, t,
-      toolsOpen, setToolsOpen, textRef: ref, fileRef, cameraRef, photoRef, attachAll }} />
-  );
-
-  return (
-    <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-1 sm:px-4 sm:pb-5">
-      {previews}
       {/* Tapping a button here keeps the typing focus: on phones losing it brings back the tab bar, which
           moved the button away mid-tap so the tap landed on the tab bar instead. */}
       <div {...dropProps} onMouseDown={(e) => { if (e.target.closest?.("button")) e.preventDefault(); }} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}@container rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
@@ -243,164 +224,6 @@ export default function ComposerInput({
       </div>
       <p className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground max-sm:hidden"><ShieldCheck className="h-3.5 w-3.5" /> Krish AI can make mistakes. Verify important information.</p>
     </div>
-  );
-}
-
-// Phones: one rounded bar with "+", the words, the mic and voice (or Send once there is something to send).
-// Search, Think, Study and attaching live in the "+" sheet; the ones that are on show as small chips.
-function PhoneComposer({ value, onChange, onSend, onStop, streaming, disabled, onAttach, uploading, thinkMode, onToggleThink,
-  studyMode, onToggleStudy, webMode, onToggleWeb, searchFocus, onSearchFocus, proSearch, onTogglePro, voiceEnabled, voiceHint,
-  onVoiceMode, placeholder, rec, transcribing, toggleMic, canSend, onKeyDown, onPaste, previews, t, toolsOpen, setToolsOpen,
-  textRef, fileRef, cameraRef, photoRef, attachAll }) {
-  const focusLabel = FOCUS_OPTIONS.find((f) => f.id === searchFocus)?.label || "Web";
-  const on = [
-    webMode && onToggleWeb && { key: "web", icon: Globe, label: searchFocus && searchFocus !== "web" ? focusLabel : t("web"), off: onToggleWeb },
-    thinkMode && onToggleThink && { key: "think", icon: Lightbulb, label: t("think"), off: onToggleThink },
-    studyMode && onToggleStudy && { key: "study", icon: GraduationCap, label: t("study"), off: onToggleStudy },
-  ].filter(Boolean);
-  const hasTools = onAttach || onToggleWeb || onToggleThink || onToggleStudy;
-  const pickFiles = (input) => (e) => { attachAll(Array.from(e.target.files || [])); if (input.current) input.current.value = ""; };
-  const openPicker = (input) => { setToolsOpen(false); setTimeout(() => input.current?.click(), 50); };
-  const round = "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40";
-
-  return (
-    <div className="w-full px-3 pb-[max(env(safe-area-inset-bottom),12px)] pt-1">
-      {previews}
-      <div onMouseDown={(e) => { if (e.target.closest?.("button")) e.preventDefault(); }} data-testid="composer-box"
-        className="rounded-[28px] border border-border bg-card p-1.5 shadow-[0_10px_30px_rgba(30,30,80,0.10)] transition-colors focus-within:border-primary/40 dark:shadow-[0_8px_30px_rgba(0,0,0,0.45)]">
-        {on.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-1.5 pb-1 pt-0.5" data-testid="composer-active-modes">
-            {on.map((m) => (
-              <button key={m.key} onClick={m.off} data-testid={`active-mode-${m.key}`} aria-label={`Turn off ${m.label}`}
-                className="flex h-7 items-center gap-1 rounded-full bg-primary/12 pl-2.5 pr-2 text-xs font-medium text-brand">
-                <m.icon className="h-3.5 w-3.5" /> {m.label}
-                {m.key === "web" && proSearch && <span className="rounded bg-primary px-1 text-[9px] font-bold uppercase text-primary-foreground">Pro</span>}
-                <X className="h-3 w-3 opacity-70" />
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="flex items-end gap-1">
-          {hasTools && (
-            <button onClick={() => { textRef.current?.blur(); setToolsOpen(true); }} disabled={disabled} data-testid="composer-attach-button"
-              aria-label="Attach and tools" className={`${round} bg-surface text-foreground active:bg-surface-strong`}>
-              {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
-            </button>
-          )}
-          <textarea ref={textRef} data-testid="message-composer-textarea" value={value} onChange={(e) => onChange(e.target.value)}
-            onKeyDown={onKeyDown} onPaste={onPaste} disabled={disabled} rows={1}
-            placeholder={rec.recording ? t("listening") : placeholder || t("message")}
-            className="radha-scroll max-h-[160px] min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-base leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none" />
-          {streaming ? (
-            <button onClick={onStop} data-testid="stop-generation-button" aria-label="Stop the reply" title="Stop"
-              className={`${round} bg-foreground text-background`}>
-              <Square className="h-3.5 w-3.5 fill-current" />
-            </button>
-          ) : canSend || rec.recording || transcribing ? (
-            <>
-              {(rec.recording || transcribing) && (
-                <button onClick={toggleMic} disabled={transcribing} data-testid="composer-mic-button" aria-label="Stop listening"
-                  className={`${round} animate-pulse bg-rose-500 text-white`}>
-                  {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-                </button>
-              )}
-              {canSend && (
-                <button onClick={() => onSend()} data-testid="send-message-button" aria-label="Send"
-                  className={`${round} bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_6px_16px_rgba(99,102,241,0.4)]`}>
-                  <ArrowUp className="h-5 w-5" />
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              <button onClick={toggleMic} disabled={!voiceEnabled || disabled} data-testid="composer-mic-button"
-                aria-label="Speak your message" title={voiceEnabled ? "Speak your message" : voiceHint} className={`${round} text-muted-foreground`}>
-                <Mic className="h-5 w-5" />
-              </button>
-              {onVoiceMode ? (
-                <button onClick={onVoiceMode} disabled={!voiceEnabled || disabled} data-testid="voice-mode-button"
-                  aria-label="Voice conversation" title={voiceEnabled ? "Voice conversation" : voiceHint}
-                  className={`${round} h-11 w-11 bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_6px_16px_rgba(99,102,241,0.4)]`}>
-                  <AudioLines className="h-5 w-5" />
-                </button>
-              ) : (
-                <button disabled data-testid="send-message-button" aria-label="Send" className={`${round} bg-surface text-muted-foreground`}>
-                  <ArrowUp className="h-5 w-5" />
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {onAttach && (
-        <>
-          <input ref={fileRef} type="file" multiple className="hidden" data-testid="composer-file-input" onChange={pickFiles(fileRef)} />
-          <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={pickFiles(cameraRef)} />
-          <input ref={photoRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={pickFiles(photoRef)} />
-        </>
-      )}
-      <BottomSheet open={toolsOpen} onOpenChange={setToolsOpen} testId="composer-tools-sheet">
-        {onAttach && (
-          <div className="grid grid-cols-3 gap-2.5">
-            {[["camera", Camera, "Camera", cameraRef], ["photos", ImageIcon, "Photos", photoRef], ["file", FileText, "Files", fileRef]].map(([id, Icon, label, input]) => (
-              <button key={id} onClick={() => openPicker(input)} disabled={uploading || disabled} data-testid={`upload-${id}-button`}
-                className="flex h-[88px] flex-col items-center justify-center gap-2 rounded-2xl bg-surface text-[13px] font-medium text-foreground active:scale-[0.98] disabled:opacity-50">
-                <Icon className="h-6 w-6 text-brand" /> {label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="mt-2 divide-y divide-border">
-          {onToggleWeb && (
-            <ToolRow icon={Globe} tone="text-sky-600 dark:text-sky-400" title="Search the web" hint="Latest news, prices, weather, with sources"
-              on={webMode} onClick={onToggleWeb} testId="web-mode-toggle" />
-          )}
-          {onToggleWeb && webMode && onSearchFocus && (
-            <div className="flex gap-1.5 overflow-x-auto py-2.5 krish-no-scrollbar" data-testid="search-focus-options">
-              {FOCUS_OPTIONS.map((f) => (
-                <button key={f.id} onClick={() => onSearchFocus(f.id)} data-testid={`search-focus-${f.id}`}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium ${
-                    searchFocus === f.id ? "border-primary bg-primary/12 text-brand" : "border-border text-muted-foreground"}`}>
-                  <f.icon className="h-3.5 w-3.5" /> {f.label}
-                </button>
-              ))}
-              {onTogglePro && (
-                <button onClick={onTogglePro} data-testid="pro-search-toggle" aria-pressed={!!proSearch}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium ${
-                    proSearch ? "border-primary bg-primary/12 text-brand" : "border-border text-muted-foreground"}`}>
-                  <Sparkles className="h-3.5 w-3.5" /> Pro search
-                </button>
-              )}
-            </div>
-          )}
-          {onToggleThink && (
-            <ToolRow icon={Lightbulb} tone="text-amber-600 dark:text-amber-400" title="Think deeper" hint="Slower, more careful answers"
-              on={thinkMode} onClick={onToggleThink} testId="think-mode-toggle" />
-          )}
-          {onToggleStudy && (
-            <ToolRow icon={GraduationCap} tone="text-emerald-600 dark:text-emerald-400" title="Study mode" hint="Step by step, with quizzes"
-              on={studyMode} onClick={onToggleStudy} testId="study-mode-toggle" />
-          )}
-        </div>
-        <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck className="h-3.5 w-3.5" /> Krish AI can make mistakes. Verify important information.</p>
-      </BottomSheet>
-    </div>
-  );
-}
-
-function ToolRow({ icon: Icon, tone, title, hint, on, onClick, testId }) {
-  return (
-    <button onClick={onClick} data-testid={testId} aria-pressed={!!on} className="flex w-full items-center gap-3.5 py-3 text-left">
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface ${tone}`}><Icon className="h-5 w-5" /></span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[15px] font-semibold text-foreground">{title}</span>
-        <span className="block text-[13px] text-muted-foreground">{hint}</span>
-      </span>
-      <span className={`flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors ${on ? "bg-primary" : "bg-surface-strong"}`}>
-        <span className={`h-6 w-6 rounded-full bg-white shadow transition-transform ${on ? "translate-x-5" : ""}`} />
-      </span>
-    </button>
   );
 }
 
