@@ -109,7 +109,7 @@
   /* Dark theme (Midnight): deep blue-charcoal, not pure black, with clear steps between
      page, panels, cards and menus so every surface reads apart. */
   .dark {
-    --background: 228 24% 7%;      /* #0D0F15 page */
+    --background: 232 30% 6%;      /* #0A0C14 page */
     --foreground: 225 33% 95%;     /* #EEF0F6 */
     --card: 226 21% 11%;           /* #161A22 cards, composer */
     --card-foreground: 225 33% 95%;
@@ -276,13 +276,53 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 /* --- Refreshed look: soft pastel canvas, glass panels, colourful cards --- */
 .krish-canvas { background-color: hsl(var(--background)); }
 .dark .krish-canvas {
-  /* one calm indigo light from the top, a hint of violet at the right; no muddy corners */
+  /* night sky: indigo light from the top, a violet rise at the bottom, deep navy in between */
   background-image:
-    radial-gradient(60% 50% at 50% -12%, rgba(99, 102, 241, 0.20), transparent 70%),
-    radial-gradient(35% 40% at 100% 0%, rgba(139, 92, 246, 0.10), transparent 70%);
+    radial-gradient(70% 55% at 50% -15%, rgba(99, 102, 241, 0.28), transparent 70%),
+    radial-gradient(40% 40% at 100% 0%, rgba(168, 85, 247, 0.14), transparent 70%),
+    radial-gradient(60% 35% at 50% 115%, rgba(139, 92, 246, 0.16), transparent 70%),
+    linear-gradient(180deg, #0D1020 0%, #0A0C14 45%, #0A0B12 100%);
 }
+
+/* --- Dark theme polish: lit edges, glass panels, glowing composer --- */
+.dark .krish-glass {
+  background: linear-gradient(180deg, rgba(129, 140, 248, 0.06), transparent 40%), hsl(var(--sunken) / 0.82);
+  backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+}
+/* cards catch light on their top edge and float on a soft shadow */
+.dark .krish-hero, .dark .krish-card, .dark .krish-topic-card, .dark [data-testid="user-profile-menu-button"],
+.dark .radha-prose pre, .dark .radha-prose table, .dark [role="menu"], .dark [role="dialog"], .dark [role="listbox"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px -20px rgba(0, 0, 0, 0.75);
+}
+.dark .krish-card:hover, .dark .krish-topic-card:hover {
+  border-color: rgba(129, 140, 248, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 40px -16px rgba(99, 102, 241, 0.35);
+}
+/* hero: gradient frame that fades from indigo to nothing */
+.dark .krish-hero {
+  border-color: transparent;
+  background:
+    linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(23, 26, 38, 0.85) 45%, rgba(168, 85, 247, 0.10)) padding-box,
+    linear-gradient(135deg, rgba(129, 140, 248, 0.55), rgba(255, 255, 255, 0.06) 40%, rgba(168, 85, 247, 0.35)) border-box;
+}
+/* composer: the same lit frame, glowing brighter while you type */
+.dark [data-testid="composer-box"] {
+  border-color: transparent;
+  background:
+    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+    linear-gradient(135deg, rgba(129, 140, 248, 0.45), rgba(255, 255, 255, 0.07) 45%, rgba(168, 85, 247, 0.35)) border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 20px 50px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+.dark [data-testid="composer-box"]:focus-within {
+  background:
+    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+    linear-gradient(135deg, #818CF8, rgba(129, 140, 248, 0.25) 45%, #A855F7) border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 20px 60px -18px rgba(99, 102, 241, 0.55);
+}
+.dark .radha-prose pre { background: #090B12 !important; }
+.dark .radha-prose code { background: rgba(129, 140, 248, 0.10); border-color: rgba(129, 140, 248, 0.18); }
+.dark .radha-prose pre code { background: transparent; }
 .krish-glass { background: rgba(255, 255, 255, 0.55); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
-.dark .krish-glass { background: hsl(var(--sunken) / 0.88); }
 /* Toasts match the menus instead of sonner's own pure black. */
 html.dark [data-sonner-toaster][data-sonner-theme] {
   --normal-bg: hsl(var(--popover)); --normal-border: hsl(var(--border-strong)); --normal-text: hsl(var(--popover-foreground));
