@@ -615,6 +615,18 @@ SYSTEM_PROMPT = (
     "paragraph, never whole sentences or every line. Use bullets only for real lists of three or more items. "
     "Never send one long block of text: when an answer runs past about four sentences, split it into short "
     "paragraphs or bullets so it reads easily on a phone. "
+    "Pick the shape that fits the question:\n"
+    "- A quick fact, yes/no or definition: one or two lines, the answer in **bold**. No headings, no bullets.\n"
+    "- How to do something: a numbered list of short steps, one action per step, exact button and menu names "
+    "in **bold**.\n"
+    "- A comparison (X vs Y, which is better, should I buy A or B): lead with the verdict in one line (\"For "
+    "most people, **Pixel 9**, because...\"), then a small table of the 3-5 things that matter, then one line "
+    "on who should pick the other one.\n"
+    "- An explanation (why, how does it work): the one-line answer first, then two or three short paragraphs "
+    "or bullets, each starting with its key idea in **bold**, and an everyday example.\n"
+    "- A long answer with several parts: short ### headings so it can be skimmed, never more than four.\n"
+    "Use the conversation: when the user says \"it\", \"that one\" or \"and in Delhi?\", answer about what you "
+    "were just discussing, and don't repeat what you already told them.\n\n"
     "Sound warm and direct, and when you can't be sure, say so plainly and why. End with one short, specific "
     "offer that keeps the chat going, naming what the user could send or ask next (\"If you **send a photo of "
     "the back of the case**, I can tell you the exact model.\"); skip it for greetings, thanks and one-word "
@@ -705,6 +717,18 @@ AGENT_PROMPT = (
 )
 
 
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def now_line(now: Optional[datetime] = None) -> str:
+    """Today's date and time for the prompt, in India time (most users are there), so "today", "kal" and
+    "what time is it" are right even late at night, when the UTC date is still yesterday's."""
+    local = (now or datetime.now(timezone.utc)).astimezone(IST)
+    return (f"Right now it is {local.strftime('%A, %d %B %Y')}, {local.strftime('%I:%M %p').lstrip('0')} in India "
+            "(IST). Use this for \"today\", \"tomorrow\", ages, countdowns and anything time-sensitive; if the user "
+            "is somewhere else, convert.")
+
+
 THINK_PROMPT = (
     "Think mode is on: the user wants your most careful answer. Before you write, work out what they really need, "
     "solve it step by step, and look for the traps: a wrong assumption, a missed case, a unit or date mistake, an "
@@ -722,7 +746,10 @@ _HARD_ASK = re.compile(
     r"speed|distance|percent|percentage|interest|emi|loan|profit|loss|ratio|average|tax|gst|why|how does|"
     r"how do|how is|how are|how can|explain|compare|comparison|difference between|vs|versus|pros and cons|"
     r"should i|which is better|best way|plan|strategy|analy[sz]e|analysis|debug|error|bug|code|function|"
-    r"algorithm|sql|regex|riddle|puzzle|logic|kyu|kyon|kaise)\b", re.IGNORECASE)
+    r"algorithm|sql|regex|riddle|puzzle|logic|kyu|kyon|kaise|kitna|kitne|kitni|samjhao|samjhaiye|fark|farak|"
+    r"antar|behtar|recommend|worth it|is it worth|help me (?:decide|choose|pick)|steps to)\b|"
+    r"\u0915\u094d\u092f\u094b\u0902|\u0915\u0948\u0938\u0947|\u0915\u093f\u0924\u0928|\u0938\u092e\u091d\u093e|"
+    r"\u092b\u0930\u094d\u0915|\u0905\u0902\u0924\u0930", re.IGNORECASE)  # क्यों कैसे कितन समझा फर्क अंतर
 HARD_ASK_CHARS = 280
 
 
@@ -1069,7 +1096,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if _to_coder(model, conv, last_user, history_docs, counselling or voice or bool(extra_system)):
         model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
-    system_parts = [base, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
+    system_parts = [base, now_line()]
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
