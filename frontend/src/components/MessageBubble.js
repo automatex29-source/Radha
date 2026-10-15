@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper } from "lucide-react";
+import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Play, Newspaper } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
@@ -136,21 +136,17 @@ function MakePageButton({ id }) {
   );
 }
 
+// Follow-up questions as one quiet row of small chips, so they don't crowd the answer.
 function RelatedQuestions({ items, onAsk, id }) {
   return (
-    <div className="mt-5" data-testid={`related-questions-${id}`}>
-      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        <CornerDownRight className="h-3.5 w-3.5" /> Related
-      </p>
-      <div className="divide-y divide-border border-y border-border">
-        {items.map((q, i) => (
-          <button key={q} onClick={() => onAsk(q)} data-testid={`related-question-${i + 1}`} dir="auto"
-            className="group/rel flex w-full items-center gap-3 py-2.5 text-left text-[14px] text-foreground transition-colors hover:text-brand">
-            <span className="min-w-0 flex-1">{q}</span>
-            <Plus className="h-4 w-4 shrink-0 text-muted-foreground group-hover/rel:text-brand" />
-          </button>
-        ))}
-      </div>
+    <div className="mt-4 flex flex-wrap gap-1.5" data-testid={`related-questions-${id}`}>
+      {items.slice(0, 3).map((q, i) => (
+        <button key={q} onClick={() => onAsk(q)} data-testid={`related-question-${i + 1}`} dir="auto"
+          className="flex max-w-full items-center gap-1 rounded-full border border-border px-2.5 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground">
+          <CornerDownRight className="h-3 w-3 shrink-0" />
+          <span className="truncate">{q}</span>
+        </button>
+      ))}
     </div>
   );
 }

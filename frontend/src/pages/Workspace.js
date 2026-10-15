@@ -714,8 +714,8 @@ export default function Workspace({ mode = null }) {
                       <Globe className="h-3.5 w-3.5" /> Get the latest from the web
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" onClick={() => regenerate()} data-testid="regenerate-button"
-                    className="gap-1.5 border-border bg-card text-muted-foreground hover:text-foreground">
+                  <Button variant="ghost" size="sm" onClick={() => regenerate()} data-testid="regenerate-button"
+                    className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground hover:text-foreground">
                     <RefreshCw className="h-3.5 w-3.5" /> Regenerate
                   </Button>
                 </div>

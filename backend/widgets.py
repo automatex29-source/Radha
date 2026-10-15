@@ -14,11 +14,17 @@ _TIMEOUT = httpx.Timeout(6.0, connect=4.0)
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"}
 
 # ------------------------------------------------------------------- weather
-_WEATHER = re.compile(r"\b(weather|temperature|forecast|raining|rain|humid|humidity|mausam|मौसम|तापमान)\b", re.I)
+_WEATHER = re.compile(r"\b(weather|temperature|forecast|raining|rain|rainy|showers?|umbrella|humid|humidity|mausam|"
+                      r"baarish|barish|barsat|मौसम|तापमान|बारिश)\b", re.I)
 _PLACE_AFTER = re.compile(r"\b(?:in|at|of|for|near|mein|में)\s+([^\d?.,!]{2,40}?)(?:\s+(?:today|tomorrow|now|this week|right now|aaj|kal)\b|[?.,!]|$)", re.I)
 _FILLER = re.compile(r"\b(what|what's|whats|is|the|weather|temperature|forecast|today|tomorrow|now|right|current|"
                      r"like|how|tell|me|will|it|rain|raining|in|at|of|for|kya|hai|hoga|aaj|kal|ka|ki|ke|mausam|"
-                     r"this|week|please|humidity|humid)\b", re.I)
+                     r"this|week|please|humidity|humid|rainy|shower|showers|umbrella|need|an|do|i|going|to|be|there|any|chance|"
+                     r"about|baarish|barish|barsat|hogi|hoga|kal|mein|me|बारिश|में)\b", re.I)
+# Places Open-Meteo's geocoder knows by their older names.
+_PLACE_ALIASES = {"gurugram": "Gurgaon", "bengaluru": "Bangalore", "mysuru": "Mysore", "prayagraj": "Allahabad",
+                  "kochi": "Cochin", "puducherry": "Pondicherry", "vadodara": "Baroda", "thiruvananthapuram": "Trivandrum",
+                  "mangaluru": "Mangalore", "belagavi": "Belgaum", "kalaburagi": "Gulbarga"}
 
 WEATHER_CODES = {
     0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Cloudy", 45: "Fog", 48: "Fog",
@@ -29,14 +35,32 @@ WEATHER_CODES = {
 }
 
 
+def is_weather(text: str) -> bool:
+    return bool(_WEATHER.search(text or ""))
+
+
 def weather_place(text: str) -> str:
     if not _WEATHER.search(text or ""):
         return ""
-    m = _PLACE_AFTER.search(text)
-    place = m.group(1) if m else _FILLER.sub(" ", text)
+    return named_place(text) or _clean_place(_FILLER.sub(" ", text))
+
+
+def named_place(text: str) -> str:
+    """The place after "in", "at", "for"... ("I'm in Gurugram", "weather of Pune"), or ""."""
+    m = _PLACE_AFTER.search(text or "")
+    return _clean_place(m.group(1)) if m else ""
+
+
+def _clean_place(place: str) -> str:
     place = re.sub(r"[^\w\s.'-]", " ", place)
     place = " ".join(_FILLER.sub(" ", place).split())
     return place[:40] if len(place) >= 2 else ""
+
+
+def place_names(place: str) -> list:
+    """Names to try with the geocoder: the place, then its older name if it has one."""
+    alias = _PLACE_ALIASES.get(place.lower())
+    return [place, alias] if alias else [place]
 
 
 async def weather(text: str) -> Optional[Tuple[str, dict]]:
@@ -44,16 +68,20 @@ async def weather(text: str) -> Optional[Tuple[str, dict]]:
     if not place:
         return None
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_UA) as client:
-        geo = (await client.get("https://geocoding-api.open-meteo.com/v1/search",
-                                params={"name": place, "count": 1, "language": "en"})).json()
-        hits = geo.get("results") or []
-        if not hits:
+        g = None
+        for name in place_names(place):
+            geo = (await client.get("https://geocoding-api.open-meteo.com/v1/search",
+                                    params={"name": name, "count": 1, "language": "en"})).json()
+            hits = geo.get("results") or []
+            if hits:
+                g = hits[0]
+                break
+        if not g:
             return None
-        g = hits[0]
         data = (await client.get("https://api.open-meteo.com/v1/forecast", params={
             "latitude": g["latitude"], "longitude": g["longitude"], "timezone": "auto", "forecast_days": 5,
             "current": "temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code",
-            "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"})).json()
+            "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum"})).json()
     return weather_card(g, data)
 
 
@@ -62,19 +90,27 @@ def weather_card(g: dict, data: dict) -> Optional[Tuple[str, dict]]:
     if "temperature_2m" not in cur:
         return None
     name = ", ".join(x for x in [g.get("name"), g.get("admin1"), g.get("country")] if x)
+    times = daily.get("time", [])
+    rain = daily.get("precipitation_probability_max") or [None] * len(times)
     days = [{"date": d, "code": c, "label": WEATHER_CODES.get(c, ""), "max": round(hi), "min": round(lo), "rain": r}
-            for d, c, hi, lo, r in zip(daily.get("time", []), daily.get("weather_code", []),
-                                       daily.get("temperature_2m_max", []), daily.get("temperature_2m_min", []),
-                                       daily.get("precipitation_probability_max", []))]
+            for d, c, hi, lo, r in zip(times, daily.get("weather_code", []), daily.get("temperature_2m_max", []),
+                                       daily.get("temperature_2m_min", []), rain)]
+    mm = daily.get("precipitation_sum") or []
     card = {"type": "weather", "place": name, "temp": round(cur["temperature_2m"]),
             "feels": round(cur.get("apparent_temperature", cur["temperature_2m"])),
             "humidity": cur.get("relative_humidity_2m"), "wind": cur.get("wind_speed_10m"),
             "code": cur.get("weather_code"), "label": WEATHER_CODES.get(cur.get("weather_code"), ""),
             "days": days, "url": "https://open-meteo.com/"}
-    forecast = "; ".join(f"{d['date']}: {d['label']}, {d['min']}-{d['max']}°C, rain chance {d['rain']}%" for d in days)
+    forecast = "; ".join(
+        f"{d['date']}{' (today)' if i == 0 else ''}: {d['label']}, {d['min']}-{d['max']}°C"
+        + (f", rain chance {d['rain']}%" if d["rain"] is not None else "")
+        + (f", {mm[i]} mm rain expected" if i < len(mm) and mm[i] is not None else "")
+        for i, d in enumerate(days))
     context = (f"Live weather for {name} (Open-Meteo): now {card['temp']}°C (feels {card['feels']}°C), {card['label']}, "
                f"humidity {card['humidity']}%, wind {card['wind']} km/h. Next days: {forecast}. "
-               "The app shows this as a weather card, so answer in one or two sentences.")
+               "Answer only from these numbers: for rain, give the rain chance and expected millimetres for the day asked "
+               "about, never round a chance above 0% down to \"no chance\". The app shows this as a weather card, so "
+               "answer in one or two sentences.")
     return context, card
 
 

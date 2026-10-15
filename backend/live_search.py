@@ -63,6 +63,18 @@ def _recent_user_text(user_messages: List[str]) -> str:
     return last
 
 
+def _with_weather_place(user_messages: List[str], text: str) -> str:
+    """ "will it rain tomorrow" after "I'm in Gurugram" becomes "will it rain tomorrow in Gurugram", so the
+    weather card (and the search) look up the right city instead of the model guessing."""
+    if not widgets.is_weather(text) or widgets.weather_place(text):
+        return text
+    for earlier in reversed(user_messages[-7:-1]):
+        place = widgets.weather_place(earlier) or (len(earlier.split()) <= 10 and widgets.named_place(earlier))
+        if place:
+            return f"{text.rstrip(' ?.!')} in {place}"
+    return text
+
+
 # Questions about Krish AI or EmpireX itself are answered from the system prompt: the web has other,
 # unrelated companies called EmpireX, and their founders' names ended up in answers.
 _ABOUT_US = re.compile(
@@ -88,10 +100,22 @@ _ASKS_SEARCH = re.compile(
 _FRESH = re.compile(
     r"\b(today|todays|tonight|right now|current(ly)?|latest|recent(ly)?|this (week|month|year)|yesterday|"
     r"news|headlines?|price|prices|rate|rates|score|scores|stock|share price|sensex|nifty|bitcoin|btc|"
-    r"crypto|gold|silver|petrol|diesel|election|results?|who won|who is the|20[2-9]\d|best(?! (way|practices?|of luck))|top \d+|vs\.?|"
+    r"crypto|gold|silver|petrol|diesel|election|results?|weather|forecast|temperature|rain|raining|mausam|baarish|barish|who won|who is the|20[2-9]\d|best(?! (way|practices?|of luck))|top \d+|vs\.?|"
     r"versus|compare|cheapest|release date|launch(ed)?|ceo|founder|president|prime minister|net worth|"
     r"population|salary|near me|aaj|abhi|taaza|khabar)\b",
     re.I,
+)
+# A weather question with no live weather data must not get a made-up forecast ("zero chance of rain").
+NO_WEATHER_NOTE = (
+    "Live weather data for this place couldn't be loaded just now. Don't state a forecast, temperature or chance of "
+    "rain from memory or guesswork. Use the web results above if they give a current forecast for this place, "
+    "citing them; otherwise say plainly that you couldn't check the live weather right now. (If the message isn't "
+    "asking about the weather, ignore this note.)"
+)
+ASK_PLACE_NOTE = (
+    "This is a weather question but no city is named, so there is no live weather data. Don't guess a forecast, "
+    "temperature or chance of rain: ask which city or area they mean, in one short sentence. (If the message "
+    "isn't asking about the weather, ignore this note.)"
 )
 MAX_SEARCH_CHARS = 1500  # long pasted text (an essay, a log) isn't a search query
 
@@ -186,6 +210,7 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
     focus = focus if focus in search_modes.FOCUSES else "web"
     force = force or pro or focus != "web"
     text = _recent_user_text(user_messages)
+    text = _with_weather_place(user_messages, text) if text else text
     if not text or not (force or needs_lookup(text)):
         return empty
     jobs = {}  # name -> awaitable; each part has its own time limit, so one slow source never costs the rest
@@ -205,7 +230,7 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
             jobs["images"] = asyncio.wait_for(search_modes.images(text[:150], 6), LOOKUP_TIMEOUT)
         if force and focus == "web" and search_modes.wants_videos(text):
             jobs["videos"] = asyncio.wait_for(search_modes.video(text[:150], 4), LOOKUP_TIMEOUT + 4)
-    if not jobs:
+    if not jobs and not widgets.is_weather(text):
         return empty
     found = dict(zip(jobs, await asyncio.gather(*jobs.values(), return_exceptions=True)))
     parts, cards, pictures, clips, live_cards, queries = [], [], [], [], [], []
@@ -229,6 +254,8 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
             # Shown as a row of YouTube videos under the sources; not numbered, so citations stay on the web cards.
             clips = [{"type": "clip", "title": v.get("title") or "YouTube video", "url": v["url"],
                       "thumbnail": v["thumbnail"], "domain": "youtube.com"} for v in item]
+    if widgets.is_weather(text) and not any(c.get("type") == "weather" for c in live_cards):
+        parts.append(NO_WEATHER_NOTE if widgets.weather_place(text) else ASK_PLACE_NOTE)
     return {"context": "\n\n".join(parts) or None, "sources": live_cards + cards + pictures + clips,
             "queries": queries}
 

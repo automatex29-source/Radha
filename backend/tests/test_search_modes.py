@@ -285,3 +285,20 @@ def test_how_to_search_adds_a_video_row(monkeypatch):
     found = asyncio.run(live_search.gather(["how to make paneer butter masala"], force=True))
     assert [s["type"] for s in found["sources"]] == ["web", "clip"]
     assert found["sources"][1]["thumbnail"].endswith("hqdefault.jpg") and "youtube" not in found["context"]
+
+
+def test_weather_place_rain_questions():
+    assert widgets.weather_place("WILL IT RAIN") == ""
+    assert widgets.weather_place("will it rain today in Gurugram?") == "Gurugram"
+    assert widgets.weather_place("barish hogi kya gurugram mein") == "gurugram"
+    assert widgets.place_names("Gurugram") == ["Gurugram", "Gurgaon"]
+
+
+def test_weather_context_gives_rain_amounts():
+    g = {"name": "Gurgaon", "country": "India", "latitude": 28.4, "longitude": 77.0}
+    data = {"current": {"temperature_2m": 25, "apparent_temperature": 26, "relative_humidity_2m": 80,
+                        "wind_speed_10m": 5, "weather_code": 61},
+            "daily": {"time": ["2026-10-15"], "weather_code": [61], "temperature_2m_max": [27], "temperature_2m_min": [22],
+                      "precipitation_probability_max": [70], "precipitation_sum": [4.2]}}
+    context, _ = widgets.weather_card(g, data)
+    assert "(today)" in context and "rain chance 70%" in context and "4.2 mm" in context

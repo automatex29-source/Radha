@@ -1157,7 +1157,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                             output="\n".join(f"Searched: {q}" for q in found["queries"]), media=[])
             yield f"event: tool_result\ndata: {_sse_json(pro_step)}\n\n"
     # Perplexity-style follow-up questions under ordinary chat answers.
-    ask_related = not app_id and not counselling and not voice and not extra_system
+    # A weather or stock card answers a quick live question; follow-up suggestions under it are just clutter.
+    live_card = any(s.get("type") in ("weather", "stock") for s in sources)
+    ask_related = not app_id and not counselling and not voice and not extra_system and not live_card
     if ask_related:
         system_parts.append(related.PROMPT)
     # Free models (Groq) get only the app tools inside an app, to stay within their token budget.

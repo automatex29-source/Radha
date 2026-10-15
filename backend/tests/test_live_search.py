@@ -144,3 +144,29 @@ def test_rates_fall_back_to_frankfurter(monkeypatch):
     monkeypatch.setattr(web.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
     out = asyncio.run(web.exchange_rates("USD to INR"))
     assert "1 USD = 88.5000 INR" in out and "ECB" in out
+
+
+def test_weather_follow_up_uses_city_from_earlier(monkeypatch):
+    asked = []
+
+    async def fake_weather(text):
+        asked.append(text)
+        return "Live weather for Gurgaon: rain chance 60%", {"type": "weather", "place": "Gurgaon"}
+    monkeypatch.setattr(live_search.widgets, "weather", fake_weather)
+    found = asyncio.run(live_search.gather(["I live in Gurugram", "what's up", "will it rain tomorrow?"], search=False))
+    assert asked and "Gurugram" in asked[0]
+    assert found["sources"][0]["type"] == "weather" and "60%" in found["context"]
+
+
+def test_weather_without_data_never_guesses(monkeypatch):
+    async def no_weather(text):
+        return None
+    monkeypatch.setattr(live_search.widgets, "weather", no_weather)
+    found = asyncio.run(live_search.gather(["WILL IT RAIN"], search=False))
+    assert found["context"] == live_search.ASK_PLACE_NOTE
+    found = asyncio.run(live_search.gather(["will it rain in Gurugram today"], search=False))
+    assert found["context"] == live_search.NO_WEATHER_NOTE
+
+
+def test_weather_questions_suggest_web():
+    assert live_search.suggests_web("will it rain today")
