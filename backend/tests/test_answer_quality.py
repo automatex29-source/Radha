@@ -66,3 +66,29 @@ def test_hard_questions_reason_more(monkeypatch):
     assert reasoning_for(monkeypatch, "hi there") is False
     assert reasoning_for(monkeypatch, "why do onions make you cry", think=True) is True
     assert reasoning_for(monkeypatch, "why do onions make you cry", voice=True) is False  # voice stays quick
+
+
+def test_hindi_and_hinglish_hard_questions_are_spotted():
+    server = _server()
+    for text in ["iPhone aur Pixel mein kya fark hai", "ye samjhao please", "kitna kharcha hoga",
+                 "आसमान नीला क्यों होता है", "ऑनलाइन पैसे कैसे कमाएं", "is it worth buying a used car",
+                 "help me decide between MBA and a job"]:
+        assert server._hard_ask(text), text
+    for text in ["namaste", "धन्यवाद", "ok"]:
+        assert not server._hard_ask(text), text
+
+
+def test_prompt_matches_answer_shape_to_the_question():
+    server = _server()
+    assert "Pick the shape that fits the question" in server.SYSTEM_PROMPT
+    assert "lead with the verdict" in server.SYSTEM_PROMPT  # comparisons
+    assert "numbered list of short steps" in server.SYSTEM_PROMPT  # how-tos
+    assert "Use the conversation" in server.SYSTEM_PROMPT  # follow-ups
+
+
+def test_prompt_date_is_india_time():
+    from datetime import datetime, timezone
+    server = _server()
+    # 20:00 UTC on 14 Oct is already 15 Oct, 1:30 AM in India.
+    line = server.now_line(datetime(2026, 10, 14, 20, 0, tzinfo=timezone.utc))
+    assert "Thursday, 15 October 2026, 1:30 AM in India (IST)" in line
