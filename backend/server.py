@@ -229,7 +229,17 @@ def public_user(doc: dict) -> dict:
         "plan": doc.get("plan") if doc.get("plan") in limits.PLANS else "basic",
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
+        "isOwner": is_owner_email(doc["email"]),
     }
+
+
+def owner_emails() -> set:
+    """The app owner's email(s), from OWNER_EMAIL (comma-separated). Only they can see the users list."""
+    return {e.strip().lower() for e in os.environ.get("OWNER_EMAIL", "").split(",") if e.strip()}
+
+
+def is_owner_email(email: str) -> bool:
+    return (email or "").lower() in owner_emails()
 
 
 def public_conversation(doc: dict) -> dict:
@@ -314,6 +324,9 @@ async def register(body: RegisterIn):
         "password_hash": hash_password(body.password),
         "createdAt": ts,
         "updatedAt": ts,
+        "lastLoginAt": ts,
+        "lastSeenAt": ts,
+        "loginCount": 1,
     }
     await db.users.insert_one(doc)
     token = create_access_token(doc["id"], email)
@@ -349,6 +362,9 @@ async def login(body: LoginIn):
             _login_failures.clear()
         raise HTTPException(status_code=401, detail="Invalid email or password")
     _login_failures.pop(email, None)
+    ts = now_iso()
+    await db.users.update_one({"id": doc["id"]}, {"$set": {"lastLoginAt": ts, "lastSeenAt": ts},
+                                                  "$inc": {"loginCount": 1}})
     token = create_access_token(doc["id"], email)
     return {"token": token, "user": public_user(doc)}
 
@@ -467,7 +483,28 @@ async def me(user_id: str = Depends(current_user_id)):
     doc = await db.users.find_one({"id": user_id})
     if not doc:
         raise HTTPException(status_code=401, detail="User not found")
+    # Opening the app with a saved sign-in counts as a visit, so the owner sees who is still using Krish.
+    await db.users.update_one({"id": user_id}, {"$set": {"lastSeenAt": now_iso()}})
     return public_user(doc)
+
+
+@api.get("/admin/users")
+async def admin_users(user_id: str = Depends(current_user_id)):
+    """Owner only: everyone who has an account, most recently active first. Others get a plain 404."""
+    me_doc = await db.users.find_one({"id": user_id}, {"email": 1})
+    if not me_doc or not is_owner_email(me_doc["email"]):
+        raise HTTPException(status_code=404, detail="Not found")
+    fields = {"_id": 0, "id": 1, "name": 1, "email": 1, "plan": 1, "createdAt": 1,
+              "lastLoginAt": 1, "lastSeenAt": 1, "loginCount": 1}
+    docs = await db.users.find({}, fields).to_list(10000)
+    users = [{
+        "id": d["id"], "name": d.get("name", ""), "email": d["email"],
+        "plan": d.get("plan") if d.get("plan") in limits.PLANS else "basic",
+        "createdAt": d.get("createdAt"), "lastLoginAt": d.get("lastLoginAt"),
+        "lastSeenAt": d.get("lastSeenAt") or d.get("lastLoginAt"), "loginCount": d.get("loginCount", 0),
+    } for d in docs]
+    users.sort(key=lambda u: u["lastSeenAt"] or u["createdAt"] or "", reverse=True)
+    return {"total": len(users), "users": users}
 
 
 class LanguageIn(BaseModel):
