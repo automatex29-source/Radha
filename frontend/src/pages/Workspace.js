@@ -161,6 +161,13 @@ export default function Workspace({ mode = null }) {
 
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
+  // Bumped whenever the screen switches chats, so a reply or load still running for the
+  // chat that was left can't write its messages into the one now open.
+  const chatSeq = useRef(0);
+  const leaveChat = () => {
+    chatSeq.current += 1;
+    if (abortRef.current) abortRef.current.abort();
+  };
   const streamTextRef = useRef("");
   const streamSourcesRef = useRef([]);
   const streamRelatedRef = useRef([]);
@@ -231,7 +238,7 @@ export default function Workspace({ mode = null }) {
     const projParam = searchParams.get("project");
     if (projParam) setProjectId(projParam);
     if (convParam && convParam !== activeId) openConversation(convParam);
-    else if (projParam) { setActiveId(null); setMessages([]); }
+    else if (projParam) { leaveChat(); setActiveId(null); setMessages([]); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -244,6 +251,8 @@ export default function Workspace({ mode = null }) {
   }, [projectId]);
 
   const openConversation = async (id) => {
+    leaveChat();
+    const seq = chatSeq.current;
     setActiveId(id);
     setSidebarOpen(false);
     setLoadingConv(true);
@@ -255,22 +264,24 @@ export default function Workspace({ mode = null }) {
     }, { replace: true });
     try {
       const { data } = await api.get(`/conversations/${id}`);
+      if (seq !== chatSeq.current) return;
       setMessages(data.messages);
       if (data.conversation?.model) setModel(data.conversation.model);
       setProjectId(data.conversation?.projectId || null);
-      try {
-        const filesRes = await api.get(`/conversations/${id}/files`);
-        setAttachments(filesRes.data);
-      } catch { setAttachments([]); }
+      let files = [];
+      try { files = (await api.get(`/conversations/${id}/files`)).data; } catch { /* none */ }
+      if (seq === chatSeq.current) setAttachments(files);
     } catch (e) {
-      toast.error(formatApiError(e));
+      if (seq === chatSeq.current) toast.error(formatApiError(e));
     } finally {
-      setLoadingConv(false);
+      if (seq === chatSeq.current) setLoadingConv(false);
     }
   };
 
   const newConversation = () => {
+    leaveChat();
     setPreviewItem(null);
+    setLoadingConv(false);
     setActiveId(null);
     setMessages([]);
     setAttachments([]);
@@ -342,6 +353,7 @@ export default function Workspace({ mode = null }) {
     streamStepsRef.current = [];
     const controller = new AbortController();
     abortRef.current = controller;
+    const seq = chatSeq.current;
 
     try {
       const res = await fetch(url, {
@@ -417,13 +429,16 @@ export default function Workspace({ mode = null }) {
       if (e.name !== "AbortError" && !streamTextRef.current.trim()) toast.error(e.message || "Something went wrong");
     } finally {
       const stopped = controller.signal.aborted;
-      abortRef.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
       setStreaming(false);
       const finalText = streamTextRef.current;
+      // The user moved to another chat: the server keeps what was written in the old one,
+      // and none of it belongs on the screen now.
+      const left = seq !== chatSeq.current;
       // A stopped reply keeps what was written so far (the server saves the same part).
       const steps = stopped ? streamStepsRef.current.map((s) => (s.status === "running" ? { ...s, status: "stopped", summary: "Stopped" } : s))
         : streamStepsRef.current;
-      if (finalText || steps.length) {
+      if (!left && (finalText || steps.length)) {
         setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model, stopped,
           sources: streamSourcesRef.current.length ? streamSourcesRef.current : null, related: streamRelatedRef.current,
           webHint: streamWebHintRef.current,
@@ -434,9 +449,10 @@ export default function Workspace({ mode = null }) {
       setStreamSteps([]);
       // Sync ordering/titles/ids from server. After Stop the server needs a moment to save the
       // part already written, so wait for it rather than replacing the reply with nothing.
-      try {
+      if (!left) try {
         for (let tries = 0; ; tries++) {
           const { data } = await api.get(`/conversations/${convId}`);
+          if (seq !== chatSeq.current) break;
           const saved = data.messages[data.messages.length - 1]?.role === "assistant";
           if (saved || !(stopped && (finalText || steps.length))) { setMessages(data.messages); break; }
           if (tries >= 5) break; // keep the local copy
