@@ -769,7 +769,7 @@ function StarterCard({ s, i, onPick, testid, hideOnPhone }) {
   const t = TONES[s.tone] || TONES.indigo;
   return (
     <button data-testid={testid} onClick={() => onPick(s.prompt)}
-      className={`${hideOnPhone ? "max-sm:hidden " : ""}krish-card group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/70 bg-gradient-to-br ${t.card} to-white/70 p-3 text-left shadow-[0_8px_30px_rgba(99,102,241,0.08)] backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(99,102,241,0.16)] active:scale-[0.99] dark:border-white/5 dark:to-card/60 sm:block sm:px-5 sm:py-4`}
+      className={`${hideOnPhone ? "max-sm:hidden " : ""}krish-card group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/70 bg-gradient-to-br ${t.card} to-white/70 p-3 text-left shadow-[0_8px_30px_rgba(99,102,241,0.08)] backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(99,102,241,0.16)] active:scale-[0.99] dark:border-border dark:to-card/60 sm:block sm:px-5 sm:py-4`}
       style={{ animationDelay: `${0.05 * i}s` }}>
       <svg viewBox="0 0 200 80" preserveAspectRatio="none" aria-hidden="true" className={`pointer-events-none absolute -bottom-1 right-0 h-16 w-3/4 ${t.wave}`}>
         <path d="M0 80 C 60 70, 110 20, 200 10 L200 80 Z" fill="currentColor" />
@@ -832,7 +832,7 @@ function TopicCard({ s, i, onPick }) {
   const t = TONES[TONE_ORDER[i % TONE_ORDER.length]];
   return (
     <button data-testid={`prompt-starter-card-${i}`} onClick={() => onPick(s.prompt)}
-      className={`krish-topic-card group relative flex items-center gap-3 overflow-hidden rounded-xl border border-white/70 bg-gradient-to-br ${t.card} to-white/70 px-3.5 py-2.5 text-left shadow-[0_8px_30px_rgba(99,102,241,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(99,102,241,0.18)] active:translate-y-0 active:scale-[0.99] dark:border-white/5 dark:to-card/60`}
+      className={`krish-topic-card group relative flex items-center gap-3 overflow-hidden rounded-xl border border-white/70 bg-gradient-to-br ${t.card} to-white/70 px-3.5 py-2.5 text-left shadow-[0_8px_30px_rgba(99,102,241,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(99,102,241,0.18)] active:translate-y-0 active:scale-[0.99] dark:border-border dark:to-card/60`}
       style={{ animationDelay: `${0.04 * i}s` }}>
             <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-110 ${t.icon}`}>
         <s.icon className="h-4 w-4" />
