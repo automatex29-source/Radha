@@ -14,7 +14,7 @@ import ShareDialog from "@/components/ShareDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
@@ -660,14 +660,8 @@ export default function Workspace({ mode = null }) {
             )}
           </div>
 
-          {!counselling && (
-            <div className="flex min-w-0 flex-1 justify-center sm:hidden">
-              <ModelMenu models={models} model={model} setModel={setModel} caps={caps} label={t("model")} />
-            </div>
-          )}
-
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            {!counselling && <div className="max-sm:hidden"><UpgradeButton /></div>}
+            {!counselling && <UpgradeButton />}
             {activeConv && messages.length > 0 && (
               <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} data-testid="share-conversation-button"
                 className={`gap-1.5 hover:text-foreground ${activeConv.shareId ? "text-brand" : "text-muted-foreground"}`}>
@@ -681,7 +675,7 @@ export default function Workspace({ mode = null }) {
                 <span className="hidden text-xs @2xl:inline">{t("export")}</span>
               </Button>
             )}
-            {!counselling && <div className="max-sm:hidden"><ModelMenu models={models} model={model} setModel={setModel} caps={caps} label={t("model")} /></div>}
+            {!counselling && <ModelMenu models={models} model={model} setModel={setModel} caps={caps} label={t("model")} />}
             <button onClick={newConversation} data-testid="mobile-new-chat-button" aria-label={t(counselling ? "newSession" : "newChat")}
               className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <SquarePen className="h-5 w-5" />
@@ -696,13 +690,12 @@ export default function Workspace({ mode = null }) {
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : messages.length === 0 && !streaming ? (
-            counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} /> : <EmptyState onPick={(p) => sendMessage(p)} recent={conversations} onOpen={openConversation} onShowAll={() => setSidebarOpen(true)} />
+            counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
                 onEdit={!streaming && m.role === "user" && !String(m.id).startsWith("tmp-") ? (text) => editMessage(m.id, text) : undefined}
                 onAsk={i === messages.length - 1 && !streaming ? (q) => sendMessage(q) : undefined}
-                onRegenerate={i === messages.length - 1 && !streaming && m.role === "assistant" ? () => regenerate() : undefined}
                 onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
                 codeActive={!!codePanel && panelMessage?.id === m.id} />)}
               {streaming && (
@@ -710,7 +703,7 @@ export default function Workspace({ mode = null }) {
                   steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
                   onOpenCode={() => setCodePanel("live")} codeActive={panelLive} />
               )}
-              {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && messages[messages.length - 1].webHint && !webMode && (
+              {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-1"
                   // Keep the typing focus so the phone tab bar doesn't reappear and move these buttons mid-tap.
                   onMouseDown={(e) => e.preventDefault()}>
@@ -721,6 +714,10 @@ export default function Workspace({ mode = null }) {
                       <Globe className="h-3.5 w-3.5" /> Get the latest from the web
                     </Button>
                   )}
+                  <Button variant="outline" size="sm" onClick={() => regenerate()} data-testid="regenerate-button"
+                    className="gap-1.5 border-border bg-card text-muted-foreground hover:text-foreground">
+                    <RefreshCw className="h-3.5 w-3.5" /> Regenerate
+                  </Button>
                 </div>
               )}
             </div>
@@ -875,100 +872,14 @@ function TypingLine() {
   );
 }
 
-// Phone home: four big shortcut tiles; each opens its ready-made requests below.
-const PHONE_TILES = [
-  { id: "write", icon: PenLine, title: "Write", hint: "Emails, posts, essays", tone: "indigo" },
-  { id: "code", icon: Braces, title: "Code", hint: "Build, fix, explain", tone: "sky" },
-  { id: "learn", icon: GraduationCap, title: "Learn", hint: "Explain it simply", tone: "emerald" },
-  { id: "create", icon: Lightbulb, title: "Create", hint: "Ideas and pictures", tone: "amber" },
-];
-
-function timeAgo(iso) {
-  const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (m < 1) return "now";
-  if (m < 60) return `${m}m`;
-  const h = Math.round(m / 60);
-  return h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
-}
-
-function PhoneHome({ onPick, recent = [], onOpen, onShowAll }) {
-  const t = useT();
-  const { user } = useAuth();
-  const first = (user?.name || "").trim().split(/\s+/)[0];
-  const [topic, setTopic] = useState(null);
-  const tile = PHONE_TILES.find((x) => x.id === topic);
-  const items = TOPICS.find((x) => x.id === (topic || "popular"))?.items || [];
-  const latest = recent.slice(0, 3);
-  return (
-    <div data-testid="phone-home" className="radha-fade-up flex min-h-full flex-col px-5 pb-4 pt-3 sm:hidden">
-      <BrandMark className="h-11 w-11" />
-      <h2 className="mt-3 font-heading text-[1.8rem] font-bold leading-[1.15] tracking-tight text-foreground">
-        {t.lang === "en" ? <>{greetingFor(first)}.<br /><span className="krish-gradient-text">What's on your mind?</span></>
-          : t.parts("helpToday", { krish: <span key="k" className="krish-gradient-text">Krish AI</span> })}
-      </h2>
-      <div className="mt-5 grid grid-cols-2 gap-2.5">
-        {PHONE_TILES.map((x) => {
-          const tone = TONES[x.tone];
-          const on = x.id === topic;
-          return (
-            <button key={x.id} onClick={() => setTopic(on ? null : x.id)} data-testid={`home-tile-${x.id}`} aria-pressed={on}
-              className={`flex h-[92px] flex-col justify-between rounded-[20px] border bg-card p-3.5 text-left transition-all active:scale-[0.98] ${
-                on ? "border-primary ring-1 ring-primary/40" : "border-border"}`}>
-              <span className={`flex h-8 w-8 items-center justify-center rounded-[10px] ${tone.icon}`}><x.icon className="h-[18px] w-[18px]" /></span>
-              <span>
-                <span className="block text-[15px] font-semibold leading-tight text-foreground">{x.title}</span>
-                <span className="block truncate text-[12.5px] text-muted-foreground">{x.hint}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {topic || !latest.length ? (
-        <>
-          <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{tile ? `${tile.title} ideas` : "Try asking"}</p>
-          <div key={topic} className="divide-y divide-border">
-            {items.map((s, i) => (
-              <button key={s.title} onClick={() => onPick(s.prompt)} data-testid={`prompt-starter-card-${i}`}
-                className="flex w-full items-center gap-3 py-3 text-left text-[15px] text-foreground active:text-brand">
-                <s.icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-brand" />
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="mb-1 mt-5 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Recent</p>
-            <button onClick={onShowAll} data-testid="home-see-all" className="text-sm font-semibold text-brand">See all</button>
-          </div>
-          <div className="divide-y divide-border">
-            {latest.map((c) => (
-              <button key={c.id} onClick={() => onOpen(c.id)} data-testid={`home-recent-${c.id}`}
-                className="flex w-full items-center gap-3 py-3 text-left text-[15px] text-foreground active:text-brand">
-                <MessageCircle className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">{c.title}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(c.updatedAt)}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function EmptyState({ onPick, recent, onOpen, onShowAll }) {
+function EmptyState({ onPick }) {
   const t = useT();
   const { user } = useAuth();
   const first = (user?.name || "").trim().split(/\s+/)[0];
   const [topic, setTopic] = useState("popular");
   const items = TOPICS.find((x) => x.id === topic)?.items || [];
   return (
-    <>
-    <PhoneHome onPick={onPick} recent={recent} onOpen={onOpen} onShowAll={onShowAll} />
-    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col justify-center px-3 py-4 max-sm:hidden sm:px-4">
+    <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col justify-center px-3 py-4 sm:px-4">
       <div className="krish-hero radha-fade-up relative overflow-hidden rounded-3xl border border-border bg-card/60 px-5 py-4 sm:px-8 sm:py-5 [@media(max-height:760px)]:sm:py-3">
         <div className="krish-aurora" aria-hidden="true"><span /><span /><span /></div>
         <div className="krish-hero-grid" aria-hidden="true" />
@@ -1004,7 +915,6 @@ function EmptyState({ onPick, recent, onOpen, onShowAll }) {
         {items.map((s, i) => <TopicCard key={s.title} s={s} i={i} onPick={onPick} />)}
       </div>
           </div>
-    </>
   );
 }
 

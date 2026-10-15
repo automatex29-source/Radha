@@ -21,7 +21,7 @@ export const LANGUAGES = [
 
 const en = {
   chat: "Chat", counsellor: "Counsellor", projects: "Projects", apps: "Apps", docs: "Docs", decks: "Decks",
-  automations: "Automations", automate: "Automate", more: "More", helpCenter: "Help Center",
+  automations: "Automations", automate: "Automate", helpCenter: "Help Center",
   newConversation: "New conversation", newSession: "New session", newChat: "New chat",
   searchChats: "Search chats and messages", searchConversations: "Search conversations",
   noMatch: "No chats match your search.", noConversations: "No conversations yet.",
@@ -42,7 +42,7 @@ const STRINGS = {
   en,
   hi: {
     chat: "चैट", counsellor: "काउंसलर", projects: "प्रोजेक्ट", apps: "ऐप्स", docs: "डॉक्स", decks: "डेक",
-    automations: "ऑटोमेशन", automate: "ऑटोमेट", more: "और", helpCenter: "सहायता केंद्र",
+    automations: "ऑटोमेशन", automate: "ऑटोमेट", helpCenter: "सहायता केंद्र",
     newConversation: "नई बातचीत", newSession: "नया सेशन", newChat: "नई चैट",
     searchChats: "चैट और संदेश खोजें", searchConversations: "बातचीत खोजें",
     noMatch: "आपकी खोज से कोई चैट नहीं मिली।", noConversations: "अभी कोई बातचीत नहीं।",
