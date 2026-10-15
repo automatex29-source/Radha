@@ -1,5 +1,8 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, ChevronDown, Crown } from "lucide-react";
+import BottomSheet from "@/components/BottomSheet";
+import { usePhone } from "@/hooks/usePhone";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -44,6 +47,82 @@ export default function ModelMenu({ models, model, setModel, caps, label }) {
   const ready = (m) => !caps || !!caps.agent?.[m.id];
   const pick = (m) => (m.pro && !paidPlan ? navigate("/plans") : setModel(m.id));
   const groups = [["Everyday", models.filter((m) => !m.pro)], ["Pro models", models.filter((m) => m.pro)]].filter(([, list]) => list.length);
+  const phone = usePhone();
+  const [open, setOpen] = useState(false);
+
+  if (phone) {
+    const available = models.filter(ready);
+    const soon = models.filter((m) => !ready(m));
+    return (
+      <>
+        <button onClick={() => setOpen(true)} data-testid="model-selector-dropdown" aria-haspopup="dialog"
+          className="flex h-9 min-w-0 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[15px] font-semibold text-foreground active:scale-[0.98]">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-gradient-to-br from-[#FFB547] to-[#F2650F]" />
+          <span className="truncate">{current?.label || label}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </button>
+        <BottomSheet open={open} onOpenChange={setOpen} title="Choose a model" testId="model-sheet">
+          <div className="space-y-2.5">
+            {available.map((m) => {
+              const MIcon = modelIcon(m.id);
+              const selected = m.id === model;
+              const locked = m.pro && !paidPlan;
+              return (
+                <button key={m.id} role="menuitemradio" aria-checked={selected} data-testid={`model-option-${m.id}`}
+                  onClick={() => { setOpen(false); pick(m); }}
+                  className={`flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left transition-colors ${
+                    selected ? "border-2 border-primary bg-primary/[0.06]" : "border-border"}`}>
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#FFB547] via-[#FF8A1E] to-[#F2650F] text-white shadow-sm shadow-[#FF8A1E]/40">
+                    <MIcon className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 text-base font-semibold text-foreground">
+                      {m.label}
+                      {m.pro && <span className="inline-flex items-center gap-0.5 rounded-full bg-[#F2650F]/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-[#F2650F]"><Crown className="h-2.5 w-2.5" /> Pro</span>}
+                    </span>
+                    <span className="mt-0.5 block text-[13px] leading-snug text-muted-foreground">{locked ? "Upgrade to use this model" : m.description}</span>
+                  </span>
+                  {selected && <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"><Check className="h-3.5 w-3.5" /></span>}
+                </button>
+              );
+            })}
+          </div>
+          {soon.length > 0 && (
+            <details className="group/soon mt-1.5" data-testid="model-sheet-soon">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-1 py-3 text-sm text-muted-foreground">
+                <span className="truncate"><b className="font-semibold text-foreground">Coming soon</b> · {soon.map((m) => m.label.replace(/^Krish\s+/, "")).join(", ")}</span>
+                <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open/soon:rotate-180" />
+              </summary>
+              <div className="space-y-1 pb-1">
+                {soon.map((m) => {
+                  const MIcon = modelIcon(m.id);
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 rounded-xl px-2 py-2 opacity-60">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#F2650F]/10 text-[#F2650F]"><MIcon className="h-4 w-4" /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-foreground">{m.label}</span>
+                        <span className="block text-xs text-muted-foreground">{m.description}</span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
+          {!paidPlan && (
+            <button onClick={() => { setOpen(false); navigate("/plans"); }} data-testid="model-sheet-upgrade"
+              className="mt-2 flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 px-4 py-3.5 text-left text-white shadow-[0_10px_24px_rgba(99,102,241,0.35)]">
+              <span>
+                <span className="block font-semibold">Krish Pro</span>
+                <span className="block text-[13px] text-white/85">Smarter models, more chats</span>
+              </span>
+              <span className="rounded-full bg-white px-3.5 py-1.5 text-[13px] font-semibold text-indigo-600">Upgrade</span>
+            </button>
+          )}
+        </BottomSheet>
+      </>
+    );
+  }
 
   return (
     <DropdownMenu>

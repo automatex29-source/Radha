@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper } from "lucide-react";
+import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
@@ -111,6 +111,10 @@ function VideoResults({ items, id }) {
   );
 }
 
+// The small buttons under a message: icon-only, thumb-sized tap targets on phones; icon and word on bigger screens.
+const ACTION = "flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-sm:h-9 max-sm:w-9 max-sm:justify-center max-sm:rounded-xl max-sm:active:bg-surface";
+const ICON = "h-3 w-3 max-sm:h-[18px] max-sm:w-[18px]";
+
 // Publishes this answer as a Page: a clean article with its own link (like Perplexity Pages).
 function MakePageButton({ id }) {
   const [busy, setBusy] = useState(false);
@@ -130,8 +134,8 @@ function MakePageButton({ id }) {
   };
   return (
     <button onClick={make} disabled={busy} data-testid={`make-page-button-${id}`} title="Publish this answer as a page anyone can read"
-      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50">
-      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Newspaper className="h-3 w-3" />} Make a page
+      aria-label="Make a page" className={`${ACTION} disabled:opacity-50`}>
+      {busy ? <Loader2 className={`${ICON} animate-spin`} /> : <Newspaper className={ICON} />} <span className="max-sm:hidden">Make a page</span>
     </button>
   );
 }
@@ -191,15 +195,15 @@ function SpeakButton({ text, voice, id }) {
     }
   };
   return (
-    <button onClick={toggle} data-testid={`speak-message-button-${id}`}
-      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-      {state === "loading" ? <Loader2 className="h-3 w-3 animate-spin" /> : state === "playing" ? <Square className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
-      {state === "playing" ? "Stop" : "Listen"}
+    <button onClick={toggle} data-testid={`speak-message-button-${id}`} aria-label={state === "playing" ? "Stop" : "Listen"}
+      className={ACTION}>
+      {state === "loading" ? <Loader2 className={`${ICON} animate-spin`} /> : state === "playing" ? <Square className={ICON} /> : <Volume2 className={ICON} />}
+      <span className="max-sm:hidden">{state === "playing" ? "Stop" : "Listen"}</span>
     </button>
   );
 }
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, onRegenerate }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -285,21 +289,20 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             </div>
           )}
         </div>
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_4px_12px_rgba(99,102,241,0.35)]">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_4px_12px_rgba(99,102,241,0.35)] max-sm:hidden">
           <User className="h-4 w-4 text-white" />
         </div>
       </div>
         {message.content && (
-          <div className="mr-11 mt-1.5 flex items-center gap-3 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
-            <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`} aria-label="Copy"
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-              {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
-              {copied ? "Copied" : "Copy"}
+          <div className="mt-1.5 flex items-center gap-3 max-sm:-mr-2 max-sm:gap-0 sm:mr-11 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
+            <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`} aria-label="Copy" className={ACTION}>
+              {copied ? <Check className={`${ICON} text-emerald-600 dark:text-emerald-400`} /> : <Copy className={ICON} />}
+              <span className="max-sm:hidden">{copied ? "Copied" : "Copy"}</span>
             </button>
             {onEdit && (
               <button onClick={() => { setDraft(message.content); setEditing(true); }} data-testid={`edit-message-button-${message.id}`}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-                <Pencil className="h-3 w-3" /> Edit
+                aria-label="Edit" className={ACTION}>
+                <Pencil className={ICON} /> <span className="max-sm:hidden">Edit</span>
               </button>
             )}
           </div>
@@ -310,12 +313,13 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
 
   return (
     <div className="group flex gap-3 radha-fade-up" data-testid={`ai-message-item-${message.id}`}>
-      <BrandMark className="mt-0.5 h-8 w-8 shrink-0" thinking={streaming} />
+      <BrandMark className="mt-0.5 h-8 w-8 shrink-0 max-sm:hidden" thinking={streaming} />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
+          <BrandMark className="h-6 w-6 shrink-0 sm:hidden" thinking={streaming} />
           <KrishWordmark className="text-[15px]" />
           {message.model && (
-            <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 text-[10px] font-medium tracking-wide text-brand">
+            <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 text-[10px] font-medium tracking-wide text-brand max-sm:hidden">
               {modelLabel(message.model)}
             </span>
           )}
@@ -349,13 +353,17 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           </div>
         )}
         {!streaming && message.content && (
-          <div className="mt-2 flex items-center gap-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-            <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-              {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
-              {copied ? "Copied" : "Copy"}
+          <div className={`mt-2 flex items-center gap-3 transition-opacity focus-within:opacity-100 group-hover:opacity-100 max-sm:-ml-2 max-sm:gap-0.5 ${onRegenerate ? "" : "sm:opacity-0"}`}>
+            <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`} aria-label="Copy" className={ACTION}>
+              {copied ? <Check className={`${ICON} text-emerald-600 dark:text-emerald-400`} /> : <Copy className={ICON} />}
+              <span className="max-sm:hidden">{copied ? "Copied" : "Copy"}</span>
             </button>
             {voiceEnabled && <SpeakButton text={message.content} voice={voice} id={message.id} />}
+            {onRegenerate && (
+              <button onClick={onRegenerate} data-testid="regenerate-button" aria-label="Regenerate" title="Write this answer again" className={ACTION}>
+                <RefreshCw className={ICON} /> <span className="max-sm:hidden">Regenerate</span>
+              </button>
+            )}
             {codeProject && <MakePageButton id={message.id} />}
           </div>
         )}

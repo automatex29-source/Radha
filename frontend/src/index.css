@@ -271,6 +271,8 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 .krish-drawer-in { animation: krish-drawer-in 0.22s cubic-bezier(0.32, 0.72, 0, 1) both; }
 @keyframes krish-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .krish-fade-in { animation: krish-fade-in 0.2s ease both; }
+@keyframes krish-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.krish-sheet-in { animation: krish-sheet-in 0.26s cubic-bezier(0.32, 0.72, 0, 1) both; }
 
 /* --- Refreshed look: soft pastel canvas, glass panels, colourful cards --- */
 .krish-canvas { background-color: hsl(var(--background)); }
