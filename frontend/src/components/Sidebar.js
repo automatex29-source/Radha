@@ -15,7 +15,7 @@ import SettingsDialog from "@/components/SettingsDialog";
 import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown,
+  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 
@@ -190,6 +190,11 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <DropdownMenuItem data-testid="menu-plans" onClick={() => navigate("/plans")}>
               <Crown className="mr-2 h-4 w-4" /> {t("plans")}
             </DropdownMenuItem>
+            {user?.isOwner && (
+              <DropdownMenuItem data-testid="menu-admin-users" onClick={() => navigate("/admin/users")}>
+                <Users className="mr-2 h-4 w-4" /> Users
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem data-testid="menu-settings" onClick={() => setSettingsOpen(true)}>
               <Settings className="mr-2 h-4 w-4" /> {t("settings")}
             </DropdownMenuItem>
