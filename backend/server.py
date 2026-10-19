@@ -81,8 +81,9 @@ AVAILABLE_MODELS = [
     {"id": "openai/gpt-oss-20b", "label": "Krish Mini", "description": "Instant replies for simple questions", "pro": False},
     {"id": "cerebras/gpt-oss-120b", "label": "Krish Titan", "description": "Remembers more for long chats and big files", "pro": False},
     {"id": CODER_MODEL, "label": "Krish Coder", "description": "Free coding expert: writes, fixes and explains code", "pro": False},
+    # Haiku before Sonnet: with only a Claude key, the cheapest Claude becomes the default.
+    {"id": "claude-haiku-5-5", "label": "Krish Swift", "description": "Quick and sharp for daily work", "pro": True},
     {"id": "claude-sonnet-5-5", "label": "Krish Ultra", "description": "Our smartest, for deep thinking", "pro": True},
-    {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "description": "Quick and sharp for daily work", "pro": True},
     {"id": "gpt-5.4", "label": "Krish Vision", "description": "A strong all-rounder for any task", "pro": True},
 ]
 # The App Builder's models: BUILDER_MODEL (any model above, the owner's choice for every user) wins;
@@ -1499,7 +1500,8 @@ async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
         # Gemini's free daily allowance is kept for chat; a build takes many steps.
         if (agent_llm.lean(model) or agent_llm.provider_for(model) == "gemini") and agent_llm.configured(FREE_BUILDER):
             model = FREE_BUILDER
-    if agent_llm.paid(model) and not agent_llm.paid(AI_MODEL) and os.environ.get("PAID_MODELS") != "all" \
+    # A paid default (e.g. Claude Haiku as the only key) is everyone's model; other paid models stay Pro-only.
+    if model != AI_MODEL and agent_llm.paid(model) and os.environ.get("PAID_MODELS") != "all" \
             and not await limits.is_pro(db, user_id):
         model = AI_MODEL
     return model
