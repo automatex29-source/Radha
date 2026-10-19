@@ -34,6 +34,7 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      # Paid Claude: with only this key, every chat uses Claude Haiku 5.5 (Krish Swift, the cheapest Claude).
       - key: ANTHROPIC_API_KEY
         sync: false
       # Optional, free: raises the image/video limits (https://enter.pollinations.ai, sign in with GitHub).
