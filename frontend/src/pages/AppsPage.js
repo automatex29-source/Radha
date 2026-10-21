@@ -72,10 +72,10 @@ export default function AppsPage() {
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-          <PageHero icon={AppWindow} title="Apps" subtitle="Describe an app and Krish AI builds it, with live preview, tests, version history and one-click publishing.">
+          <PageHero scene="apps" icon={AppWindow} title="Apps" subtitle="Describe an app and Krish AI builds it, with live preview, tests, version history and one-click publishing.">
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button data-testid="new-app-button" className="gap-1.5"><Plus className="h-4 w-4" /> New app</Button>
+                <Button data-testid="new-app-button" className="gap-1.5 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New app</Button>
               </DialogTrigger>
               <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <DialogHeader>

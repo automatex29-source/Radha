@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import PageHero from "@/components/PageHero";
+import PageHero, { accentStyle } from "@/components/PageHero";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
@@ -55,15 +55,15 @@ export default function DiscoverPage() {
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10" data-testid="discover-page">
-          <PageHero icon={Compass} title={t("discover")} subtitle="Today's top stories. Tap one to read it, or ask Krish to explain." />
+        <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10" data-testid="discover-page" style={accentStyle("discover")}>
+          <PageHero scene="discover" icon={Compass} title={t("discover")} subtitle="Today's top stories. Tap one to read it, or ask Krish to explain." />
 
           <div className="radha-scroll -mx-4 mt-6 flex gap-2 overflow-x-auto px-4 pb-1" data-testid="discover-topics">
             {TOPICS.map((x) => (
               <button key={x.id} onClick={() => setParams(x.id === "top" ? {} : { topic: x.id }, { replace: true })}
                 data-testid={`discover-topic-${x.id}`} aria-pressed={topic === x.id}
                 className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                  topic === x.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}>
+                  topic === x.id ? "kb-tab-on border-transparent text-white" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}>
                 {x.label}
               </button>
             ))}
