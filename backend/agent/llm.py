@@ -90,6 +90,8 @@ _HEARTBEAT_SECONDS = 10
 # Groq counts max_tokens against the per-minute budget, so a plain chat answer asks for less room
 # and the next message isn't kept waiting (see ai_runtime/_backend.py).
 PLAIN_OUTPUT = 3000
+# Code answers (with the reasoning that comes before them) need more: 3,000 tokens cut whole files short.
+CODE_OUTPUT = 8000
 # Groq's limits are per model: when the big model is rate limited, its smaller sibling answers right away
 # instead of the user waiting up to a minute.
 _FALLBACK = {"openai/gpt-oss-120b": "openai/gpt-oss-20b", "cerebras/gpt-oss-120b": "openai/gpt-oss-120b"}
