@@ -173,7 +173,7 @@ export default function DecksPage() {
             <section className="mx-auto max-w-4xl text-center" data-testid="deck-create" style={accentStyle("decks")}>
               <PageHero scene="decks" overlap icon={Presentation} title="Presentations"
                 subtitle="Start from a topic, your notes, a file, a web page or a YouTube video. Krish AI writes the outline, designs the slides, and you download a real PowerPoint." />
-              <div className="kb-float -mt-12 mx-2 rounded-2xl border border-border p-3 text-left sm:mx-6 sm:-mt-14">
+              <div className="kb-float -mt-9 mx-2 rounded-2xl border border-border p-3 text-left sm:mx-6 sm:-mt-10">
                 <div className="mb-2 flex flex-wrap gap-1" data-testid="deck-source-tabs">
                   {SOURCES.map(({ id, label, Icon }) => (
                     <button key={id} type="button" onClick={() => { setMode(id); setSource(null); }} data-testid={`deck-source-${id}`}

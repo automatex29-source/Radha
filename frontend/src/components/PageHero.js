@@ -27,22 +27,22 @@ export const accentStyle = (scene) => {
 export default function PageHero({ icon: Icon, title, subtitle, children, scene, overlap = false, compact = false, testid }) {
   return (
     <div data-testid={testid} style={accentStyle(scene)}
-      className={`kb-hero radha-fade-up rounded-[1.75rem] text-left ${compact ? "px-4 pb-4 pt-3" : `px-5 pt-4 sm:px-9 sm:pt-8 ${overlap ? "pb-16 sm:pb-20" : "pb-5 sm:pb-8"}`}`}>
+      className={`kb-hero radha-fade-up rounded-3xl text-left ${compact ? "px-4 py-3" : `px-4 pt-4 sm:px-7 sm:pt-5 ${overlap ? "pb-12 sm:pb-14" : "pb-4 sm:pb-5"}`}`}>
       <div className="kb-blobs" aria-hidden="true"><i /><i /><i /></div>
       <div className="kb-grid" aria-hidden="true" />
       <div className="kb-shine" aria-hidden="true" />
-      <div className={`grid items-center ${compact ? "gap-1" : "gap-2 md:grid-cols-[1fr_1.05fr] md:gap-6"}`}>
-        {scene && <PageScene name={scene} className={compact ? "mx-auto max-w-[300px]" : "max-md:mx-auto max-md:max-w-[380px] md:order-last"} />}
-        <div className="min-w-0">
+      <div className="flex items-center gap-3 sm:gap-6">
+        <div className="min-w-0 flex-1">
           {Icon && (
-            <span className="kb-pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold">
+            <span className={`kb-pill items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${compact ? "hidden" : "hidden sm:inline-flex"}`}>
               <Icon className="h-3.5 w-3.5" /> Krish {title}
             </span>
           )}
-          <h1 className={`kb-title ${compact ? "mt-2 text-3xl" : "mt-3 text-4xl sm:mt-4 sm:text-[3.4rem]"}`}>{title}</h1>
-          {subtitle && <p className={`mt-2 max-w-md leading-relaxed text-white/80 ${compact ? "text-[13px]" : "text-sm sm:mt-3 sm:text-[15px]"}`}>{subtitle}</p>}
-          {children && <div className="mt-4 flex flex-wrap gap-2">{children}</div>}
+          <h1 className={`kb-title ${compact ? "text-2xl" : "text-[1.7rem] sm:mt-2 sm:text-[2.4rem]"}`}>{title}</h1>
+          {subtitle && <p className={`mt-1.5 max-w-md leading-snug text-white/80 ${compact ? "line-clamp-2 text-xs" : "line-clamp-2 text-[13px] sm:line-clamp-none sm:text-sm"}`}>{subtitle}</p>}
+          {children && <div className="mt-3 flex flex-wrap gap-2">{children}</div>}
         </div>
+        {scene && <PageScene name={scene} className={`shrink-0 ${compact ? "!w-[120px]" : "!w-[128px] sm:!w-[230px] md:!w-[280px]"}`} />}
       </div>
     </div>
   );
