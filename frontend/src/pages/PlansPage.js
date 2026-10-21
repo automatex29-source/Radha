@@ -21,6 +21,7 @@ const TAGLINE = {
 function features(plan) {
   return [
     { ok: true, text: "Unlimited chat and search" },
+    { ok: true, text: "Krish AI, our free model for every question" },
     ...DAILY.map((d) => ({ ok: true, text: `${plan.daily[d.key]} ${plan.daily[d.key] === 1 ? d.one : d.many} a day` })),
     { ok: true, text: `${plan.total.automation} automation${plan.total.automation === 1 ? "" : "s"}` },
     { ok: plan.publish, text: "Publish apps to the web" },

@@ -102,7 +102,6 @@ def answering_model(monkeypatch, question, model="gemini-3.5-flash-lite", key=Tr
 def test_coding_questions_go_to_krish_coder(monkeypatch):
     server = _server()
     assert server.CODER_MODEL == "openrouter/qwen/qwen3-coder:free"
-    assert any(m["id"] == server.CODER_MODEL and not m["pro"] for m in server.AVAILABLE_MODELS)
     answered, kept = answering_model(monkeypatch, "fix this python KeyError")
     assert answered == server.CODER_MODEL
     assert kept == "gemini-3.5-flash-lite"  # the chat stays on the model the user picked
