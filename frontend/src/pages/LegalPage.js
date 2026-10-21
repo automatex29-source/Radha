@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
 import BrandMark from "@/components/BrandMark";
 
-const UPDATED = "14 October 2026";
+const UPDATED = "21 October 2026";
 
 const PRIVACY = {
   title: "Privacy Policy",
@@ -25,6 +25,7 @@ const PRIVACY = {
       "To write answers, your messages and files are sent to the AI provider that answers them. Depending on the model, that is Google (Gemini), Groq, Cerebras, OpenAI, Anthropic, Pollinations or fal.ai. They process it to reply and under their own terms.",
       "When web search is on, your question is sent to search services to find current results.",
       "The app is hosted on Render and your data is stored in a MongoDB database. Emails are sent through Brevo or Resend.",
+      "Payments for Pro and Max are handled by Razorpay. Your card, UPI or bank details go straight to Razorpay; we only keep the order and payment ids, the plan and the amount.",
     ]],
     ["Sharing", [
       "A chat or page is public only if you create a share link for it. Anyone with that link can read it until you turn sharing off or delete it.",
@@ -67,7 +68,9 @@ const TERMS = {
       "Only upload content you have the right to use.",
     ]],
     ["Plans and limits", [
-      "Chat is free. Some features have daily limits on the free plan. Paid plans, when offered, will show their price and terms before you pay.",
+      "Chat is free. Some features have daily limits on the free Basic plan.",
+      "Pro (₹299) and Max (₹699) are paid once for 30 days, through Razorpay. They do not renew by themselves: when the 30 days end you go back to Basic, and nothing in your account is deleted. Paying again for the same plan adds 30 more days.",
+      "Refunds and cancellations are explained in the Refund Policy.",
       "We may change features and limits as the service grows.",
     ]],
     ["Availability and liability", [
@@ -84,9 +87,35 @@ const TERMS = {
   ],
 };
 
-/** Public Privacy Policy and Terms of Service pages; they open without signing in. */
+const REFUNDS = {
+  title: "Refund and Cancellation Policy",
+  intro: "This page explains how payments for the Pro and Max plans of Krish AI work, and when you can get your money back.",
+  sections: [
+    ["What you pay for", [
+      "Pro costs ₹299 and Max costs ₹699, each for 30 days of the plan. Prices include all charges shown at checkout.",
+      "Payments are made through Razorpay with UPI, debit or credit card, net banking or a wallet. Krish AI is a digital service: nothing is shipped, and the plan starts as soon as the payment goes through.",
+    ]],
+    ["No automatic renewal", [
+      "A plan does not renew by itself and we never charge you again without you paying. When the 30 days end your account goes back to the free Basic plan and all your work stays.",
+      "You can stop at any time simply by not paying again, so there is nothing to cancel.",
+    ]],
+    ["Refunds", [
+      "If you were charged but your plan did not switch on, or you were charged twice for the same order, we refund the extra payment in full.",
+      "If you are not happy with a plan, ask within 7 days of paying and we will refund it in full, once per account.",
+      "Approved refunds go back to the same UPI, card or bank account through Razorpay, usually within 5 to 7 working days. Your account returns to Basic when a refund is made.",
+    ]],
+    ["How to ask", [
+      "Write to us from the Help Center inside the app with the email of your account and the payment date. We reply within 2 working days.",
+    ]],
+  ],
+};
+
+const DOCS = { privacy: PRIVACY, terms: TERMS, refunds: REFUNDS };
+const OTHER = [["/privacy", "privacy", "Privacy Policy"], ["/terms", "terms", "Terms of Service"], ["/refunds", "refunds", "Refund Policy"]];
+
+/** Public Privacy Policy, Terms of Service and Refund Policy pages; they open without signing in. */
 export default function LegalPage({ kind }) {
-  const doc = kind === "terms" ? TERMS : PRIVACY;
+  const doc = DOCS[kind] || PRIVACY;
   useEffect(() => { document.title = `${doc.title} · Krish AI`; }, [doc.title]);
 
   return (
@@ -111,10 +140,10 @@ export default function LegalPage({ kind }) {
             </ul>
           </section>
         ))}
-        <p className="mt-12 flex gap-4 text-sm">
-          <Link to={kind === "terms" ? "/privacy" : "/terms"} className="font-medium text-brand hover:underline">
-            {kind === "terms" ? "Privacy Policy" : "Terms of Service"}
-          </Link>
+        <p className="mt-12 flex flex-wrap gap-4 text-sm">
+          {OTHER.filter(([, k]) => k !== kind).map(([to, k, label]) => (
+            <Link key={k} to={to} className="font-medium text-brand hover:underline">{label}</Link>
+          ))}
           <Link to="/" className="text-muted-foreground hover:underline">Back to Krish AI</Link>
         </p>
       </main>

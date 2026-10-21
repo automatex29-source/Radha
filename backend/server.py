@@ -8,6 +8,7 @@ import asyncio
 import anyio
 import functools
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -57,6 +58,7 @@ import writer
 import code_edit
 import code_check
 import limits
+import billing
 import languages
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
@@ -226,7 +228,8 @@ def public_user(doc: dict) -> dict:
         "email": doc["email"],
         "name": doc["name"],
         "language": languages.normalize(doc.get("language")),
-        "plan": doc.get("plan") if doc.get("plan") in limits.PLANS else "basic",
+        "plan": limits.plan_from(doc),
+        "planExpiresAt": doc.get("planExpiresAt") if limits.plan_from(doc) != "basic" else None,
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
         "isOwner": is_owner_email(doc["email"]),
@@ -494,12 +497,12 @@ async def admin_users(user_id: str = Depends(current_user_id)):
     me_doc = await db.users.find_one({"id": user_id}, {"email": 1})
     if not me_doc or not is_owner_email(me_doc["email"]):
         raise HTTPException(status_code=404, detail="Not found")
-    fields = {"_id": 0, "id": 1, "name": 1, "email": 1, "plan": 1, "createdAt": 1,
+    fields = {"_id": 0, "id": 1, "name": 1, "email": 1, "plan": 1, "planExpiresAt": 1, "createdAt": 1,
               "lastLoginAt": 1, "lastSeenAt": 1, "loginCount": 1}
     docs = await db.users.find({}, fields).to_list(10000)
     users = [{
         "id": d["id"], "name": d.get("name", ""), "email": d["email"],
-        "plan": d.get("plan") if d.get("plan") in limits.PLANS else "basic",
+        "plan": limits.plan_from(d),
         "createdAt": d.get("createdAt"), "lastLoginAt": d.get("lastLoginAt"),
         "lastSeenAt": d.get("lastSeenAt") or d.get("lastLoginAt"), "loginCount": d.get("loginCount", 0),
     } for d in docs]
@@ -2098,7 +2101,55 @@ def _user_from_header_or_query(authorization: Optional[str], auth: Optional[str]
 
 @api.get("/usage")
 async def usage(user_id: str = Depends(current_user_id)):
-    return await limits.summary(db, user_id)
+    user = await db.users.find_one({"id": user_id}, {"plan": 1, "planExpiresAt": 1}) or {}
+    expires = user.get("planExpiresAt") if limits.plan_from(user) != "basic" else None
+    return {**await limits.summary(db, user_id), "paymentsOn": billing.enabled(), "planExpiresAt": expires}
+
+
+# ------------------------------------------------------------------- billing
+class CheckoutIn(BaseModel):
+    plan: Literal["pro", "max"]
+
+
+class PaymentDoneIn(BaseModel):
+    orderId: str = Field(min_length=1, max_length=64)
+    paymentId: str = Field(min_length=1, max_length=64)
+    signature: str = Field(min_length=1, max_length=256)
+
+
+@api.post("/billing/order")
+async def billing_order(body: CheckoutIn, user_id: str = Depends(current_user_id)):
+    """Start paying for a month of Pro or Max: returns the Razorpay order the checkout opens."""
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    try:
+        return await billing.create_order(db, user, body.plan)
+    except billing.BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@api.post("/billing/verify")
+async def billing_verify(body: PaymentDoneIn, user_id: str = Depends(current_user_id)):
+    """The checkout finished: confirm the payment and switch the plan on. Returns the updated account."""
+    try:
+        await billing.verify(db, user_id, body.orderId, body.paymentId, body.signature)
+    except billing.BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return public_user(await db.users.find_one({"id": user_id}))
+
+
+@api.post("/billing/webhook")
+async def billing_webhook(request: Request, x_razorpay_signature: str = Header(default="")):
+    """Razorpay tells us an order was paid, even if the user closed the app before it came back."""
+    body = await request.body()
+    try:
+        event = json.loads(body or b"{}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Bad body")
+    if not await billing.webhook(db, body, x_razorpay_signature, event):
+        raise HTTPException(status_code=400, detail="Bad signature")
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------ discover

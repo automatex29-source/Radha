@@ -6,7 +6,9 @@ in the App Builder), pictures, new decks and videos, counted per user per day
 the user has now, so deleting one frees a slot. Publishing apps is for Pro and
 Max only.
 
-A user's plan is the `plan` field on their account ("basic" when missing).
+A user's plan is the `plan` field on their account ("basic" when missing). A paid
+plan bought in the app also has `planExpiresAt` (an ISO time); once that passes the
+user is back on Basic. A plan set by hand without an expiry never runs out.
 Set FREE_LIMITS=off to switch every limit off (for testing).
 """
 import os
@@ -71,10 +73,19 @@ def today() -> str:
     return datetime.now(IST).strftime("%Y-%m-%d")
 
 
-async def plan_of(db, user_id: str) -> str:
-    user = await db.users.find_one({"id": user_id}, {"plan": 1})
+def plan_from(user: dict) -> str:
+    """The plan a user account is on right now: an unknown or expired plan counts as Basic."""
     plan = (user or {}).get("plan") or "basic"
-    return plan if plan in PLANS else "basic"
+    if plan not in PLANS:
+        return "basic"
+    expires = (user or {}).get("planExpiresAt")
+    if plan != "basic" and expires and expires <= datetime.now(timezone.utc).isoformat():
+        return "basic"
+    return plan
+
+
+async def plan_of(db, user_id: str) -> str:
+    return plan_from(await db.users.find_one({"id": user_id}, {"plan": 1, "planExpiresAt": 1}))
 
 
 async def is_pro(db, user_id: str) -> bool:
