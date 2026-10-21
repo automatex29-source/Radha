@@ -116,13 +116,20 @@ async def _activate(db, order_id: str, payment_id: str, amount=None) -> bool:
     if not claimed:
         return False
     user = await db.users.find_one({"id": pay["userId"]}, {"plan": 1, "planExpiresAt": 1}) or {}
+    current = limits.plan_from(user)
+    plan = pay["plan"]
+    if limits.ORDER.index(current) > limits.ORDER.index(plan):
+        # An older Pro order paid after the user moved to Max: never step them down, add the days to Max.
+        plan = current
+    if plan == current and plan != "basic" and not user.get("planExpiresAt"):
+        return True  # a plan set by hand that never runs out stays that way
     start = _now()
-    if limits.plan_from(user) == pay["plan"] and user.get("planExpiresAt"):
+    if plan == current and user.get("planExpiresAt"):
         start = max(start, datetime.fromisoformat(user["planExpiresAt"]))
     expires = (start + timedelta(days=DAYS)).isoformat()
     await db.users.update_one({"id": pay["userId"]}, {"$set": {
-        "plan": pay["plan"], "planExpiresAt": expires, "updatedAt": _now().isoformat()}})
-    logger.info("User %s is on %s until %s (order %s)", pay["userId"], pay["plan"], expires, order_id)
+        "plan": plan, "planExpiresAt": expires, "updatedAt": _now().isoformat()}})
+    logger.info("User %s is on %s until %s (order %s)", pay["userId"], plan, expires, order_id)
     return True
 
 

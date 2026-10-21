@@ -131,3 +131,20 @@ def test_expired_plan_is_basic_again():
     assert limits.plan_from({"plan": "pro", "planExpiresAt": future}) == "pro"
     assert limits.plan_from({"plan": "max"}) == "max"  # set by hand, never runs out
     assert limits.plan_from({"plan": "gold"}) == "basic"
+
+
+def test_an_old_pro_order_paid_later_never_steps_max_down(client):
+    h = _user(client, "pay6@test.com")
+    old_pro = client.post("/api/billing/order", headers=h, json={"plan": "pro"}).json()
+    max_order = client.post("/api/billing/order", headers=h, json={"plan": "max"}).json()
+    first = _pay(client, h, max_order).json()
+    assert first["plan"] == "max"
+    after = _pay(client, h, old_pro, "pay_old").json()
+    assert after["plan"] == "max" and after["planExpiresAt"] > first["planExpiresAt"]
+
+
+def test_order_never_returns_the_secret(client):
+    h = _user(client, "pay7@test.com")
+    order = client.post("/api/billing/order", headers=h, json={"plan": "pro"})
+    assert SECRET not in order.text and HOOK not in order.text
+    assert SECRET not in client.get("/api/usage", headers=h).text
