@@ -55,6 +55,53 @@ class TestImages:
         monkeypatch.setenv("IMAGE_PROVIDER", "off")
         assert not media.image_available()
 
+    def test_gemini_images_on_the_chat_key(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "g")
+        monkeypatch.setenv("POLLINATIONS_API_KEY", "p")
+        assert media._image_providers() == ["pollinations", "gemini", "pollinations_legacy"]
+        monkeypatch.setenv("GEMINI_IMAGES", "0")
+        assert media._image_providers() == ["pollinations", "pollinations_legacy"]
+
+    def test_gemini_image(self, monkeypatch):
+        from google import genai
+        from google.genai import types
+
+        monkeypatch.setenv("GEMINI_API_KEY", "g")
+        monkeypatch.setattr(media, "_gemini_rest_until", 0.0)
+        seen = {}
+
+        class Models:
+            async def generate_content(self, **kw):
+                seen.update(kw)
+                part = types.Part(inline_data=types.Blob(data=png(size=(960, 540)), mime_type="image/png"))
+                return types.GenerateContentResponse(candidates=[types.Candidate(content=types.Content(parts=[part]))])
+
+        class Client:
+            def __init__(self, **kw):
+                self.aio = type("A", (), {"models": Models()})()
+
+        monkeypatch.setattr(genai, "Client", Client)
+        assert media.image_type(run(media.generate_image("a fox", "1920x1080"))) == "image/png"
+        assert seen["model"] == "gemini-2.5-flash-image" and seen["config"].image_config.aspect_ratio == "16:9"
+
+    def test_gemini_rests_after_quota_error(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "g")
+        monkeypatch.setattr(media, "_gemini_rest_until", 0.0)
+
+        class Models:
+            async def generate_content(self, **kw):
+                raise RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")
+
+        class Client:
+            def __init__(self, **kw):
+                self.aio = type("A", (), {"models": Models()})()
+
+        from google import genai
+        monkeypatch.setattr(genai, "Client", Client)
+        fake_http(monkeypatch, lambda req: httpx.Response(200, content=png(size=(768, 512))))
+        assert media.image_type(run(media.generate_image("a fox", "1536x1024"))) == "image/png"
+        assert "gemini" not in media._image_providers()  # resting for a while
+
     def test_image_type(self):
         assert media.image_type(png()) == "image/png"
         assert media.image_type(b"\xff\xd8\xff\xe0rest") == "image/jpeg"

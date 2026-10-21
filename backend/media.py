@@ -3,8 +3,8 @@
 Transcription uses the OpenAI API (OPENAI_API_KEY, optional OPENAI_BASE_URL
 for an OpenAI-compatible gateway) or, without it, Groq's free Whisper
 (GROQ_API_KEY). Server speech uses OpenAI; without it the browser speaks
-replies itself. Images use OpenAI when that
-key is set and free providers (Pollinations, Hugging Face) otherwise. Media bytes live in the
+replies itself. Images use fal or OpenAI when those
+keys are set, then Pollinations, Google's Nano Banana on the Gemini key, Hugging Face and the keyless Pollinations. Media bytes live in the
 `media` collection, owned per user, and are served by GET /api/media/{id}.
 """
 import base64
@@ -85,6 +85,21 @@ def image_key_configured() -> bool:
     return any(os.environ.get(k) for k in ("FAL_KEY", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN"))
 
 
+GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+GEMINI_IMAGE_TIMEOUT = float(os.environ.get("GEMINI_IMAGE_TIMEOUT_SECONDS", "60"))
+GEMINI_REST_SECONDS = 600  # after "quota used up", stop asking for a while instead of failing every picture
+_gemini_rest_until = 0.0
+
+
+def gemini_images() -> bool:
+    """Google's image model on the Gemini key the chat already uses. GEMINI_IMAGES=0 turns it off
+    (on a paid Google plan each picture is billed, about $0.04)."""
+    import time
+
+    return (os.environ.get("GEMINI_IMAGES", "1") != "0" and time.monotonic() >= _gemini_rest_until
+            and bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")))
+
+
 def spells_well() -> bool:
     """True when a premium image model (fal Nano Banana Pro or OpenAI) is set up; those can write real words."""
     return fal_api.configured() or openai_configured()
@@ -138,7 +153,7 @@ def image_type(data: bytes) -> str:
 
 def _image_providers() -> list:
     explicit = os.environ.get("IMAGE_PROVIDER", "").lower()
-    if explicit in ("fal", "openai", "pollinations", "huggingface"):
+    if explicit in ("fal", "openai", "gemini", "pollinations", "huggingface"):
         order = [explicit]
     else:
         order = []
@@ -148,6 +163,8 @@ def _image_providers() -> list:
             order.append("openai")
         if os.environ.get("POLLINATIONS_API_KEY"):
             order.append("pollinations")
+        if gemini_images():  # Nano Banana on the chat key: sharper than the free models when its quota allows
+            order.append("gemini")
         if os.environ.get("HF_TOKEN"):
             order.append("huggingface")
     # gen.pollinations.ai needs a key now, so without one only the old keyless endpoint is worth trying.
@@ -253,6 +270,8 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
                 return await _fal_image(prompt, size, seed)
             if which == "openai":
                 return await _openai_image(prompt, size, quality)
+            if which == "gemini":
+                return await _gemini_image(prompt, size)
             if which == "huggingface":
                 return await _huggingface(prompt, size)
             return await _pollinations(prompt, size, legacy=which == "pollinations_legacy", seed=seed)
@@ -262,6 +281,33 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
     hint = "" if image_key_configured() else (" Add a free POLLINATIONS_API_KEY (from enter.pollinations.ai) "
                                               "on the server to turn on images.")
     raise ImageError("Image generation failed. " + "; ".join(errors) + hint)
+
+
+async def _gemini_image(prompt: str, size: str) -> bytes:
+    import asyncio
+
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+    config = types.GenerateContentConfig(response_modalities=["IMAGE"],
+                                         image_config=types.ImageConfig(aspect_ratio=_ratio(size)))
+    try:
+        resp = await asyncio.wait_for(client.aio.models.generate_content(model=GEMINI_IMAGE_MODEL, contents=prompt,
+                                                                         config=config), GEMINI_IMAGE_TIMEOUT)
+    except Exception as exc:
+        if re.search(r"\b429\b|RESOURCE_EXHAUSTED|quota", str(exc), re.I):
+            import time
+
+            global _gemini_rest_until
+            _gemini_rest_until = time.monotonic() + GEMINI_REST_SECONDS
+        raise
+    for cand in resp.candidates or []:
+        for part in (cand.content.parts if cand.content else None) or []:
+            data = part.inline_data.data if part.inline_data else None
+            if data and image_type(data):
+                return data
+    raise ImageError(f"gemini returned no image ({getattr(resp, 'prompt_feedback', None) or 'no picture'})")
 
 
 FAL_IMAGE_MODEL = os.environ.get("FAL_IMAGE_MODEL", "fal-ai/nano-banana-pro")
