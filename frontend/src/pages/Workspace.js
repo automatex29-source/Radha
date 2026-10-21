@@ -792,7 +792,7 @@ export default function Workspace({ mode = null }) {
         </header>
 
         {/* Messages */}
-        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
+        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-x-hidden overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
           {loadingConv ? (
             <div className="flex h-full items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -837,7 +837,7 @@ export default function Workspace({ mode = null }) {
 
         {/* Composer */}
         {counselling && (
-          <p data-testid="counsellor-care-note" className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-5 text-center text-[11px] leading-snug text-muted-foreground">
+          <p data-testid="counsellor-care-note" className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-5 pt-2 text-center text-[11px] leading-snug text-muted-foreground">
             {messages.length > 0 && (
               <button onClick={toggleRoboSpeaks} data-testid="counsellor-voice-chat" aria-pressed={roboSpeaks}
                 className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:underline dark:text-violet-300">

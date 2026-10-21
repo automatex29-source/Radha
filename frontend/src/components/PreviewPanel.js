@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, mediaUrl, getToken, API, formatApiError } from "@/lib/api";
 import { X, Download, Loader2, Code2, Eye, FileSpreadsheet, Presentation, FileText, Globe, File, FileArchive, FileCode2 } from "lucide-react";
+import ScrollTable from "@/components/ScrollTable";
 
 export function fileKind(item) {
   const ct = item?.contentType || "";
@@ -161,7 +162,7 @@ export default function PreviewPanel({ item, onClose }) {
       : <iframe title={item.name} sandbox="allow-scripts allow-forms allow-modals allow-popups" className="h-full w-full bg-white"
           srcDoc={data.html} data-testid="preview-html" />;
   } else if (data.type === "markdown") {
-    body = <div className="radha-prose radha-scroll h-full overflow-y-auto p-6"><ReactMarkdown remarkPlugins={[remarkGfm]}>{data.text}</ReactMarkdown></div>;
+    body = <div className="radha-prose radha-scroll h-full overflow-y-auto p-6"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{data.text}</ReactMarkdown></div>;
   } else if (data.type === "code") {
     body = <pre className="radha-scroll h-full overflow-auto whitespace-pre-wrap p-4 font-mono text-xs text-foreground">{data.text}</pre>;
   } else body = <p className="p-6 text-sm text-muted-foreground">No preview for this file type — download it instead.</p>;

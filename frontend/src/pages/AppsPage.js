@@ -139,7 +139,7 @@ export default function AppsPage() {
                     </div>
                   </button>
                   <button onClick={() => remove(a)} title="Delete app" data-testid={`delete-app-${a.id}`}
-                    className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100">
+                    className="absolute right-2 top-2 rounded-md p-2.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>

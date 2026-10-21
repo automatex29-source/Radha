@@ -7,6 +7,7 @@ import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Undo2, Download, Eye, PencilLine, Sparkles, ArrowUp, Check, MessageSquare } from "lucide-react";
+import ScrollTable from "@/components/ScrollTable";
 
 const ACTIONS = [
   { id: "shorter", label: "Shorter" }, { id: "longer", label: "Longer" }, { id: "grammar", label: "Fix grammar" },
@@ -164,7 +165,7 @@ export default function DocEditor() {
           <div className="radha-scroll min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5 sm:px-8">
               {preview ? (
-                <div className="radha-prose" data-testid="doc-preview"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content || "*Empty document*"}</ReactMarkdown></div>
+                <div className="radha-prose" data-testid="doc-preview"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{content || "*Empty document*"}</ReactMarkdown></div>
               ) : (
                 <textarea ref={editorRef} value={content} onChange={(e) => edit({ content: e.target.value })}
                   onSelect={readSelection} onKeyUp={readSelection} onMouseUp={readSelection} data-testid="doc-editor"
@@ -196,7 +197,7 @@ export default function DocEditor() {
                 <div key={i} className="space-y-1.5">
                   {m.asked && <p className="ml-6 rounded-2xl rounded-br-sm bg-primary/10 px-3 py-2 text-sm">{m.asked}</p>}
                   <div className={`rounded-2xl rounded-bl-sm border border-border bg-background px-3 py-2 text-sm ${m.error ? "text-destructive" : ""}`}>
-                    <div className="radha-prose text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.reply || ""}</ReactMarkdown></div>
+                    <div className="radha-prose text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{m.reply || ""}</ReactMarkdown></div>
                     {m.handoff && (
                       <Button size="sm" onClick={() => openInChat(m.handoff)} className="mt-2 gap-1.5" data-testid="doc-ai-open-chat">
                         <MessageSquare className="h-4 w-4" /> Make it in chat
