@@ -20,7 +20,7 @@ import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
 import UpgradeButton from "@/components/UpgradeButton";
 import ModelMenu from "@/components/ModelMenu";
-import { modelLabel } from "@/lib/models";
+import { menuModel, modelLabel } from "@/lib/models";
 import { showPlanLimit } from "@/lib/planLimits";
 import { useT } from "@/lib/i18n";
 
@@ -280,7 +280,7 @@ export default function Workspace({ mode = null }) {
       const { data } = await api.get(`/conversations/${id}`);
       if (seq !== chatSeq.current) return;
       setMessages(data.messages);
-      if (data.conversation?.model) setModel(data.conversation.model);
+      if (data.conversation?.model) setModel(menuModel(data.conversation.model));
       setProjectId(data.conversation?.projectId || null);
       let files = [];
       try { files = (await api.get(`/conversations/${id}/files`)).data; } catch { /* none */ }

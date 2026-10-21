@@ -74,13 +74,12 @@ AI_API_KEY = os.environ.get("AI_API_KEY", "")
 # to it when it's set up; CODER_MODEL picks another one if this one is retired.
 CODER_MODEL = os.environ.get("CODER_MODEL", "").strip() or "openrouter/qwen/qwen3-coder:free"
 # What people see in the model menu: Krish names and plain words, never the provider or its tier.
-# "pro" marks models only paid plans get (the frontend shows a Pro badge on them).
+# "pro" marks models only paid plans get (the frontend shows a Pro badge on them). The free models (Gemini, Groq,
+# Cerebras and Krish Coder) are one model, Krish AI, which picks the right one for each question (see _auto_model);
+# their ids still work for older chats and for AI_MODEL / BUILDER_MODEL.
+AUTO_MODEL = agent_llm.AUTO
 AVAILABLE_MODELS = [
-    {"id": "gemini-3.5-flash-lite", "label": "Krish Spark", "description": "Smart and quick for everyday questions", "pro": False},
-    {"id": "openai/gpt-oss-120b", "label": "Krish Turbo", "description": "Lightning-fast answers and coding help", "pro": False},
-    {"id": "openai/gpt-oss-20b", "label": "Krish Mini", "description": "Instant replies for simple questions", "pro": False},
-    {"id": "cerebras/gpt-oss-120b", "label": "Krish Titan", "description": "Remembers more for long chats and big files", "pro": False},
-    {"id": CODER_MODEL, "label": "Krish Coder", "description": "Free coding expert: writes, fixes and explains code", "pro": False},
+    {"id": AUTO_MODEL, "label": "Krish AI", "description": "Free, and picks the best engine for each question", "pro": False},
     {"id": "claude-sonnet-5-5", "label": "Krish Ultra", "description": "Our smartest, for deep thinking", "pro": True},
     {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "description": "Quick and sharp for daily work", "pro": True},
     {"id": "gpt-5.4", "label": "Krish Vision", "description": "A strong all-rounder for any task", "pro": True},
@@ -93,6 +92,7 @@ BUILDER_STEPS = 14  # tool steps per builder turn for models with room for them 
 # Default model: AI_MODEL if set, otherwise the first configured model, free ones first, so adding a
 # paid key doesn't make every chat paid.
 AI_MODEL = (os.environ.get("AI_MODEL")
+            or (AUTO_MODEL if agent_llm.configured(AUTO_MODEL) else None)
             or next((m["id"] for m in sorted(AVAILABLE_MODELS, key=lambda m: agent_llm.paid(m["id"]))
                      if agent_llm.configured(m["id"])), "claude-sonnet-5-5"))
 
@@ -892,6 +892,26 @@ def _to_coder(model: str, conv: Optional[dict], coding: bool, history_docs: list
     return not any(m.get("images") for m in recent)  # pictures need a model that can see them
 
 
+# Past this many tokens of chat, Krish AI answers with Cerebras, whose free tier fits about 4x more than Groq's.
+LONG_CHAT_TOKENS = 6000
+
+
+def _auto_model(history_docs: list, text: Optional[str], coding: bool = False) -> str:
+    """The free model that answers a Krish AI question. Pictures go to Gemini (it can see them), long chats to
+    Cerebras (most room), hard questions to gpt-oss-120b (it reasons), everything else to Gemini (quick). Coding
+    questions then move to Krish Coder in _to_coder. Gemini hands over to Groq, then Cerebras, when it runs out."""
+    recent = [m for m in history_docs if m["role"] == "user"][-1:]
+    if any(m.get("images") for m in recent):
+        wanted = ["gemini-3.5-flash-lite"]
+    elif agent_llm.estimate_tokens([m.get("content") or "" for m in history_docs]) > LONG_CHAT_TOKENS:
+        wanted = ["cerebras/gpt-oss-120b", "openai/gpt-oss-120b"]
+    elif coding or _hard_ask(text or "") or _code_ask(text or ""):
+        wanted = ["cerebras/gpt-oss-120b", "openai/gpt-oss-120b"]
+    else:
+        wanted = ["gemini-3.5-flash-lite"]
+    return next((m for m in wanted if agent_llm.configured(m)), agent_llm.concrete(AUTO_MODEL))
+
+
 VOICE_LANG_NAMES = {"hi": "Hindi", "en": "English", "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati",
                     "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "ur": "Urdu",
                     "es": "Spanish", "fr": "French", "de": "German", "ar": "Arabic", "pa": "Punjabi"}
@@ -1167,6 +1187,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     chosen = model  # the model the user picked, kept for the chat even when the coding model answers
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
     coding = _coding_turn(history_docs)
+    if model == AUTO_MODEL:
+        model = _auto_model(history_docs, last_user, coding)
     if _to_coder(model, conv, coding, history_docs, counselling or voice or bool(extra_system)):
         model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
@@ -1556,6 +1578,8 @@ async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
     """The model that answers: the App Builder's stronger model inside an app, and no paid
     model (Claude, GPT) for free-plan users unless the owner sets PAID_MODELS=all."""
     model = requested
+    if model == AUTO_MODEL and conv.get("appId"):
+        model = agent_llm.concrete(model)
     if conv.get("appId"):
         override = os.environ.get("BUILDER_MODEL", "").strip()
         if override and agent_llm.configured(override):

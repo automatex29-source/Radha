@@ -18,9 +18,22 @@ _PROVIDER_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", 
                  "groq": "GROQ_API_KEY", "cerebras": "CEREBRAS_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
 # Free providers with a small per-minute token budget; their requests are trimmed to fit.
 _FREE = ("groq", "cerebras")
+# Krish AI: the one free model people see. It isn't a real model: each question is answered by one of the free
+# models behind it (server._auto_model picks which), and anything that gets the id unresolved uses the first free
+# model that is set up.
+AUTO = "krish-auto"
+FREE_MODELS = ("gemini-3.5-flash-lite", "openai/gpt-oss-120b", "cerebras/gpt-oss-120b")
+
+
+def concrete(model: str) -> str:
+    """The real model for `model`: Krish AI becomes the first free model that is set up."""
+    if model != AUTO:
+        return model
+    return next((m for m in FREE_MODELS if configured(m)), FREE_MODELS[0])
 
 
 def provider_for(model: str) -> str:
+    model = concrete(model)
     if model.startswith("openrouter/"):
         return "openrouter"
     if model.startswith("cerebras/"):
@@ -40,6 +53,8 @@ def gateway() -> Optional[dict]:
 
 
 def configured(model: str) -> bool:
+    if model == AUTO:
+        return any(configured(m) for m in FREE_MODELS)
     return bool(gateway() or os.environ.get(_PROVIDER_KEYS[provider_for(model)]))
 
 
@@ -241,6 +256,7 @@ async def stream_completion(model: str, messages: List[dict], tools: List[dict],
     `think` (the Think button, or DEEPER for a hard question) asks reasoning models to reason longer before answering.
     `max_output` caps the reply on Groq's free tier, which counts the room asked for against the minute's budget.
     """
+    model = concrete(model)
     for attempt in range(_TOOL_CALL_RETRIES + 1):
         sent = False
         try:

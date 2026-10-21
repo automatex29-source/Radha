@@ -1,19 +1,24 @@
-import { Sparkles, Zap, Feather, BookOpen, Crown, Rocket, Eye, Code2 } from "lucide-react";
+import { Sparkles, Crown, Rocket, Eye } from "lucide-react";
 
 // Krish names and icons for each model, so chats never show a raw model id. Labels match backend AVAILABLE_MODELS.
+// The free models are one model, Krish AI, that picks the right one for each question, so replies from any of
+// them (and from older chats that picked one) show as Krish AI.
+const KRISH = { label: "Krish AI", icon: Sparkles };
 export const MODEL_INFO = {
-  "gemini-3.5-flash-lite": { label: "Krish Spark", icon: Sparkles },
-  "openai/gpt-oss-120b": { label: "Krish Turbo", icon: Zap },
-  "openai/gpt-oss-20b": { label: "Krish Mini", icon: Feather },
-  "cerebras/gpt-oss-120b": { label: "Krish Titan", icon: BookOpen },
+  "krish-auto": KRISH,
+  "gemini-3.5-flash-lite": KRISH,
+  "openai/gpt-oss-120b": KRISH,
+  "openai/gpt-oss-20b": KRISH,
+  "cerebras/gpt-oss-120b": KRISH,
   "claude-sonnet-5-5": { label: "Krish Ultra", icon: Crown },
   "claude-haiku-4-5-20251001": { label: "Krish Swift", icon: Rocket },
   "gpt-5.4": { label: "Krish Vision", icon: Eye },
 };
 
-// Krish Coder: the free coding model on OpenRouter (the owner can swap which one with CODER_MODEL).
-const CODER = { label: "Krish Coder", icon: Code2 };
-const infoFor = (id) => MODEL_INFO[id] || (id?.startsWith("openrouter/") ? CODER : null);
+// Krish Coder (OpenRouter's free coding model) answers coding questions inside Krish AI.
+const infoFor = (id) => MODEL_INFO[id] || (id?.startsWith("openrouter/") ? KRISH : null);
 
 export const modelIcon = (id) => infoFor(id)?.icon || Sparkles;
 export const modelLabel = (id) => infoFor(id)?.label || "Krish AI";
+// The menu choice for a chat's saved model: a free model saved by an older chat is Krish AI now.
+export const menuModel = (id) => (MODEL_INFO[id] && MODEL_INFO[id] !== KRISH ? id : "krish-auto");
