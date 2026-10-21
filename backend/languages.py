@@ -19,6 +19,8 @@ LANGUAGES = {
     "ar": "Arabic",
 }
 DEFAULT = "en"
+# Languages people often type in English letters, mixed with English.
+INDIC = {"hi", "bn", "mr", "gu", "pa", "ur"}
 
 
 def normalize(code: Optional[str]) -> str:
@@ -33,4 +35,6 @@ def prompt_line(code: Optional[str]) -> Optional[str]:
     name = LANGUAGES[code]
     return (f"The person set {name} as their language in Settings. Always reply in {name}, written in its own "
             f"script, even when they write in another language, unless they ask you to use a different language. "
+            + (f"But if they write {name} in English letters (like Hinglish), reply the same way in English "
+               "letters, mixing in English as they do. " if code in INDIC else "") +
             "Keep code, links and names as they are.")
