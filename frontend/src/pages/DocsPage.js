@@ -53,7 +53,7 @@ export default function DocsPage() {
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10" style={accentStyle("docs")}>
           <PageHero scene="docs" overlap icon={FileText} title="Docs" subtitle="Write with Krish side by side. Select any part and ask Krish to change it, then download as Word or PDF." />
 
-          <div className="kb-float -mt-12 mx-2 rounded-2xl border border-border p-4 sm:mx-6 sm:-mt-14 sm:p-5" data-testid="doc-draft-box">
+          <div className="kb-float -mt-9 mx-2 rounded-2xl border border-border p-4 sm:mx-6 sm:-mt-10 sm:p-5" data-testid="doc-draft-box">
             <p className="flex items-center gap-1.5 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> What should Krish write?</p>
             <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} data-testid="doc-prompt-input"
               placeholder="e.g. A cover letter for a marketing job at Zomato" className="mt-2 min-h-[80px] bg-background" />
