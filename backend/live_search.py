@@ -51,6 +51,32 @@ CITE_NOTE = (
 )
 
 
+# Fast phone typing ("plzzz tell weathr tmrw") made searches miss and kept the checks below from noticing a
+# question. Only short forms that can't mean anything else are expanded; the model still reads the raw message.
+_SHORT_FORMS = {
+    "pls": "please", "plz": "please", "plss": "please", "plzz": "please", "tmrw": "tomorrow", "tmr": "tomorrow",
+    "tmrow": "tomorrow", "tomoro": "tomorrow", "tommorow": "tomorrow", "tomorow": "tomorrow", "2day": "today",
+    "tday": "today", "2moro": "tomorrow", "abt": "about", "wht": "what", "wat": "what", "whr": "where",
+    "hw": "how", "bcz": "because", "bcoz": "because", "coz": "because", "cuz": "because", "ppl": "people",
+    "msg": "message", "govt": "government", "info": "information", "latst": "latest", "lates": "latest",
+    "weathr": "weather", "wheather": "weather", "temprature": "temperature", "tempreture": "temperature",
+    "pric": "price", "prise": "price", "nws": "news", "srch": "search", "serch": "search", "seach": "search",
+    "gogle": "google", "googel": "google", "rn": "right now", "yday": "yesterday", "yesterdy": "yesterday",
+}
+_WORD = re.compile(r"[A-Za-z0-9]+")
+_STRETCHED = re.compile(r"([A-VX-Za-vx-z])\1{2,}")  # not w, so www. stays
+
+
+def tidy(text: str) -> str:
+    """The message with stretched letters ("pleaseeee") cut to two and common short forms spelled out, for
+    searching and for spotting what kind of question it is."""
+    if not text:
+        return text
+    text = _STRETCHED.sub(r"\1\1", text)
+    text = _WORD.sub(lambda m: _SHORT_FORMS.get(m.group(0).lower(), m.group(0)), text)
+    return re.sub(r"[ \t]{2,}", " ", text)
+
+
 def _recent_user_text(user_messages: List[str]) -> str:
     """The latest question, joined with the one before it when it is a short follow-up like "USD"."""
     if not user_messages:
@@ -108,13 +134,14 @@ def needs_lookup(text: str) -> bool:
 
 def asks_for_search(text: str) -> bool:
     """True when the user asked in words for a web search."""
-    return bool(text) and len(text) <= MAX_SEARCH_CHARS and bool(_ASKS_SEARCH.search(text))
+    return bool(text) and len(text) <= MAX_SEARCH_CHARS and bool(_ASKS_SEARCH.search(tidy(text)))
 
 
 def suggests_web(text: str) -> bool:
     """True when the answer likely depends on fresh facts, so turning web search on would help."""
     if not text or len(text) > MAX_SEARCH_CHARS or "```" in text or _ABOUT_US.search(text) or _SMALL_TALK.match(text):
         return False
+    text = tidy(text)
     return bool(_FRESH.search(text) or _CURRENCY.search(text))
 
 
@@ -185,7 +212,7 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
     empty = {"context": None, "sources": [], "queries": []}
     focus = focus if focus in search_modes.FOCUSES else "web"
     force = force or pro or focus != "web"
-    text = _recent_user_text(user_messages)
+    text = tidy(_recent_user_text(user_messages))
     if not text or not (force or needs_lookup(text)):
         return empty
     jobs = {}  # name -> awaitable; each part has its own time limit, so one slow source never costs the rest
