@@ -8,6 +8,7 @@ import { MediaGallery } from "@/components/ToolSteps";
 import ThemeToggle from "@/components/ThemeToggle";
 import { Loader2, User } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
+import ScrollTable from "@/components/ScrollTable";
 
 /** Public, read-only view of a chat someone shared. Works without signing in. */
 export default function SharedChat() {
@@ -62,7 +63,7 @@ export default function SharedChat() {
                   <div className="min-w-0 flex-1">
                     <p className="mb-1 text-sm font-semibold tracking-tight">Krish AI</p>
                     <div className="radha-prose min-w-0">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{m.content}</ReactMarkdown>
                     </div>
                     <MediaGallery items={m.media} />
                   </div>

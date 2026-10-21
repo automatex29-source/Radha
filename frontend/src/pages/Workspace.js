@@ -715,7 +715,7 @@ export default function Workspace({ mode = null }) {
         </header>
 
         {/* Messages */}
-        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
+        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-x-hidden overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
           {loadingConv ? (
             <div className="flex h-full items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -757,7 +757,7 @@ export default function Workspace({ mode = null }) {
 
         {/* Composer */}
         {counselling && (
-          <p data-testid="counsellor-care-note" className="mx-auto w-full max-w-3xl px-5 text-center text-[11px] leading-snug text-muted-foreground">
+          <p data-testid="counsellor-care-note" className="mx-auto w-full max-w-3xl px-5 pt-2 text-center text-[11px] leading-snug text-muted-foreground">
             Need urgent help? Tele-MANAS 14416, free 24x7 💛
           </p>
         )}

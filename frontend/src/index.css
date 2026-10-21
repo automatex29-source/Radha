@@ -235,6 +235,8 @@
 .radha-prose pre { font-size: 0.92em; line-height: 1.6; background: hsl(var(--sunken)) !important; border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 0.9rem 1rem; overflow-x: auto; margin: 0.9em 0; }
 .radha-prose pre code { font-size: inherit; background: transparent; border: none; padding: 0; color: hsl(var(--foreground) / 0.9); }
 .radha-prose table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0.9em 0; font-size: 0.9em; line-height: 1.5; border: 1px solid hsl(var(--border)); border-radius: 12px; overflow: hidden; background: hsl(var(--card)); }
+.radha-prose .radha-table-wrap { margin: 0.9em 0; max-width: 100%; overflow-x: auto; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); }
+.radha-prose .radha-table-wrap table { margin: 0; border: 0; border-radius: 0; }
 .radha-prose th, .radha-prose td { border-bottom: 1px solid hsl(var(--border)); padding: 0.55em 0.85em; text-align: left; vertical-align: top; }
 .radha-prose th + th, .radha-prose td + td { border-left: 1px solid hsl(var(--border)); }
 .radha-prose tbody tr:last-child td { border-bottom: 0; }
@@ -259,7 +261,9 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 
 /* Touch screens have no hover, so buttons that only appear on hover stay visible. */
 @media (hover: none) {
-  .group-hover\:opacity-100 { opacity: 1; }
+  .group-hover\:opacity-100, .group-hover\/code\:opacity-100 { opacity: 1; }
+  /* The code Copy button is always shown here, so it gets its own strip above the code. */
+  .radha-prose .group\/code > pre { padding-top: 2.75rem; }
 }
 
 /* Hide the phone tab bar while typing, so the keyboard doesn't squeeze the page. */
