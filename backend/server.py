@@ -797,23 +797,66 @@ _CODE_ASK = re.compile(
     r"github|docker|npm|pip install|unit tests?|pytest|jest)\b", re.IGNORECASE)
 
 CODE_PROMPT = (
-    "This is a coding question. Answer like a senior engineer pairing with the user:\n"
+    "This is a coding question. Answer like a senior engineer pairing with the user. Working code matters more than "
+    "the short-reply style above: never shorten, skip or summarise code to keep a reply short.\n"
+    "- Start with one line on what the code does or what was wrong, then the code, then a short note.\n"
     "- For a bug or error, read the error and the code first, name the root cause in one sentence, then give the "
-    "fix. Change what is broken; don't rewrite working code or switch libraries unless that is the real fix.\n"
+    "fix. Change what is broken; don't rewrite working code or switch libraries unless that is the real fix. If the "
+    "error or the code needed to find it is missing, give the likeliest cause and fix, then ask for the exact error "
+    "or file in one line.\n"
+    "- For a follow-up (\"still not working\", \"add a login\", \"now in Java\"), work from the latest version of "
+    "the code in this chat and keep everything that already works.\n"
     "- Before writing new code, settle the approach in a sentence or two (data structures, edge cases, and time "
     "complexity when it matters), then write it.\n"
     "- Give complete, runnable code: every import, no \"...\" or placeholder comments, nothing left for the user "
     "to fill in. For a small change to a long file, show the changed part with a few lines around it and say where "
-    "it goes.\n"
-    "- Use the language, framework and version the user uses. Only call functions, options and packages that "
-    "really exist; if an API differs between versions, say which version you wrote for.\n"
+    "it goes. Never stop mid-file or mid-function; if the whole answer would be very long, give the complete core "
+    "first and offer the rest.\n"
+    "- Put code in fenced blocks tagged with its real language (```python, ```javascript, ```sql, ```bash), never "
+    "a bare ```. With several files, add the file name after the language (```python app.py) and give each file "
+    "in full. Shell commands go in their own ```bash block without a $ prompt. Never put markdown such as ** "
+    "inside code.\n"
+    "- Use the language, framework and version the user uses; if they didn't say, use the one their earlier code "
+    "uses, otherwise Python (JavaScript for anything in a browser). Only call functions, options and packages that "
+    "really exist, prefer the standard library and well-known packages, use current, non-deprecated APIs, and give "
+    "the exact install command for anything extra. If an API differs between versions, say which you wrote for.\n"
+    "- Write code a reviewer would approve: clear names, small functions, no dead code or unused imports, comments "
+    "only where the reason isn't obvious, and errors handled where they can happen instead of swallowed.\n"
     "- Handle the edge cases (empty input, missing values, bad user input, network failures) and keep it safe: "
     "no secrets in code, parameterised SQL, validated input.\n"
+    "- Before you send it, review the code once: trace it on a normal input and an edge case, and look for "
+    "off-by-one errors, wrong types, None or undefined values, missing awaits, unclosed files or connections, and "
+    "names used before they are defined. Fix what you find without mentioning the check.\n"
     "- After the code, say in one line how to run it and show one example input and its output, or a short test.\n"
     "- If you have the run_python tool and the code is Python (or its logic can be checked in Python), run it on "
     "a small test before you answer and fix anything that fails. Don't paste the test run unless it helps.\n"
-    "- Explain what isn't obvious in a few short lines; explain line by line only if the user is learning or asks."
+    "- Explain what isn't obvious in a few short lines, in the user's language (Hinglish if they write it), with "
+    "code, names and comments in English; explain line by line only if the user is learning or asks."
 )
+
+# A short follow-up in a chat about code ("still not working", "add a dark mode", "now in java") is a coding
+# question too, even with no code words in it. Thanks and new topics (ideas, the news) aren't.
+_THANKS = re.compile(r"^\W*(?:thanks?|thank you|thx|ty|ok(?:ay)?|cool|great|nice|perfect|awesome|got it|done|"
+                     r"shukriya|dhanyavaad|dhanyavad)\W*$", re.IGNORECASE)
+FOLLOW_UP_CHARS = 400
+
+
+def _coding_turn(history_docs: list) -> bool:
+    """True when the latest user message is a coding question, or a short follow-up in a chat about code."""
+    turns = [m for m in history_docs if m["role"] in ("user", "assistant")]
+    at = next((i for i in range(len(turns) - 1, -1, -1) if turns[i]["role"] == "user"), None)
+    if at is None:
+        return False
+    text = turns[at]["content"] or ""
+    if _code_ask(text):
+        return True
+    if len(text) > FOLLOW_UP_CHARS or _THANKS.match(text) or _ideas_ask(text) or live_search.suggests_web(text):
+        return False
+    before = turns[:at]
+    reply = next((m["content"] or "" for m in reversed(before) if m["role"] == "assistant"), "")
+    asked = next((m["content"] or "" for m in reversed(before) if m["role"] == "user"), "")
+    return "```" in reply or _code_ask(asked)
+
 
 # Requests for ideas (brainstorming, names, business or content ideas) get IDEAS_PROMPT.
 _IDEAS_ASK = re.compile(
@@ -839,11 +882,11 @@ def _ideas_ask(text: str) -> bool:
     return bool(_IDEAS_ASK.search(text or "")) and not _code_ask(text)
 
 
-def _to_coder(model: str, conv: Optional[dict], text: Optional[str], history_docs: list, special: bool) -> bool:
+def _to_coder(model: str, conv: Optional[dict], coding: bool, history_docs: list, special: bool) -> bool:
     """True when a free model was asked a coding question and the free coding model should answer instead."""
     if special or (conv or {}).get("appId") or model == CODER_MODEL or agent_llm.paid(model):
         return False
-    if not agent_llm.configured(CODER_MODEL) or agent_llm.gateway() or not _code_ask(text or ""):
+    if not agent_llm.configured(CODER_MODEL) or agent_llm.gateway() or not coding:
         return False
     recent = [m for m in history_docs if m["role"] == "user"][-1:]
     return not any(m.get("images") for m in recent)  # pictures need a model that can see them
@@ -1123,7 +1166,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     chosen = model  # the model the user picked, kept for the chat even when the coding model answers
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
-    if _to_coder(model, conv, last_user, history_docs, counselling or voice or bool(extra_system)):
+    coding = _coding_turn(history_docs)
+    if _to_coder(model, conv, coding, history_docs, counselling or voice or bool(extra_system)):
         model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
     system_parts = [base, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
@@ -1227,7 +1271,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(STUDY_PROMPT)
     # How to answer this kind of question well: code, or ideas (not in the app builder, voice or counselling).
     if not (app_id or counselling or voice or extra_system):
-        if _code_ask(last_user or ""):
+        if coding:
             system_parts.append(CODE_PROMPT)
         elif _ideas_ask(last_user or ""):
             system_parts.append(IDEAS_PROMPT)
@@ -1236,7 +1280,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     # Without Think, a hard question still gets more reasoning from the free models (never in voice, the app
     # builder or a counselling chat, where a quick reply matters more).
     reasoning = think or (agent_llm.DEEPER if not (voice or app_id or counselling or extra_system)
-                          and (_hard_ask(last_user or "") or _code_ask(last_user or "")) else False)
+                          and (_hard_ask(last_user or "") or coding) else False)
     if extra_system:
         system_parts.append(extra_system)
     if voice and not app_id:
@@ -1292,7 +1336,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             if not uses_emergent(AI_API_KEY) and not agent_llm.configured(model):
                 raise RuntimeError(agent_llm.missing_key_message(model))
             ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id,
-                                   think=reasoning)
+                                   think=reasoning, long_answer=coding)
             async for delta in model_router.stream(ai_request):
                 full.append(delta)
                 yield f"data: {_sse_json(delta)}\n\n"

@@ -126,3 +126,79 @@ def test_krish_coder_hands_over_when_its_free_allowance_runs_out(monkeypatch):
 def server_router_supports(model):
     server = _server()
     return server.model_router.resolve(model).name == "openrouter"
+
+
+def _chat(*turns):
+    roles = ["user", "assistant"]
+    return [{"role": roles[i % 2], "content": text} for i, text in enumerate(turns)]
+
+
+def test_follow_ups_in_a_coding_chat_stay_coding_questions():
+    server = _server()
+    code_reply = "Here it is:\n```python\nprint('hi')\n```"
+    for follow_up in ["still not working", "add a dark mode", "now in java", "make it faster",
+                      "isme login bhi daal do"]:
+        assert server._coding_turn(_chat("make a todo app", code_reply, follow_up)), follow_up
+    assert server._coding_turn(_chat("fix my python KeyError", "Check the key exists first.", "didn't help"))
+    for follow_up in ["thanks!", "ok", "give me business ideas for a cafe", "latest news on isro today"]:
+        assert not server._coding_turn(_chat("make a todo app", code_reply, follow_up)), follow_up
+    assert not server._coding_turn(_chat("hi", "Hello! How can I help?", "still not working"))
+    assert not server._coding_turn(_chat("make a todo app", code_reply, "x" * (server.FOLLOW_UP_CHARS + 1)))
+    assert not server._coding_turn([])
+
+
+def test_coding_prompt_asks_for_finished_tagged_reviewed_code():
+    server = _server()
+    for rule in ["never a bare ```", "Never stop mid-file", "review the code once", "latest version of the code",
+                 "how to run it", "non-deprecated"]:
+        assert rule in server.CODE_PROMPT, rule
+
+
+def test_code_answers_get_more_room(monkeypatch):
+    from ai_runtime import _backend
+    from agent import llm
+    seen = []
+
+    async def fake_stream(model, messages, tools, think=False, max_output=None):
+        seen.append(max_output)
+        yield {"type": "text", "text": "ok"}
+    monkeypatch.setattr(llm, "stream_completion", fake_stream)
+
+    async def go(**kw):
+        req = server_types().AIRequest(messages=[], model="openai/gpt-oss-120b", **kw)
+        return [t async for t in _backend.stream_via_litellm(req)]
+    asyncio.run(go())
+    asyncio.run(go(long_answer=True))
+    assert seen == [llm.PLAIN_OUTPUT, llm.CODE_OUTPUT] and llm.CODE_OUTPUT > llm.PLAIN_OUTPUT
+
+
+def server_types():
+    from ai_runtime import types
+    return types
+
+
+def test_coding_turns_ask_for_long_answers(monkeypatch):
+    server = _server()
+    import mongomock_motor
+    db = mongomock_motor.AsyncMongoMockClient()["t"]
+    monkeypatch.setattr(server, "db", db)
+    seen = []
+
+    async def fake_gather(*a, **k):
+        return {"context": None, "sources": [], "queries": []}
+
+    async def fake_stream(req):
+        seen.append((req.long_answer, server.CODE_PROMPT in req.system))
+        yield "An answer."
+    monkeypatch.setattr(server.live_search, "gather", fake_gather)
+    monkeypatch.setattr(server.model_router, "stream", fake_stream)
+
+    async def go(conv, *turns):
+        await db.conversations.insert_one({"id": conv, "userId": "u1"})
+        for i, (role, text) in enumerate(zip(["user", "assistant"] * 3, turns)):
+            await db.messages.insert_one({"id": f"{conv}{i}", "conversationId": conv, "role": role,
+                                          "content": text, "createdAt": str(i)})
+        [c async for c in server.run_turn(conv, "openai/gpt-oss-120b")]
+    asyncio.run(go("c1", "make a calculator in python", "```python\nprint(1)\n```", "still not working"))
+    asyncio.run(go("c2", "hi there"))
+    assert seen == [(True, True), (False, False)]
