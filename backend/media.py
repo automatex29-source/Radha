@@ -25,7 +25,9 @@ TTS_MODEL = os.environ.get("TTS_MODEL", "gpt-4o-mini-tts")
 GROQ_STT_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3-turbo")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 TTS_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]
-IMAGE_SIZES = {"1024x1024", "1536x1024", "1024x1536", "auto"}
+IMAGE_SIZES = {"1024x1024", "1536x1024", "1024x1536", "1920x1080", "1080x1920", "auto"}
+# Full-HD 16:9 / 9:16 for slides and videos; OpenAI only draws 3:2 / 2:3, so it gets the nearest of those.
+WIDE_SIZES = {"1920x1080": "1536x1024", "1080x1920": "1024x1536"}
 MAX_MEDIA_BYTES = 250 * 1024 * 1024  # high-quality video can be large
 INLINE_LIMIT = 8 * 1024 * 1024  # larger files are split into chunks (MongoDB caps documents at 16MB)
 CHUNK_BYTES = 4 * 1024 * 1024
@@ -55,13 +57,17 @@ def _client():
 #   huggingface:  FLUX.1-schnell on HF inference with a free HF_TOKEN (small monthly allowance).
 POLLINATIONS_BASE = os.environ.get("POLLINATIONS_BASE_URL", "https://gen.pollinations.ai").rstrip("/")
 # Best first: Seedream 4.0 draws far more detailed, photo-like pictures (and real words on signs) than the fast
-# Z-Image Turbo. It spends the key's free daily Pollen; when that runs out or the model is busy, the next one answers.
+# Z-Image Turbo, and Nano Banana (Gemini 2.5 Flash Image) is nearly as good when Seedream is busy. They spend the
+# key's free daily Pollen; when that runs out the cheap fast model (always last) answers.
 POLLINATIONS_IMAGE_MODELS = [m.strip() for m in (os.environ.get("POLLINATIONS_IMAGE_MODELS")
                                                  or os.environ.get("POLLINATIONS_IMAGE_MODEL")
-                                                 or "bytedance/seedream-4.0,tongyi-mai/z-image-turbo").split(",")
+                                                 or "bytedance/seedream-4.0,google/gemini-2.5-flash-image,"
+                                                    "tongyi-mai/z-image-turbo").split(",")
                              if m.strip()]
 # A better model that is slow today shouldn't keep the person waiting: it gets this long before the next one tries.
 BEST_IMAGE_TIMEOUT = float(os.environ.get("BEST_IMAGE_TIMEOUT_SECONDS", "60"))
+# All the better models together get this long, so the fast one still has its turn.
+BEST_IMAGE_BUDGET = float(os.environ.get("BEST_IMAGE_BUDGET_SECONDS", "90"))
 LEGACY_POLLINATIONS = "https://image.pollinations.ai/prompt"
 HF_IMAGE_MODEL = os.environ.get("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
 IMAGE_TIMEOUT = float(os.environ.get("IMAGE_TIMEOUT_SECONDS", "150"))
@@ -151,6 +157,15 @@ def _image_providers() -> list:
     return order
 
 
+def _ratio(size: str) -> str:
+    w, h = _dims(size)
+    if w == h:
+        return "1:1"
+    if max(w, h) / min(w, h) > 1.6:
+        return "16:9" if w > h else "9:16"
+    return "3:2" if w > h else "2:3"
+
+
 def _dims(size: str) -> tuple:
     w, _, h = (size if size in IMAGE_SIZES and size != "auto" else "1024x1024").partition("x")
     return int(w), int(h)
@@ -192,24 +207,34 @@ async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Opti
     url = f"{POLLINATIONS_BASE}/image/{quote(prompt[:1500], safe='')}"
     if os.environ.get("POLLINATIONS_API_KEY"):
         headers["Authorization"] = f"Bearer {os.environ['POLLINATIONS_API_KEY']}"
+    import time
+
     errors = []
-    for i, model in enumerate(POLLINATIONS_IMAGE_MODELS):
-        last = i == len(POLLINATIONS_IMAGE_MODELS) - 1
+    started = time.monotonic()
+    models = list(POLLINATIONS_IMAGE_MODELS)
+    while models:
+        model = models.pop(0)
+        last = not models
+        wait = IMAGE_TIMEOUT if last else max(5.0, min(BEST_IMAGE_TIMEOUT, BEST_IMAGE_BUDGET - (time.monotonic() - started)))
         try:
-            async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT if last else BEST_IMAGE_TIMEOUT,
-                                         follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=wait, follow_redirects=True) as client:
                 return _check_image(await client.get(url, params={**params, "model": model}, headers=headers), size)
         except Exception as exc:
-            if last:
-                raise ImageError("; ".join(errors + [f"{model}: {str(exc)[:160] or type(exc).__name__}"]))
-            logger.info("pollinations model %s failed, trying the next: %s", model, str(exc)[:200])
             errors.append(f"{model}: {str(exc)[:120] or type(exc).__name__}")
+            if last:
+                raise ImageError("; ".join(errors))
+            logger.info("pollinations model %s failed, trying the next: %s", model, str(exc)[:200])
+            if re.match(r"HTTP 40[13]\b", str(exc)):  # the key itself was refused: no model will answer
+                raise ImageError("; ".join(errors))
+            # Out of free Pollen (402) or out of time: the other better models would fail the same way.
+            if "HTTP 402" in str(exc) or time.monotonic() - started >= BEST_IMAGE_BUDGET:
+                models = models[-1:]
 
 
 async def _huggingface(prompt: str, size: str) -> bytes:
     import httpx
 
-    w, h = _dims(size)
+    w, h = (d // 16 * 16 for d in _dims(size))  # FLUX wants multiples of 16
     async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT) as client:
         resp = await client.post(
             f"https://router.huggingface.co/hf-inference/models/{HF_IMAGE_MODEL}",
@@ -240,13 +265,11 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
 
 
 FAL_IMAGE_MODEL = os.environ.get("FAL_IMAGE_MODEL", "fal-ai/nano-banana-pro")
-FAL_IMAGE_RESOLUTION = os.environ.get("FAL_IMAGE_RESOLUTION", "1K")
+FAL_IMAGE_RESOLUTION = os.environ.get("FAL_IMAGE_RESOLUTION", "2K")  # same price as 1K, twice as sharp
 
 
 async def _fal_image(prompt: str, size: str, seed: Optional[int] = None) -> bytes:
-    w, h = _dims(size)
-    ratio = "1:1" if w == h else ("3:2" if w > h else "2:3")
-    payload = {"prompt": prompt, "num_images": 1, "aspect_ratio": ratio, "resolution": FAL_IMAGE_RESOLUTION}
+    payload = {"prompt": prompt, "num_images": 1, "aspect_ratio": _ratio(size), "resolution": FAL_IMAGE_RESOLUTION}
     if seed:
         payload["seed"] = seed
     result = await fal_api.run(FAL_IMAGE_MODEL, payload, timeout=180)
@@ -260,6 +283,7 @@ async def _fal_image(prompt: str, size: str, seed: Optional[int] = None) -> byte
 
 
 async def _openai_image(prompt: str, size: str = "1024x1024", quality: Optional[str] = None) -> bytes:
+    size = WIDE_SIZES.get(size, size)
     if size not in IMAGE_SIZES:
         size = "1024x1024"
     kwargs = {"model": IMAGE_MODEL, "prompt": prompt, "size": size, "n": 1}

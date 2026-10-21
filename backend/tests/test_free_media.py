@@ -88,7 +88,27 @@ class TestImages:
 
         fake_http(monkeypatch, handler)
         assert media.image_type(run(media.generate_image("a red fox"))) == "image/png"
-        assert models == ["bytedance/seedream-4.0", "tongyi-mai/z-image-turbo"]
+        assert models == ["bytedance/seedream-4.0", "tongyi-mai/z-image-turbo"]  # 402 skips the other paid ones
+
+    def test_busy_best_model_tries_nano_banana(self, monkeypatch):
+        monkeypatch.setenv("POLLINATIONS_API_KEY", "sk_test")
+        models = []
+
+        def handler(req):
+            models.append(req.url.params["model"])
+            if req.url.params["model"] == "bytedance/seedream-4.0":
+                return httpx.Response(503, json={"error": "busy"})
+            return httpx.Response(200, content=png(size=(960, 540)), headers={"content-type": "image/png"})
+
+        fake_http(monkeypatch, handler)
+        assert media.image_type(run(media.generate_image("a red fox", "1920x1080"))) == "image/png"
+        assert models == ["bytedance/seedream-4.0", "google/gemini-2.5-flash-image"]
+
+    def test_wide_sizes(self):
+        assert media._dims("1920x1080") == (1920, 1080) and media._dims("1080x1920") == (1080, 1920)
+        assert media._ratio("1920x1080") == "16:9" and media._ratio("1536x1024") == "3:2"
+        assert media._ratio("1080x1920") == "9:16" and media._ratio("1024x1024") == "1:1"
+        assert media.WIDE_SIZES["1920x1080"] == "1536x1024"  # OpenAI only draws 3:2
 
     def test_placeholder_banner_is_rejected(self, monkeypatch):
         fake_http(monkeypatch, lambda req: httpx.Response(200, content=png("green", (400, 120))))
@@ -107,7 +127,7 @@ class TestImages:
 
         fake_http(monkeypatch, handler)
         assert run(media.generate_image("cat")) == png(size=(512, 512))
-        assert hosts == ["gen.pollinations.ai", "gen.pollinations.ai", "image.pollinations.ai"]  # both models, then keyless
+        assert hosts == ["gen.pollinations.ai", "image.pollinations.ai"]  # a refused key skips the other models
 
     def test_all_fail_reports_errors(self, monkeypatch):
         fake_http(monkeypatch, lambda req: httpx.Response(200, text="<html>busy</html>",

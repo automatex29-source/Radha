@@ -4,7 +4,7 @@ AI images go through media.generate_image (OpenAI, Pollinations or Hugging Face,
 whichever the server has; the keyless Pollinations endpoint otherwise) and are
 stored in the media collection, so slides point at /api/media/<id>.
 Stock photos come from Pexels or Unsplash when a key is set, otherwise from
-Openverse (free, no key), filtered to large landscape photos and ranked by how
+Openverse (free, no key), stock-quality sources first, filtered to large landscape photos and ranked by how
 well their title and tags match the search words.
 """
 import io
@@ -45,9 +45,14 @@ def score(query: str, item: dict) -> float:
     return overlap * 2 + min(width, 4000) / 4000 + bonus
 
 
-async def _openverse(client: httpx.AsyncClient, query: str, large: bool) -> List[dict]:
+# Openverse sources whose photos are professional stock quality; the rest (Flickr, museums) are hit and miss.
+GOOD_SOURCES = os.environ.get("OPENVERSE_SOURCES", "stocksnap,rawpixel")
+
+
+async def _openverse(client: httpx.AsyncClient, query: str, large: bool, sources: str = "") -> List[dict]:
     url = (f"https://api.openverse.org/v1/images/?q={quote_plus(query)}&page_size=30&aspect_ratio=wide"
-           f"&mature=false&category=photograph{'&size=large' if large else ''}")
+           f"&mature=false&category=photograph{'&size=large' if large else ''}"
+           f"{'&source=' + sources if sources else ''}")
     r = await client.get(url)
     r.raise_for_status()
     out = []
@@ -95,10 +100,17 @@ async def search(query: str) -> List[dict]:
                             "credit": f"Photo by {p['user']['name']} on Unsplash", "link": p["links"]["html"]}
                            for p in r.json().get("results", [])]
             else:
-                results = await _openverse(client, query, large=True)
-                if len(results) < 4:
+                results = []
+                for kw in ({"large": True, "sources": GOOD_SOURCES}, {"large": True}, {"large": False}):
+                    if len(results) >= 4:
+                        break
+                    if "sources" in kw and not GOOD_SOURCES:
+                        continue
                     seen = {x["url"] for x in results}
-                    results += [x for x in await _openverse(client, query, large=False) if x["url"] not in seen]
+                    try:
+                        results += [x for x in await _openverse(client, query, **kw) if x["url"] not in seen]
+                    except httpx.HTTPError as exc:
+                        logger.info("openverse search %s failed: %s", kw, exc)
                 results.sort(key=lambda x: score(query, x), reverse=True)
     except Exception as exc:  # pictures are a nice-to-have: never fail the deck over them
         logger.info("image search failed for %r: %s", query, exc)
@@ -159,21 +171,21 @@ async def make_ai(db, user_id: str, slide: dict, topic: str = "", prompt: Option
         prompt = f"{prompt.strip()}. {AI_STYLE}"
         if not (media.spells_well() and media.asks_for_text(prompt)):
             prompt = media.text_free(prompt)
-    data = await media.generate_image(prompt or ai_prompt(slide, topic), "1536x1024")
+    data = await media.generate_image(prompt or ai_prompt(slide, topic), "1920x1080")  # the slide's own 16:9 shape
     data = shrink(data) or data
     saved = await media.save_media(db, user_id, data, media.image_type(data) or "image/jpeg", "generated",
                                    name="slide-picture.jpg")
     return {"url": saved["url"], "thumb": "", "credit": "AI-made picture", "link": ""}
 
 
-def shrink(data: bytes, box: int = 1600) -> Optional[bytes]:
+def shrink(data: bytes, box: int = 1920) -> Optional[bytes]:
     try:
         from PIL import Image
 
         img = Image.open(io.BytesIO(data)).convert("RGB")
         img.thumbnail((box, box))
         out = io.BytesIO()
-        img.save(out, "JPEG", quality=85, optimize=True)
+        img.save(out, "JPEG", quality=90, optimize=True, subsampling=0)
         return out.getvalue()
     except Exception:
         return None
