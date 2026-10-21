@@ -169,6 +169,7 @@ async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality
     ai_prompt = f"{prompt}. {styles.video_scene_words(style)}" if style else prompt
     quality = quality if quality in ("high", "standard") else (DEFAULT_QUALITY if DEFAULT_QUALITY in ("high", "standard") else "high")
     note = ""
+    cinematic = ""
     if which == "fal":
         try:
             cinematic = await prompt_boost.video_prompt(prompt, styles.video_scene_words(style) if style else "",
@@ -179,6 +180,11 @@ async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality
             logger.warning("fal video failed, falling back to the free method: %s", exc)
             note = "The premium video service failed (its credit may be used up), so a free method was used. "
             which = "pollinations" if os.environ.get("POLLINATIONS_API_KEY") else "slideshow"
+    if which in ("openai", "gemini", "pollinations"):
+        # True video models follow a directed, shot-by-shot prompt far better than a one-line idea.
+        ai_prompt = cinematic or await prompt_boost.video_prompt(prompt, styles.video_scene_words(style) if style else "",
+                                                    POLLINATIONS_VIDEO_SECONDS if which == "pollinations"
+                                                    else min(12, seconds or 8))
     if which == "openai":
         return {"data": await _sora(ai_prompt, seconds, portrait, quality), "contentType": "video/mp4", "method": "ai_video"}
     if which == "gemini":
