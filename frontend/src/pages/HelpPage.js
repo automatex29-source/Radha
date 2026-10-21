@@ -213,6 +213,7 @@ export default function HelpPage() {
           <p className="mt-6 flex justify-center gap-4 text-xs text-muted-foreground" data-testid="help-legal-links">
             <a href="/privacy" className="hover:underline">Privacy Policy</a>
             <a href="/terms" className="hover:underline">Terms of Service</a>
+            <a href="/refunds" className="hover:underline">Refund Policy</a>
           </p>
 
           {reports.length > 0 && (

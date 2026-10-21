@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, formatApiError } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -29,6 +30,26 @@ function features(plan) {
   ];
 }
 
+const ORDER = ["basic", "pro", "max"];
+
+// Razorpay's checkout window (UPI, cards, net banking, wallets), loaded only when someone pays.
+let checkoutScript;
+function loadCheckout() {
+  if (window.Razorpay) return Promise.resolve();
+  checkoutScript = checkoutScript || new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = resolve;
+    s.onerror = () => { checkoutScript = null; reject(new Error("The payment window couldn't load. Check your internet and try again.")); };
+    document.body.appendChild(s);
+  });
+  return checkoutScript;
+}
+
+function untilText(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 function Usage({ usage }) {
   return (
     <section className="mt-10 rounded-3xl border border-border/70 bg-card/80 p-6 shadow-sm backdrop-blur" data-testid="plans-usage">
@@ -55,8 +76,10 @@ function Usage({ usage }) {
   );
 }
 
-function PlanCard({ plan, current }) {
+function PlanCard({ plan, current, currentPlan, paymentsOn, expires, busy, onBuy }) {
   const popular = plan.id === "pro";
+  const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
+  const canBuy = paymentsOn && plan.price > 0 && !lower;
   return (
     <div data-testid={`plan-${plan.id}`}
       className={`relative flex flex-col rounded-3xl p-6 transition-shadow sm:p-7 ${popular
@@ -83,11 +106,16 @@ function PlanCard({ plan, current }) {
           </li>
         ))}
       </ul>
-      <Button disabled data-testid={`plan-button-${plan.id}`}
-        className={`mt-7 h-11 w-full rounded-xl font-semibold disabled:opacity-100 ${popular && !current
-          ? "bg-gradient-to-r from-indigo-500 to-violet-500 text-white" : "border border-border bg-transparent text-muted-foreground"}`}>
-        {current ? "Current plan" : plan.price ? "Coming soon" : "Free"}
+      <Button disabled={!canBuy || busy} onClick={() => onBuy(plan.id)} data-testid={`plan-button-${plan.id}`}
+        className={`mt-7 h-11 w-full rounded-xl font-semibold disabled:opacity-100 ${canBuy && (popular || current)
+          ? "bg-gradient-to-r from-indigo-500 to-violet-500 text-white" : canBuy ? "bg-foreground text-background"
+          : "border border-border bg-transparent text-muted-foreground"}`}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" />
+          : !plan.price ? (current ? "Current plan" : "Free")
+          : !paymentsOn ? (current ? "Current plan" : "Coming soon")
+          : current ? `Add a month · ₹${plan.price}` : lower ? "Included in your plan" : `Get ${plan.name} · ₹${plan.price}`}
       </Button>
+      {current && expires && <p className="mt-2.5 text-center text-xs text-muted-foreground">Active until {untilText(expires)}</p>}
     </div>
   );
 }
@@ -95,10 +123,48 @@ function PlanCard({ plan, current }) {
 /** The three plans (Basic, Pro, Max), the user's current one and what they've used today. */
 export default function PlansPage() {
   const [data, setData] = useState(null);
+  const [buying, setBuying] = useState(null);
+  const { setUser } = useAuth() || {};
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api.get("/usage").then(({ data }) => setData(data)).catch((e) => toast.error(formatApiError(e)));
   }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const buy = async (planId) => {
+    setBuying(planId);
+    try {
+      const [{ data: order }] = await Promise.all([api.post("/billing/order", { plan: planId }), loadCheckout()]);
+      await new Promise((resolve) => {
+        const rzp = new window.Razorpay({
+          key: order.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
+          name: "Krish AI", description: `${order.planName} plan · 1 month`,
+          prefill: { name: order.name, email: order.email },
+          theme: { color: "#6366f1" },
+          handler: async (res) => {
+            try {
+              const { data: account } = await api.post("/billing/verify", {
+                orderId: res.razorpay_order_id, paymentId: res.razorpay_payment_id, signature: res.razorpay_signature,
+              });
+              setUser?.(account);
+              toast.success(`You're on ${order.planName}. Enjoy!`);
+              load();
+            } catch (e) {
+              toast.error(formatApiError(e));
+            }
+            resolve();
+          },
+          modal: { ondismiss: resolve },
+        });
+        rzp.on("payment.failed", (r) => toast.error(r?.error?.description || "The payment didn't go through. No money was taken."));
+        rzp.open();
+      });
+    } catch (e) {
+      toast.error(e?.response ? formatApiError(e) : e.message);
+    } finally {
+      setBuying(null);
+    }
+  };
 
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
@@ -120,9 +186,16 @@ export default function PlansPage() {
           ) : (
             <>
               <div className="mt-10 grid gap-5 md:grid-cols-3" data-testid="plans-grid">
-                {data.plans.map((p) => <PlanCard key={p.id} plan={p} current={p.id === data.plan} />)}
+                {data.plans.map((p) => (
+                  <PlanCard key={p.id} plan={p} current={p.id === data.plan} currentPlan={data.plan}
+                    paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={buy} />
+                ))}
               </div>
-              <p className="mt-5 text-center text-xs text-muted-foreground">Payments are coming soon. Pro and Max will open here when they're ready.</p>
+              <p className="mt-5 text-center text-xs text-muted-foreground">
+                {data.paymentsOn
+                  ? "Pay once for 30 days with UPI, card, net banking or a wallet. No auto-renewal: pay again whenever you like to add another month."
+                  : "Payments are coming soon. Pro and Max will open here when they're ready."}
+              </p>
               {data.limitsOn && <Usage usage={data.usage} />}
             </>
           )}

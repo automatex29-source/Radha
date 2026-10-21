@@ -52,6 +52,16 @@ services:
       # Optional: where Help Center bug reports and feedback are emailed (defaults to MAIL_FROM).
       - key: SUPPORT_EMAIL
         sync: false
+      # Payments for Pro and Max (Razorpay: UPI, cards, net banking). From https://dashboard.razorpay.com
+      # > Account & Settings > API Keys. Without both keys the Plans page says "Coming soon".
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      # A password you choose; type the same one when adding the webhook in Razorpay
+      # (URL https://<your-app>/api/billing/webhook, events order.paid and payment.captured).
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
       # The free plan has 512 MB of memory; a headless Chrome would exceed it.
       - key: BROWSER_TOOL
         value: "0"

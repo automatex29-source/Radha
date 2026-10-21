@@ -118,6 +118,7 @@ export default function App() {
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/privacy" element={<LegalPage kind="privacy" />} />
                 <Route path="/terms" element={<LegalPage kind="terms" />} />
+                <Route path="/refunds" element={<LegalPage kind="refunds" />} />
                 <Route path="*" element={<Gate />} />
               </Routes>
             </Suspense>
