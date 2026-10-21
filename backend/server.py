@@ -79,7 +79,7 @@ CODER_MODEL = os.environ.get("CODER_MODEL", "").strip() or "openrouter/qwen/qwen
 # their ids still work for older chats and for AI_MODEL / BUILDER_MODEL.
 AUTO_MODEL = agent_llm.AUTO
 AVAILABLE_MODELS = [
-    {"id": AUTO_MODEL, "label": "Krish AI", "description": "Free, and picks the best engine for each question", "pro": False},
+    {"id": AUTO_MODEL, "label": "Krish Basic", "description": "Free, and picks the best engine for each question", "pro": False},
     {"id": "claude-sonnet-5-5", "label": "Krish Ultra", "description": "Our smartest, for deep thinking", "pro": True},
     {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "description": "Quick and sharp for daily work", "pro": True},
     {"id": "gpt-5.4", "label": "Krish Vision", "description": "A strong all-rounder for any task", "pro": True},

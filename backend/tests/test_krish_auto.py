@@ -19,7 +19,7 @@ def keys(monkeypatch, *names):
 def test_free_plan_menu_has_one_free_model():
     server = _server()
     free = [m for m in server.AVAILABLE_MODELS if not m["pro"]]
-    assert [m["id"] for m in free] == [server.AUTO_MODEL] and free[0]["label"] == "Krish AI"
+    assert [m["id"] for m in free] == [server.AUTO_MODEL] and free[0]["label"] == "Krish Basic"
     assert all(m["pro"] for m in server.AVAILABLE_MODELS[1:])
 
 
