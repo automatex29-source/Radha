@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import PageHero from "@/components/PageHero";
+import PageHero, { accentStyle } from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
@@ -50,10 +50,10 @@ export default function DocsPage() {
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
-          <PageHero icon={FileText} title="Docs" subtitle="Write with Krish side by side. Select any part and ask Krish to change it, then download as Word or PDF." />
+        <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10" style={accentStyle("docs")}>
+          <PageHero scene="docs" overlap icon={FileText} title="Docs" subtitle="Write with Krish side by side. Select any part and ask Krish to change it, then download as Word or PDF." />
 
-          <div className="mt-6 rounded-2xl border border-border bg-card p-4" data-testid="doc-draft-box">
+          <div className="kb-float -mt-12 mx-2 rounded-2xl border border-border p-4 sm:mx-6 sm:-mt-14 sm:p-5" data-testid="doc-draft-box">
             <p className="flex items-center gap-1.5 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> What should Krish write?</p>
             <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} data-testid="doc-prompt-input"
               placeholder="e.g. A cover letter for a marketing job at Zomato" className="mt-2 min-h-[80px] bg-background" />
@@ -63,7 +63,7 @@ export default function DocsPage() {
               ))}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button onClick={() => create(true)} disabled={!prompt.trim() || !!busy} data-testid="doc-write-button" className="gap-2 font-semibold">
+              <Button onClick={() => create(true)} disabled={!prompt.trim() || !!busy} data-testid="doc-write-button" className="kb-btn gap-2 font-semibold">
                 {busy === "draft" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Write it
               </Button>
               <Button variant="outline" onClick={() => create(false)} disabled={!!busy} data-testid="doc-blank-button" className="gap-2 border-border bg-card">

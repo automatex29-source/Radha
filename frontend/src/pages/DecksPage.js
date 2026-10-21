@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import PageHero from "@/components/PageHero";
+import PageHero, { accentStyle } from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
@@ -170,10 +170,10 @@ export default function DecksPage() {
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
           {step === "prompt" ? (
-            <section className="mx-auto max-w-3xl text-center" data-testid="deck-create">
-              <PageHero center icon={Presentation} title="Presentations"
+            <section className="mx-auto max-w-4xl text-center" data-testid="deck-create" style={accentStyle("decks")}>
+              <PageHero scene="decks" overlap icon={Presentation} title="Presentations"
                 subtitle="Start from a topic, your notes, a file, a web page or a YouTube video. Krish AI writes the outline, designs the slides, and you download a real PowerPoint." />
-              <div className="mt-6 rounded-2xl border border-border bg-card p-3 text-left shadow-sm">
+              <div className="kb-float -mt-12 mx-2 rounded-2xl border border-border p-3 text-left sm:mx-6 sm:-mt-14">
                 <div className="mb-2 flex flex-wrap gap-1" data-testid="deck-source-tabs">
                   {SOURCES.map(({ id, label, Icon }) => (
                     <button key={id} type="button" onClick={() => { setMode(id); setSource(null); }} data-testid={`deck-source-${id}`}
@@ -240,7 +240,7 @@ export default function DecksPage() {
                       title="Turn a rough idea into a clear brief you can edit">
                       {improving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Improve prompt
                     </Button>
-                    <Button onClick={makeOutline} disabled={busy || !ready} className="gap-1.5 max-sm:flex-1" data-testid="deck-outline-button">
+                    <Button onClick={makeOutline} disabled={busy || !ready} className="kb-btn gap-1.5 max-sm:flex-1" data-testid="deck-outline-button">
                       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Write outline
                     </Button>
                   </div>

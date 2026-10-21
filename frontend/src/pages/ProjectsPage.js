@@ -67,10 +67,10 @@ export default function ProjectsPage() {
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-          <PageHero icon={FolderKanban} title="Projects" subtitle="Group conversations, files and knowledge. Krish AI grounds answers in a project's documents.">
+          <PageHero scene="projects" icon={FolderKanban} title="Projects" subtitle="Group conversations, files and knowledge. Krish AI grounds answers in a project's documents.">
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button data-testid="new-project-button" className="gap-2 font-semibold"><Plus className="h-4 w-4" /> New project</Button>
+                <Button data-testid="new-project-button" className="gap-2 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New project</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>

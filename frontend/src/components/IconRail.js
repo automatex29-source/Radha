@@ -3,6 +3,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy, FileText, Compass } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
 import { useT } from "@/lib/i18n";
+import { accentStyle } from "@/components/PageHero";
 
 const ITEMS = [
   { icon: MessageSquare, label: "Chat", key: "chat", to: "/", match: (p) => p === "/" },
@@ -32,9 +33,9 @@ export default function IconRail({ mobileBar = true }) {
             const active = it.match(pathname);
             return (
               <button key={it.to} onClick={() => navigate(it.to)} data-testid={`nav-${it.label.toLowerCase()}`}
-                title={t(it.key)}
+                title={t(it.key)} style={accentStyle(it.key)}
                 className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
-                  active ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_8px_22px_rgba(99,102,241,0.45)]"
+                  active ? "kb-tab-on text-white"
                     : "text-muted-foreground hover:-translate-y-0.5 hover:bg-white/80 hover:text-primary hover:shadow-sm dark:hover:bg-surface"
                 }`}>
                 <it.icon className="h-5 w-5" />
@@ -59,11 +60,11 @@ export default function IconRail({ mobileBar = true }) {
             const active = it.match(pathname);
             return (
               <button key={it.to} onClick={() => navigate(it.to)} data-testid={`tab-${it.label.toLowerCase()}`}
-                aria-current={active ? "page" : undefined}
+                aria-current={active ? "page" : undefined} style={accentStyle(it.key)}
                 className={`flex min-w-0 flex-1 flex-col items-center gap-1 pb-1.5 pt-2 text-[10px] font-semibold transition-colors ${
-                  active ? "text-primary" : "text-muted-foreground active:text-foreground"
+                  active ? "text-[var(--ka1)]" : "text-muted-foreground active:text-foreground"
                 }`}>
-                <span className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${active ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_4px_12px_rgba(99,102,241,0.4)]" : ""}`}>
+                <span className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${active ? "kb-tab-on text-white" : ""}`}>
                   <it.icon className="h-5 w-5" />
                 </span>
                 <span className="max-w-full truncate tracking-tight">{t(it.short || it.key)}</span>

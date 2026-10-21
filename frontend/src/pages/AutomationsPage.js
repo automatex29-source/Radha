@@ -78,9 +78,9 @@ export default function AutomationsPage() {
       <IconRail />
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className={`radha-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5 max-md:max-w-none max-md:border-r-0 max-md:p-4 ${phoneDetail ? "max-md:hidden" : ""}`}>
-          <PageHero compact icon={Workflow} title="Automations"
+          <PageHero compact scene="automations" icon={Workflow} title="Automations"
             subtitle="Your own AI agents. Each one plans its steps, uses search, research, code, files and images, and sends you the result.">
-            <Button size="sm" onClick={() => setEditing(blank())} data-testid="new-automation" className="gap-1.5"><Plus className="h-4 w-4" /> New</Button>
+            <Button size="sm" onClick={() => setEditing(blank())} data-testid="new-automation" className="gap-1.5 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New</Button>
           </PageHero>
 
           {items === null ? <div className="mt-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : items.length === 0 ? (
