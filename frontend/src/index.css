@@ -359,3 +359,12 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 @keyframes krish-chakra-glow { 0%, 100% { opacity: 0.15; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.5); } }
 @keyframes krish-chakra-breathe { 50% { transform: scale(0.8); } }
 @media (prefers-reduced-motion: reduce) { .krish-chakra-blade, .krish-chakra-idle, .krish-chakra-hub, .krish-chakra-glow { animation: none !important; transition: none; } }
+
+/* "Unlock Pro" in the chat's top bar: a dark pill with a glowing indigo-to-pink edge. */
+.krish-unlock {
+  border: 1.5px solid transparent;
+  background: linear-gradient(#151A28, #151A28) padding-box, linear-gradient(135deg, #818CF8, #C084FC, #F472B6) border-box;
+  box-shadow: 0 0 0 3px rgb(129 140 248 / 0.15);
+}
+.krish-unlock:hover { box-shadow: 0 0 0 3px rgb(129 140 248 / 0.28), 0 4px 14px rgb(129 140 248 / 0.25); }
+.dark .krish-unlock { background: linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box, linear-gradient(135deg, #818CF8, #C084FC, #F472B6) border-box; }
