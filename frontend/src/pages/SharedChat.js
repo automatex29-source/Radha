@@ -61,7 +61,7 @@ export default function SharedChat() {
                   <BrandMark className="mt-0.5 h-8 w-8 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="mb-1 text-sm font-semibold tracking-tight">Krish AI</p>
-                    <div className="radha-prose min-w-0">
+                    <div className="radha-prose krish-answer min-w-0">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                     </div>
                     <MediaGallery items={m.media} />
