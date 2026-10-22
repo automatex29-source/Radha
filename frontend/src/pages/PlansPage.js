@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { Check, Crown, Gift, Loader2, Tag, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import InviteDialog from "@/components/InviteDialog";
+import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
+import { useNavigate } from "react-router-dom";
 
 const DAILY = [
   { key: "build", label: "App builds", one: "app build", many: "app builds" },
@@ -151,7 +153,11 @@ export default function PlansPage() {
       toast.error(formatApiError(err));
     } finally { setChecking(false); }
   };
-  const { setUser } = useAuth() || {};
+  const { user, setUser } = useAuth() || {};
+  const navigate = useNavigate();
+  const [picked, setPicked] = useState(null); // the plan whose "what you get" window is open
+  const [welcome, setWelcome] = useState(null); // {plan, until} after a payment went through
+  const priceOf = (plan) => (offer && offer.prices[plan.id]) ?? plan.price;
 
   const load = useCallback(() => {
     api.get("/usage").then(({ data }) => setData(data)).catch((e) => toast.error(formatApiError(e)));
@@ -174,9 +180,10 @@ export default function PlansPage() {
                 orderId: res.razorpay_order_id, paymentId: res.razorpay_payment_id, signature: res.razorpay_signature,
               });
               setUser?.(account);
+              setWelcome({ plan: data.plans.find((p) => p.id === planId),
+                until: account.planExpiresAt ? untilText(account.planExpiresAt) : "" });
               setOffer(null);
               setCodeText("");
-              toast.success(`You're on ${order.planName}. Enjoy!`);
               load();
             } catch (e) {
               toast.error(formatApiError(e));
@@ -217,7 +224,7 @@ export default function PlansPage() {
               <div className="mt-10 grid gap-5 md:grid-cols-3" data-testid="plans-grid">
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} current={p.id === data.plan} currentPlan={data.plan}
-                    paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={buy} offer={offer} />
+                    paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} />
                 ))}
               </div>
               <p className="mt-5 text-center text-xs text-muted-foreground">
@@ -248,6 +255,12 @@ export default function PlansPage() {
         </div>
       </main>
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+      {picked && data && (
+        <PlanSheet plan={picked} current={data.plans.find((p) => p.id === data.plan)} user={user} price={priceOf(picked)}
+          offer={offer} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
+      )}
+      <PlanWelcome plan={welcome?.plan} user={user} until={welcome?.until} onClose={() => setWelcome(null)}
+        onStart={() => { setWelcome(null); navigate("/"); }} />
     </div>
   );
 }

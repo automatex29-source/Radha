@@ -23,6 +23,7 @@ const DiscoverPage = lazy(() => import("@/pages/DiscoverPage"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const PlansPage = lazy(() => import("@/pages/PlansPage"));
 const LegalPage = lazy(() => import("@/pages/LegalPage"));
+const InvitePage = lazy(() => import("@/pages/InvitePage"));
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import { installPlanLimitToasts } from "@/lib/planLimits";
@@ -123,6 +124,8 @@ export default function App() {
                 <Route path="/privacy" element={<LegalPage kind="privacy" />} />
                 <Route path="/terms" element={<LegalPage kind="terms" />} />
                 <Route path="/refunds" element={<LegalPage kind="refunds" />} />
+                {/* A friend's invite link: who invited them, and the free Pro days. */}
+                <Route path="/i/:code" element={<InvitePage />} />
                 <Route path="*" element={<Gate />} />
               </Routes>
             </Suspense>
