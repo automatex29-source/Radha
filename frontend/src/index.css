@@ -368,3 +368,29 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 }
 .krish-unlock:hover { box-shadow: 0 0 0 3px rgb(129 140 248 / 0.28), 0 4px 14px rgb(129 140 248 / 0.25); }
 .dark .krish-unlock { background: linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box, linear-gradient(135deg, #818CF8, #C084FC, #F472B6) border-box; }
+
+/* Install card: springs down from the top with a little overshoot, glides away when closed. */
+.krish-install {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 18px 48px -12px rgba(15, 23, 42, 0.28);
+  animation: krish-install-in 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.dark .krish-install { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 18px 48px -12px rgba(0, 0, 0, 0.7); }
+.krish-install.is-leaving { animation: krish-install-out 0.26s cubic-bezier(0.4, 0, 1, 1) both; }
+@keyframes krish-install-in {
+  from { opacity: 0; transform: translateY(-16px) scale(0.96); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes krish-install-out { to { opacity: 0; transform: translateY(-10px) scale(0.97); } }
+.krish-install-glow { position: absolute; inset: -40% -20% auto auto; width: 70%; height: 120%; pointer-events: none;
+  background: radial-gradient(closest-side, hsl(var(--primary) / 0.14), transparent); animation: krish-fade-in 0.8s ease 0.2s both; }
+.krish-install-icon { animation: krish-install-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.12s both; }
+@keyframes krish-install-pop { from { opacity: 0; transform: scale(0.6) rotate(-12deg); } to { opacity: 1; transform: none; } }
+.krish-install-item { animation: krish-rise 0.4s ease both; }
+.krish-install-check { animation: krish-install-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.krish-install-cta { background-image: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.28) 50%, transparent 70%);
+  background-size: 220% 100%; background-position: 120% 0; animation: krish-install-shine 2.4s ease 1s 2; }
+@keyframes krish-install-shine { to { background-position: -120% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .krish-install, .krish-install.is-leaving, .krish-install-icon, .krish-install-item, .krish-install-check, .krish-install-cta, .krish-install-glow { animation-duration: 0.01ms; animation-iteration-count: 1; }
+}
