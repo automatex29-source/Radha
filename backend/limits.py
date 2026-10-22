@@ -22,18 +22,21 @@ PLANS = {
         "daily": {"build": 5, "picture": 3, "deck": 4, "video": 1},
         "total": {"automation": 1},
         "publish": False, "premium": False,
+        "quality": {"media": "free", "videoSeconds": 8, "uploadMb": 20, "memory": 60, "premiumDaily": 0},
     },
     "pro": {
         "name": "Pro", "price": 299,
         "daily": {"build": 30, "picture": 25, "deck": 15, "video": 5},
         "total": {"automation": 10},
         "publish": True, "premium": True,
+        "quality": {"media": "premium", "videoSeconds": 12, "uploadMb": 50, "memory": 200, "premiumDaily": 150},
     },
     "max": {
         "name": "Max", "price": 699,
         "daily": {"build": 100, "picture": 80, "deck": 50, "video": 20},
         "total": {"automation": 30},
         "publish": True, "premium": True,
+        "quality": {"media": "premium", "videoSeconds": 20, "uploadMb": 100, "memory": 400, "premiumDaily": 500},
     },
 }
 ORDER = ["basic", "pro", "max"]
@@ -91,6 +94,38 @@ async def plan_of(db, user_id: str) -> str:
 async def is_pro(db, user_id: str) -> bool:
     """True for paid plans (Pro or Max), which get the premium AI models."""
     return PLANS[await plan_of(db, user_id)]["premium"]
+
+
+async def quality(db, user_id: str) -> dict:
+    """What the user's plan gets beyond the daily counts: premium picture and video engines ("media"), the
+    longest video, the biggest upload, how many facts memory keeps, and premium-model messages a day."""
+    return quality_of(await plan_of(db, user_id))
+
+
+async def upload_bytes(db, user_id: str) -> int:
+    return quality_of(await plan_of(db, user_id))["uploadMb"] * 1024 * 1024
+
+
+def quality_of(plan: str) -> dict:
+    return PLANS[plan if plan in PLANS else "basic"]["quality"]
+
+
+async def use_premium(db, user_id: str) -> bool:
+    """Count one message on a premium model (Claude, GPT). False when today's allowance is used up, so the
+    chat falls back to Krish Basic: premium messages cost money each, and this keeps a plan from costing more
+    than it earns. PREMIUM_DAILY=off lifts the cap."""
+    if not enabled() or os.environ.get("PREMIUM_DAILY", "").strip().lower() in ("off", "0", "false", "no"):
+        return True
+    allowed = quality_of(await plan_of(db, user_id))["premiumDaily"]
+    doc = await db.usage.find_one_and_update(
+        {"_id": f"{user_id}:{today()}"},
+        {"$inc": {"premium": 1}, "$setOnInsert": {"userId": user_id, "day": today()}},
+        upsert=True, return_document=True,
+    )
+    if doc["premium"] > allowed:
+        await refund(db, user_id, "premium")
+        return False
+    return True
 
 
 async def use(db, user_id: str, kind: str) -> None:

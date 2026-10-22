@@ -1706,7 +1706,7 @@ def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool 
 async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or AI_MODEL)
+    model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think)
 
     image_ids = []
     for mid in body.images:
@@ -1772,10 +1772,21 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
                             focus=body.focus, pro=body.pro)
 
 
-async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
+THINK_MODELS = ("claude-sonnet-5-5", "gpt-5.4")  # Think on Pro and Max: the first one set up answers
+
+
+async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = False) -> str:
     """The model that answers: the App Builder's stronger model inside an app, and no paid
-    model (Claude, GPT) for free-plan users unless the owner sets PAID_MODELS=all."""
+    model (Claude, GPT) for free-plan users unless the owner sets PAID_MODELS=all.
+
+    On Pro and Max, Think moves a free-model question to the strongest premium model. Premium messages
+    count toward the plan's daily allowance; once it is used up the chat answers with Krish Basic."""
     model = requested
+    pro = await limits.is_pro(db, user_id)
+    if think and pro and not conv.get("appId") and not agent_llm.paid(model):
+        model = next((m for m in THINK_MODELS if agent_llm.configured(m)), model)
+    if pro and agent_llm.paid(model) and not await limits.use_premium(db, user_id):
+        return AI_MODEL
     if model == AUTO_MODEL and conv.get("appId"):
         model = agent_llm.concrete(model)
     if conv.get("appId"):
@@ -1786,7 +1797,7 @@ async def _pick_model(user_id: str, conv: dict, requested: str) -> str:
         if (agent_llm.lean(model) or agent_llm.provider_for(model) == "gemini") and agent_llm.configured(FREE_BUILDER):
             model = FREE_BUILDER
     if agent_llm.paid(model) and not agent_llm.paid(AI_MODEL) and os.environ.get("PAID_MODELS") != "all" \
-            and not await limits.is_pro(db, user_id):
+            and not pro:
         model = AI_MODEL
     return model
 
@@ -1902,7 +1913,7 @@ def _background(coro):
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL)
+    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think)
     if conv.get("appId"):  # chat is unlimited; App Builder messages count as app builds
         await limits.require(db, user_id, "build")
 
@@ -1932,7 +1943,7 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     the new wording."""
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL)
+    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think)
     if conv.get("appId"):
         await limits.require(db, user_id, "build")
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
@@ -2200,12 +2211,19 @@ async def _process_file(file_id: str, user_id: str, project_id, data: bytes, ext
         await db.files.update_one({"id": file_id}, {"$set": {"status": "failed", "error": str(exc)[:300]}})
 
 
+async def _check_upload_size(user_id: str, data: bytes, what: str) -> None:
+    """Uploads can be as big as the plan allows (20MB on Basic, more on Pro and Max)."""
+    limit = await limits.upload_bytes(db, user_id)
+    if len(data) > limit:
+        more = " Pro and Max take bigger files." if limit < limits.quality_of("max")["uploadMb"] * 1024 * 1024 else ""
+        raise HTTPException(status_code=413, detail=f"{what} too large (max {limit // (1024 * 1024)}MB).{more}")
+
+
 @api.post("/projects/{pid}/files")
 async def upload_file(pid: str, file: UploadFile = File(...), user_id: str = Depends(current_user_id)):
     await _owned_project(pid, user_id)
     data = await file.read()
-    if len(data) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large (max 20MB)")
+    await _check_upload_size(user_id, data, "File")
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
     file_id = str(uuid.uuid4())
     path = storage.object_path(user_id, file_id, ext)
@@ -2264,8 +2282,7 @@ async def list_conversation_files(conv_id: str, user_id: str = Depends(current_u
 async def upload_conversation_file(conv_id: str, file: UploadFile = File(...), user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
     data = await file.read()
-    if len(data) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large (max 20MB)")
+    await _check_upload_size(user_id, data, "File")
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
     file_id = str(uuid.uuid4())
     path = storage.object_path(user_id, file_id, ext)
@@ -2496,8 +2513,7 @@ async def upload_media(file: UploadFile = File(...), conversationId: Optional[st
     if conversationId:
         await _owned_conversation(conversationId, user_id)
     data = await file.read()
-    if len(data) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Image too large (max 20MB)")
+    await _check_upload_size(user_id, data, "Image")
     try:
         return await media.save_media(db, user_id, data, content_type, "upload",
                                       name=file.filename, conversation_id=conversationId)

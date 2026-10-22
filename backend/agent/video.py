@@ -50,13 +50,14 @@ class VideoError(Exception):
 
 def provider() -> Optional[str]:
     explicit = os.environ.get("VIDEO_PROVIDER", "").lower()
-    if explicit in PROVIDERS:
+    paid = media.premium_media()  # Basic gets the free methods only (see media.PREMIUM_MEDIA)
+    if explicit in PROVIDERS and (paid or explicit not in ("fal", "openai", "gemini")):
         return explicit
     if explicit in ("off", "0", "none"):
         return None
-    if fal_api.configured():
+    if paid and fal_api.configured():
         return "fal"
-    if os.environ.get("OPENAI_API_KEY"):
+    if paid and os.environ.get("OPENAI_API_KEY"):
         return "openai"
     # A Gemini key alone doesn't pick Veo: Veo has no free tier, and the key is usually there for chat.
     # Set VIDEO_PROVIDER=gemini on a paid Google plan.

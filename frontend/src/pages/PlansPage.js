@@ -30,7 +30,14 @@ function features(plan) {
     ...DAILY.map((d) => ({ ok: true, text: `${plan.daily[d.key]} ${plan.daily[d.key] === 1 ? d.one : d.many} a day` })),
     { ok: true, text: `${plan.total.automation} automation${plan.total.automation === 1 ? "" : "s"}` },
     { ok: plan.publish, text: "Publish apps to the web" },
-    { ok: plan.premium, text: "Premium AI models" },
+    { ok: plan.premium, text: plan.quality?.premiumDaily ? `Premium AI models, ${plan.quality.premiumDaily} messages a day` : "Premium AI models" },
+    ...(plan.quality ? [
+      { ok: plan.quality.media === "premium", text: "HD pictures and real AI video" },
+      { ok: plan.premium, text: "Think mode on our smartest model" },
+      { ok: true, text: `Videos up to ${plan.quality.videoSeconds} seconds` },
+      { ok: true, text: `Uploads up to ${plan.quality.uploadMb}MB` },
+      { ok: true, text: `Remembers ${plan.quality.memory} things about you` },
+    ] : []),
   ];
 }
 
