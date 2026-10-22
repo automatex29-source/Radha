@@ -57,80 +57,76 @@ export default function InviteDialog({ open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92dvh] w-[calc(100vw-2rem)] max-w-[26rem] overflow-y-auto rounded-2xl p-0 sm:rounded-2xl" data-testid="invite-dialog">
-        <div className="min-w-0 px-5 pb-5 pt-6 sm:px-6">
-          <DialogTitle className="pr-8 text-xl font-bold tracking-tight">Invite friends, get Pro free</DialogTitle>
-          <DialogDescription className="mt-1 text-sm text-muted-foreground">
-            Share your link. When a friend joins, you both get {data?.rewardDays || 7} days of Pro.
+      <DialogContent className="max-h-[92dvh] w-[calc(100vw-2rem)] max-w-[26rem] gap-0 overflow-y-auto rounded-3xl border-0 p-0 shadow-2xl sm:rounded-3xl [&>button]:text-white/70 [&>button]:hover:text-white"
+        data-testid="invite-dialog">
+        <div className="relative overflow-hidden bg-[#0b0c14] px-6 pb-6 pt-7 text-white">
+          <div className="pointer-events-none absolute -left-16 top-6 h-56 w-56 rounded-full bg-orange-500/25 blur-3xl" />
+          <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-indigo-500/30 blur-3xl" />
+          <p className="relative text-[11px] font-medium uppercase tracking-[0.18em] text-white/55">Krish AI Rewards</p>
+          <DialogTitle className="relative mt-2 text-[1.65rem] font-semibold leading-tight tracking-tight">
+            Give Pro. <span className="text-[#ffb048]">Get Pro.</span>
+          </DialogTitle>
+          <DialogDescription className="relative mt-1.5 text-sm leading-relaxed text-white/70">
+            When a friend joins with your link, you each get {data?.rewardDays || 7} days of Krish AI Pro, on us.
           </DialogDescription>
+          {data && (
+            <img src={picture} alt="The picture your friends see with your link" data-testid="invite-picture"
+              className="relative mt-5 aspect-[1200/630] w-full rounded-2xl object-cover shadow-[0_20px_50px_-15px_rgba(0,0,0,0.8)] ring-1 ring-white/10" />
+          )}
+        </div>
 
+        <div className="min-w-0 px-6 pb-6 pt-5">
           {!data ? (
             <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
           ) : (
             <div className="min-w-0">
-              <img src={picture} alt="The picture your friends see with your link" data-testid="invite-picture"
-                className="mt-5 aspect-[1200/630] w-full rounded-xl border border-border/70 bg-white object-cover" />
+              <Button onClick={canShare ? share : () => copy(message)} data-testid="invite-share"
+                className="h-12 w-full rounded-2xl bg-foreground text-[15px] font-semibold text-background hover:bg-foreground/90">
+                {canShare ? <><Share2 className="mr-2 h-4 w-4" /> Share your invite</> : <><Copy className="mr-2 h-4 w-4" /> Copy invite message</>}
+              </Button>
 
-              <div className="mt-4 grid grid-cols-2 gap-2 text-center" data-testid="invite-rewards">
-                <div className="rounded-xl bg-surface px-3 py-2.5">
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">You get</p>
-                  <p className="mt-0.5 text-sm font-semibold">{data.rewardDays} days of Pro</p>
-                </div>
-                <div className="rounded-xl bg-surface px-3 py-2.5">
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Your friend gets</p>
-                  <p className="mt-0.5 text-sm font-semibold">{data.rewardDays} days of Pro</p>
-                </div>
-              </div>
-
-              <label className="mt-5 block text-xs font-medium text-muted-foreground" htmlFor="invite-link-box">Your invite link</label>
-              <div className="mt-1.5 flex min-w-0 items-center gap-1 rounded-xl border border-border bg-background p-1 pl-3">
-                <input id="invite-link-box" readOnly value={shortLink} onFocus={(e) => e.target.select()} data-testid="invite-link"
-                  className="min-w-0 flex-1 truncate bg-transparent text-sm outline-none" />
-                <Button size="sm" variant="ghost" onClick={() => copy()} data-testid="invite-copy" className="h-8 shrink-0 rounded-lg px-3">
-                  {copied ? <><Check className="mr-1.5 h-3.5 w-3.5 text-emerald-600" /> Copied</> : <><Copy className="mr-1.5 h-3.5 w-3.5" /> Copy</>}
-                </Button>
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="mt-2.5 grid grid-cols-2 gap-2.5">
                 <a href={`https://wa.me/?text=${encodeURIComponent(message)}`} target="_blank" rel="noreferrer" data-testid="invite-whatsapp"
-                  className="flex h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-border bg-background text-sm font-semibold transition-colors hover:bg-surface">
+                  className="flex h-11 min-w-0 items-center justify-center gap-2 rounded-2xl border border-border text-sm font-medium transition-colors hover:bg-surface">
                   <WhatsAppIcon className="h-[18px] w-[18px] shrink-0 text-[#25D366]" /> WhatsApp
                 </a>
-                {canShare ? (
-                  <Button variant="outline" onClick={share} className="h-11 min-w-0 rounded-xl font-semibold" data-testid="invite-share">
-                    <Share2 className="mr-2 h-4 w-4 shrink-0" /> More ways
-                  </Button>
-                ) : (
-                  <Button variant="outline" onClick={() => copy(message)} className="h-11 min-w-0 rounded-xl font-semibold" data-testid="invite-copy-message">
-                    <Copy className="mr-2 h-4 w-4 shrink-0" /> Copy message
-                  </Button>
-                )}
+                <button type="button" onClick={() => copy()} data-testid="invite-copy"
+                  className="flex h-11 min-w-0 items-center justify-center gap-2 rounded-2xl border border-border text-sm font-medium transition-colors hover:bg-surface">
+                  {copied ? <><Check className="h-4 w-4 shrink-0 text-emerald-600" /> Copied</> : <><Copy className="h-4 w-4 shrink-0" /> Copy link</>}
+                </button>
+              </div>
+
+              <div className="mt-4 flex min-w-0 items-center gap-2 rounded-xl bg-surface px-3.5 py-2.5">
+                <span className="shrink-0 text-xs text-muted-foreground">Your link</span>
+                <input readOnly value={shortLink} onFocus={(e) => e.target.select()} aria-label="Your invite link" data-testid="invite-link"
+                  className="min-w-0 flex-1 truncate bg-transparent text-right text-[13px] font-medium outline-none" />
               </div>
 
               <button type="button" onClick={() => setShowMessage((s) => !s)} aria-expanded={showMessage} data-testid="invite-message-toggle"
-                className="mt-3 flex w-full items-center justify-between rounded-lg px-1 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
-                What your friends receive
+                className="mt-3 flex w-full items-center justify-between py-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+                Preview the message
                 <ChevronDown className={`h-4 w-4 transition-transform ${showMessage ? "rotate-180" : ""}`} />
               </button>
               {showMessage && (
-                <p className="mt-1 whitespace-pre-line break-words rounded-xl bg-surface px-3.5 py-3 text-[13px] leading-relaxed" data-testid="invite-message">
+                <p className="mt-1.5 whitespace-pre-line break-words rounded-xl border border-border/70 px-3.5 py-3 text-[13px] leading-relaxed text-foreground/90" data-testid="invite-message">
                   {message}
                 </p>
               )}
 
-              <div className="mt-4 border-t border-border pt-4" data-testid="invite-progress">
-                <div className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="text-muted-foreground">
-                    <b className="font-semibold text-foreground tabular-nums">{data.joined}</b> {data.joined === 1 ? "friend" : "friends"} joined
-                  </span>
-                  <span className="text-muted-foreground">
-                    <b className="font-semibold text-foreground tabular-nums">{data.daysEarned}</b> Pro days earned
-                  </span>
+              <div className="mt-5 border-t border-border/70 pt-4" data-testid="invite-progress">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium">Your rewards</span>
+                  <span className="text-muted-foreground tabular-nums">{rewarded} of {data.maxRewards} friends</span>
                 </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-strong">
-                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (rewarded / data.maxRewards) * 100)}%` }} />
+                <div className="mt-2 flex gap-1" aria-hidden="true">
+                  {Array.from({ length: data.maxRewards }, (_, i) => (
+                    <span key={i} className={`h-1.5 flex-1 rounded-full ${i < rewarded ? "bg-[#ff9a2e]" : "bg-surface-strong"}`} />
+                  ))}
                 </div>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">{rewarded} of {data.maxRewards} friends rewarded</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {data.joined ? <><b className="font-semibold text-foreground">{data.daysEarned} Pro days</b> earned from {data.joined} {data.joined === 1 ? "friend" : "friends"}.</>
+                    : "No friends yet. Your first invite is the start."}
+                </p>
               </div>
             </div>
           )}

@@ -23,14 +23,9 @@ export const inviteLink = (code) => `${window.location.origin}/i/${code}`;
 /** The message people send with their invite link: personal, short, and says what Krish does. */
 export function inviteMessage(link, days) {
   return [
-    "Hey! 👋 I've been using Krish AI and I think you'll love it.",
+    "I've been using Krish AI and thought you'd like it. It answers anything, helps with study and writing, and makes slides, pictures and even apps.",
     "",
-    "✨ Ask anything, in English, Hindi or Hinglish",
-    "📚 Study help, notes and quick quizzes",
-    "🎨 Make pictures, slide decks and even apps",
-    "🕉️ Calm advice from the Bhagavad Gita",
-    "",
-    `Join with my link and we both get ${days} days of Pro free 🎁`,
+    `Join with my link and we both get ${days} days of Pro, free:`,
     link,
   ].join("\n");
 }
