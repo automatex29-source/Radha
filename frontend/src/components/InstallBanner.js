@@ -8,6 +8,7 @@ const SNOOZED = "krish.installSnoozedUntil";
 const DELAY_MS = 20000; // let people look around first
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000; // "Not now" asks again in a week
 const EXIT_MS = 260;
+const QUIET_MS = 4000; // wait for a pause in typing so the card never interrupts a message
 
 const PERKS = [
   { icon: Maximize2, label: "Full screen" },
@@ -39,8 +40,18 @@ export default function InstallBanner() {
   useEffect(() => onInstallChange(setReady), []);
   useEffect(() => {
     if (hidden() || isStandalone()) return;
-    const t = setTimeout(() => setShow(true), DELAY_MS);
-    return () => clearTimeout(t);
+    let lastKey = 0;
+    const typed = () => { lastKey = Date.now(); };
+    const typing = () => {
+      const el = document.activeElement;
+      const field = el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable);
+      return Date.now() - lastKey < QUIET_MS || (field && el.value);
+    };
+    window.addEventListener("keydown", typed, true);
+    let t = setTimeout(function wait() {
+      if (typing()) t = setTimeout(wait, 1500); else setShow(true);
+    }, DELAY_MS);
+    return () => { clearTimeout(t); window.removeEventListener("keydown", typed, true); };
   }, []);
 
   const close = (key = DISMISSED) => {
@@ -124,10 +135,8 @@ export default function InstallBanner() {
           </div>
         ) : (
           <div className="relative p-4">
-            <div className="flex items-start gap-3 pr-6">
-              <span className="krish-install-icon relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-border bg-background shadow-sm">
-                <BrandMark className="h-8 w-8" />
-              </span>
+            <div className="flex items-center gap-3.5 pr-6">
+              <HomeScreen />
               <div className="min-w-0 text-sm">
                 <p id="install-title" className="font-semibold leading-tight">Get the Krish app</p>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -185,5 +194,25 @@ export default function InstallBanner() {
         )}
       </div>
     </div>
+  );
+}
+
+/** A tiny phone whose home screen fills in, then the Krish icon drops into the last spot. */
+function HomeScreen() {
+  return (
+    <span className="krish-install-phone relative flex h-[76px] w-[52px] shrink-0 flex-col rounded-[14px] border border-border bg-background p-[5px] shadow-sm" aria-hidden="true">
+      <span className="mx-auto mb-1 h-[3px] w-4 rounded-full bg-muted-foreground/25" />
+      <span className="grid grid-cols-3 gap-[3px]">
+        {Array.from({ length: 8 }, (_, i) => (
+          <span key={i} className="krish-install-tile aspect-square rounded-[4px]" style={{ animationDelay: `${140 + i * 35}ms` }} />
+        ))}
+        <span className="krish-install-drop relative flex aspect-square items-center justify-center rounded-[4px] bg-popover ring-1 ring-primary/40">
+          <BrandMark className="h-[11px] w-[11px]" />
+        </span>
+      </span>
+      <span className="mt-auto flex justify-center gap-[3px] rounded-md bg-muted/70 p-[3px]">
+        {[0, 1, 2].map((i) => <span key={i} className="h-[7px] w-[7px] rounded-[3px] bg-muted-foreground/20" />)}
+      </span>
+    </span>
   );
 }
