@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { reportError } from "@/lib/crashReport";
 
 const RELOADED = "krish.chunkReload";
 
@@ -17,7 +18,7 @@ export default class ErrorBoundary extends Component {
     return { error };
   }
 
-  componentDidCatch(error) {
+  componentDidCatch(error, info) {
     if (isStaleBuild(error)) {
       try {
         if (!sessionStorage.getItem(RELOADED)) {
@@ -28,6 +29,7 @@ export default class ErrorBoundary extends Component {
       } catch { /* optional */ }
     }
     console.error(error);
+    reportError(error, info?.componentStack || "");
   }
 
   componentDidMount() {

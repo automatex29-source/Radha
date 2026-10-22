@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 import limits
+import promos
 
 logger = logging.getLogger("radha.billing")
 
@@ -79,8 +80,10 @@ async def _create_razorpay_order(amount: int, receipt: str, notes: dict) -> dict
     return r.json()
 
 
-async def create_order(db, user: dict, plan: str) -> dict:
-    """Make a Razorpay order for one month of `plan` and return what the checkout needs."""
+async def create_order(db, user: dict, plan: str, code: str = "") -> dict:
+    """Make a Razorpay order for one month of `plan` and return what the checkout needs.
+
+    `code` is an optional offer code (e.g. LAUNCH50) that takes a percentage off this payment."""
     if not enabled():
         raise BillingError("Payments are coming soon.")
     if plan not in limits.PLANS or not limits.PLANS[plan]["price"]:
@@ -90,14 +93,24 @@ async def create_order(db, user: dict, plan: str) -> dict:
         raise BillingError(f"You're on {limits.PLANS[current]['name']} already, which includes everything in "
                            f"{limits.PLANS[plan]['name']}.")
     amount = limits.PLANS[plan]["price"] * 100  # paise
+    promo = None
+    if code.strip():
+        try:
+            promo = await promos.check(db, code, user["id"], plan)
+        except promos.PromoError as exc:
+            raise BillingError(str(exc))
+        amount = promos.discounted(amount, promo["percentOff"])
     receipt = uuid.uuid4().hex[:20]
-    order = await _create_razorpay_order(amount, receipt, {"userId": user["id"], "plan": plan})
+    notes = {"userId": user["id"], "plan": plan, **({"promoCode": promo["code"]} if promo else {})}
+    order = await _create_razorpay_order(amount, receipt, notes)
     await db.payments.insert_one({
         "orderId": order["id"], "userId": user["id"], "plan": plan, "amount": amount, "currency": "INR",
         "receipt": receipt, "status": "created", "createdAt": _now().isoformat(),
+        "promoCode": promo["code"] if promo else None,
     })
     return {"orderId": order["id"], "amount": amount, "currency": "INR", "keyId": key_id(),
             "plan": plan, "planName": limits.PLANS[plan]["name"],
+            "promoCode": promo["code"] if promo else None, "percentOff": promo["percentOff"] if promo else 0,
             "name": user.get("name", ""), "email": user.get("email", "")}
 
 
@@ -115,22 +128,31 @@ async def _activate(db, order_id: str, payment_id: str, amount=None) -> bool:
         {"$set": {"status": "paid", "paymentId": payment_id, "paidAt": _now().isoformat()}})
     if not claimed:
         return False
-    user = await db.users.find_one({"id": pay["userId"]}, {"plan": 1, "planExpiresAt": 1}) or {}
+    if pay.get("promoCode"):
+        await promos.count_use(db, pay["promoCode"])
+    expires = await grant_days(db, pay["userId"], pay["plan"], DAYS)
+    logger.info("User %s is on %s until %s (order %s)", pay["userId"], pay["plan"], expires, order_id)
+    return True
+
+
+async def grant_days(db, user_id: str, plan: str, days: int):
+    """Give a user `days` of `plan` (a payment, or a free gift such as a friend invite). Returns the new end time.
+
+    Days on the same plan add to what is left. A higher plan the user is already on is never stepped down:
+    the days go onto it instead. A plan set by hand that never runs out stays that way (returns None)."""
+    user = await db.users.find_one({"id": user_id}, {"plan": 1, "planExpiresAt": 1}) or {}
     current = limits.plan_from(user)
-    plan = pay["plan"]
     if limits.ORDER.index(current) > limits.ORDER.index(plan):
-        # An older Pro order paid after the user moved to Max: never step them down, add the days to Max.
         plan = current
     if plan == current and plan != "basic" and not user.get("planExpiresAt"):
-        return True  # a plan set by hand that never runs out stays that way
+        return None
     start = _now()
     if plan == current and user.get("planExpiresAt"):
         start = max(start, datetime.fromisoformat(user["planExpiresAt"]))
-    expires = (start + timedelta(days=DAYS)).isoformat()
-    await db.users.update_one({"id": pay["userId"]}, {"$set": {
+    expires = (start + timedelta(days=days)).isoformat()
+    await db.users.update_one({"id": user_id}, {"$set": {
         "plan": plan, "planExpiresAt": expires, "updatedAt": _now().isoformat()}})
-    logger.info("User %s is on %s until %s (order %s)", pay["userId"], plan, expires, order_id)
-    return True
+    return expires
 
 
 async def verify(db, user_id: str, order_id: str, payment_id: str, signature: str) -> None:

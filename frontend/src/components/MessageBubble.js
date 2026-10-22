@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper } from "lucide-react";
+import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper, ThumbsUp, ThumbsDown } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
@@ -199,6 +199,38 @@ function SpeakButton({ text, voice, id }) {
   );
 }
 
+/** 👍 / 👎 on one of Krish's answers. A 👎 shares the question and answer with EmpireX to make Krish better. */
+function RateButtons({ message }) {
+  const [rating, setRating] = useState(message.rating || null);
+  const [busy, setBusy] = useState(false);
+  const rate = async (value) => {
+    const next = rating === value ? null : value;
+    const before = rating;
+    setRating(next);
+    setBusy(true);
+    try {
+      await api.post(`/conversations/${message.conversationId}/messages/${message.id}/feedback`, { rating: next });
+      if (next === "down") toast.success("Thanks. We'll use this to make Krish's answers better.");
+    } catch (e) {
+      setRating(before);
+      toast.error(formatApiError(e));
+    } finally { setBusy(false); }
+  };
+  const cls = (on) => `flex h-6 w-6 items-center justify-center rounded-md transition-colors ${on ? "text-primary" : "text-muted-foreground hover:text-foreground"}`;
+  return (
+    <span className="flex items-center gap-0.5" data-testid={`rate-${message.id}`}>
+      <button type="button" disabled={busy} onClick={() => rate("up")} aria-label="Good answer" aria-pressed={rating === "up"}
+        title="Good answer" data-testid={`rate-up-${message.id}`} className={cls(rating === "up")}>
+        <ThumbsUp className={`h-3 w-3 ${rating === "up" ? "fill-current" : ""}`} />
+      </button>
+      <button type="button" disabled={busy} onClick={() => rate("down")} aria-label="Bad answer" aria-pressed={rating === "down"}
+        title="Bad answer (shares it with EmpireX to improve Krish)" data-testid={`rate-down-${message.id}`} className={cls(rating === "down")}>
+        <ThumbsDown className={`h-3 w-3 ${rating === "down" ? "fill-current" : ""}`} />
+      </button>
+    </span>
+  );
+}
+
 export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -357,6 +389,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             </button>
             {voiceEnabled && <SpeakButton text={message.content} voice={voice} id={message.id} />}
             {codeProject && <MakePageButton id={message.id} />}
+            {message.conversationId && message.id !== "streaming" && <RateButtons message={message} />}
           </div>
         )}
         {!streaming && onAsk && message.related?.length > 0 && <RelatedQuestions items={message.related} onAsk={onAsk} id={message.id} />}

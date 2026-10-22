@@ -5,6 +5,9 @@ import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Input } from "@/components/ui/input";
 import { Loader2, Search, Users } from "lucide-react";
+import { AnswersTab, OfferCodesTab, ProblemsTab, UsageTab } from "@/components/OwnerInsights";
+
+const TABS = [["users", "Users"], ["usage", "Usage"], ["answers", "Answers"], ["problems", "Problems"], ["codes", "Offer codes"]];
 
 function ago(iso) {
   if (!iso) return "Not yet";
@@ -25,6 +28,7 @@ export default function AdminUsersPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
+  const [tab, setTab] = useState("users");
 
   useEffect(() => {
     if (!user?.isOwner) return;
@@ -61,13 +65,23 @@ export default function AdminUsersPage() {
                 </p>
               )}
             </div>
-            <div className="relative w-full sm:w-64">
+            {tab === "users" && <div className="relative w-full sm:w-64">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" className="pl-9" data-testid="admin-users-search" />
-            </div>
+            </div>}
           </header>
 
-          {error ? (
+          <div className="mt-6 flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1" role="tablist" data-testid="owner-tabs">
+            {TABS.map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} data-testid={`owner-tab-${id}`}
+                className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${tab === id ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "usage" ? <UsageTab /> : tab === "answers" ? <AnswersTab /> : tab === "problems" ? <ProblemsTab />
+            : tab === "codes" ? <OfferCodesTab /> : error ? (
             <p className="mt-10 text-center text-sm text-destructive">{error}</p>
           ) : !data ? (
             <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
@@ -103,7 +117,7 @@ export default function AdminUsersPage() {
               </table>
             </div>
           )}
-          <p className="mt-4 text-xs text-muted-foreground">Sign-in times are kept from this update on. People who joined earlier show their time once they next open Krish.</p>
+          {tab === "users" && <p className="mt-4 text-xs text-muted-foreground">Sign-in times are kept from this update on. People who joined earlier show their time once they next open Krish.</p>}
         </div>
       </main>
     </div>

@@ -12,10 +12,11 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import MemoryDialog from "@/components/MemoryDialog";
 import SettingsDialog from "@/components/SettingsDialog";
+import InviteDialog from "@/components/InviteDialog";
 import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users,
+  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users, Gift,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 
@@ -54,6 +55,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [deleteId, setDeleteId] = useState(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // Search also looks inside messages (server side), with a short snippet of where the words appear.
   const [hits, setHits] = useState(null); // { [conversationId]: snippet }
@@ -187,6 +189,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <DropdownMenuItem data-testid="menu-help" onClick={() => navigate("/help")}>
               <LifeBuoy className="mr-2 h-4 w-4" /> {t("helpFeedback")}
             </DropdownMenuItem>
+            <DropdownMenuItem data-testid="menu-invite" onClick={() => setInviteOpen(true)}>
+              <Gift className="mr-2 h-4 w-4" /> Invite friends
+            </DropdownMenuItem>
             <DropdownMenuItem data-testid="menu-plans" onClick={() => navigate("/plans")}>
               <Crown className="mr-2 h-4 w-4" /> {t("plans")}
             </DropdownMenuItem>
@@ -210,6 +215,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
 
       <MemoryDialog open={memoryOpen} onOpenChange={setMemoryOpen} />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
