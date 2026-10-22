@@ -369,69 +369,50 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 .krish-unlock:hover { box-shadow: 0 0 0 3px rgb(129 140 248 / 0.28), 0 4px 14px rgb(129 140 248 / 0.25); }
 .dark .krish-unlock { background: linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box, linear-gradient(135deg, #818CF8, #C084FC, #F472B6) border-box; }
 
-/* Install card: springs down from the top with a little overshoot, glides away when closed. */
+/* Install card: eases down from the top, glides away when closed. Motion stays quiet and short. */
 .krish-install {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 18px 48px -12px rgba(15, 23, 42, 0.28);
-  animation: krish-install-in 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  animation: krish-install-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.2s ease;
 }
 .dark .krish-install { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 18px 48px -12px rgba(0, 0, 0, 0.7); }
-.krish-install.is-leaving { animation: krish-install-out 0.26s cubic-bezier(0.4, 0, 1, 1) both; }
-@keyframes krish-install-in {
-  from { opacity: 0; transform: translateY(-16px) scale(0.96); filter: blur(4px); }
-  to { opacity: 1; transform: none; filter: none; }
-}
-@keyframes krish-install-out { to { opacity: 0; transform: translateY(-10px) scale(0.97); } }
+.krish-install:hover { transform: translateY(-1px); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 22px 52px -14px rgba(15, 23, 42, 0.32); }
+.krish-install.is-leaving { animation: krish-install-out 0.24s cubic-bezier(0.4, 0, 1, 1) both; }
+@keyframes krish-install-in { from { opacity: 0; transform: translateY(-12px) scale(0.98); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes krish-install-out { to { opacity: 0; transform: translateY(-8px) scale(0.98); } }
 .krish-install-glow { position: absolute; inset: -40% -20% auto auto; width: 70%; height: 120%; pointer-events: none;
-  background: radial-gradient(closest-side, hsl(var(--primary) / 0.14), transparent); animation: krish-fade-in 0.8s ease 0.2s both; }
-.krish-install:hover { transform: translateY(-2px); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 24px 56px -14px rgba(15, 23, 42, 0.34); }
-.krish-install-phone { animation: krish-install-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.08s both, krish-install-bob 4s ease-in-out 1.6s infinite; }
-@keyframes krish-install-bob { 0%, 100% { transform: translateY(0) rotate(0); } 30% { transform: translateY(-3px) rotate(-3deg); } 70% { transform: translateY(1px) rotate(2deg); } }
-.krish-install-tile { background: hsl(var(--muted-foreground) / 0.16); animation: krish-install-tile 0.3s ease both; }
-.krish-install-tile:nth-child(3n + 1) { background: hsl(var(--primary) / 0.22); }
-.krish-install-tile:nth-child(4n + 2) { background: rgba(255, 138, 30, 0.28); }
-@keyframes krish-install-tile { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
-/* The Krish icon falls in from above the phone, lands with a bounce, then a ring ripples out. */
-.krish-install-drop { animation: krish-install-drop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.55s both; }
-.krish-install-drop::after { content: ""; position: absolute; inset: -2px; border-radius: 5px; box-shadow: 0 0 0 0 hsl(var(--primary) / 0.5);
-  animation: krish-install-ripple 1.6s ease-out 1.15s 2; }
-@keyframes krish-install-drop { 0% { opacity: 0; transform: translateY(-30px) scale(1.6); } 60% { opacity: 1; } 100% { opacity: 1; transform: none; } }
-@keyframes krish-install-ripple { from { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.5); } to { box-shadow: 0 0 0 8px hsl(var(--primary) / 0); } }
-@keyframes krish-install-pop { from { opacity: 0; transform: scale(0.6) rotate(-12deg); } to { opacity: 1; transform: none; } }
-.krish-install-item { animation: krish-rise 0.4s ease both; }
-.krish-install-check { animation: krish-install-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-.krish-install-cta { background-image: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.28) 50%, transparent 70%);
-  background-size: 220% 100%; background-position: 120% 0; animation: krish-install-shine 2.4s ease 1s 2; }
-@keyframes krish-install-shine { to { background-position: -120% 0; } }
-/* A light that keeps travelling round the card's edge. */
+  background: radial-gradient(closest-side, hsl(var(--primary) / 0.12), transparent); animation: krish-fade-in 1s ease 0.2s both; }
+/* A faint light passes slowly round the edge, in the brand colour only. */
 @property --krish-install-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
-.krish-install::before { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; padding: 1.5px; pointer-events: none;
-  background: conic-gradient(from var(--krish-install-angle), transparent 0 55%, #8b5cf6 70%, #FF8A1E 82%, transparent 95%);
+.krish-install::before { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: conic-gradient(from var(--krish-install-angle), transparent 0 65%, hsl(var(--primary) / 0.55) 82%, transparent 96%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: krish-install-orbit 3.5s linear infinite, krish-fade-in 0.6s ease 0.4s both; }
+  animation: krish-install-orbit 7s linear infinite, krish-fade-in 1s ease 0.5s both; }
 @keyframes krish-install-orbit { to { --krish-install-angle: 360deg; } }
-/* Title words rise in one by one, then the line under it. */
-.krish-install-word { display: inline-block; white-space: pre; animation: krish-install-word 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
-@keyframes krish-install-word { from { opacity: 0; transform: translateY(6px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
-.krish-install-sub { animation: krish-install-word 0.5s ease 0.42s both; }
-.krish-install-perk { transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease; }
-.krish-install-perk:hover { transform: translateY(-2px); color: hsl(var(--foreground)); }
-.krish-install-perk svg { animation: krish-install-twinkle 2.4s ease-in-out 1s infinite; }
-@keyframes krish-install-twinkle { 0%, 70%, 100% { transform: none; } 80% { transform: scale(1.35) rotate(-12deg); } 90% { transform: scale(0.95) rotate(6deg); } }
-/* Install button: a soft ring pulses out every few seconds and the arrow nudges down. */
-.krish-install-cta { position: relative; }
-.krish-install-cta::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; animation: krish-install-pulse 2.8s ease-out 1.4s infinite; }
-@keyframes krish-install-pulse { 0% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.45); } 55%, 100% { box-shadow: 0 0 0 9px hsl(var(--primary) / 0); } }
-.krish-install-arrow { animation: krish-install-nudge 1.4s ease-in-out 1.2s infinite; }
-@keyframes krish-install-nudge { 0%, 60%, 100% { transform: none; } 30% { transform: translateY(2px); } }
-.krish-install-x svg { transition: transform 0.25s ease; }
-.krish-install-x:hover svg { transform: rotate(90deg); }
-.krish-install-confetti { position: absolute; left: 0; top: 0; width: 5px; height: 5px; border-radius: 1.5px; opacity: 0;
-  animation: krish-install-burst 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
-.krish-install-confetti:nth-child(odd) { border-radius: 9999px; }
-@keyframes krish-install-burst { 0% { opacity: 1; transform: translate(0, 0) scale(0.4); }
-  70% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(200deg) scale(1); } }
+/* Home-screen preview: tiles settle in, then the Krish icon slides into the last spot. */
+.krish-install-phone { animation: krish-install-settle 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both; }
+.krish-install-tile { background: hsl(var(--muted-foreground) / 0.16); animation: krish-install-tile 0.35s ease both; }
+.krish-install-tile:nth-child(3n + 1) { background: hsl(var(--primary) / 0.2); }
+.krish-install-tile:nth-child(4n + 2) { background: rgba(255, 138, 30, 0.24); }
+@keyframes krish-install-tile { from { opacity: 0; transform: scale(0.7); } to { opacity: 1; transform: none; } }
+.krish-install-drop { animation: krish-install-drop 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.5s both; }
+.krish-install-drop::after { content: ""; position: absolute; inset: -2px; border-radius: 5px; animation: krish-install-ring 1.2s ease-out 1s both; }
+@keyframes krish-install-drop { from { opacity: 0; transform: translateY(-14px) scale(1.15); } to { opacity: 1; transform: none; } }
+@keyframes krish-install-ring { from { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); } to { box-shadow: 0 0 0 7px hsl(var(--primary) / 0); } }
+@keyframes krish-install-settle { from { opacity: 0; transform: translateY(4px) scale(0.94); } to { opacity: 1; transform: none; } }
+/* Title words fade up in turn, then the line under it and the perks. */
+.krish-install-word { display: inline-block; white-space: pre; animation: krish-install-word 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes krish-install-word { from { opacity: 0; transform: translateY(4px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+.krish-install-sub { animation: krish-install-word 0.45s ease 0.4s both; }
+.krish-install-item { animation: krish-rise 0.4s ease both; }
+.krish-install-perk { transition: background-color 0.2s ease, color 0.2s ease; }
+.krish-install-perk:hover { color: hsl(var(--foreground)); }
+.krish-install-check { animation: krish-install-settle 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* One slow sheen across Install once everything has settled. */
+.krish-install-cta { background-image: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, 0.22) 50%, transparent 65%);
+  background-size: 250% 100%; background-position: 130% 0; animation: krish-install-shine 1.6s ease 1.6s both; }
+@keyframes krish-install-shine { to { background-position: -130% 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .krish-install, .krish-install.is-leaving, .krish-install-phone, .krish-install-tile, .krish-install-drop, .krish-install-drop::after, .krish-install-item, .krish-install-check, .krish-install-cta, .krish-install-glow,
-  .krish-install::before, .krish-install-word, .krish-install-sub, .krish-install-perk svg, .krish-install-cta::after, .krish-install-arrow, .krish-install-confetti { animation-duration: 0.01ms; animation-iteration-count: 1; }
+  .krish-install, .krish-install.is-leaving, .krish-install::before, .krish-install-glow, .krish-install-phone, .krish-install-tile, .krish-install-drop,
+  .krish-install-drop::after, .krish-install-word, .krish-install-sub, .krish-install-item, .krish-install-check, .krish-install-cta { animation-duration: 0.01ms; animation-iteration-count: 1; }
 }
