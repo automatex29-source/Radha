@@ -341,3 +341,53 @@ def test_real_push_keys_are_made_once(client):
     assert client.portal.call(daily_verse.ensure_keys)["public"] == first
     from py_vapid import Vapid
     assert Vapid.from_pem(daily_verse._keys["private"].encode())
+
+
+# ------------------------------------------------------------- invite pictures, page and emails
+def test_invite_page_picture_and_emails(client, monkeypatch):
+    import mailer
+    sent = []
+
+    async def send(to, subject, html, text):
+        sent.append((to, subject, html))
+    monkeypatch.setattr(mailer, "configured", lambda: True)
+    monkeypatch.setattr(mailer, "send", send)
+    monkeypatch.setenv("APP_URL", "https://krish.example")
+
+    inviter = client.post("/api/auth/register", json={"name": "Ravi Kumar", "email": "ravi-inv@test.com",
+                                                       "password": "secret1"}).json()
+    code = client.get("/api/referrals", headers=_h(inviter["token"])).json()["code"]
+    info = client.get(f"/api/invite/{code}").json()
+    assert info == {"code": code, "name": "Ravi", "days": 7}  # first name only, open to anyone
+    assert client.get("/api/invite/NOPE123").status_code == 404
+    png = client.get(f"/api/cards/invite/{code}.png")
+    assert png.status_code == 200 and png.headers["content-type"] == "image/png" and png.content[:4] == b"\x89PNG"
+    assert client.get("/api/cards/welcome.png?n=Priya&p=pro").content[:4] == b"\x89PNG"
+
+    sent.clear()
+    _register(client, "priya-inv@test.com", ref=code)
+    client.portal.call(lambda: __import__("asyncio").sleep(0.1))
+    subjects = {to: subject for to, subject, _ in sent}
+    assert "Ravi gave you 7 days" in subjects["priya-inv@test.com"]
+    assert "joined Krish AI" in subjects["ravi-inv@test.com"]
+    html = next(h for to, _, h in sent if to == "priya-inv@test.com")
+    assert "https://krish.example/api/cards/welcome.png" in html
+
+
+def test_invite_link_preview_is_personal():
+    import server
+    page = ('<meta name="description" content="x" /><meta property="og:title" content="t" />'
+            '<meta property="og:image" content="/og-image.png" /><meta name="twitter:image" content="/og-image.png" />'
+            '<title>Krish AI</title>')
+    out = server._invite_preview(page, {"code": "ABC1234", "name": "Ra\\vi <b>", "days": 7}, "https://k.ai")
+    assert 'og:title" content="Ra\\vi &lt;b&gt; invited you to Krish AI' in out
+    assert 'og:image" content="https://k.ai/api/cards/invite/ABC1234.png"' in out
+    assert "both get 7 days" in out and "<title>Ra\\vi &lt;b&gt; invited you" in out
+
+
+def test_welcome_and_plan_emails_read_well():
+    import growth_mail
+    subject, html, text = growth_mail.plan_started("https://k.ai", "Asha Rao", "max", "30 Nov 2026")
+    assert subject.startswith("You're on Krish AI Max, Asha") and "30 Nov 2026" in html and "automations" in text
+    subject, html, _ = growth_mail.welcome("https://k.ai", "Asha", "", 7)
+    assert subject.startswith("Welcome to Krish AI, Asha") and "Open Krish AI" in html

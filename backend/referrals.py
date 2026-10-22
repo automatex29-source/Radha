@@ -7,6 +7,7 @@ accounts can't farm Pro forever. Paid days are never lost: free days add to a ru
 """
 import secrets
 from datetime import datetime, timezone
+from typing import Optional
 
 import billing
 
@@ -33,14 +34,15 @@ async def code_for(db, user_id: str) -> str:
     return (await db.users.find_one({"id": user_id}, {"referralCode": 1}))["referralCode"]
 
 
-async def apply(db, new_user: dict, code: str) -> bool:
-    """Called once when an account is made with an invite code. True when the friend and inviter got their days."""
+async def apply(db, new_user: dict, code: str) -> Optional[dict]:
+    """Called once when an account is made with an invite code. When the code is a real one, gives the friend
+    their days (and the inviter theirs, up to the cap) and returns {inviter, rewarded, joined}; else None."""
     code = (code or "").strip().upper()
     if not code:
-        return False
-    inviter = await db.users.find_one({"referralCode": code}, {"id": 1, "referralRewards": 1})
+        return None
+    inviter = await db.users.find_one({"referralCode": code}, {"id": 1, "name": 1, "email": 1})
     if not inviter or inviter["id"] == new_user["id"]:
-        return False
+        return None
     await db.users.update_one({"id": new_user["id"]}, {"$set": {"referredBy": inviter["id"]}})
     await billing.grant_days(db, new_user["id"], "pro", REWARD_DAYS)
     claimed = await db.users.find_one_and_update(
@@ -50,7 +52,19 @@ async def apply(db, new_user: dict, code: str) -> bool:
         await billing.grant_days(db, inviter["id"], "pro", REWARD_DAYS)
     await db.referrals.insert_one({"inviterId": inviter["id"], "friendId": new_user["id"], "rewarded": bool(claimed),
                                    "createdAt": datetime.now(timezone.utc).isoformat()})
-    return True
+    joined = await db.referrals.count_documents({"inviterId": inviter["id"], "rewarded": True})
+    return {"inviter": inviter, "rewarded": bool(claimed), "joined": joined}
+
+
+async def public_invite(db, code: str) -> Optional[dict]:
+    """What the invite page may show to anyone with the link: the inviter's first name only."""
+    code = (code or "").strip().upper()
+    if not code or len(code) > 20:
+        return None
+    inviter = await db.users.find_one({"referralCode": code}, {"name": 1})
+    if not inviter:
+        return None
+    return {"code": code, "name": (inviter.get("name") or "").strip().split(" ")[0][:30], "days": REWARD_DAYS}
 
 
 async def summary(db, user_id: str) -> dict:

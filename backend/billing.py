@@ -14,6 +14,7 @@ Set on the server (Render > Environment):
   RAZORPAY_WEBHOOK_SECRET  any password you choose, typed again when adding the webhook
 Without the two key settings the Plans page keeps saying "Coming soon".
 """
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -23,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+import growth_mail
 import limits
 import promos
 
@@ -30,6 +32,7 @@ logger = logging.getLogger("radha.billing")
 
 API = "https://api.razorpay.com/v1"
 DAYS = 30
+_TASKS: set = set()  # emails being sent, kept so they finish
 
 
 class BillingError(Exception):
@@ -132,7 +135,21 @@ async def _activate(db, order_id: str, payment_id: str, amount=None) -> bool:
         await promos.count_use(db, pay["promoCode"])
     expires = await grant_days(db, pay["userId"], pay["plan"], DAYS)
     logger.info("User %s is on %s until %s (order %s)", pay["userId"], pay["plan"], expires, order_id)
+    await _thank_you(db, pay["userId"], expires)
     return True
+
+
+async def _thank_you(db, user_id: str, expires) -> None:
+    """A personal "Pro is on" email with a picture, sent in the background after a payment."""
+    base = growth_mail.app_url()
+    user = await db.users.find_one({"id": user_id}, {"name": 1, "email": 1, "plan": 1, "planExpiresAt": 1}) or {}
+    if not base or not user.get("email"):
+        return
+    until = datetime.fromisoformat(expires).astimezone(limits.IST).strftime("%d %b %Y") if expires else "you choose to stop"
+    mail = growth_mail.plan_started(base, user.get("name", ""), limits.plan_from(user), until)
+    task = asyncio.create_task(growth_mail.send(user["email"], mail))
+    _TASKS.add(task)
+    task.add_done_callback(_TASKS.discard)
 
 
 async def grant_days(db, user_id: str, plan: str, days: int):

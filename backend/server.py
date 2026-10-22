@@ -66,6 +66,8 @@ import google_signin
 import monitor
 import promos
 import referrals
+import growth_mail
+import invite_card
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -361,10 +363,26 @@ async def register(body: RegisterIn, request: Request):
         "loginCount": 1,
     }
     await db.users.insert_one(doc)
-    if await referrals.apply(db, doc, body.ref):
+    referral = await referrals.apply(db, doc, body.ref)
+    if referral:
         doc = await db.users.find_one({"id": doc["id"]})
+    _welcome_emails(doc, referral)
     token = create_access_token(doc["id"], email)
-    return {"token": token, "user": public_user(doc), "invited": bool(doc.get("referredBy"))}
+    return {"token": token, "user": public_user(doc), "invited": bool(referral)}
+
+
+def _welcome_emails(user: dict, referral: Optional[dict]) -> None:
+    """A personal welcome (with a picture) for the new person, and a thank-you to whoever invited them."""
+    base = growth_mail.app_url()
+    if not base:
+        return
+    inviter = (referral or {}).get("inviter") or {}
+    _background(growth_mail.send(user["email"], growth_mail.welcome(
+        base, user.get("name", ""), inviter.get("name", "") if referral else "", referrals.REWARD_DAYS)))
+    if referral:
+        _background(growth_mail.send(inviter.get("email"), growth_mail.friend_joined(
+            base, inviter.get("name", ""), user.get("name", ""), referrals.REWARD_DAYS, referral["rewarded"],
+            referral["joined"])))
 
 
 @api.post("/auth/google")
@@ -377,7 +395,7 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
         raise HTTPException(status_code=401, detail="Google sign-in didn't work. Please try again.")
     ts = now_iso()
     doc = await db.users.find_one({"googleId": info["sub"]}) or await db.users.find_one({"email": info["email"]})
-    invited = False
+    referral = None
     if doc:
         await db.users.update_one({"id": doc["id"]}, {"$set": {"googleId": info["sub"], "lastLoginAt": ts, "lastSeenAt": ts},
                                                       "$inc": {"loginCount": 1}})
@@ -395,9 +413,10 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
             if not doc:
                 raise
         else:
-            invited = await referrals.apply(db, doc, body.ref)
+            referral = await referrals.apply(db, doc, body.ref)
+            _welcome_emails(doc, referral)
     doc = await db.users.find_one({"id": doc["id"]})
-    return {"token": create_access_token(doc["id"], doc["email"]), "user": public_user(doc), "invited": invited}
+    return {"token": create_access_token(doc["id"], doc["email"]), "user": public_user(doc), "invited": bool(referral)}
 
 
 LOGIN_MAX_FAILURES = 10
@@ -625,6 +644,30 @@ async def admin_toggle_promo(code: str, body: PromoActiveIn, user_id: str = Depe
     if not doc:
         raise HTTPException(status_code=404, detail="No such code")
     return doc
+
+
+@api.get("/invite/{code}")
+async def invite_info(code: str):
+    """The invite page (open to anyone with the link): who invited them and how many free Pro days they get."""
+    info = await referrals.public_invite(db, code)
+    if not info:
+        raise HTTPException(status_code=404, detail="This invite link isn't valid any more.")
+    return info
+
+
+@api.get("/cards/invite/{code}.png", include_in_schema=False)
+async def invite_card_png(code: str):
+    """The invite picture for link previews and sharing: "<Name> invited you to Krish AI"."""
+    info = await referrals.public_invite(db, code)
+    png = invite_card.render(info["name"] if info else "", referrals.REWARD_DAYS)
+    return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api.get("/cards/welcome.png", include_in_schema=False)
+async def welcome_card_png(n: str = Query("", max_length=40), p: str = Query("", max_length=8)):
+    """The picture at the top of welcome and thank-you emails."""
+    png = invite_card.welcome(invite_card.first_name(n), p if p in ("pro", "max") else "")
+    return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
 
 @api.get("/referrals")
@@ -2668,8 +2711,28 @@ if (FRONTEND_DIST / "index.html").is_file():
             return FileResponse(candidate, headers=headers)
         # Link previews (WhatsApp, X, LinkedIn) need the share picture as a full address.
         page = (FRONTEND_DIST / "index.html").read_text(encoding="utf-8")
+        invite = re.fullmatch(r"i/([A-Za-z0-9]{4,20})/?", full_path)
+        info = await referrals.public_invite(db, invite.group(1)) if invite else None
+        if info:
+            page = _invite_preview(page, info, _app_url(request))
         page = page.replace('content="/og-image.png"', f'content="{_app_url(request)}/og-image.png"')
         return Response(page, media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+def _invite_preview(page: str, info: dict, base: str) -> str:
+    """Swap the link preview (WhatsApp, X, email) for the inviter's personal one."""
+    import html as _html
+    who = _html.escape(info["name"]) or "A friend"
+    title = f"{who} invited you to Krish AI 🎁"
+    desc = (f"Join with this link and you both get {info['days']} days of Krish AI Pro, free. "
+            "Chat, study, build apps and get calm advice from the Bhagavad Gita.")
+    picture = f"{base}/api/cards/invite/{info['code']}.png"
+    values = {"og:title": title, "twitter:title": title, "og:description": desc, "twitter:description": desc,
+              "description": desc, "og:image": picture, "twitter:image": picture}
+    for prop, value in values.items():
+        page = re.sub(rf'(<meta (?:property|name)="{re.escape(prop)}" content=")[^"]*"',
+                      lambda m, v=value: f'{m.group(1)}{v}"', page)
+    return page.replace("<title>Krish AI</title>", f"<title>{title}</title>")
+
 
 app.add_middleware(
     CORSMiddleware,
