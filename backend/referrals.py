@@ -1,0 +1,62 @@
+"""Invite a friend: everyone gets a personal link, and a friend who signs up through it gives both people
+free days of Pro.
+
+The link is the app address with ?ref=CODE. The app keeps the code while the friend signs up (by email or
+Google) and sends it with the sign-up. A person can be rewarded for at most MAX_REWARDS friends, so made-up
+accounts can't farm Pro forever. Paid days are never lost: free days add to a running plan (see billing).
+"""
+import secrets
+from datetime import datetime, timezone
+
+import billing
+
+REWARD_DAYS = 7
+MAX_REWARDS = 10
+_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I, so a code read aloud is typed right
+
+
+def _new_code() -> str:
+    return "".join(secrets.choice(_ALPHABET) for _ in range(7))
+
+
+async def code_for(db, user_id: str) -> str:
+    """The user's invite code, made the first time it is asked for."""
+    user = await db.users.find_one({"id": user_id}, {"referralCode": 1})
+    if user and user.get("referralCode"):
+        return user["referralCode"]
+    for _ in range(5):
+        code = _new_code()
+        if not await db.users.find_one({"referralCode": code}):
+            await db.users.update_one({"id": user_id, "referralCode": {"$exists": False}},
+                                      {"$set": {"referralCode": code}})
+            break
+    return (await db.users.find_one({"id": user_id}, {"referralCode": 1}))["referralCode"]
+
+
+async def apply(db, new_user: dict, code: str) -> bool:
+    """Called once when an account is made with an invite code. True when the friend and inviter got their days."""
+    code = (code or "").strip().upper()
+    if not code:
+        return False
+    inviter = await db.users.find_one({"referralCode": code}, {"id": 1, "referralRewards": 1})
+    if not inviter or inviter["id"] == new_user["id"]:
+        return False
+    await db.users.update_one({"id": new_user["id"]}, {"$set": {"referredBy": inviter["id"]}})
+    await billing.grant_days(db, new_user["id"], "pro", REWARD_DAYS)
+    claimed = await db.users.find_one_and_update(
+        {"id": inviter["id"], "$or": [{"referralRewards": {"$exists": False}}, {"referralRewards": {"$lt": MAX_REWARDS}}]},
+        {"$inc": {"referralRewards": 1}})
+    if claimed:
+        await billing.grant_days(db, inviter["id"], "pro", REWARD_DAYS)
+    await db.referrals.insert_one({"inviterId": inviter["id"], "friendId": new_user["id"], "rewarded": bool(claimed),
+                                   "createdAt": datetime.now(timezone.utc).isoformat()})
+    return True
+
+
+async def summary(db, user_id: str) -> dict:
+    """What the Invite page shows: the code, how many friends joined and how many free days were earned."""
+    code = await code_for(db, user_id)
+    joined = await db.referrals.count_documents({"inviterId": user_id})
+    rewarded = await db.referrals.count_documents({"inviterId": user_id, "rewarded": True})
+    return {"code": code, "joined": joined, "daysEarned": rewarded * REWARD_DAYS, "rewardDays": REWARD_DAYS,
+            "maxRewards": MAX_REWARDS}

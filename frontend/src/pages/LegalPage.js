@@ -14,6 +14,10 @@ const PRIVACY = {
       "What you put into Krish AI: your chats, uploaded files, projects, memory notes, apps, decks, docs and automations.",
       "Daily usage counts (for example how many pictures you made today), so plan limits work.",
       "Bug reports and feedback you send from the Help Center.",
+      "If you sign in with Google: your Google account's name, email and account id (never your Google password).",
+      "When you mark an answer 👎: that question and the start of the answer, so we can see where Krish needs to get better.",
+      "Crash reports from the app (what went wrong and on which page), so we can fix problems quickly.",
+      "If you turn on the daily Gita verse: the notification address your browser gives for that device.",
     ]],
     ["How we use it", [
       "To answer you and run the features you use, and to keep your work saved between visits.",

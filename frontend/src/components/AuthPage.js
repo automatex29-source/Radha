@@ -1,19 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import ThemeToggle from "@/components/ThemeToggle";
-import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, Database, Cpu, MailCheck } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, Database, Cpu, MailCheck, Gift } from "lucide-react";
 import { api } from "@/lib/api";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 import Mascot from "@/components/Mascot";
+import GoogleButton from "@/components/GoogleButton";
+import { getRef } from "@/lib/referral";
 
 export default function AuthPage() {
-  const { login, register, formatApiError } = useAuth();
-  const [tab, setTab] = useState("login");
+  const { login, register, googleLogin, formatApiError } = useAuth();
+  const invited = Boolean(getRef());
+  // Someone arriving from a friend's invite link most likely has no account yet.
+  const [tab, setTab] = useState(invited ? "register" : "login");
+  const [config, setConfig] = useState({});
+  useEffect(() => {
+    api.get("/auth/config").then(({ data }) => setConfig(data)).catch(() => {});
+  }, []);
+
+  const welcome = (data, fresh) => {
+    if (data?.invited) toast.success(`Welcome to Krish AI! You and your friend got ${config.inviteDays || 7} days of Pro.`);
+    else toast.success(fresh ? "Account created — welcome to Krish AI" : "Welcome back to Krish AI");
+  };
+
+  const onGoogle = async (credential) => {
+    setBusy(true);
+    try {
+      welcome(await googleLogin(credential), false);
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "" });
@@ -32,8 +56,7 @@ export default function AuthPage() {
         await login(form.email, form.password);
         toast.success("Welcome back to Krish AI");
       } else {
-        await register(form.name, form.email, form.password);
-        toast.success("Account created — welcome to Krish AI");
+        welcome(await register(form.name, form.email, form.password), true);
       }
     } catch (err) {
       toast.error(formatApiError(err));
@@ -98,7 +121,23 @@ export default function AuthPage() {
             {tab === "login" ? "Sign in to continue to Krish AI." : "It takes less than a minute."}
           </p>
 
-          <div className="mt-6 flex rounded-xl border border-border bg-card p-1">
+          {invited && (
+            <p className="mt-4 flex items-start gap-2 rounded-xl bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-700 dark:text-emerald-300" data-testid="invite-note">
+              <Gift className="mt-0.5 h-4 w-4 shrink-0" />
+              A friend invited you. Sign up and you both get {config.inviteDays || 7} days of Pro free.
+            </p>
+          )}
+
+          {config.googleClientId && (
+            <div className="mt-6">
+              <GoogleButton clientId={config.googleClientId} onCredential={onGoogle} text={tab === "login" ? "signin_with" : "signup_with"} />
+              <div className="mt-5 flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" /> or use your email <span className="h-px flex-1 bg-border" />
+              </div>
+            </div>
+          )}
+
+          <div className={`${config.googleClientId ? "mt-5" : "mt-6"} flex rounded-xl border border-border bg-card p-1`}>
             <TabBtn active={tab === "login"} onClick={() => setTab("login")} testId="auth-tab-login">Login</TabBtn>
             <TabBtn active={tab === "register"} onClick={() => setTab("register")} testId="auth-tab-register">Register</TabBtn>
           </div>

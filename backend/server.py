@@ -60,6 +60,12 @@ import code_check
 import limits
 import billing
 import languages
+import abuse
+import daily_verse
+import google_signin
+import monitor
+import promos
+import referrals
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -141,6 +147,12 @@ class RegisterIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
+    ref: Optional[str] = Field(default=None, max_length=20)  # a friend's invite code
+
+
+class GoogleSignInIn(BaseModel):
+    credential: str = Field(min_length=20, max_length=5000)  # the signed token from Google's button
+    ref: Optional[str] = Field(default=None, max_length=20)
 
 
 class LoginIn(BaseModel):
@@ -158,7 +170,8 @@ class ResetPasswordIn(BaseModel):
 
 
 class DeleteAccountIn(BaseModel):
-    password: str = Field(min_length=1, max_length=128)
+    password: str = Field(default="", max_length=128)
+    confirmEmail: str = Field(default="", max_length=320)  # accounts made with Google have no password
 
 
 class ConversationIn(BaseModel):
@@ -233,6 +246,8 @@ def public_user(doc: dict) -> dict:
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
         "isOwner": is_owner_email(doc["email"]),
+        "hasPassword": bool(doc.get("password_hash")),
+        "google": bool(doc.get("googleId")),
     }
 
 
@@ -309,16 +324,30 @@ def public_message(doc: dict) -> dict:
         "steps": doc.get("steps") or [],
         "media": doc.get("media") or [],
         "stopped": bool(doc.get("stopped")),
+        "rating": doc.get("rating"),
         "createdAt": doc["createdAt"],
     }
 
 
 # ----------------------------------------------------------------------- auth
+async def _check_new_account(email: str, request: Request) -> None:
+    """Spam protection for sign-ups: no throwaway emails, and only a few new accounts an hour per connection."""
+    await abuse.check_signup_email(email)
+    abuse.require("signup", abuse.client_ip(request))
+
+
+@api.get("/auth/config")
+async def auth_config():
+    """What the login page offers: the Google button appears only when GOOGLE_CLIENT_ID is set."""
+    return {"googleClientId": google_signin.client_id() or None, "inviteDays": referrals.REWARD_DAYS}
+
+
 @api.post("/auth/register")
-async def register(body: RegisterIn):
+async def register(body: RegisterIn, request: Request):
     email = body.email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already registered")
+    await _check_new_account(email, request)
     ts = now_iso()
     doc = {
         "id": str(uuid.uuid4()),
@@ -332,8 +361,43 @@ async def register(body: RegisterIn):
         "loginCount": 1,
     }
     await db.users.insert_one(doc)
+    if await referrals.apply(db, doc, body.ref):
+        doc = await db.users.find_one({"id": doc["id"]})
     token = create_access_token(doc["id"], email)
-    return {"token": token, "user": public_user(doc)}
+    return {"token": token, "user": public_user(doc), "invited": bool(doc.get("referredBy"))}
+
+
+@api.post("/auth/google")
+async def google_sign_in(body: GoogleSignInIn, request: Request):
+    """Sign in (or sign up) with the token from Google's button. A matching email account is the same account."""
+    try:
+        info = await google_signin.verify(body.credential)
+    except google_signin.GoogleSignInError as exc:
+        logger.warning(f"Google sign-in refused: {exc}")
+        raise HTTPException(status_code=401, detail="Google sign-in didn't work. Please try again.")
+    ts = now_iso()
+    doc = await db.users.find_one({"googleId": info["sub"]}) or await db.users.find_one({"email": info["email"]})
+    invited = False
+    if doc:
+        await db.users.update_one({"id": doc["id"]}, {"$set": {"googleId": info["sub"], "lastLoginAt": ts, "lastSeenAt": ts},
+                                                      "$inc": {"loginCount": 1}})
+    else:
+        abuse.require("signup", abuse.client_ip(request))  # Google confirmed the email, so no email check
+        doc = {
+            "id": str(uuid.uuid4()), "email": info["email"], "name": info["name"].strip() or "Friend",
+            "password_hash": "", "googleId": info["sub"],
+            "createdAt": ts, "updatedAt": ts, "lastLoginAt": ts, "lastSeenAt": ts, "loginCount": 1,
+        }
+        try:
+            await db.users.insert_one(doc)
+        except Exception:  # the same person signing in twice at once
+            doc = await db.users.find_one({"email": info["email"]})
+            if not doc:
+                raise
+        else:
+            invited = await referrals.apply(db, doc, body.ref)
+    doc = await db.users.find_one({"id": doc["id"]})
+    return {"token": create_access_token(doc["id"], doc["email"]), "user": public_user(doc), "invited": invited}
 
 
 LOGIN_MAX_FAILURES = 10
@@ -460,8 +524,11 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     user = await db.users.find_one({"id": user_id})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-    if not verify_password(body.password, user.get("password_hash", "")):
-        raise HTTPException(status_code=403, detail="That password isn't right.")
+    if user.get("password_hash"):
+        if not verify_password(body.password, user["password_hash"]):
+            raise HTTPException(status_code=403, detail="That password isn't right.")
+    elif body.confirmEmail.strip().lower() != user["email"]:
+        raise HTTPException(status_code=403, detail="Type your account email exactly to confirm.")
     for app in await db.apps.find({"userId": user_id}, {"id": 1}).to_list(None):
         await apps.delete_app(app["id"], user_id)
     for auto in await db.automations.find({"userId": user_id}, {"id": 1}).to_list(None):
@@ -473,8 +540,9 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     await db.messages.delete_many({"conversationId": {"$in": conv_ids}})
     await media.delete_media(db, {"userId": user_id})
     for name in ("conversations", "files", "chunks", "memories", "projects", "decks", "docs", "pages",
-                 "help_reports", "password_resets"):
+                 "help_reports", "password_resets", "push_subscriptions", "message_feedback", "activity"):
         await db[name].delete_many({"userId": user_id})
+    await db.referrals.delete_many({"$or": [{"inviterId": user_id}, {"friendId": user_id}]})
     await db.usage.delete_many({"_id": {"$regex": f"^{re.escape(user_id)}:"}})
     await db.users.delete_one({"id": user_id})
     _login_failures.pop(user["email"], None)
@@ -488,6 +556,7 @@ async def me(user_id: str = Depends(current_user_id)):
         raise HTTPException(status_code=401, detail="User not found")
     # Opening the app with a saved sign-in counts as a visit, so the owner sees who is still using Krish.
     await db.users.update_one({"id": user_id}, {"$set": {"lastSeenAt": now_iso()}})
+    await monitor.count(db, user_id)
     return public_user(doc)
 
 
@@ -508,6 +577,78 @@ async def admin_users(user_id: str = Depends(current_user_id)):
     } for d in docs]
     users.sort(key=lambda u: u["lastSeenAt"] or u["createdAt"] or "", reverse=True)
     return {"total": len(users), "users": users}
+
+
+async def _require_owner(user_id: str) -> None:
+    me_doc = await db.users.find_one({"id": user_id}, {"email": 1})
+    if not me_doc or not is_owner_email(me_doc["email"]):
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+@api.get("/admin/stats")
+async def admin_stats(days: int = Query(14, ge=1, le=60), user_id: str = Depends(current_user_id)):
+    """Owner only: people and features used each day, 👍 / 👎 on answers, and the latest problems."""
+    await _require_owner(user_id)
+    return await monitor.stats(db, days)
+
+
+class PromoIn(BaseModel):
+    code: str = Field(min_length=3, max_length=24)
+    percentOff: int = Field(ge=1, le=promos.MAX_PERCENT)
+    maxUses: int = Field(default=0, ge=0, le=1000000)
+    expiresOn: Optional[str] = Field(default=None, max_length=10)  # last day, YYYY-MM-DD
+
+
+class PromoActiveIn(BaseModel):
+    active: bool
+
+
+@api.get("/admin/promos")
+async def admin_promos(user_id: str = Depends(current_user_id)):
+    await _require_owner(user_id)
+    return {"codes": await promos.list_all(db)}
+
+
+@api.post("/admin/promos")
+async def admin_create_promo(body: PromoIn, user_id: str = Depends(current_user_id)):
+    await _require_owner(user_id)
+    try:
+        return await promos.create(db, body.code, body.percentOff, body.maxUses, body.expiresOn)
+    except promos.PromoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@api.put("/admin/promos/{code}")
+async def admin_toggle_promo(code: str, body: PromoActiveIn, user_id: str = Depends(current_user_id)):
+    await _require_owner(user_id)
+    doc = await promos.set_active(db, code, body.active)
+    if not doc:
+        raise HTTPException(status_code=404, detail="No such code")
+    return doc
+
+
+@api.get("/referrals")
+async def my_referrals(user_id: str = Depends(current_user_id)):
+    """The Invite page: this person's invite code and what it has earned."""
+    return await referrals.summary(db, user_id)
+
+
+class ClientErrorIn(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    stack: str = Field(default="", max_length=8000)
+    path: str = Field(default="", max_length=500)
+
+
+@api.post("/client-errors")
+async def client_error(body: ClientErrorIn, request: Request):
+    """A crash in the app on someone's device, sent so the owner hears about it. Works signed in or out."""
+    abuse.require("report", abuse.client_ip(request))
+    try:
+        user_id = get_user_id_from_request(request)
+    except HTTPException:
+        user_id = ""
+    await monitor.record("app", body.message, body.stack, body.path, user_id)
+    return {"ok": True}
 
 
 class LanguageIn(BaseModel):
@@ -1513,6 +1654,7 @@ def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool 
 
 @api.post("/conversations/{conv_id}/stream")
 async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
+    abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or AI_MODEL)
 
@@ -1549,6 +1691,9 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         "createdAt": now_iso(),
     }
     await db.messages.insert_one(user_msg)
+    used = ["build" if conv.get("appId") else "counsellor" if conv.get("mode") == counsellor.MODE else "chat"]
+    used += [f for f, on in (("web", body.web), ("voice", body.voice), ("think", body.think)) if on]
+    await monitor.count(db, user_id, *used)
 
     # Auto-title on first user message.
     existing_count = await db.messages.count_documents({"conversationId": conv_id})
@@ -1705,6 +1850,7 @@ def _background(coro):
 
 @api.post("/conversations/{conv_id}/regenerate")
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
+    abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL)
     if conv.get("appId"):  # chat is unlimited; App Builder messages count as app builds
@@ -1734,6 +1880,7 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
 async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str = Depends(current_user_id)):
     """Edit one of the user's earlier questions (like ChatGPT): everything after it is dropped and Krish answers
     the new wording."""
+    abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL)
     if conv.get("appId"):
@@ -1748,6 +1895,32 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     await db.messages.update_one({"id": message_id}, {"$set": {"content": body.content, "editedAt": now_iso()}})
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
                             focus=body.focus, pro=body.pro)
+
+
+class FeedbackIn(BaseModel):
+    rating: Optional[Literal["up", "down"]] = None  # None takes the rating back
+
+
+@api.post("/conversations/{conv_id}/messages/{message_id}/feedback")
+async def rate_message(conv_id: str, message_id: str, body: FeedbackIn, user_id: str = Depends(current_user_id)):
+    """👍 / 👎 on one of Krish's answers. A 👎 keeps the question and the start of the answer, so the owner
+    can see which answers are weak."""
+    await _owned_conversation(conv_id, user_id)
+    msg = await db.messages.find_one({"id": message_id, "conversationId": conv_id, "role": "assistant"})
+    if not msg:
+        raise HTTPException(status_code=404, detail="That answer isn't in this chat any more")
+    await db.messages.update_one({"id": message_id}, {"$set": {"rating": body.rating}})
+    await db.message_feedback.delete_one({"messageId": message_id})
+    if body.rating:
+        question = await db.messages.find_one({"conversationId": conv_id, "role": "user",
+                                               "createdAt": {"$lte": msg["createdAt"]}}, sort=[("createdAt", -1)])
+        await db.message_feedback.insert_one({
+            "messageId": message_id, "conversationId": conv_id, "userId": user_id, "rating": body.rating,
+            "model": msg.get("model"), "createdAt": now_iso(),
+            **({"question": (question or {}).get("content", "")[:400], "answer": (msg.get("content") or "")[:600]}
+               if body.rating == "down" else {}),
+        })
+    return {"rating": body.rating}
 
 
 # -------------------------------------------------------------------- sharing
@@ -2109,6 +2282,19 @@ async def usage(user_id: str = Depends(current_user_id)):
 # ------------------------------------------------------------------- billing
 class CheckoutIn(BaseModel):
     plan: Literal["pro", "max"]
+    code: str = Field(default="", max_length=24)  # an offer code like LAUNCH50
+
+
+@api.post("/billing/check-code")
+async def billing_check_code(body: CheckoutIn, user_id: str = Depends(current_user_id)):
+    """Try an offer code on the Plans page before paying: says what it takes off."""
+    plan = limits.PLANS[body.plan]
+    try:
+        promo = await promos.check(db, body.code, user_id, body.plan)
+    except promos.PromoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"code": promo["code"], "percentOff": promo["percentOff"],
+            "price": promos.discounted(plan["price"] * 100, promo["percentOff"]) // 100}
 
 
 class PaymentDoneIn(BaseModel):
@@ -2124,7 +2310,7 @@ async def billing_order(body: CheckoutIn, user_id: str = Depends(current_user_id
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     try:
-        return await billing.create_order(db, user, body.plan)
+        return await billing.create_order(db, user, body.plan, body.code)
     except billing.BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2235,6 +2421,7 @@ async def capabilities(user_id: str = Depends(current_user_id)):
 @api.post("/media")
 async def upload_media(file: UploadFile = File(...), conversationId: Optional[str] = Form(None),
                        user_id: str = Depends(current_user_id)):
+    abuse.require("media", user_id)
     content_type = (file.content_type or "").lower()
     if content_type not in IMAGE_TYPES:
         raise HTTPException(status_code=415, detail="Only PNG, JPEG, WebP and GIF images are supported")
@@ -2312,6 +2499,7 @@ async def preview_media(mid: str, user_id: str = Depends(current_user_id)):
 @api.post("/audio/transcribe")
 async def transcribe_audio(file: UploadFile = File(...), language: Optional[str] = Form(None),
                            user_id: str = Depends(current_user_id)):
+    abuse.require("media", user_id)
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio")
@@ -2430,6 +2618,8 @@ automations.init(db, run_turn, AI_MODEL)
 app.include_router(automations.router)
 help_center.init(db)
 app.include_router(help_center.router)
+daily_verse.init(db)
+app.include_router(daily_verse.routes(current_user_id))
 
 # Serve the built frontend (frontend/build) from the same origin, so a single
 # process runs all of RADHA. In development the Vite dev server is used instead.
@@ -2534,8 +2724,20 @@ async def startup():
     await site_images.ensure_indexes()
     await appcloud.ensure_indexes()
     await automations.ensure_indexes()
+    await db.settings.create_index("id", unique=True)
+    await db.users.create_index("referralCode", sparse=True)
+    await db.users.create_index("googleId", sparse=True)
+    await db.promo_codes.create_index("code", unique=True)
+    await db.push_subscriptions.create_index("endpoint", unique=True)
+    await db.push_subscriptions.create_index("userId")
+    await db.message_feedback.create_index("createdAt")
+    await db.errors.create_index("createdAt")
+    await db.activity.create_index("day")
+    monitor.start(db)
+    await monitor.clean_old(db)
     if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":
         automations.start_scheduler()
+        daily_verse.start_scheduler()
     await _ensure_auth_secret()
     await storage.ensure_indexes()
     if storage.USE_EMERGENT:
@@ -2554,5 +2756,7 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await automations.stop_scheduler()
+    await daily_verse.stop_scheduler()
+    monitor.stop()
     await agent_browser.manager.shutdown()
     client.close()

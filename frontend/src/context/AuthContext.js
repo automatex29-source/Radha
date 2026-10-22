@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api, setToken, clearToken, getToken, formatApiError } from "@/lib/api";
+import { clearRef, getRef } from "@/lib/referral";
 
 const AuthContext = createContext(null);
 
@@ -37,9 +38,20 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (name, email, password) => {
-    const { data } = await api.post("/auth/register", { name, email, password });
+    const { data } = await api.post("/auth/register", { name, email, password, ref: getRef() });
+    clearRef();
     setToken(data.token);
     setUser(data.user);
+    return data;
+  };
+
+  // The signed token from Google's button. Makes the account the first time.
+  const googleLogin = async (credential) => {
+    const { data } = await api.post("/auth/google", { credential, ref: getRef() });
+    clearRef();
+    setToken(data.token);
+    setUser(data.user);
+    return data;
   };
 
   // Used after a password reset, which answers with a fresh session.
@@ -65,7 +77,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, setUser, login, register, logout, startSession, setLanguage, formatApiError }}>
+    <AuthContext.Provider value={{ user, setUser, login, register, googleLogin, logout, startSession, setLanguage, formatApiError }}>
       {children}
     </AuthContext.Provider>
   );

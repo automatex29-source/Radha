@@ -4,7 +4,9 @@ import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Check, Crown, Loader2, X } from "lucide-react";
+import { Check, Crown, Gift, Loader2, Tag, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import InviteDialog from "@/components/InviteDialog";
 
 const DAILY = [
   { key: "build", label: "App builds", one: "app build", many: "app builds" },
@@ -76,10 +78,11 @@ function Usage({ usage }) {
   );
 }
 
-function PlanCard({ plan, current, currentPlan, paymentsOn, expires, busy, onBuy }) {
+function PlanCard({ plan, current, currentPlan, paymentsOn, expires, busy, onBuy, offer }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
   const canBuy = paymentsOn && plan.price > 0 && !lower;
+  const price = offer && plan.price ? offer.prices[plan.id] ?? plan.price : plan.price;
   return (
     <div data-testid={`plan-${plan.id}`}
       className={`relative flex flex-col rounded-3xl p-6 transition-shadow sm:p-7 ${popular
@@ -92,7 +95,8 @@ function PlanCard({ plan, current, currentPlan, paymentsOn, expires, busy, onBuy
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground">{TAGLINE[plan.id]}</p>
       <div className="mt-6 flex items-baseline gap-1.5">
-        <span className="text-[2.6rem] font-extrabold leading-none tracking-tight tabular-nums">₹{plan.price}</span>
+        {price !== plan.price && <span className="text-lg font-semibold text-muted-foreground line-through tabular-nums">₹{plan.price}</span>}
+        <span className="text-[2.6rem] font-extrabold leading-none tracking-tight tabular-nums">₹{price}</span>
         <span className="text-sm text-muted-foreground">{plan.price ? "/ month" : "forever"}</span>
       </div>
       <div className="my-6 h-px bg-border/70" />
@@ -113,7 +117,7 @@ function PlanCard({ plan, current, currentPlan, paymentsOn, expires, busy, onBuy
         {busy ? <Loader2 className="h-4 w-4 animate-spin" />
           : !plan.price ? (current ? "Current plan" : "Free")
           : !paymentsOn ? (current ? "Current plan" : "Coming soon")
-          : current ? `Add a month · ₹${plan.price}` : lower ? "Included in your plan" : `Get ${plan.name} · ₹${plan.price}`}
+          : current ? `Add a month · ₹${price}` : lower ? "Included in your plan" : `Get ${plan.name} · ₹${price}`}
       </Button>
       {current && expires && <p className="mt-2.5 text-center text-xs text-muted-foreground">Active until {untilText(expires)}</p>}
     </div>
@@ -124,6 +128,29 @@ function PlanCard({ plan, current, currentPlan, paymentsOn, expires, busy, onBuy
 export default function PlansPage() {
   const [data, setData] = useState(null);
   const [buying, setBuying] = useState(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [codeText, setCodeText] = useState("");
+  const [offer, setOffer] = useState(null); // {code, percentOff, prices: {pro, max}} once a code checks out
+  const [checking, setChecking] = useState(false);
+
+  const applyCode = async (e) => {
+    e.preventDefault();
+    const code = codeText.trim();
+    if (!code) return;
+    setChecking(true);
+    try {
+      const results = await Promise.allSettled(["pro", "max"].map((plan) => api.post("/billing/check-code", { plan, code })));
+      const ok = results.filter((r) => r.status === "fulfilled").map((r) => r.value.data);
+      if (!ok.length) throw results[0].reason;
+      const prices = {};
+      results.forEach((r, i) => { if (r.status === "fulfilled") prices[["pro", "max"][i]] = r.value.data.price; });
+      setOffer({ code: ok[0].code, percentOff: ok[0].percentOff, prices });
+      toast.success(`${ok[0].code} applied: ${ok[0].percentOff}% off`);
+    } catch (err) {
+      setOffer(null);
+      toast.error(formatApiError(err));
+    } finally { setChecking(false); }
+  };
   const { setUser } = useAuth() || {};
 
   const load = useCallback(() => {
@@ -134,7 +161,7 @@ export default function PlansPage() {
   const buy = async (planId) => {
     setBuying(planId);
     try {
-      const [{ data: order }] = await Promise.all([api.post("/billing/order", { plan: planId }), loadCheckout()]);
+      const [{ data: order }] = await Promise.all([api.post("/billing/order", { plan: planId, code: offer && offer.prices[planId] ? offer.code : "" }), loadCheckout()]);
       await new Promise((resolve) => {
         const rzp = new window.Razorpay({
           key: order.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
@@ -147,6 +174,8 @@ export default function PlansPage() {
                 orderId: res.razorpay_order_id, paymentId: res.razorpay_payment_id, signature: res.razorpay_signature,
               });
               setUser?.(account);
+              setOffer(null);
+              setCodeText("");
               toast.success(`You're on ${order.planName}. Enjoy!`);
               load();
             } catch (e) {
@@ -188,7 +217,7 @@ export default function PlansPage() {
               <div className="mt-10 grid gap-5 md:grid-cols-3" data-testid="plans-grid">
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} current={p.id === data.plan} currentPlan={data.plan}
-                    paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={buy} />
+                    paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={buy} offer={offer} />
                 ))}
               </div>
               <p className="mt-5 text-center text-xs text-muted-foreground">
@@ -196,11 +225,29 @@ export default function PlansPage() {
                   ? "Pay once for 30 days with UPI, card, net banking or a wallet. No auto-renewal: pay again whenever you like to add another month."
                   : "Payments are coming soon. Pro and Max will open here when they're ready."}
               </p>
+              {data.paymentsOn && (
+                <form onSubmit={applyCode} className="mx-auto mt-6 flex max-w-sm items-center gap-2" data-testid="offer-code-form">
+                  <div className="relative flex-1">
+                    <Tag className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={codeText} onChange={(e) => setCodeText(e.target.value)} placeholder="Have an offer code?" maxLength={24}
+                      className="h-10 rounded-xl pl-9 uppercase placeholder:normal-case" data-testid="offer-code-input" />
+                  </div>
+                  <Button type="submit" variant="outline" disabled={checking || !codeText.trim()} className="h-10 rounded-xl" data-testid="offer-code-apply">
+                    {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : offer ? "Applied" : "Apply"}
+                  </Button>
+                </form>
+              )}
+              <button type="button" onClick={() => setInviteOpen(true)} data-testid="plans-invite"
+                className="mx-auto mt-8 flex w-full max-w-xl items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-left transition-colors hover:bg-emerald-500/10">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"><Gift className="h-4 w-4" /></span>
+                <span className="text-sm"><b>Get Pro free:</b> invite a friend and you both get 7 days of Pro.</span>
+              </button>
               {data.limitsOn && <Usage usage={data.usage} />}
             </>
           )}
         </div>
       </main>
+      <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
     </div>
   );
 }

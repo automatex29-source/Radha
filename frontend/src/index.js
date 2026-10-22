@@ -4,6 +4,13 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import "@/index.css";
 import App from "@/App";
 import { queryClient } from "@/lib/queryClient";
+import { captureRef } from "@/lib/referral";
+import { installCrashReporting } from "@/lib/crashReport";
+import { registerServiceWorker } from "@/lib/pwa";
+
+captureRef();
+installCrashReporting();
+registerServiceWorker();
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(

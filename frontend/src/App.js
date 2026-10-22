@@ -28,6 +28,7 @@ import { ThemeProvider } from "next-themes";
 import { installPlanLimitToasts } from "@/lib/planLimits";
 import PlanLimitDialog from "@/components/PlanLimitDialog";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import InstallBanner from "@/components/InstallBanner";
 
 installPlanLimitToasts();
 
@@ -79,6 +80,8 @@ function Gate() {
   }
 
   return (
+    <>
+    <InstallBanner />
     <Routes>
       <Route path="/login" element={<Navigate to={takeRememberedPath()} replace />} />
       <Route path="/" element={<Workspace key="chat" />} />
@@ -99,6 +102,7 @@ function Gate() {
       <Route path="/docs/:id" element={<DocEditor />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 
