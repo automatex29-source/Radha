@@ -99,6 +99,8 @@ _FALLBACK = {"openai/gpt-oss-120b": "openai/gpt-oss-20b", "cerebras/gpt-oss-120b
 # Groq answers instead of the user seeing an error, then Cerebras if Groq can't either.
 _GEMINI_FALLBACK = "openai/gpt-oss-120b"
 _GEMINI_FALLBACKS = (_GEMINI_FALLBACK, "cerebras/gpt-oss-120b")
+# Krish Coder writes long code (and builds apps), so Cerebras, which fits about 4x more than Groq, takes over first.
+_CODER_FALLBACKS = ("cerebras/gpt-oss-120b", _GEMINI_FALLBACK)
 _GEMINI_RETRY_PAUSE = 1.0
 # Google retires Gemini models for new keys; chats saved with an old name use the current one.
 _RENAMED = {"gemini-2.5-flash": "gemini-3.5-flash-lite"}
@@ -128,7 +130,8 @@ def fallbacks_for(model: str, messages: List[dict]) -> List[str]:
     Pictures need Gemini."""
     if not _handed_over(model) or (provider_for(model) == "gemini" and _has_images(messages)):
         return []
-    return [m for m in _GEMINI_FALLBACKS if configured(m)]
+    chain = _CODER_FALLBACKS if provider_for(model) == "openrouter" else _GEMINI_FALLBACKS
+    return [m for m in chain if configured(m)]
 
 
 def lean(model: str) -> bool:
