@@ -216,18 +216,22 @@ async def _run_python(ctx: ToolContext, args: dict) -> ToolOutput:
 
 @contextlib.asynccontextmanager
 async def _allowance(ctx: ToolContext, kind: str = "picture"):
-    """Count one picture or video for the user's plan, given back if making it fails."""
+    """Count one picture or video for the user's plan, given back if making it fails. Inside, the picture and
+    video engines are the ones the plan gets (premium on Pro and Max, free on Basic)."""
     try:
         await limits.use(ctx.db, ctx.user_id, kind)
     except limits.LimitReached as exc:
         ctx.limit_hit = str(exc)
         raise ValueError(f"{exc} Tell the user this kindly, in one sentence, and that the Plans page "
                          "(menu with their name > Plans) shows Pro and Max.")
+    token = media.PREMIUM_MEDIA.set((await limits.quality(ctx.db, ctx.user_id))["media"] == "premium")
     try:
         yield
     except BaseException:
         await limits.refund(ctx.db, ctx.user_id, kind)
         raise
+    finally:
+        media.PREMIUM_MEDIA.reset(token)
 
 
 
@@ -373,6 +377,7 @@ async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
         seconds = int(float(args.get("seconds") or 12))
     except (TypeError, ValueError):
         seconds = 12
+    seconds = max(2, min(seconds, (await limits.quality(ctx.db, ctx.user_id))["videoSeconds"]))
     async with _allowance(ctx, "video"):
         out = await video.generate(prompt, seconds, str(args.get("orientation") or "").lower(),
                                    args.get("quality"), scenes, args.get("style") or "", captions)

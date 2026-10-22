@@ -69,9 +69,16 @@ class FakeUsers:
         return {"plan": self.plan}
 
 
+class FakeUsage:
+    """Counts premium messages, which never run out in these tests."""
+    async def find_one_and_update(self, *_a, **_k):
+        return {"premium": 1}
+
+
 class FakeDB:
     def __init__(self, plan=None):
         self.users = FakeUsers(plan)
+        self.usage = FakeUsage()
 
 
 def _server():

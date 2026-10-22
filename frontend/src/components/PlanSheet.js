@@ -62,8 +62,18 @@ export function PlanSheet({ plan, current, user, price, offer, busy, onPay, onCl
                 </span>
               </li>
             ))}
-            <li className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm"><BadgeCheck className="h-4 w-4 text-primary" /> Premium AI models for harder questions</li>
-            <li className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm"><BadgeCheck className="h-4 w-4 text-primary" /> Publish your apps to the web</li>
+            {[
+              "Premium AI models for harder questions",
+              "HD pictures and real AI video",
+              "Think mode answers with our smartest model",
+              ...(plan.quality ? [
+                `Videos up to ${plan.quality.videoSeconds} seconds, uploads up to ${plan.quality.uploadMb}MB`,
+                `Krish remembers up to ${plan.quality.memory} things about you`,
+              ] : []),
+              "Publish your apps to the web",
+            ].map((perk) => (
+              <li key={perk} className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm"><BadgeCheck className="h-4 w-4 shrink-0 text-primary" /> {perk}</li>
+            ))}
           </ul>
 
           <p className="mt-5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Things you could make this week</p>

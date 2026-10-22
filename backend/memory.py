@@ -14,11 +14,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+import limits
 from agent import llm as agent_llm
 
 logger = logging.getLogger("radha.memory")
 
-MAX_FACTS = 60
 _MAX_FACT_CHARS = 300
 
 # Words that suggest the user is saying something about themselves or asking RADHA to (un)remember.
@@ -94,6 +94,11 @@ async def _ask(model: str, prompt: str) -> str:
     return resp.choices[0].message.content or ""
 
 
+async def _keeps(db, user_id: str) -> int:
+    """How many facts the user's plan remembers."""
+    return (await limits.quality(db, user_id))["memory"]
+
+
 async def learn(db, user_id: str, message: str, chat_model: str, ask=None) -> dict:
     """Update the user's global facts from one message. Returns {"added": [...], "removed": [...]}.
 
@@ -106,7 +111,8 @@ async def learn(db, user_id: str, message: str, chat_model: str, ask=None) -> di
         model = learning_model(chat_model)
         if not model:
             return result
-        facts = await db.memories.find({"userId": user_id, "projectId": None}).sort("createdAt", 1).to_list(MAX_FACTS)
+        keep = await _keeps(db, user_id)
+        facts = await db.memories.find({"userId": user_id, "projectId": None}).sort("createdAt", 1).to_list(keep)
         listing = "\n".join(f"- {f['content']}" for f in facts) or "(none yet)"
         reply = await (ask or _ask)(model, _PROMPT.format(facts=listing, message=message[:2000]))
         data = _parse(reply)
@@ -123,7 +129,7 @@ async def learn(db, user_id: str, message: str, chat_model: str, ask=None) -> di
             text = str(text).strip().lstrip("- ").strip()[:_MAX_FACT_CHARS]
             if len(text) < 3 or text.lower() in by_text:
                 continue
-            if len(by_text) >= MAX_FACTS:
+            if len(by_text) >= keep:
                 break
             doc = {"id": str(uuid.uuid4()), "userId": user_id, "projectId": None, "content": text,
                    "source": "auto", "createdAt": now_iso()}
@@ -139,7 +145,7 @@ async def prompt_section(db, user_id: str, project_id: Optional[str]) -> str:
     """System-prompt text with what RADHA knows about the user, or "" when nothing."""
     user = await db.users.find_one({"id": user_id}, {"name": 1})
     query = {"userId": user_id, "$or": [{"projectId": None}, {"projectId": project_id}]}
-    facts = await db.memories.find(query).sort("createdAt", -1).to_list(MAX_FACTS)
+    facts = await db.memories.find(query).sort("createdAt", -1).to_list(await _keeps(db, user_id))
     lines = []
     if user and user.get("name"):
         lines.append(f"- Account name: {user['name']}")

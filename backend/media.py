@@ -8,6 +8,7 @@ keys are set, then Pollinations, Google's Nano Banana on the Gemini key, Hugging
 `media` collection, owned per user, and are served by GET /api/media/{id}.
 """
 import base64
+import contextvars
 import logging
 import os
 import re
@@ -18,6 +19,15 @@ from typing import Optional
 import fal_api
 
 logger = logging.getLogger("radha.media")
+
+# Pro and Max get the paid picture and video engines (fal, OpenAI, Veo); Basic gets the free ones (Gemini,
+# Pollinations, Hugging Face, the slideshow). The chat's picture and video tools set this for each request;
+# anything that doesn't (decks, automations) keeps the best engine. PAID_MEDIA=all gives everyone the paid ones.
+PREMIUM_MEDIA = contextvars.ContextVar("premium_media", default=True)
+
+
+def premium_media() -> bool:
+    return PREMIUM_MEDIA.get() or os.environ.get("PAID_MEDIA", "").strip().lower() == "all"
 
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
 STT_MODEL = os.environ.get("STT_MODEL", "gpt-4o-mini-transcribe")
@@ -153,13 +163,14 @@ def image_type(data: bytes) -> str:
 
 def _image_providers() -> list:
     explicit = os.environ.get("IMAGE_PROVIDER", "").lower()
-    if explicit in ("fal", "openai", "gemini", "pollinations", "huggingface"):
+    paid = premium_media()
+    if explicit in ("fal", "openai", "gemini", "pollinations", "huggingface") and (paid or explicit not in ("fal", "openai")):
         order = [explicit]
     else:
         order = []
-        if fal_api.configured():  # premium: Nano Banana Pro via fal.ai
+        if paid and fal_api.configured():  # premium: Nano Banana Pro via fal.ai
             order.append("fal")
-        if openai_configured():
+        if paid and openai_configured():
             order.append("openai")
         if os.environ.get("POLLINATIONS_API_KEY"):
             order.append("pollinations")
