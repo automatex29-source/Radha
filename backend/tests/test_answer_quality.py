@@ -28,6 +28,7 @@ def test_prompts_ask_for_spaced_highlighted_answers():
     server = _server()
     import counsellor
     assert "Never send one long block of text" in server.SYSTEM_PROMPT
+    assert "Write well" in server.SYSTEM_PROMPT and "no stock phrases" in server.SYSTEM_PROMPT
     assert "meaningful or personal questions" in server.SYSTEM_PROMPT
     for text in (counsellor.PROMPT, counsellor.BRIEF):
         assert "never one dense paragraph" in text and "**bold**" in text

@@ -25,6 +25,8 @@ PROMPT = (
     "- Put a Gita verse on its own line as a quote, like: > **Gita 2.47:** Your right is to the work, not to its "
     "results.\n"
     "- End with a short caring question on its own line.\n"
+    "Write cleanly: correct grammar and punctuation, short plain words, no stock phrases or filler, and at most "
+    "one emoji. "
     "No headings or tables. Keep it around 80-150 words; go up to about 250 only when they ask for detail, a plan "
     "or the meaning of a verse, or when they are in a crisis. Say the one thing that helps most, not everything "
     "you could say.\n\n"

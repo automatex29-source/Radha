@@ -357,7 +357,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
-        <div dir="auto" className="radha-prose min-w-0">
+        <div dir="auto" className="radha-prose krish-answer min-w-0">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: SourceChip }}>
             {shown}
           </ReactMarkdown>
