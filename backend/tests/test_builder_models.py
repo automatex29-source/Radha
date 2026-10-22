@@ -106,10 +106,24 @@ def test_builder_moves_to_cerebras_when_its_key_is_set(monkeypatch):
     monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
     monkeypatch.delenv("BUILDER_MODEL", raising=False)
     monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     assert pick(monkeypatch, "openai/gpt-oss-120b") == "openai/gpt-oss-120b"
     monkeypatch.setenv("CEREBRAS_API_KEY", "k")
     assert pick(monkeypatch, "openai/gpt-oss-120b") == CEREBRAS
     assert pick(monkeypatch, "openai/gpt-oss-120b", app=False) == "openai/gpt-oss-120b"  # chat keeps its pick
+
+
+def test_free_builds_go_to_krish_coder_then_cerebras(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("BUILDER_MODEL", raising=False)
+    monkeypatch.setenv("CEREBRAS_API_KEY", "k")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    coder = _server().CODER_MODEL
+    assert pick(monkeypatch, "openai/gpt-oss-120b") == coder
+    assert pick(monkeypatch, "gemini-3.5-flash-lite") == coder
+    assert pick(monkeypatch, "openai/gpt-oss-120b", app=False) == "openai/gpt-oss-120b"  # chat keeps its pick
+    # When Krish Coder's free allowance runs out, Cerebras (more room for a build) takes over before Groq.
+    assert llm.fallbacks_for(coder, []) == [CEREBRAS, "openai/gpt-oss-120b"]
 
 
 def test_builder_model_override_is_for_everyone(monkeypatch):
