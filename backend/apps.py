@@ -176,6 +176,21 @@ DESIGN_GUIDE = (
     "- Make it look like a modern, premium product: a clear hierarchy with a proper header, generous spacing, one "
     "accent color over a cohesive palette, soft gradients, rounded-2xl cards with subtle borders and shadows, "
     "hover, focus and active states, smooth transitions, friendly empty states and toasts instead of alert().\n"
+    "- A logo, or any picture with words in it, is never a made-up picture link: the picture maker can't spell "
+    "and doesn't know the brand. Use the user's own logo when they gave one; otherwise make a text logo "
+    "(the name in a bold font beside a coloured icon tile).\n"
+    "- A tool that reads a file and gives a report (an audit, a checker, a converter, a parser for logs or exports) "
+    "is judged on the analysis, not the look, so put most of the work there, the way an expert in that field "
+    "would check it: work from a real sample of the input (ask for one in a line if there is none), recognise "
+    "its real structure and the domain's terms, turn what it finds into named checks, each with a Pass, Fail or "
+    "Attention verdict, the value found, what was expected and why it matters, then show a summary (counts by "
+    "verdict, the problems first), a section per area with its table, and a search or filter. Keep the parsing in "
+    "its own plain module (e.g. parser.js, with no page code) and test it with node --test on the sample. An Excel "
+    "export uses ExcelJS (https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js), which can style cells, "
+    "not SheetJS: a Summary sheet first, then one sheet per area, with a coloured bold header row, frozen header, "
+    "filters, column widths that fit, wrapped text and green, red and amber fills for the verdicts. Read files in "
+    "the browser (nothing uploaded), handle a wrong or empty file with a clear message, and add a \"Try with "
+    "sample\" button when a sample exists.\n"
     "- Responsive from phone to desktop, with labelled inputs and good contrast.\n"
     "- Every feature works for real: all buttons do something, input is validated, data persists in localStorage "
     "when that helps, and sample content is realistic (no lorem ipsum, no TODOs, no placeholders). Add the extra "
@@ -271,6 +286,84 @@ async def _add_kit(app_id: str, path: str, content: str) -> None:
         if target and not await db.app_files.find_one({"appId": app_id, "path": target}, {"_id": 1}):
             await db.app_files.update_one({"appId": app_id, "path": target},
                                           {"$set": {"content": KIT_CSS, "updatedAt": _now()}}, upsert=True)
+
+
+# Files the user attaches in the builder chat are copied into the app, so the model can read all of a sample
+# (the chat's file context gives a free model only a few hundred words of it) and the app can use the user's
+# own logo. Krish built a generic "key = value" parser for a 4,000-line AMOS log it had seen 450 words of,
+# and asked the picture maker for a logo.
+SAMPLE_DIR = "samples"
+ASSET_DIR = "assets"
+_IMAGE_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}
+IMAGE_EXTS = {"svg", *_IMAGE_TYPES}
+_RAW_TEXT_EXTS = {"txt", "log", "dat", "csv", "tsv", "json", "md", "html", "htm", "xml", "yaml", "yml", "ini", "cfg"}
+_MAX_IMAGE_BYTES = 600 * 1024  # base64 grows it by a third and the file must stay under MAX_FILE_BYTES
+
+
+def _upload_name(filename: str) -> str:
+    stem = re.sub(r"[^A-Za-z0-9_.\-]+", "-", os.path.basename(filename or "file")).strip("-.") or "file"
+    return stem[:80]
+
+
+def _image_svg(data: bytes, ext: str) -> Optional[str]:
+    """A raster picture as an SVG that embeds it: app files are text, and <img src="assets/logo.svg"> shows it."""
+    import base64
+    from PIL import Image
+    try:
+        img = Image.open(io.BytesIO(data))
+        width, height = img.size
+        if len(data) > _MAX_IMAGE_BYTES:
+            img.thumbnail((800, 800))
+            width, height = img.size
+            out = io.BytesIO()
+            if img.mode in ("RGBA", "LA", "P"):
+                img.save(out, "PNG", optimize=True)
+                ext = "png"
+            else:
+                img.convert("RGB").save(out, "JPEG", quality=85)
+                ext = "jpg"
+            data = out.getvalue()
+            if len(data) > _MAX_IMAGE_BYTES:
+                return None
+    except Exception:
+        return None
+    href = f"data:{_IMAGE_TYPES[ext]};base64,{base64.b64encode(data).decode()}"
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+            f'width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+            f'<image width="{width}" height="{height}" href="{href}" xlink:href="{href}"/></svg>')
+
+
+async def keep_upload(app_id: str, filename: str, data: bytes, text: str = "") -> Optional[str]:
+    """Copy a file attached in the builder chat into the app; returns its path there, or None.
+
+    Pictures go to assets/ (an SVG logo as it is, a PNG or JPEG inside an SVG); text files go to samples/ unchanged,
+    so a parser is built for their real layout; other documents (PDF, Word, Excel) go in as their extracted text."""
+    import extract
+    name = _upload_name(filename)
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext == "svg" and not extract.is_binary(data):
+        path, content = f"{ASSET_DIR}/{name}", extract._decode(data)
+    elif ext in _IMAGE_TYPES:
+        content = _image_svg(data, ext)
+        path = f"{ASSET_DIR}/{name.rsplit('.', 1)[0]}.svg"
+    elif (ext in _RAW_TEXT_EXTS or not ext) and not extract.is_binary(data):
+        path, content = f"{SAMPLE_DIR}/{name}", extract._decode(data)
+    elif text.strip():
+        path, content = f"{SAMPLE_DIR}/{name}.txt", text
+    else:
+        return None
+    if not content:
+        return None
+    limit = MAX_FILE_BYTES - 1024
+    if len(content.encode("utf-8")) > limit:
+        if path.startswith(ASSET_DIR):
+            return None
+        content = content.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
+        content = content[:content.rfind("\n") + 1] or content  # end on a whole line
+    try:
+        return await write_file(app_id, path, content)
+    except ValueError:
+        return None
 
 
 async def delete_file(app_id: str, path: str) -> bool:
@@ -490,6 +583,12 @@ async def app_prompt(database, app_id: str) -> str:
         "theirs: keep its structure, CSS, colors, layout and wording exactly, change only what they ask, and never "
         "rewrite or restyle it (the quality bar below is for apps you design yourself). Make each change with "
         "edit_file; use search_files and read_file with line ranges to find the spot in a large file.\n"
+        "- Files in samples/ are real files the user gave you (logs, exports, reports) and files in assets/ are "
+        "their own pictures. When the app reads or processes files like a sample, study the sample before you "
+        "write any code: search_files for its commands, headings and table headers, and read_file the parts that "
+        "matter, in line ranges. Then build for that exact layout (its sections, columns, units, OK and error "
+        "values), not a generic \"key = value\" or \"any text\" parser. Use the sample as a \"Try with sample\" "
+        "button (fetch('samples/<name>')) and to test the parser. Show the user's logo from assets/ with <img>.\n"
         "- Read files before editing them. Prefer edit_file for small changes and write_file for new or rewritten files.\n"
         + ("- After changing the UI, call check_preview to see a screenshot and any console errors, and fix them.\n"
            if agent_browser.available() else "")
