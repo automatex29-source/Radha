@@ -117,7 +117,7 @@ export default function InstallBanner() {
           type="button"
           onClick={() => close()}
           aria-label="Close"
-          className="absolute right-2.5 top-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="krish-install-x absolute right-2.5 top-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           data-testid="install-banner-close"
         >
           <X className="h-3.5 w-3.5" />
@@ -125,7 +125,8 @@ export default function InstallBanner() {
 
         {status === "done" ? (
           <div className="relative flex items-center gap-3 p-4 pr-10" data-testid="install-banner-done">
-            <span className="krish-install-check flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+            <Confetti />
+            <span className="krish-install-check relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
               <Check className="h-5 w-5" strokeWidth={2.5} />
             </span>
             <div className="min-w-0 text-sm">
@@ -138,8 +139,12 @@ export default function InstallBanner() {
             <div className="flex items-center gap-3.5 pr-6">
               <HomeScreen />
               <div className="min-w-0 text-sm">
-                <p id="install-title" className="font-semibold leading-tight">Get the Krish app</p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                <p id="install-title" className="font-semibold leading-tight">
+                  {["Get", "the", "Krish", "app"].map((word, i) => (
+                    <span key={word} className={`krish-install-word ${word === "Krish" ? "krish-gradient-text" : ""}`} style={{ animationDelay: `${120 + i * 70}ms` }}>{word} </span>
+                  ))}
+                </p>
+                <p className="krish-install-sub mt-1 text-xs leading-relaxed text-muted-foreground">
                   {ready ? "Add Krish to your home screen and open it in one tap." : "Add Krish to your home screen in two quick steps."}
                 </p>
               </div>
@@ -148,8 +153,8 @@ export default function InstallBanner() {
             {ready ? (
               <ul className="mt-3 flex flex-wrap gap-1.5">
                 {PERKS.map(({ icon: Icon, label }, i) => (
-                  <li key={label} className="krish-install-item flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground" style={{ animationDelay: `${180 + i * 70}ms` }}>
-                    <Icon className="h-3 w-3 text-primary" /> {label}
+                  <li key={label} className="krish-install-item krish-install-perk flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground" style={{ animationDelay: `${180 + i * 70}ms` }}>
+                    <Icon className="h-3 w-3 text-primary" style={{ animationDelay: `${i * 0.6}s` }} /> {label}
                   </li>
                 ))}
               </ul>
@@ -185,7 +190,7 @@ export default function InstallBanner() {
                   className="krish-install-cta inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition-transform hover:-translate-y-px active:translate-y-0 active:scale-[0.98] disabled:opacity-80"
                   data-testid="install-banner-button"
                 >
-                  {status === "installing" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {status === "installing" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="krish-install-arrow h-3.5 w-3.5" />}
                   {status === "installing" ? "Installing" : "Install"}
                 </button>
               )}
@@ -213,6 +218,31 @@ function HomeScreen() {
       <span className="mt-auto flex justify-center gap-[3px] rounded-md bg-muted/70 p-[3px]">
         {[0, 1, 2].map((i) => <span key={i} className="h-[7px] w-[7px] rounded-[3px] bg-muted-foreground/20" />)}
       </span>
+    </span>
+  );
+}
+
+/** A small burst of colour behind the tick once Krish is installed. */
+function Confetti() {
+  const colours = ["#6366f1", "#8b5cf6", "#FF8A1E", "#10b981", "#ec4899", "#f59e0b"];
+  return (
+    <span className="pointer-events-none absolute left-[38px] top-1/2" aria-hidden="true">
+      {Array.from({ length: 14 }, (_, i) => {
+        const angle = (i / 14) * 2 * Math.PI;
+        const far = 34 + (i % 3) * 12;
+        return (
+          <span
+            key={i}
+            className="krish-install-confetti"
+            style={{
+              background: colours[i % colours.length],
+              "--dx": `${Math.cos(angle) * far}px`,
+              "--dy": `${Math.sin(angle) * far}px`,
+              animationDelay: `${(i % 4) * 30}ms`,
+            }}
+          />
+        );
+      })}
     </span>
   );
 }
