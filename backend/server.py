@@ -1205,6 +1205,10 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
         for f in files:
             note = "read" if f.get("chunk_count") else ("could not be read" if f.get("status") == "failed"
                                                           else "attached, but no readable text in it (an empty, encrypted, audio or program file). Tell the user what you can and cannot do with it")
+            if f.get("appPath"):
+                note += (f"; the whole file is in the app as {f['appPath']}" + (": read it with search_files and "
+                         "read_file before you build anything that reads such files" if f["appPath"].startswith(
+                             apps.SAMPLE_DIR) else ": show it with <img>"))
             status.append(f"- {f['original_filename']}: {note}")
         parts.append("Files the user attached to this chat:\n" + "\n".join(status))
     if chosen:
@@ -1447,6 +1451,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     # builder or a counselling chat, where a quick reply matters more).
     reasoning = think or (agent_llm.DEEPER if not (voice or app_id or counselling or extra_system)
                           and (_hard_ask(last_user or "") or coding) else False)
+    if app_id and not think:
+        # A build is a hard task: the free builder (gpt-oss) otherwise plans a whole app at its lightest setting.
+        reasoning = agent_llm.DEEPER
     if extra_system:
         system_parts.append(extra_system)
     if voice and not app_id:
@@ -2187,6 +2194,22 @@ async def upload_file(pid: str, file: UploadFile = File(...), user_id: str = Dep
     return public_file(updated)
 
 
+async def _keep_in_app(app_id: str, file_id: str, filename: str, data: bytes):
+    """A file attached in the App Builder also goes into the app (samples/ or assets/), whole, so the builder can
+    read every line of it with its file tools (see apps.keep_upload)."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    try:
+        text = ""
+        if ext not in apps.IMAGE_EXTS and extractor.is_binary(data):  # a PDF, Word or Excel file: its text
+            text = await asyncio.to_thread(extractor.extract_text, data, ext, "")
+        path = await apps.keep_upload(app_id, filename, data, text)
+    except Exception:
+        logger.exception("Could not copy the attached file into the app")
+        return
+    if path:
+        await db.files.update_one({"id": file_id}, {"$set": {"appPath": path}})
+
+
 @api.get("/conversations/{conv_id}/files")
 async def list_conversation_files(conv_id: str, user_id: str = Depends(current_user_id)):
     await _owned_conversation(conv_id, user_id)
@@ -2227,6 +2250,8 @@ async def upload_conversation_file(conv_id: str, file: UploadFile = File(...), u
     }
     await db.files.insert_one(doc)
     await _process_file(file_id, user_id, conv.get("projectId"), data, ext, file.filename, content_type, conversation_id=conv_id)
+    if conv.get("appId"):
+        await _keep_in_app(conv["appId"], file_id, file.filename, data)
     updated = await db.files.find_one({"id": file_id})
     return public_file(updated)
 

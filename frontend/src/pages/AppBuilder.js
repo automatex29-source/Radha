@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
+  Paperclip, X,
 } from "lucide-react";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit"]);
@@ -134,8 +135,31 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
   const [steps, setSteps] = useState([]);
   const [model, setModel] = useState(null);
   const [needsKey, setNeedsKey] = useState(false);
+  const [attached, setAttached] = useState([]);
+  const [uploading, setUploading] = useState(false);
   const abortRef = useRef(null);
   const scrollRef = useRef(null);
+  const fileRef = useRef(null);
+
+  // A sample file (a log, an export) or a logo goes into the app too (samples/, assets/), so Krish reads all of it.
+  const attach = async (e) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!picked.length) return;
+    setUploading(true);
+    for (const file of picked) {
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const { data } = await api.post(`/conversations/${app.conversationId}/files`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+        setAttached((a) => [...a, data]);
+      } catch (err) {
+        toast.error(formatApiError(err?.response?.data?.detail) || `Couldn't attach ${file.name}`);
+      }
+    }
+    setUploading(false);
+    onFilesChanged();
+  };
 
   const load = useCallback(async () => {
     const { data } = await api.get(`/conversations/${app.conversationId}`);
@@ -160,6 +184,7 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
     const content = (typeof typed === "string" ? typed : input).trim();
     if (!content || streaming) return;
     if (typeof typed !== "string") setInput("");
+    setAttached([]);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content }]);
     setStreaming(true);
     setText("");
@@ -222,7 +247,22 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); send(); } }}
             placeholder="Add a dark mode toggle and save todos in the browser…"
             className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-sm focus:outline-none" />
-          <div className="flex justify-end">
+          {attached.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-1 pb-1.5" data-testid="builder-attachments">
+              {attached.map((f) => (
+                <span key={f.id} className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted px-2 py-0.5 text-[11px]">
+                  <Paperclip className="h-3 w-3 shrink-0" /><span className="truncate">{f.filename}</span>
+                  <button onClick={() => setAttached((a) => a.filter((x) => x.id !== f.id))} aria-label="Hide" className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <input ref={fileRef} type="file" multiple hidden onChange={attach} data-testid="builder-file-input" />
+            <Button size="icon" variant="ghost" onClick={() => fileRef.current?.click()} disabled={uploading}
+              title="Attach a sample file or your logo" aria-label="Attach a sample file or your logo" data-testid="builder-attach" className="h-10 w-10 sm:h-8 sm:w-8">
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+            </Button>
             {streaming ? (
               <Button size="icon" onClick={() => abortRef.current?.abort()} title="Stop" aria-label="Stop the reply" data-testid="builder-stop"
                 className="h-10 w-10 rounded-full bg-foreground text-background hover:bg-foreground/90 sm:h-8 sm:w-8"><Square className="h-3 w-3 fill-current" /></Button>
