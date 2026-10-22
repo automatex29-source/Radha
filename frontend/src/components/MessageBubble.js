@@ -14,6 +14,7 @@ import SourceChip from "@/components/SourceChip";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { modelLabel } from "@/lib/models";
+import ScrollTable from "@/components/ScrollTable";
 
 function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
   const [failed, setFailed] = useState(false);
@@ -130,7 +131,7 @@ function MakePageButton({ id }) {
   };
   return (
     <button onClick={make} disabled={busy} data-testid={`make-page-button-${id}`} title="Publish this answer as a page anyone can read"
-      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50">
+      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 max-md:min-h-9 max-md:px-1">
       {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Newspaper className="h-3 w-3" />} Make a page
     </button>
   );
@@ -192,7 +193,7 @@ function SpeakButton({ text, voice, id }) {
   };
   return (
     <button onClick={toggle} data-testid={`speak-message-button-${id}`}
-      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
       {state === "loading" ? <Loader2 className="h-3 w-3 animate-spin" /> : state === "playing" ? <Square className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
       {state === "playing" ? "Stop" : "Listen"}
     </button>
@@ -322,15 +323,15 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         </div>
       </div>
         {message.content && (
-          <div className="mr-11 mt-1.5 flex items-center gap-3 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
+          <div className="mr-11 mt-1.5 flex items-center gap-3 max-md:mt-0 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
             <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`} aria-label="Copy"
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
               {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
             </button>
             {onEdit && (
               <button onClick={() => { setDraft(message.content); setEditing(true); }} data-testid={`edit-message-button-${message.id}`}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
                 <Pencil className="h-3 w-3" /> Edit
               </button>
             )}
@@ -342,9 +343,10 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
 
   return (
     <div className="group flex gap-3 radha-fade-up" data-testid={`ai-message-item-${message.id}`}>
-      <BrandMark className="mt-0.5 h-8 w-8 shrink-0" thinking={streaming} />
+      <BrandMark className="mt-0.5 h-8 w-8 shrink-0 max-sm:hidden" thinking={streaming} />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
+          <BrandMark className="h-7 w-7 shrink-0 sm:hidden" thinking={streaming} />
           <KrishWordmark className="text-[15px]" />
           {message.model && (
             <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 text-[10px] font-medium tracking-wide text-brand">
@@ -358,7 +360,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
         <div dir="auto" className="radha-prose min-w-0">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: SourceChip }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable }}>
             {shown}
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
@@ -381,9 +383,9 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           </div>
         )}
         {!streaming && message.content && (
-          <div className="mt-2 flex items-center gap-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <div className="mt-2 flex items-center gap-3 max-md:mt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
             <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
               {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
             </button>

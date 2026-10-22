@@ -457,9 +457,9 @@ export default function DeckEditor() {
       <IconRail mobileBar={false} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* top bar */}
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+        <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-2 sm:gap-2 sm:px-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/decks")} title="All presentations"><ArrowLeft className="h-4 w-4" /></Button>
-          <Presentation className="h-4 w-4 shrink-0 text-primary" />
+          <Presentation className="h-4 w-4 shrink-0 text-primary max-sm:hidden" />
           <input defaultValue={deck.title} key={deck.title} data-testid="deck-title"
             onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== deck.title) patch({ title: v }); }}
             onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
@@ -534,8 +534,8 @@ export default function DeckEditor() {
           </aside>
 
           {/* main slide */}
-          <main className="flex min-w-0 flex-col bg-sunken/40 max-lg:h-[55vh] max-lg:shrink-0 lg:flex-1">
-            <div className="flex min-h-0 flex-1 items-center justify-center p-4 sm:p-8">
+          <main className="flex min-w-0 flex-col bg-sunken/40 max-lg:h-[55vh] max-lg:shrink-0 max-sm:h-auto lg:flex-1">
+            <div className="flex min-h-0 flex-1 items-center justify-center p-4 max-sm:aspect-video max-sm:flex-none max-sm:p-3 sm:p-8">
               {current ? (
                 <ScaledSlide fit className="h-full w-full" slide={shown} theme={theme} index={sel} total={slides.length} pending={deck.picturesPending} />
               ) : generating ? (

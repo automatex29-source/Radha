@@ -11,6 +11,7 @@ import { LiveCards } from "@/components/LiveCards";
 import { linkCitations, faviconUrl } from "@/lib/citations";
 import SourceChip from "@/components/SourceChip";
 import { Link2, Loader2 } from "lucide-react";
+import ScrollTable from "@/components/ScrollTable";
 
 /** A Page: one Krish answer published as a clean article anyone can read (like Perplexity Pages). */
 export default function PageView() {
@@ -69,7 +70,7 @@ export default function PageView() {
 
             <div className="mt-6"><LiveCards items={live} /></div>
             <div className="radha-prose mt-2 text-[1.02rem]" dir="auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SourceChip }}>{linkCitations(page.content, sources)}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SourceChip, table: ScrollTable }}>{linkCitations(page.content, sources)}</ReactMarkdown>
             </div>
 
             {sources.length > 0 && (

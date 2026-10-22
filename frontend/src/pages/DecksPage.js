@@ -275,7 +275,7 @@ export default function DecksPage() {
                             placeholder="Key points, one per line" className="resize-none border-0 bg-transparent px-1 text-sm text-muted-foreground shadow-none focus-visible:ring-1" />
                         </div>
                         <button onClick={() => setOutline((o) => o.filter((_, j) => j !== i))} title="Remove slide"
-                          className="self-start rounded-md p-1 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100">
+                          className="self-start rounded-md p-2 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100">
                           <X className="h-4 w-4" />
                         </button>
                       </li>
@@ -324,7 +324,7 @@ export default function DecksPage() {
                       </div>
                     </button>
                     <button onClick={() => remove(d)} title="Delete"
-                      className="absolute right-2 top-2 rounded-md bg-black/40 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/60 group-hover:opacity-100">
+                      className="absolute right-2 top-2 rounded-md bg-black/40 p-2 text-white opacity-0 transition-opacity hover:bg-black/60 group-hover:opacity-100">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>

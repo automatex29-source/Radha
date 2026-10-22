@@ -20,6 +20,7 @@ import {
   Workflow, Plus, Loader2, Play, Webhook, Clock, Copy, Trash2, CheckCircle2, XCircle, MessageSquare, Pencil, ArrowLeft,
   Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp,
 } from "lucide-react";
+import ScrollTable from "@/components/ScrollTable";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const EXAMPLES = [
@@ -101,7 +102,7 @@ export default function AutomationsPage() {
                   className={`cursor-pointer rounded-xl border p-3.5 transition-colors ${a.id === selected ? "border-primary/60 bg-primary/5" : "border-border bg-card hover:border-primary/40"}`}>
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{a.name}</p>
+                      <p className="line-clamp-2 text-sm font-semibold max-md:break-words md:truncate">{a.name}</p>
                       <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground"><Clock className="h-3 w-3" /> {a.scheduleText}</p>
                     </div>
                     <Switch checked={a.enabled} onCheckedChange={(v) => toggle(a, v)} onClick={(e) => e.stopPropagation()} data-testid={`toggle-${a.id}`} />
@@ -317,7 +318,7 @@ function RunCard({ run: r, onOpen, onPreview }) {
       {r.error && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">{r.error}</p>}
       {r.output && (
         <div className={`radha-prose mt-3 min-w-0 text-sm ${open || !long ? "" : "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"}`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.output}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{r.output}</ReactMarkdown>
         </div>
       )}
       {long && (

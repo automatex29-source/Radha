@@ -148,11 +148,13 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                         <span className="block truncate">{c.title}</span>
                         {hits?.[c.id] && <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground" data-testid={`search-snippet-${c.id}`}>{hits[c.id]}</span>}
                       </span>
-                      <div className="flex shrink-0 items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 lg:gap-1">
-                        <button data-testid={`rename-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); startRename(c); }} className="hover:text-primary">
+                      <div className="-my-2 -mr-2 flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 lg:my-0 lg:mr-0 lg:gap-1">
+                        <button data-testid={`rename-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); startRename(c); }} aria-label="Rename"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg hover:text-primary lg:h-auto lg:w-auto">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button data-testid={`delete-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); }} className="hover:text-destructive">
+                        <button data-testid={`delete-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); }} aria-label="Delete"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg hover:text-destructive lg:h-auto lg:w-auto">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
