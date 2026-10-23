@@ -12,12 +12,14 @@ PROMPT = (
     "\"Related:\" in English. Write nothing after that line. Skip the line only for greetings and thanks."
 )
 
-_LINE = re.compile(r"(?:^|\n)[ \t>*_#-]*\**Related\**:\**[ \t]*([^\n]*)\s*$", re.I)
+_PATTERN = r"(?:^|\n)[ \t>*_#-]*\**{}\**:\**[ \t]*([^\n]*)\s*$"
+_LINE = re.compile(_PATTERN.format("Related"), re.I)
+_REPLIES = re.compile(_PATTERN.format("Replies"), re.I)  # the Counsellor's tap-to-answer replies
 
 
-def split(text: str) -> Tuple[str, List[str]]:
-    """(reply without the Related line, up to three questions)."""
-    found = _LINE.search(text or "")
+def split(text: str, line: re.Pattern = _LINE) -> Tuple[str, List[str]]:
+    """(reply without the Related line, or another line pattern, and up to three items from it)."""
+    found = line.search(text or "")
     if not found:
         return text, []
     questions = []

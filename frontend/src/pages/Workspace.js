@@ -11,10 +11,11 @@ import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel from "@/components/CodePanel";
 import { extractFiles } from "@/lib/codeFiles";
 import ShareDialog from "@/components/ShareDialog";
+import BreatheDialog from "@/components/BreatheDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
@@ -91,6 +92,31 @@ const GREETINGS = {
     ["Late night thoughts, {name}? 🌌", "I'm all", "ears"],
   ],
 };
+// The mood check-in on the Counsellor welcome. The last pick is kept in this browser only (Counsellor chats are
+// never saved to memory), so the next visit can ask whether things got better.
+const MOODS = [
+  { id: "great", emoji: "😄", label: "Great", feel: "great" },
+  { id: "okay", emoji: "🙂", label: "Okay", feel: "okay" },
+  { id: "tired", emoji: "😴", label: "Tired", feel: "tired" },
+  { id: "low", emoji: "😔", label: "Low", feel: "low" },
+  { id: "stressed", emoji: "😣", label: "Stressed", feel: "stressed" },
+  { id: "angry", emoji: "😤", label: "Angry", feel: "angry" },
+];
+const MOOD_KEY = "krish-counsel-mood";
+
+function readMood() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MOOD_KEY) || "null");
+    const mood = MOODS.find((m) => m.id === saved?.id);
+    const days = Math.floor((Date.now() - new Date(saved?.at).getTime()) / 86400000);
+    return mood && days >= 0 && days <= 14 ? { mood, days } : null;
+  } catch { return null; }
+}
+
+function saveMood(id) {
+  try { localStorage.setItem(MOOD_KEY, JSON.stringify({ id, at: new Date().toISOString() })); } catch { /* optional */ }
+}
+
 const TAGLINES = ["Let's talk!", "I'm here for you", "Smile please! 😄", "Good vibes only", "Aaj kya scene hai?"];
 
 function pickGreeting(name) {
@@ -111,6 +137,7 @@ export default function Workspace({ mode = null }) {
   const [projectId, setProjectId] = useState(searchParams.get("project") || null);
   const [project, setProject] = useState(null);
   const [conversations, setConversations] = useState([]);
+  const [breatheOpen, setBreatheOpen] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -721,14 +748,15 @@ export default function Workspace({ mode = null }) {
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : messages.length === 0 && !streaming ? (
-            counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} /> : <EmptyState onPick={(p) => sendMessage(p)} />
+            counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} onBreathe={() => setBreatheOpen(true)}
+              last={conversations[0]} onResume={openConversation} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
                 onEdit={!streaming && m.role === "user" && !String(m.id).startsWith("tmp-") ? (text) => editMessage(m.id, text) : undefined}
                 onAsk={i === messages.length - 1 && !streaming ? (q) => sendMessage(q) : undefined}
                 onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
-                codeActive={!!codePanel && panelMessage?.id === m.id} />)}
+                codeActive={!!codePanel && panelMessage?.id === m.id} quickReplies={counselling} />)}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
                   steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
@@ -757,8 +785,14 @@ export default function Workspace({ mode = null }) {
 
         {/* Composer */}
         {counselling && (
-          <p data-testid="counsellor-care-note" className="mx-auto w-full max-w-3xl px-5 text-center text-[11px] leading-snug text-muted-foreground">
-            Need urgent help? Tele-MANAS 14416, free 24x7 💛
+          <p data-testid="counsellor-care-note" className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-5 text-center text-[11px] leading-snug text-muted-foreground">
+            {messages.length > 0 && (
+              <button onClick={() => setBreatheOpen(true)} data-testid="breathe-button-chat"
+                className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:underline dark:text-violet-300">
+                <Wind className="h-3 w-3" /> Breathe with me
+              </button>
+            )}
+            <span>Need urgent help? Tele-MANAS 14416, free 24x7 💛</span>
           </p>
         )}
         <ComposerInput value={input} onChange={setInput} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
@@ -775,6 +809,7 @@ export default function Workspace({ mode = null }) {
           onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
           placeholder={counselling ? "Type anything… how's your day going? 😊" : undefined} />
       </div>
+      {counselling && <BreatheDialog open={breatheOpen} onOpenChange={setBreatheOpen} onDone={(text) => sendMessage(text)} />}
       {codePanel && panelContent && (
         <CodePanel content={panelContent} streaming={panelLive && streaming && streamHasCode} onClose={() => setCodePanel(null)} />
       )}
@@ -955,7 +990,34 @@ const Sparkle = ({ className }) => (
   </svg>
 );
 
-function CounselEmptyState({ onPick }) {
+function MoodCheckIn({ onPick }) {
+  const [last] = useState(readMood);
+  const when = last && (last.days === 0 ? "earlier today" : last.days === 1 ? "yesterday" : `${last.days} days ago`);
+  const pick = (m) => {
+    saveMood(m.id);
+    const before = last && last.mood.id !== m.id ? ` Last time I was feeling ${last.mood.feel}.` : "";
+    onPick(`I'm feeling ${m.feel} right now ${m.emoji}.${before}`);
+  };
+  return (
+    <div data-testid="mood-check-in" className="radha-fade-up relative mt-5 rounded-2xl border border-border bg-card/70 px-4 py-3 shadow-sm backdrop-blur-sm sm:mt-6 sm:px-5">
+      <p className="text-sm font-semibold text-foreground max-sm:text-center">
+        {last ? <>You felt {last.mood.feel} {last.mood.emoji} {when}. How are you now?</> : "How are you feeling right now?"}
+      </p>
+      <div className="mt-2.5 grid grid-cols-3 gap-2 sm:grid-cols-6">
+        {MOODS.map((m) => (
+          <button key={m.id} onClick={() => pick(m)} data-testid={`mood-${m.id}`}
+            className={`group flex flex-col items-center gap-0.5 rounded-xl border px-2 py-2 transition-all hover:-translate-y-0.5 hover:border-pink-300 hover:bg-pink-50/70 active:scale-95 dark:hover:border-pink-400/40 dark:hover:bg-pink-500/10 ${
+              last?.mood.id === m.id ? "border-pink-300 bg-pink-50/60 dark:border-pink-400/40 dark:bg-pink-500/10" : "border-border bg-background/60"}`}>
+            <span className="text-2xl transition-transform group-hover:scale-110">{m.emoji}</span>
+            <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground">{m.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
   const { user } = useAuth();
   const first = (user?.name || "").trim().split(/\s+/)[0];
   const g = useMemo(() => pickGreeting(first), [first]);
@@ -981,9 +1043,24 @@ function CounselEmptyState({ onPick }) {
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+      <MoodCheckIn onPick={onPick} />
+      <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+        <button onClick={onBreathe} data-testid="breathe-button"
+          className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-[13px] font-medium text-violet-700 transition hover:-translate-y-0.5 hover:shadow-sm dark:border-violet-400/25 dark:bg-violet-500/10 dark:text-violet-200">
+          <Wind className="h-3.5 w-3.5" /> Breathe with me · 1 min
+        </button>
+        {last && (
+          <button onClick={() => onResume(last.id)} data-testid="counsellor-resume"
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] font-medium text-foreground transition hover:-translate-y-0.5 hover:shadow-sm">
+            <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 text-muted-foreground">Pick up where we left off:</span>
+            <span className="truncate">{last.title}</span>
+          </button>
+        )}
+      </div>
+      <div className="relative mt-4 grid w-full gap-2.5 sm:mt-5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
         {COUNSEL_STARTERS.map((s, i) => (
-          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} hideOnPhone={i >= 4} />
+          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} hideOnPhone={i >= 2} />
         ))}
       </div>
     </div>

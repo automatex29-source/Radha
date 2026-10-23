@@ -424,3 +424,7 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
   .krish-install, .krish-install.is-leaving, .krish-install::before, .krish-install-glow, .krish-install-phone, .krish-install-tile, .krish-install-drop,
   .krish-install-drop::after, .krish-install-word, .krish-install-sub, .krish-install-item, .krish-install-check, .krish-install-cta { animation-duration: 0.01ms; animation-iteration-count: 1; }
 }
+
+/* Counsellor breathing circle: grows and shrinks with each breath (BreatheDialog sets the duration). */
+.krish-breathe { transition-property: transform; transition-timing-function: ease-in-out; }
+@media (prefers-reduced-motion: reduce) { .krish-breathe { transition: none; } }
