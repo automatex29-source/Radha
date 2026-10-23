@@ -934,7 +934,6 @@ WEB_OFF_NOTE = (
     "never say you searched. If the answer depends on facts that change (news, prices, who holds a job), add one "
     "short line that it may be out of date. Live exchange rates, weather or stock data given below are current."
 )
-MAX_WEB_SEARCHES = 3  # per answer, when nothing was searched before the model started
 
 AGENT_PROMPT = (
     "You have tools; use them on your own whenever they make the answer better, without asking. "
@@ -1320,13 +1319,14 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
     if not (ctx.app_id and use_tools and changed):
         return
     problems = []
-    for repair_round in range(REPAIR_ROUNDS + 1):
+    rounds = ctx.repair_rounds if ctx.repair_rounds is not None else REPAIR_ROUNDS
+    for repair_round in range(rounds + 1):
         async for ev in _app_problems(ctx.app_id):
             if ev["type"] == "problems":
                 problems = ev["problems"]
             else:
                 yield ev
-        if not problems or repair_round == REPAIR_ROUNDS:
+        if not problems or repair_round == rounds:
             break
         if repair_round == 0:
             yield {"type": "text", "text": "\n\nChecking the app… I found a problem and I'm fixing it.\n\n"}
@@ -1486,8 +1486,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(related.PROMPT)
     # Free models (Groq) get only the app tools inside an app, to stay within their token budget.
     focused = bool(app_id) and agent_llm.lean(model)
+    work = limits.work_of(await limits.plan_of(db, user_id)) if user_id else limits.work_of("basic")
     if app_id and not max_steps and (not agent_llm.lean(model) or agent_llm.token_budget(model) > 16000):
-        max_steps = BUILDER_STEPS
+        max_steps = max(BUILDER_STEPS, work["builderSteps"]) if not agent_llm.lean(model) else BUILDER_STEPS
     if agent and not focused:
         system_parts.append(AGENT_PROMPT)
     if study and not app_id and not counselling:
@@ -1533,7 +1534,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             searched = any(s.get("type") in ("web", "video") for s in sources)
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model, sources=None if app_id else sources,
-                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching)
+                              searches_left=None if app_id else (1 if searched else work["searches"]), web=searching,
+                              search_results=work["results"], research_depth=work["research"],
+                              repair_rounds=work["repairRounds"])
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
             async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS):
                 if ev["type"] == "text":
@@ -1716,7 +1719,7 @@ def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool 
 async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think, len(body.content))
+    model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think, body.content)
 
     image_ids = []
     for mid in body.images:
@@ -1793,19 +1796,25 @@ async def _chat_chars(conv: dict) -> int:
     return sum(len(d.get("content") or "") for d in docs)
 
 
-async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = False, new_chars: int = 0) -> str:
+async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = False, text: str = "") -> str:
     """The model that answers: the App Builder's stronger model inside an app, and no paid
     model (Claude, GPT) for free-plan users unless the owner sets PAID_MODELS=all.
 
-    On Pro and Max, Think moves a free-model question to the strongest premium model. A premium message uses
+    Paid plans move a free-model question to the strongest premium model that is set up: Think on Pro and
+    Max, hard questions and app builds on Pro, every answer on Max (limits.work_of). A premium message uses
     credits from the plan's meter by how much is sent (the chat so far and the new message); once the meter
     is empty the chat answers with Krish Basic."""
     model = requested
-    pro = await limits.is_pro(db, user_id)
-    if think and pro and not conv.get("appId") and not agent_llm.paid(model):
+    plan = await limits.plan_of(db, user_id)
+    pro = limits.PLANS[plan]["premium"]
+    upgrade = limits.work_of(plan)["model"]
+    builder_override = conv.get("appId") and os.environ.get("BUILDER_MODEL", "").strip()
+    if pro and not agent_llm.paid(model) and not builder_override and (
+            upgrade == "all" or (think and not conv.get("appId"))
+            or (upgrade == "hard" and (conv.get("appId") or _hard_ask(text) or _code_ask(text)))):
         model = next((m for m in THINK_MODELS if agent_llm.configured(m)), model)
     if pro and agent_llm.paid(model) and not await limits.use_premium(db, user_id,
-                                                                       new_chars + await _chat_chars(conv)):
+                                                                       len(text) + await _chat_chars(conv)):
         return AI_MODEL
     if model == AUTO_MODEL and conv.get("appId"):
         model = agent_llm.concrete(model)
@@ -1934,10 +1943,11 @@ def _background(coro):
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think)
+    last = await db.messages.find_one({"conversationId": conv_id, "role": "user"}, sort=[("createdAt", -1)])
+    asked = (last or {}).get("content") or ""
+    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think, asked)
     if conv.get("appId"):  # chat is unlimited; an App Builder message uses credits by how much it asks for
-        last = await db.messages.find_one({"conversationId": conv_id, "role": "user"}, sort=[("createdAt", -1)])
-        await limits.require(db, user_id, "build", size=len((last or {}).get("content") or ""))
+        await limits.require(db, user_id, "build", size=len(asked))
 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     if not history_docs:
@@ -1965,8 +1975,7 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     the new wording."""
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think,
-                              len(body.content))
+    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think, body.content)
     if conv.get("appId"):
         await limits.require(db, user_id, "build", size=len(body.content))
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)

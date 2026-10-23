@@ -55,9 +55,13 @@ export function PlanSheet({ plan, current, basic, user, price, offer, busy, onPa
             </li>
             <li className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm"><BadgeCheck className="h-4 w-4 shrink-0 text-primary" /> Usage refills every 5 hours</li>
             {[
-              "Premium AI models for harder questions",
-              "HD pictures and real AI video",
+              plan.work?.model === "all" ? "Our strongest AI answers every question" : "Premium AI on hard questions, automatically",
+              `Web search reads more: ${plan.work?.searches} searches, ${plan.work?.results} results each`,
+              `Better app builds: premium AI with ${plan.work?.builderSteps} steps and self-checks`,
+              ...(plan.work?.research > 1 ? ["Deep Research twice as deep, with full reports"] : []),
+              plan.work?.pictureSize === "4K" ? "4K pictures and real AI video" : "HD pictures and real AI video",
               "Think mode answers with our smartest model",
+              `Automations as often as ${plan.work?.automationMinutes >= 60 ? "every hour" : `every ${plan.work?.automationMinutes} minutes`}`,
               ...(plan.quality ? [
                 `Videos up to ${plan.quality.videoSeconds} seconds, uploads up to ${plan.quality.uploadMb}MB`,
               ] : []),

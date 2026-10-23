@@ -26,6 +26,10 @@ logger = logging.getLogger("radha.media")
 PREMIUM_MEDIA = contextvars.ContextVar("premium_media", default=True)
 
 
+# The picture resolution the plan gets on the premium engine: "4K" on Max, else FAL_IMAGE_RESOLUTION.
+PICTURE_SIZE = contextvars.ContextVar("picture_size", default="")
+
+
 def premium_media() -> bool:
     return PREMIUM_MEDIA.get() or os.environ.get("PAID_MEDIA", "").strip().lower() == "all"
 
@@ -326,7 +330,8 @@ FAL_IMAGE_RESOLUTION = os.environ.get("FAL_IMAGE_RESOLUTION", "2K")  # same pric
 
 
 async def _fal_image(prompt: str, size: str, seed: Optional[int] = None) -> bytes:
-    payload = {"prompt": prompt, "num_images": 1, "aspect_ratio": _ratio(size), "resolution": FAL_IMAGE_RESOLUTION}
+    payload = {"prompt": prompt, "num_images": 1, "aspect_ratio": _ratio(size),
+               "resolution": PICTURE_SIZE.get() or FAL_IMAGE_RESOLUTION}
     if seed:
         payload["seed"] = seed
     result = await fal_api.run(FAL_IMAGE_MODEL, payload, timeout=180)
