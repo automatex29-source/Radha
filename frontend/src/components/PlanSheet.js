@@ -6,7 +6,7 @@ import { ArrowRight, BadgeCheck, Crown, Loader2, Lock, PartyPopper, RefreshCcw, 
 const DAILY = [
   { key: "picture", label: "AI pictures" },
   { key: "deck", label: "slide decks" },
-  { key: "video", label: "videos" },
+  { key: "video", label: "video credits" },
   { key: "build", label: "app builds" },
 ];
 
@@ -68,8 +68,8 @@ export function PlanSheet({ plan, current, user, price, offer, busy, onPay, onCl
               "Think mode answers with our smartest model",
               ...(plan.quality ? [
                 `Videos up to ${plan.quality.videoSeconds} seconds, uploads up to ${plan.quality.uploadMb}MB`,
-                `Krish remembers up to ${plan.quality.memory} things about you`,
               ] : []),
+              "Krish remembers what you tell it, in every chat",
               "Publish your apps to the web",
             ].map((perk) => (
               <li key={perk} className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm"><BadgeCheck className="h-4 w-4 shrink-0 text-primary" /> {perk}</li>

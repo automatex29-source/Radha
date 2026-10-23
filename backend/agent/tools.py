@@ -215,11 +215,11 @@ async def _run_python(ctx: ToolContext, args: dict) -> ToolOutput:
 
 
 @contextlib.asynccontextmanager
-async def _allowance(ctx: ToolContext, kind: str = "picture"):
-    """Count one picture or video for the user's plan, given back if making it fails. Inside, the picture and
-    video engines are the ones the plan gets (premium on Pro and Max, free on Basic)."""
+async def _allowance(ctx: ToolContext, kind: str = "picture", n: int = 1):
+    """Count one picture (or n video credits) for the user's plan, given back if making it fails. Inside, the
+    picture and video engines are the ones the plan gets (premium on Pro and Max, free on Basic)."""
     try:
-        await limits.use(ctx.db, ctx.user_id, kind)
+        await limits.use(ctx.db, ctx.user_id, kind, n)
     except limits.LimitReached as exc:
         ctx.limit_hit = str(exc)
         raise ValueError(f"{exc} Tell the user this kindly, in one sentence, and that the Plans page "
@@ -228,7 +228,7 @@ async def _allowance(ctx: ToolContext, kind: str = "picture"):
     try:
         yield
     except BaseException:
-        await limits.refund(ctx.db, ctx.user_id, kind)
+        await limits.refund(ctx.db, ctx.user_id, kind, n)
         raise
     finally:
         media.PREMIUM_MEDIA.reset(token)
@@ -377,8 +377,9 @@ async def _generate_video(ctx: ToolContext, args: dict) -> ToolOutput:
         seconds = int(float(args.get("seconds") or 12))
     except (TypeError, ValueError):
         seconds = 12
-    seconds = max(2, min(seconds, (await limits.quality(ctx.db, ctx.user_id))["videoSeconds"]))
-    async with _allowance(ctx, "video"):
+    longest = (await limits.quality(ctx.db, ctx.user_id))["videoSeconds"]
+    seconds = max(2, min(seconds, longest))
+    async with _allowance(ctx, "video", limits.video_credits(seconds)):
         out = await video.generate(prompt, seconds, str(args.get("orientation") or "").lower(),
                                    args.get("quality"), scenes, args.get("style") or "", captions)
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "video", "mp4")
@@ -584,7 +585,8 @@ def default_registry() -> ToolRegistry:
                            "description": "3-6 detailed shot descriptions in order, same characters and look"},
                 "captions": {"type": "array", "items": {"type": "string"},
                              "description": "Optional text shown on each scene (max ~8 words each; '' for none)"},
-                "seconds": {"type": "integer", "description": "Length in seconds (default 12, up to 30)"},
+                "seconds": {"type": "integer", "description": "Length in seconds (default 12). Max plan: up to 60; "
+                            "1 video credit per 12 seconds, so only make it long when the user asks for a long video"},
                 "orientation": {"type": "string", "description": "landscape, or portrait for reels/stories/shorts"},
                 "quality": {"type": "string", "description": "high (default) or standard (faster, 720p)"},
                 "filename": {"type": "string", "description": "Short file name without extension"},

@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Check, Crown, Gift, Loader2, Tag, X } from "lucide-react";
+import { Check, Clapperboard, Crown, Gift, Loader2, Tag, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import InviteDialog from "@/components/InviteDialog";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
@@ -14,8 +14,10 @@ const DAILY = [
   { key: "build", label: "App builds", one: "app build", many: "app builds" },
   { key: "picture", label: "AI pictures", one: "AI picture", many: "AI pictures" },
   { key: "deck", label: "New decks", one: "new deck", many: "new decks" },
-  { key: "video", label: "Videos", one: "video", many: "videos" },
+  { key: "video", label: "Video credits", one: "video credit", many: "video credits" },
 ];
+
+const CREDIT_SECONDS = 12; // one video credit makes up to this many seconds (limits.VIDEO_CREDIT_SECONDS)
 
 const TAGLINE = {
   basic: "Everything you need to get started.",
@@ -34,9 +36,9 @@ function features(plan) {
     ...(plan.quality ? [
       { ok: plan.quality.media === "premium", text: "HD pictures and real AI video" },
       { ok: plan.premium, text: "Think mode on our smartest model" },
-      { ok: true, text: `Videos up to ${plan.quality.videoSeconds} seconds` },
+      { ok: true, text: `Videos up to ${plan.quality.videoSeconds} seconds${plan.quality.videoSeconds > CREDIT_SECONDS ? " (1 credit per 12 seconds)" : ""}` },
       { ok: true, text: `Uploads up to ${plan.quality.uploadMb}MB` },
-      { ok: true, text: `Remembers ${plan.quality.memory} things about you` },
+      { ok: true, text: "Remembers what you tell it, in every chat" },
     ] : []),
   ];
 }
@@ -61,15 +63,37 @@ function untilText(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-function Usage({ usage }) {
+/** How many video credits are left today, as a bar: a long video takes several. */
+function VideoCredits({ video, longest }) {
+  const left = Math.max(0, video.limit - video.used);
+  const pct = Math.min(100, Math.round((left / Math.max(1, video.limit)) * 100));
+  return (
+    <div className="mt-5 rounded-2xl bg-gradient-to-br from-indigo-500/[0.08] to-violet-500/[0.05] p-4 ring-1 ring-indigo-400/25" data-testid="video-credits">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="flex items-center gap-2 text-sm font-semibold"><Clapperboard className="h-4 w-4 text-indigo-500" /> Video credits</span>
+        <span className="text-sm tabular-nums"><b className="text-base">{left}</b> <span className="text-muted-foreground">of {video.limit} left</span></span>
+      </div>
+      <div className="mt-2.5 h-2.5 overflow-hidden rounded-full bg-surface-strong">
+        <div className={`h-full rounded-full transition-all ${left ? "bg-gradient-to-r from-indigo-500 to-violet-500" : "bg-rose-500"}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        1 credit makes up to {CREDIT_SECONDS} seconds of video{longest > CREDIT_SECONDS
+          ? `, so a ${longest}-second video takes ${Math.ceil(longest / CREDIT_SECONDS)} credits` : ""}.
+      </p>
+    </div>
+  );
+}
+
+function Usage({ usage, longest }) {
   return (
     <section className="mt-10 rounded-3xl border border-border/70 bg-card/80 p-6 shadow-sm backdrop-blur" data-testid="plans-usage">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-extrabold tracking-tight">Used today</h2>
         <p className="text-xs text-muted-foreground">Refills at midnight (India time). Chat is never counted.</p>
       </div>
+      <VideoCredits video={usage.video} longest={longest} />
       <div className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        {[...DAILY, { key: "automation", label: "Automations (total)" }].map((d) => {
+        {[...DAILY.filter((d) => d.key !== "video"), { key: "automation", label: "Automations (total)" }].map((d) => {
           const u = usage[d.key];
           const pct = Math.min(100, Math.round((u.used / Math.max(1, u.limit)) * 100));
           return (
@@ -256,7 +280,7 @@ export default function PlansPage() {
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"><Gift className="h-4 w-4" /></span>
                 <span className="text-sm"><b>Get Pro free:</b> invite a friend and you both get 7 days of Pro.</span>
               </button>
-              {data.limitsOn && <Usage usage={data.usage} />}
+              {data.limitsOn && <Usage usage={data.usage} longest={data.plans.find((p) => p.id === data.plan)?.quality?.videoSeconds || CREDIT_SECONDS} />}
             </>
           )}
         </div>

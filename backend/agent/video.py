@@ -162,6 +162,62 @@ async def _fal(prompt: str, seconds: int, portrait: bool) -> bytes:
     return await fal_api.download(url)
 
 
+# One AI clip is at most this long; a longer video (Max plan, up to 60s) is several clips of one story, joined.
+# Up to LONG_AFTER seconds (one video credit) stays a single clip, as it always was.
+CLIP_SECONDS = {"fal": max(FAL_SECONDS), "openai": max(SORA_SECONDS)}
+LONG_AFTER = 12
+PARALLEL_CLIPS = 4
+
+
+async def _long(which: str, prompt: str, seconds: int, portrait: bool, quality: str, style: str,
+                scenes: Optional[list]) -> bytes:
+    """A video longer than one clip: plan the story as shots, make a clip per shot (a few at a time), join them."""
+    clip = CLIP_SECONDS[which]
+    count = -(-seconds // clip)
+    words = styles.video_scene_words(style) if style else ""
+    shots = [s for s in (scenes or []) if isinstance(s, str) and s.strip()] or \
+        await prompt_boost.video_scenes(prompt, None, style, count) or [prompt]
+    shots = [shots[i * len(shots) // count] for i in range(count)]  # spread the story over every clip
+    gate = asyncio.Semaphore(PARALLEL_CLIPS)
+
+    async def one(i: int, shot: str) -> bytes:
+        async with gate:
+            text = await prompt_boost.video_prompt(f"{prompt}. Part {i + 1} of {count}: {shot}", words, clip)
+            if which == "fal":
+                return await _fal(text, clip, portrait)
+            return await _sora(text, clip, portrait, quality)
+
+    return await asyncio.to_thread(join_clips, await asyncio.gather(*(one(i, s) for i, s in enumerate(shots))))
+
+
+def join_clips(clips: list) -> bytes:
+    """Join MP4 clips end to end with ffmpeg (stream copy, or a re-encode when the clips don't match)."""
+    import subprocess
+    import tempfile
+
+    ffmpeg = slideshow.ffmpeg_path()
+    if not ffmpeg:
+        raise VideoError("ffmpeg is needed to join long videos")
+    with tempfile.TemporaryDirectory() as tmp:
+        names = []
+        for i, data in enumerate(clips):
+            names.append(os.path.join(tmp, f"clip{i}.mp4"))
+            with open(names[-1], "wb") as f:
+                f.write(data)
+        listing = os.path.join(tmp, "list.txt")
+        with open(listing, "w") as f:
+            f.write("".join(f"file '{n}'\n" for n in names))
+        out = os.path.join(tmp, "long.mp4")
+        base = [ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", listing]
+        if subprocess.run(base + ["-c", "copy", out], capture_output=True).returncode != 0:
+            done = subprocess.run(base + ["-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", out],
+                                  capture_output=True)
+            if done.returncode != 0:
+                raise VideoError(f"couldn't join the clips: {done.stderr.decode()[:200]}")
+        with open(out, "rb") as f:
+            return f.read()
+
+
 async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality: Optional[str] = None,
                    scenes: Optional[list] = None, style: str = "", captions: Optional[list] = None) -> dict:
     """{"data", "contentType", "method": "ai_video" | "slideshow", "note"}."""
@@ -171,6 +227,14 @@ async def generate(prompt: str, seconds: int = 8, orientation: str = "", quality
     quality = quality if quality in ("high", "standard") else (DEFAULT_QUALITY if DEFAULT_QUALITY in ("high", "standard") else "high")
     note = ""
     cinematic = ""
+    if which in CLIP_SECONDS and seconds > max(LONG_AFTER, CLIP_SECONDS[which]):
+        try:
+            return {"data": await _long(which, prompt, seconds, portrait, quality, style, scenes),
+                    "contentType": "video/mp4", "method": "ai_video"}
+        except Exception as exc:
+            logger.warning("long %s video failed, falling back to the free method: %s", which, exc)
+            note = "The premium video service couldn't make the long video, so a free method was used. "
+            which = "slideshow"
     if which == "fal":
         try:
             cinematic = await prompt_boost.video_prompt(prompt, styles.video_scene_words(style) if style else "",

@@ -1,5 +1,7 @@
 """What Pro and Max get beyond the daily counts: the paid picture and video engines, Think on a premium model
-(with a daily cap on premium messages), longer videos, bigger uploads and a longer memory. MongoDB is mongomock."""
+(with a daily cap on premium messages), longer videos paid for in credits and bigger uploads. Memory has no
+plan limit. MongoDB is mongomock."""
+import asyncio
 import os
 import sys
 import time
@@ -13,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 @pytest.fixture(scope="module")
 def client():
-    os.environ.update(MONGO_URL="mongodb://test", GROQ_API_KEY="test", AUTOMATIONS_SCHEDULER="0",
-                      AI_MODEL="openai/gpt-oss-120b")
+    env = dict(MONGO_URL="mongodb://test", GROQ_API_KEY="test", AUTOMATIONS_SCHEDULER="0", AI_MODEL="openai/gpt-oss-120b")
+    saved = {k: os.environ.get(k) for k in env}
+    os.environ.update(env)
     import motor.motor_asyncio
     motor.motor_asyncio.AsyncIOMotorClient = mongomock_motor.AsyncMongoMockClient
     import embeddings
@@ -23,6 +26,8 @@ def client():
     from fastapi.testclient import TestClient
     with TestClient(server.app) as c:
         yield c
+    for k, v in saved.items():  # a fake Groq key left behind would send other tests' prompts to Groq
+        os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
 def _user(client, email, plan="basic"):
@@ -65,7 +70,8 @@ def test_plans_list_their_quality(client):
     assert plans["pro"]["price"] == 299
     assert basic["media"] == "free" and pro["media"] == "premium"
     assert pro["videoSeconds"] > basic["videoSeconds"] and pro["uploadMb"] > basic["uploadMb"]
-    assert pro["memory"] > basic["memory"] and pro["premiumDaily"] > 0
+    assert pro["premiumDaily"] > 0 and "memory" not in pro
+    assert plans["max"]["quality"]["videoSeconds"] == 60
 
 
 def test_think_uses_a_premium_model_on_pro_only(client, monkeypatch):
@@ -88,9 +94,7 @@ def test_premium_messages_have_a_daily_cap(client, monkeypatch):
     assert picks == ["claude-sonnet-5-5", "claude-sonnet-5-5", server.AI_MODEL]
 
 
-def test_uploads_and_memory_follow_the_plan(client):
-    import limits
-    import memory
+def test_uploads_follow_the_plan(client):
     import server
     from fastapi import HTTPException
     basic, pro = _user(client, "up-basic@test.com"), _user(client, "up-pro@test.com", "pro")
@@ -99,8 +103,81 @@ def test_uploads_and_memory_follow_the_plan(client):
         client.portal.call(server._check_upload_size, basic, big, "File")
     assert err.value.status_code == 413 and "20MB" in err.value.detail and "Pro" in err.value.detail
     client.portal.call(server._check_upload_size, pro, big, "File")  # 30MB fits in Pro's 50MB
-    assert client.portal.call(memory._keeps, server.db, basic) == limits.PLANS["basic"]["quality"]["memory"]
-    assert client.portal.call(memory._keeps, server.db, pro) == limits.PLANS["pro"]["quality"]["memory"]
+
+
+def test_memory_keeps_learning_when_it_is_long(client, monkeypatch):
+    import memory
+    import server
+    monkeypatch.setattr(memory, "MAX_FACTS", 3)
+    uid = _user(client, "mem-basic@test.com")
+    replies = iter(['{"add": ["Likes tea"]}', '{"add": ["Lives in Pune"]}', '{"add": ["Has a cat"]}',
+                    '{"add": ["Studies law"]}'])
+
+    async def ask(model, prompt):
+        return next(replies)
+    for text in ("I like tea", "I live in Pune", "I have a cat", "I study law"):
+        client.portal.call(memory.learn, server.db, uid, f"remember that {text}", "openai/gpt-oss-120b", ask)
+
+    async def facts():
+        return [m["content"] for m in await server.db.memories.find({"userId": uid}).sort("createdAt", 1).to_list(10)]
+    assert client.portal.call(facts) == ["Lives in Pune", "Has a cat", "Studies law"]  # the oldest made room
+
+
+def test_long_videos_cost_more_credits(client, monkeypatch):
+    import limits
+    import server
+    from agent import tools, video
+    uid = _user(client, "long-max@test.com", "max")
+    seen = []
+
+    async def fake(prompt, seconds, *rest):
+        seen.append(seconds)
+        return {"data": b"\x00\x00\x00\x18ftypmp42", "contentType": "video/mp4", "method": "ai_video"}
+    monkeypatch.setattr(video, "generate", fake)
+    ctx = tools.ToolContext(db=server.db, user_id=uid)
+    client.portal.call(tools._generate_video, ctx, {"prompt": "a road trip", "seconds": 90})
+    assert seen == [60]
+
+    async def used():
+        return (await server.db.usage.find_one({"_id": f"{uid}:{limits.today()}"}))["video"]
+    assert client.portal.call(used) == 5  # 60 seconds at 12 seconds a credit
+    monkeypatch.setitem(limits.PLANS["max"]["daily"], "video", 7)
+    with pytest.raises(ValueError, match="needs 5 credits and you have 2 left"):
+        client.portal.call(tools._generate_video, ctx, {"prompt": "another trip", "seconds": 60})
+    assert client.portal.call(used) == 5  # nothing taken for the video that couldn't be made
+
+
+def test_long_video_is_clips_joined(monkeypatch):
+    import subprocess
+    import tempfile
+    from agent import prompt_boost, slideshow, video
+    if not slideshow.ffmpeg_path():
+        pytest.skip("ffmpeg not available")
+    made = []
+
+    async def clip(prompt, seconds, portrait):
+        made.append(prompt)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = f"{tmp}/c.mp4"
+            subprocess.run([slideshow.ffmpeg_path(), "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                            f"color=c=blue:s=64x36:d={seconds}", "-c:v", "libx264", "-pix_fmt", "yuv420p", out],
+                           check=True)
+            return open(out, "rb").read()
+
+    async def same(prompt, *a, **k):
+        return prompt
+
+    async def no_scenes(*a, **k):
+        return None
+    monkeypatch.setattr(video, "_fal", clip)
+    monkeypatch.setattr(prompt_boost, "video_prompt", same)
+    monkeypatch.setattr(prompt_boost, "video_scenes", no_scenes)
+    monkeypatch.setenv("FAL_KEY", "k")
+    out = asyncio.run(video.generate("a sunrise", 20, scenes=["dawn", "sun up", "noon"]))
+    assert out["method"] == "ai_video" and len(made) == 3  # 20 seconds is three 8-second clips
+    assert "Part 1 of 3: dawn" in made[0] and "Part 3 of 3: noon" in made[2]
+    info = subprocess.run([slideshow.ffmpeg_path(), "-i", "pipe:0"], input=out["data"], capture_output=True).stderr
+    assert b"00:00:24" in info  # three clips, end to end
 
 
 def test_video_length_follows_the_plan(client, monkeypatch):
