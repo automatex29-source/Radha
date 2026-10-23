@@ -966,6 +966,15 @@ THINK_PROMPT = (
     "steps, and say plainly what you are unsure of. Think mode may be longer than a usual reply, but never padded."
 )
 
+# Pro and Max answers are crafted, not just quick (limits.work_of: any plan whose model isn't "free").
+PREMIUM_ANSWER_PROMPT = (
+    "This user is on a paid plan: give them noticeably better answers than a quick reply. Understand what they "
+    "are really trying to do and answer that. Make it complete and polished: a clear structure (short headings or "
+    "bullets when it helps, a table for any comparison), one concrete example or worked case, the details an "
+    "expert would add, and end with a useful next step or tip. Make it personal when you know about them. Stay "
+    "warm and easy to read; never pad, and keep short questions short."
+)
+
 # Questions where a free reasoning model answers better when it thinks harder (see agent_llm.DEEPER): maths and
 # numbers, code, "why"/"how"/"compare" questions, plans and puzzles. Long asks count too.
 _HARD_ASK = re.compile(
@@ -1501,6 +1510,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             system_parts.append(IDEAS_PROMPT)
     if think and not counselling:
         system_parts.append(THINK_PROMPT)
+    premium_answers = work["model"] != "free" and not (app_id or counselling or voice or extra_system)
+    if premium_answers:
+        system_parts.append(PREMIUM_ANSWER_PROMPT)
     # Without Think, a hard question still gets more reasoning from the free models (never in voice, the app
     # builder or a counselling chat, where a quick reply matters more).
     reasoning = think or (agent_llm.DEEPER if not (voice or app_id or counselling or extra_system)
@@ -1565,7 +1577,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             if not uses_emergent(AI_API_KEY) and not agent_llm.configured(model):
                 raise RuntimeError(agent_llm.missing_key_message(model))
             ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id,
-                                   think=reasoning, long_answer=coding)
+                                   think=reasoning, long_answer=coding or premium_answers)
             async for delta in model_router.stream(ai_request):
                 full.append(delta)
                 yield f"data: {_sse_json(delta)}\n\n"

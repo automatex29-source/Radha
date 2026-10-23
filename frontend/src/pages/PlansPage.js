@@ -27,6 +27,7 @@ function workFeatures(plan) {
   const every = w.automationMinutes >= 1440 ? "once a day" : w.automationMinutes >= 60 ? "every hour" : `every ${w.automationMinutes} minutes`;
   return [
     { ok: true, text: { free: "Krish Basic answers every question", hard: "Premium AI on hard questions, automatically", all: "Our strongest AI on every answer" }[w.model] },
+    { ok: w.model !== "free", text: "Richer, more complete answers with examples and next steps" },
     { ok: true, text: `Web search: up to ${w.searches} searches and ${w.results} results each` },
     { ok: true, text: w.model === "free" ? "App Builder on the free model" : `App Builder on premium AI, ${w.builderSteps} steps and ${w.repairRounds} rounds of self-checks` },
     { ok: w.research > 1, text: "Deep Research twice as deep" },

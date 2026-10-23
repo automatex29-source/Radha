@@ -127,3 +127,33 @@ def test_automations_repeat_as_often_as_the_plan_allows(client):
     assert client.post("/api/automations", headers=basic,
                        json={**body, "schedule": {"type": "interval", "minutes": 1440}}).status_code == 200
     assert client.post("/api/automations", headers=top, json=body).status_code == 200
+
+
+def test_paid_plans_get_crafted_answers(monkeypatch):
+    from tests.test_builder_models import _server
+    server = _server()
+    seen = {}
+
+    async def fake_gather(*a, **k):
+        return {"context": None, "sources": [], "queries": []}
+
+    async def fake_stream(req):
+        seen["system"], seen["long"] = req.system, req.long_answer
+        yield "An answer."
+    monkeypatch.setattr(server.live_search, "gather", fake_gather)
+    monkeypatch.setattr(server.model_router, "stream", fake_stream)
+
+    def answer(plan):
+        db = mongomock_motor.AsyncMongoMockClient()["t"]
+        monkeypatch.setattr(server, "db", db)
+
+        async def go():
+            await db.users.insert_one({"id": "u1", "plan": plan})
+            await db.conversations.insert_one({"id": "c1", "userId": "u1"})
+            await db.messages.insert_one({"id": "m1", "conversationId": "c1", "role": "user",
+                                          "content": "how do I start a small bakery", "createdAt": "1"})
+            [c async for c in server.run_turn("c1", "openai/gpt-oss-120b")]
+        asyncio.run(go())
+        return server.PREMIUM_ANSWER_PROMPT in seen["system"], seen["long"]
+    assert answer("basic") == (False, False)
+    assert answer("pro") == (True, True)
