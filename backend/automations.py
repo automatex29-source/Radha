@@ -68,6 +68,7 @@ PLAN_SYSTEM = (
 )
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
+_priority = asyncio.Semaphore(MAX_CONCURRENT_RUNS)  # Max plan runs have their own lane, so they never wait behind others
 _scheduler_task: Optional[asyncio.Task] = None
 _running: set = set()
 
@@ -114,6 +115,21 @@ class Schedule(BaseModel):
     time: Optional[str] = None  # "HH:MM" for daily/weekly
     weekday: Optional[int] = Field(default=None, ge=0, le=6)  # 0 = Monday
     timezone: str = "UTC"
+
+
+async def check_plan_interval(user_id: str, schedule: dict) -> None:
+    """How often an automation may repeat depends on the plan: every 15 minutes on Max, hourly on Pro, daily
+    on Basic (limits.work_of)."""
+    if schedule.get("type") != "interval" or not limits.enabled():
+        return
+    plan = await limits.plan_of(db, user_id)
+    least = limits.work_of(plan)["automationMinutes"]
+    if (schedule.get("minutes") or 0) < least:
+        every = f"{least} minutes" if least < 60 else ("hour" if least == 60 else
+                                                       "day" if least == 1440 else f"{least // 60} hours")
+        faster = " Max runs them as often as every 15 minutes." if plan != "max" else ""
+        raise HTTPException(status_code=402, detail=f"On the {limits.PLANS[plan]['name']} plan an automation can "
+                                                    f"repeat at most once every {every}.{faster}")
 
 
 def validate_schedule(s: Schedule) -> Schedule:
@@ -206,7 +222,8 @@ def _step_view(step: dict) -> dict:
 async def _execute(auto: dict, run: dict, conv: dict, context: str = ""):
     error = None
     steps = STEPS_THOROUGH if auto.get("thorough") else STEPS_NORMAL
-    async with _semaphore:
+    lane = _priority if limits.work_of(await limits.plan_of(db, auto["userId"]))["priority"] else _semaphore
+    async with lane:
         try:
             async for chunk in run_turn(conv["id"], conv["model"], agent=True, extra_system=context or None,
                                         max_steps=steps):
@@ -460,6 +477,7 @@ def parse_plan(data: dict, goal: str) -> dict:
 async def create_automation(body: AutomationIn, user_id: str = Depends(current_user_id)):
     await limits.require(db, user_id, "automation")
     schedule = validate_schedule(body.schedule).model_dump()
+    await check_plan_interval(user_id, schedule)
     now = _now()
     doc = {"id": str(uuid.uuid4()), "userId": user_id, "name": body.name.strip(), "prompt": body.prompt.strip(),
            "schedule": schedule, "model": body.model, "enabled": body.enabled,
@@ -484,6 +502,7 @@ async def update_automation(aid: str, body: AutomationPatch, user_id: str = Depe
         updates["notifyUrl"] = await _clean_notify_url(body.notifyUrl)
     if body.schedule:
         updates["schedule"] = validate_schedule(body.schedule).model_dump()
+        await check_plan_interval(user_id, updates["schedule"])
     merged = {**doc, **updates}
     if "schedule" in updates or "enabled" in updates:
         updates["nextRunAt"] = _iso(next_run(merged["schedule"], _now())) if merged["enabled"] else None

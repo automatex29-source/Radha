@@ -1,6 +1,7 @@
 """Plan limits: Basic (free), Pro and Max.
 
-Chat on Krish Basic is never limited. Everything that costs real money to make (app builds, pictures, decks,
+Chat on Krish Basic is never limited. Each plan also works differently (see work_of): smarter models,
+deeper search and research, bigger app builds, sharper pictures and faster automations. Everything that costs real money to make (app builds, pictures, decks,
 videos and messages on the premium models) runs down one usage meter, like Claude's own limit: each request
 uses credits by how big it really is (the length of what's asked, the seconds of video, a premium or free
 engine), and the meter refills a few hours after the first use (a "session"). A weekly meter on top keeps a
@@ -26,6 +27,8 @@ PLANS = {
         "total": {"automation": 1},
         "publish": False, "premium": False,
         "quality": {"media": "free", "videoSeconds": 8, "uploadMb": 20},
+        "work": {"model": "free", "searches": 3, "results": 6, "builderSteps": 14, "repairRounds": 2,
+                 "research": 1, "pictureSize": "2K", "automationMinutes": 24 * 60, "priority": False},
     },
     "pro": {
         "name": "Pro", "price": 299,
@@ -33,6 +36,8 @@ PLANS = {
         "total": {"automation": 10},
         "publish": True, "premium": True,
         "quality": {"media": "premium", "videoSeconds": 12, "uploadMb": 50},
+        "work": {"model": "hard", "searches": 5, "results": 8, "builderSteps": 20, "repairRounds": 3,
+                 "research": 1, "pictureSize": "2K", "automationMinutes": 60, "priority": False},
     },
     "max": {
         "name": "Max", "price": 699,
@@ -40,6 +45,8 @@ PLANS = {
         "total": {"automation": 30},
         "publish": True, "premium": True,
         "quality": {"media": "premium", "videoSeconds": 60, "uploadMb": 100},
+        "work": {"model": "all", "searches": 8, "results": 10, "builderSteps": 30, "repairRounds": 4,
+                 "research": 2, "pictureSize": "4K", "automationMinutes": 15, "priority": True},
     },
 }
 ORDER = ["basic", "pro", "max"]
@@ -57,15 +64,17 @@ def cost(kind: str, size: Optional[int] = None, plan: str = "basic") -> int:
     """Credits one request uses, by how much it really asks for.
 
     build: 2, plus 1 for every 500 characters of the request (up to 20). chat (premium models only): 1, plus 1
-    for every 3,000 characters sent (up to 10). picture: 10 on the premium engine, 2 on the free one. deck: 5.
+    for every 3,000 characters sent (up to 10). picture: 10 on the premium engine (20 in 4K), 2 on the free one.
+    deck: 5.
     video: credits for each second, 10 on the premium engine, 1 on the free one."""
     premium = quality_of(plan)["media"] == "premium"
     if kind == "build":
         return min(20, 2 + int(size or 0) // 500)
     if kind == "chat":
         return min(10, 1 + int(size or 0) // 3000)
-    if kind == "picture":
-        return (10 if premium else 2) * max(1, int(size or 1))
+    if kind == "picture":  # a 4K picture (Max) costs twice a 2K one to make
+        each = (20 if work_of(plan)["pictureSize"] == "4K" else 10) if premium else 2
+        return each * max(1, int(size or 1))
     if kind == "deck":
         return 5
     if kind == "video":
@@ -140,6 +149,18 @@ async def quality(db, user_id: str) -> dict:
 
 async def upload_bytes(db, user_id: str) -> int:
     return quality_of(await plan_of(db, user_id))["uploadMb"] * 1024 * 1024
+
+
+def work_of(plan: str) -> dict:
+    """How Krish works on a plan: which questions get a premium model ("free": none, "hard": hard questions and
+    app builds, "all": every answer), web searches and results per answer, App Builder steps and rounds of
+    automatic fixes, how deep Deep Research goes (1 or 2), picture resolution, the shortest automation
+    interval, and whether automations get their own lane (never wait behind others)."""
+    return PLANS[plan if plan in PLANS else "basic"]["work"]
+
+
+async def work(db, user_id: str) -> dict:
+    return work_of(await plan_of(db, user_id))
 
 
 def quality_of(plan: str) -> dict:

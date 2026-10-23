@@ -28,11 +28,17 @@ _STOP = set("a an and are as at be by can do does for from how i in is it me my 
 Ask = Callable[[str, str, int], Awaitable[str]]  # (model, prompt, max_tokens) -> text
 
 
-def limits(model: str) -> dict:
-    """How many sources, how much of each, and how long the report may be for this model."""
+def limits(model: str, depth: int = 1) -> dict:
+    """How many searches and sources, how much of each, and how long the report may be for this model.
+    depth=2 (the Max plan) searches and reads twice as much and writes a longer report."""
     if llm.lean(model):
-        return {"sources": 6, "chars": 1500, "report_tokens": 2600}
-    return {"sources": 10, "chars": 3500, "report_tokens": 6000}
+        base = {"queries": MAX_QUERIES, "sources": 6, "chars": 1500, "report_tokens": 2600}
+    else:
+        base = {"queries": MAX_QUERIES, "sources": 10, "chars": 3500, "report_tokens": 6000}
+    if depth >= 2:
+        base = {"queries": MAX_QUERIES * 2, "sources": base["sources"] * 2, "chars": base["chars"],
+                "report_tokens": min(12000, int(base["report_tokens"] * 1.5))}
+    return base
 
 
 def keywords(text: str) -> List[str]:
@@ -66,7 +72,7 @@ def best_passages(text: str, terms: List[str], max_chars: int) -> str:
     return "\n".join(paras[i] for i in sorted(keep))[:max_chars]
 
 
-def parse_queries(text: str, question: str) -> List[str]:
+def parse_queries(text: str, question: str, most: int = MAX_QUERIES) -> List[str]:
     m = re.search(r"\[.*\]", text or "", re.S)
     queries = []
     if m:
@@ -81,7 +87,7 @@ def parse_queries(text: str, question: str) -> List[str]:
         q = q.strip()[:200]
         if q and q.lower() not in {o.lower() for o in out}:
             out.append(q)
-    return out[:MAX_QUERIES]
+    return out[:most]
 
 
 async def default_ask(model: str, prompt: str, max_tokens: int) -> str:
@@ -110,15 +116,15 @@ def planner_model(model: str) -> str:
     return "openai/gpt-oss-20b" if llm.lean(model) and model.startswith("openai/gpt-oss") else model
 
 
-async def plan(question: str, focus: str, model: str, ask: Ask) -> List[str]:
-    prompt = (f"Break this research question into {MAX_QUERIES - 1} short, different web search queries that "
+async def plan(question: str, focus: str, model: str, ask: Ask, most: int = MAX_QUERIES) -> List[str]:
+    prompt = (f"Break this research question into {most - 1} short, different web search queries that "
               "together cover it (facts, prices, comparisons, recent news, pros and cons). Today is "
               f"{datetime.now(timezone.utc):%d %B %Y}: for anything that changes (who holds a job, prices, "
               "rankings, news), put the current year in at least one query so the newest pages come first. "
               "Reply with only a JSON "
               f"array of strings.\n\nQuestion: {question}" + (f"\nFocus: {focus}" if focus else ""))
     try:
-        return parse_queries(await ask(planner_model(model), prompt, 400), question)
+        return parse_queries(await ask(planner_model(model), prompt, 400), question, most)
     except Exception as exc:
         logger.warning("research planning failed, searching the question only: %s", exc)
         return [question.strip()[:200]]
@@ -184,11 +190,11 @@ def summary_of(report: str, max_chars: int = 1500) -> str:
 
 
 async def run(question: str, model: str, focus: str = "", ask: Optional[Ask] = None,
-              search=web.search, fetch=web.fetch_page) -> dict:
+              search=web.search, fetch=web.fetch_page, depth: int = 1) -> dict:
     """Returns {"title", "markdown", "summary", "sources", "queries"}."""
     ask = ask or default_ask
-    lim = limits(model)
-    queries = await plan(question, focus, model, ask)
+    lim = limits(model, depth)
+    queries = await plan(question, focus, model, ask, lim["queries"])
     terms = keywords(question + " " + focus + " " + " ".join(queries))
     sources = await gather_sources(queries, terms, lim["sources"], lim["chars"], search, fetch)
     if not sources:

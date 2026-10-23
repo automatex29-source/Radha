@@ -36,6 +36,11 @@ class ToolContext:
     searches_left: Optional[int] = None  # None means no limit
     web: bool = True  # False when the user hasn't turned web search on: web_search and deep_research are hidden
     limit_hit: Optional[str] = None  # set when a plan limit stopped a tool, so the app can offer an upgrade
+    # How the user's plan works (limits.work_of): results per web search, Deep Research depth (1 or 2) and
+    # rounds of automatic App Builder fixes (None keeps the default).
+    search_results: int = 6
+    research_depth: int = 1
+    repair_rounds: Optional[int] = None
 
 
 @dataclass
@@ -161,7 +166,7 @@ async def _web_search(ctx: ToolContext, args: dict) -> ToolOutput:
             logger.warning("Exchange rates failed: %s", exc)
             rates = ""
     try:
-        results = await web.search(query, int(args.get("max_results") or 6))
+        results = await web.search(query, int(args.get("max_results") or (ctx.search_results if ctx else 6)))
     except Exception:
         if not rates:
             raise
@@ -225,7 +230,9 @@ async def _allowance(ctx: ToolContext, kind: str = "picture", size: Optional[int
         ctx.limit_hit = str(exc)
         raise ValueError(f"{exc} Tell the user this kindly, in one sentence, and that the Plans page "
                          "(menu with their name > Plans) shows Pro and Max.")
-    token = media.PREMIUM_MEDIA.set((await limits.quality(ctx.db, ctx.user_id))["media"] == "premium")
+    plan = await limits.plan_of(ctx.db, ctx.user_id)
+    token = media.PREMIUM_MEDIA.set(limits.quality_of(plan)["media"] == "premium")
+    sharp = media.PICTURE_SIZE.set(limits.work_of(plan)["pictureSize"] if limits.quality_of(plan)["media"] == "premium" else "")
     try:
         yield
     except BaseException:
@@ -233,6 +240,7 @@ async def _allowance(ctx: ToolContext, kind: str = "picture", size: Optional[int
         raise
     finally:
         media.PREMIUM_MEDIA.reset(token)
+        media.PICTURE_SIZE.reset(sharp)
 
 
 
@@ -315,7 +323,8 @@ async def _create_document(ctx: ToolContext, args: dict) -> ToolOutput:
 
 async def _deep_research(ctx: ToolContext, args: dict) -> ToolOutput:
     question = _require(args, "question")
-    result = await research.run(question, ctx.model or research.planner_model(""), focus=args.get("focus") or "")
+    result = await research.run(question, ctx.model or research.planner_model(""), focus=args.get("focus") or "",
+                                depth=ctx.research_depth)
     fmt = "docx" if (args.get("format") or "").lower() == "docx" else "pdf"
     body = result["markdown"]
     data = documents.build_docx(body) if fmt == "docx" else documents.build_pdf(body)

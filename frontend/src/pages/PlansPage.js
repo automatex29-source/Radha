@@ -21,17 +21,31 @@ function times(plan, basic) {
   return basic ? Math.round(plan.meter.session / basic.meter.session) : 1;
 }
 
+// How Krish works on each plan (limits.work_of), in plain words.
+function workFeatures(plan) {
+  const w = plan.work;
+  const every = w.automationMinutes >= 1440 ? "once a day" : w.automationMinutes >= 60 ? "every hour" : `every ${w.automationMinutes} minutes`;
+  return [
+    { ok: true, text: { free: "Krish Basic answers every question", hard: "Premium AI on hard questions, automatically", all: "Our strongest AI on every answer" }[w.model] },
+    { ok: w.model !== "free", text: "Richer, more complete answers with examples and next steps" },
+    { ok: true, text: `Web search: up to ${w.searches} searches and ${w.results} results each` },
+    { ok: true, text: w.model === "free" ? "App Builder on the free model" : `App Builder on premium AI, ${w.builderSteps} steps and ${w.repairRounds} rounds of self-checks` },
+    { ok: w.research > 1, text: "Deep Research twice as deep" },
+    { ok: true, text: `Automations can repeat ${every}` },
+    { ok: w.priority, text: "Automations get their own lane, never wait in line" },
+  ];
+}
+
 function features(plan, basic) {
   const x = times(plan, basic);
   return [
     { ok: true, text: "Unlimited chat and search" },
-    { ok: true, text: "Krish AI, our free model for every question" },
     { ok: true, text: x > 1 ? `${x}x the usage of Basic for builds, pictures, decks and videos` : "Builds, pictures, decks and videos" },
     { ok: true, text: "Usage refills every 5 hours" },
     { ok: true, text: `${plan.total.automation} automation${plan.total.automation === 1 ? "" : "s"}` },
     { ok: plan.publish, text: "Publish apps to the web" },
-    { ok: plan.premium, text: "Premium AI models" },
-    { ok: plan.quality.media === "premium", text: "HD pictures and real AI video" },
+    ...workFeatures(plan),
+    { ok: plan.quality.media === "premium", text: plan.work.pictureSize === "4K" ? "4K pictures and real AI video" : "HD pictures and real AI video" },
     { ok: plan.premium, text: "Think mode on our smartest model" },
     { ok: true, text: `Videos up to ${plan.quality.videoSeconds} seconds` },
     { ok: true, text: `Uploads up to ${plan.quality.uploadMb}MB` },

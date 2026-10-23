@@ -90,7 +90,7 @@ def test_premium_messages_use_the_meter_by_length(client, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
     monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": 3, "week": 100})
     uid = _user(client, "cap-pro@test.com", "pro")
-    pick = lambda chars: client.portal.call(server._pick_model, uid, {}, "claude-sonnet-5-5", False, chars)
+    pick = lambda chars: client.portal.call(server._pick_model, uid, {}, "claude-sonnet-5-5", False, "x" * chars)
     assert pick(10) == "claude-sonnet-5-5"  # 1 credit
     assert pick(6500) == server.AI_MODEL  # 3 credits don't fit in the 2 left: Krish Basic answers
     assert pick(10) == "claude-sonnet-5-5"
