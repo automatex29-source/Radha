@@ -3,13 +3,6 @@ import { Button } from "@/components/ui/button";
 import BrandMark from "@/components/BrandMark";
 import { ArrowRight, BadgeCheck, Crown, Loader2, Lock, PartyPopper, RefreshCcw, Sparkles } from "lucide-react";
 
-const DAILY = [
-  { key: "picture", label: "AI pictures" },
-  { key: "deck", label: "slide decks" },
-  { key: "video", label: "videos" },
-  { key: "build", label: "app builds" },
-];
-
 const IDEAS = {
   pro: [
     "A full wedding or birthday invitation, with pictures, in a minute",
@@ -26,10 +19,10 @@ const IDEAS = {
 const firstName = (name) => (name || "").trim().split(" ")[0];
 
 /** Opens when someone taps a paid plan: what it unlocks for them (compared with their plan now), then pay. */
-export function PlanSheet({ plan, current, user, price, offer, busy, onPay, onClose }) {
+export function PlanSheet({ plan, current, basic, user, price, offer, busy, onPay, onClose }) {
   if (!plan) return null;
   const first = firstName(user?.name);
-  const more = (k) => plan.daily[k];
+  const usage = (p) => Math.round(p.meter.session / Math.max(1, (basic || p).meter.session));
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md overflow-hidden p-0" data-testid="plan-sheet">
@@ -50,26 +43,25 @@ export function PlanSheet({ plan, current, user, price, offer, busy, onPay, onCl
         </div>
 
         <div className="max-h-[55dvh] overflow-y-auto px-6 pt-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Every day</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Your usage</p>
           <ul className="mt-2 space-y-2" data-testid="plan-sheet-compare">
-            {DAILY.map((d) => (
-              <li key={d.key} className="flex items-center justify-between gap-3 rounded-xl bg-surface px-3 py-2 text-sm">
-                <span className="font-medium capitalize">{d.label}</span>
-                <span className="tabular-nums">
-                  <span className="text-muted-foreground line-through decoration-1">{current?.daily[d.key]}</span>
-                  <ArrowRight className="mx-1.5 inline h-3 w-3 text-muted-foreground" />
-                  <b className="text-primary">{more(d.key)}</b>
-                </span>
-              </li>
-            ))}
+            <li className="flex items-center justify-between gap-3 rounded-xl bg-surface px-3 py-2 text-sm">
+              <span className="font-medium">Builds, pictures, decks and videos</span>
+              <span className="shrink-0 tabular-nums">
+                {current && <><span className="text-muted-foreground line-through decoration-1">{usage(current)}x</span>
+                  <ArrowRight className="mx-1.5 inline h-3 w-3 text-muted-foreground" /></>}
+                <b className="text-primary">{usage(plan)}x</b>
+              </span>
+            </li>
+            <li className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm"><BadgeCheck className="h-4 w-4 shrink-0 text-primary" /> Usage refills every 5 hours</li>
             {[
               "Premium AI models for harder questions",
               "HD pictures and real AI video",
               "Think mode answers with our smartest model",
               ...(plan.quality ? [
                 `Videos up to ${plan.quality.videoSeconds} seconds, uploads up to ${plan.quality.uploadMb}MB`,
-                `Krish remembers up to ${plan.quality.memory} things about you`,
               ] : []),
+              "Krish remembers what you tell it, in every chat",
               "Publish your apps to the web",
             ].map((perk) => (
               <li key={perk} className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm"><BadgeCheck className="h-4 w-4 shrink-0 text-primary" /> {perk}</li>

@@ -70,9 +70,12 @@ class FakeUsers:
 
 
 class FakeUsage:
-    """Counts premium messages, which never run out in these tests."""
+    """The usage meter, which never runs out in these tests."""
+    async def find_one(self, *_a, **_k):
+        return {"sessionStart": 9e12, "weekStart": 9e12, "sessionUsed": 0, "weekUsed": 0}
+
     async def find_one_and_update(self, *_a, **_k):
-        return {"premium": 1}
+        return {"sessionUsed": 1}
 
 
 class FakeDB:

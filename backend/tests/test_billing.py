@@ -78,7 +78,7 @@ def test_paying_for_pro_switches_it_on_for_30_days(client):
     assert r.status_code == 200 and r.json()["plan"] == "pro"
     expires = datetime.fromisoformat(r.json()["planExpiresAt"])
     assert timedelta(days=29) < expires - datetime.now(timezone.utc) <= timedelta(days=30)
-    assert client.get("/api/usage", headers=h).json()["usage"]["picture"]["limit"] == 25
+    assert client.get("/api/usage", headers=h).json()["meter"]["session"]["limit"] == 400
 
     # The same payment coming back again (or by webhook) doesn't add more days.
     assert _pay(client, h, order).json()["planExpiresAt"] == r.json()["planExpiresAt"]

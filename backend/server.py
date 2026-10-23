@@ -1716,7 +1716,7 @@ def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool 
 async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think)
+    model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think, len(body.content))
 
     image_ids = []
     for mid in body.images:
@@ -1724,8 +1724,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         if not doc or not (doc.get("contentType") or "").startswith("image/"):
             raise HTTPException(status_code=400, detail="Unknown image attachment")
         image_ids.append(mid)
-    if conv.get("appId"):  # chat is unlimited; App Builder messages count as app builds
-        await limits.require(db, user_id, "build")
+    if conv.get("appId"):  # chat is unlimited; an App Builder message uses credits by how much it asks for
+        await limits.require(db, user_id, "build", size=len(body.content))
 
     content, ready_reply = body.content, None
     if conv.get("appId"):
@@ -1785,17 +1785,27 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
 THINK_MODELS = ("claude-sonnet-5-5", "gpt-5.4")  # Think on Pro and Max: the first one set up answers
 
 
-async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = False) -> str:
+async def _chat_chars(conv: dict) -> int:
+    """How much text a premium model is sent for this chat (the recent history), for the usage meter."""
+    if not conv.get("id"):
+        return 0
+    docs = await db.messages.find({"conversationId": conv["id"]}, {"content": 1}).sort("createdAt", -1).to_list(40)
+    return sum(len(d.get("content") or "") for d in docs)
+
+
+async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = False, new_chars: int = 0) -> str:
     """The model that answers: the App Builder's stronger model inside an app, and no paid
     model (Claude, GPT) for free-plan users unless the owner sets PAID_MODELS=all.
 
-    On Pro and Max, Think moves a free-model question to the strongest premium model. Premium messages
-    count toward the plan's daily allowance; once it is used up the chat answers with Krish Basic."""
+    On Pro and Max, Think moves a free-model question to the strongest premium model. A premium message uses
+    credits from the plan's meter by how much is sent (the chat so far and the new message); once the meter
+    is empty the chat answers with Krish Basic."""
     model = requested
     pro = await limits.is_pro(db, user_id)
     if think and pro and not conv.get("appId") and not agent_llm.paid(model):
         model = next((m for m in THINK_MODELS if agent_llm.configured(m)), model)
-    if pro and agent_llm.paid(model) and not await limits.use_premium(db, user_id):
+    if pro and agent_llm.paid(model) and not await limits.use_premium(db, user_id,
+                                                                       new_chars + await _chat_chars(conv)):
         return AI_MODEL
     if model == AUTO_MODEL and conv.get("appId"):
         model = agent_llm.concrete(model)
@@ -1925,8 +1935,9 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think)
-    if conv.get("appId"):  # chat is unlimited; App Builder messages count as app builds
-        await limits.require(db, user_id, "build")
+    if conv.get("appId"):  # chat is unlimited; an App Builder message uses credits by how much it asks for
+        last = await db.messages.find_one({"conversationId": conv_id, "role": "user"}, sort=[("createdAt", -1)])
+        await limits.require(db, user_id, "build", size=len((last or {}).get("content") or ""))
 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     if not history_docs:
@@ -1954,9 +1965,10 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     the new wording."""
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think)
+    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think,
+                              len(body.content))
     if conv.get("appId"):
-        await limits.require(db, user_id, "build")
+        await limits.require(db, user_id, "build", size=len(body.content))
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     index = next((i for i, m in enumerate(history_docs) if m["id"] == message_id), None)
     if index is None or history_docs[index]["role"] != "user":

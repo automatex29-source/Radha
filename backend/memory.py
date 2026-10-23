@@ -14,12 +14,16 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-import limits
 from agent import llm as agent_llm
 
 logger = logging.getLogger("radha.memory")
 
 _MAX_FACT_CHARS = 300
+# Memory has no small cap on any plan: Krish keeps what it's told, across every chat. A safety limit stops
+# the list growing without end; past it the oldest auto-learned fact makes room. The prompt carries the
+# newest PROMPT_FACTS, so a long memory doesn't crowd out the conversation.
+MAX_FACTS = 1000
+PROMPT_FACTS = 150
 
 # Words that suggest the user is saying something about themselves or asking RADHA to (un)remember.
 _HINT = re.compile(
@@ -94,10 +98,6 @@ async def _ask(model: str, prompt: str) -> str:
     return resp.choices[0].message.content or ""
 
 
-async def _keeps(db, user_id: str) -> int:
-    """How many facts the user's plan remembers."""
-    return (await limits.quality(db, user_id))["memory"]
-
 
 async def learn(db, user_id: str, message: str, chat_model: str, ask=None) -> dict:
     """Update the user's global facts from one message. Returns {"added": [...], "removed": [...]}.
@@ -111,9 +111,8 @@ async def learn(db, user_id: str, message: str, chat_model: str, ask=None) -> di
         model = learning_model(chat_model)
         if not model:
             return result
-        keep = await _keeps(db, user_id)
-        facts = await db.memories.find({"userId": user_id, "projectId": None}).sort("createdAt", 1).to_list(keep)
-        listing = "\n".join(f"- {f['content']}" for f in facts) or "(none yet)"
+        facts = await db.memories.find({"userId": user_id, "projectId": None}).sort("createdAt", 1).to_list(MAX_FACTS)
+        listing = "\n".join(f"- {f['content']}" for f in facts[-PROMPT_FACTS:]) or "(none yet)"
         reply = await (ask or _ask)(model, _PROMPT.format(facts=listing, message=message[:2000]))
         data = _parse(reply)
 
@@ -129,8 +128,12 @@ async def learn(db, user_id: str, message: str, chat_model: str, ask=None) -> di
             text = str(text).strip().lstrip("- ").strip()[:_MAX_FACT_CHARS]
             if len(text) < 3 or text.lower() in by_text:
                 continue
-            if len(by_text) >= keep:
-                break
+            if len(by_text) >= MAX_FACTS:
+                oldest = next((f for f in facts if f.get("source") == "auto" and f["content"].strip().lower() in by_text), None)
+                if not oldest:
+                    break
+                await db.memories.delete_one({"id": oldest["id"]})
+                by_text.pop(oldest["content"].strip().lower(), None)
             doc = {"id": str(uuid.uuid4()), "userId": user_id, "projectId": None, "content": text,
                    "source": "auto", "createdAt": now_iso()}
             await db.memories.insert_one(doc)
@@ -145,7 +148,7 @@ async def prompt_section(db, user_id: str, project_id: Optional[str]) -> str:
     """System-prompt text with what RADHA knows about the user, or "" when nothing."""
     user = await db.users.find_one({"id": user_id}, {"name": 1})
     query = {"userId": user_id, "$or": [{"projectId": None}, {"projectId": project_id}]}
-    facts = await db.memories.find(query).sort("createdAt", -1).to_list(await _keeps(db, user_id))
+    facts = await db.memories.find(query).sort("createdAt", -1).to_list(PROMPT_FACTS)
     lines = []
     if user and user.get("name"):
         lines.append(f"- Account name: {user['name']}")

@@ -4,18 +4,11 @@ import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Check, Crown, Gift, Loader2, Tag, X } from "lucide-react";
+import { Check, Crown, Gauge, Gift, Loader2, Tag, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import InviteDialog from "@/components/InviteDialog";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
 import { useNavigate } from "react-router-dom";
-
-const DAILY = [
-  { key: "build", label: "App builds", one: "app build", many: "app builds" },
-  { key: "picture", label: "AI pictures", one: "AI picture", many: "AI pictures" },
-  { key: "deck", label: "New decks", one: "new deck", many: "new decks" },
-  { key: "video", label: "Videos", one: "video", many: "videos" },
-];
 
 const TAGLINE = {
   basic: "Everything you need to get started.",
@@ -23,21 +16,26 @@ const TAGLINE = {
   max: "For businesses and power users.",
 };
 
-function features(plan) {
+// How much more a plan can make than Basic, by the size of their usage meters.
+function times(plan, basic) {
+  return basic ? Math.round(plan.meter.session / basic.meter.session) : 1;
+}
+
+function features(plan, basic) {
+  const x = times(plan, basic);
   return [
     { ok: true, text: "Unlimited chat and search" },
     { ok: true, text: "Krish AI, our free model for every question" },
-    ...DAILY.map((d) => ({ ok: true, text: `${plan.daily[d.key]} ${plan.daily[d.key] === 1 ? d.one : d.many} a day` })),
+    { ok: true, text: x > 1 ? `${x}x the usage of Basic for builds, pictures, decks and videos` : "Builds, pictures, decks and videos" },
+    { ok: true, text: "Usage refills every 5 hours" },
     { ok: true, text: `${plan.total.automation} automation${plan.total.automation === 1 ? "" : "s"}` },
     { ok: plan.publish, text: "Publish apps to the web" },
-    { ok: plan.premium, text: plan.quality?.premiumDaily ? `Premium AI models, ${plan.quality.premiumDaily} messages a day` : "Premium AI models" },
-    ...(plan.quality ? [
-      { ok: plan.quality.media === "premium", text: "HD pictures and real AI video" },
-      { ok: plan.premium, text: "Think mode on our smartest model" },
-      { ok: true, text: `Videos up to ${plan.quality.videoSeconds} seconds` },
-      { ok: true, text: `Uploads up to ${plan.quality.uploadMb}MB` },
-      { ok: true, text: `Remembers ${plan.quality.memory} things about you` },
-    ] : []),
+    { ok: plan.premium, text: "Premium AI models" },
+    { ok: plan.quality.media === "premium", text: "HD pictures and real AI video" },
+    { ok: plan.premium, text: "Think mode on our smartest model" },
+    { ok: true, text: `Videos up to ${plan.quality.videoSeconds} seconds` },
+    { ok: true, text: `Uploads up to ${plan.quality.uploadMb}MB` },
+    { ok: true, text: "Remembers what you tell it, in every chat" },
   ];
 }
 
@@ -61,33 +59,66 @@ function untilText(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-function Usage({ usage }) {
+function resetText(ts) {
+  if (!ts) return null;
+  const mins = Math.max(1, Math.round((ts * 1000 - Date.now()) / 60000));
+  if (mins < 20 * 60) {
+    const at = new Date(ts * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return `Refills at ${at} (in ${mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`})`;
+  }
+  return `Refills on ${new Date(ts * 1000).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`;
+}
+
+function MeterBar({ label, part, idle, testid }) {
+  const pct = Math.min(100, Math.round((part.used / Math.max(1, part.limit)) * 100));
+  return (
+    <div data-testid={testid}>
+      <div className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="font-semibold">{label}</span>
+        <span className="tabular-nums text-muted-foreground"><b className="text-foreground">{pct}%</b> used</span>
+      </div>
+      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface-strong">
+        <div className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-500" : "bg-gradient-to-r from-indigo-500 to-violet-500"}`}
+          style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">{resetText(part.resetsAt) || idle}</p>
+    </div>
+  );
+}
+
+/** The usage meter, like Claude's: every build, picture, deck and video runs it down by how big it is. */
+function Usage({ meter, costs, automation }) {
+  const range = (r) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}-${r[1]}`);
   return (
     <section className="mt-10 rounded-3xl border border-border/70 bg-card/80 p-6 shadow-sm backdrop-blur" data-testid="plans-usage">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-extrabold tracking-tight">Used today</h2>
-        <p className="text-xs text-muted-foreground">Refills at midnight (India time). Chat is never counted.</p>
+        <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight"><Gauge className="h-5 w-5 text-indigo-500" /> Your usage</h2>
+        <p className="text-xs text-muted-foreground">Chat on Krish Basic is never counted.</p>
       </div>
       <div className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        {[...DAILY, { key: "automation", label: "Automations (total)" }].map((d) => {
-          const u = usage[d.key];
-          const pct = Math.min(100, Math.round((u.used / Math.max(1, u.limit)) * 100));
-          return (
-            <div key={d.key}>
-              <div className="flex justify-between text-sm"><span className="font-medium">{d.label}</span>
-                <span className="tabular-nums text-muted-foreground">{u.used} of {u.limit}</span></div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-strong">
-                <div className={`h-full rounded-full ${pct >= 100 ? "bg-rose-500" : "bg-gradient-to-r from-indigo-500 to-violet-500"}`} style={{ width: `${pct}%` }} />
-              </div>
-            </div>
-          );
-        })}
+        <MeterBar label="This session" part={meter.session} testid="meter-session"
+          idle={`Starts when you make something, then refills ${meter.session.hours} hours later`} />
+        <MeterBar label="This week" part={meter.week} testid="meter-week" idle="Starts when you make something" />
       </div>
+      <div className="mt-6 rounded-2xl bg-surface p-4" data-testid="meter-costs">
+        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">What things use</p>
+        <p className="mt-1 text-xs text-muted-foreground">Bigger requests use more: a longer build ask, a longer video, a longer chat.</p>
+        <ul className="mt-2 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+          <li className="flex justify-between gap-3 whitespace-nowrap"><span>App build</span><span className="tabular-nums text-muted-foreground">{range(costs.build)} credits</span></li>
+          <li className="flex justify-between gap-3 whitespace-nowrap"><span>AI picture</span><span className="tabular-nums text-muted-foreground">{costs.picture} credits</span></li>
+          <li className="flex justify-between gap-3 whitespace-nowrap"><span>Slide deck</span><span className="tabular-nums text-muted-foreground">{costs.deck} + pictures</span></li>
+          <li className="flex justify-between gap-3 whitespace-nowrap"><span>Video</span><span className="tabular-nums text-muted-foreground">{costs.videoSecond} a second</span></li>
+          <li className="flex justify-between gap-3 whitespace-nowrap"><span>Premium message</span><span className="tabular-nums text-muted-foreground">{range(costs.chat)} credits</span></li>
+        </ul>
+      </div>
+      <p className="mt-4 text-xs text-muted-foreground" data-testid="meter-automations">
+        Automations: {automation.used} of {automation.limit}
+      </p>
     </section>
   );
 }
 
-function PlanCard({ plan, current, currentPlan, paymentsOn, expires, busy, onBuy, offer }) {
+function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
   const canBuy = paymentsOn && plan.price > 0 && !lower;
@@ -110,7 +141,7 @@ function PlanCard({ plan, current, currentPlan, paymentsOn, expires, busy, onBuy
       </div>
       <div className="my-6 h-px bg-border/70" />
       <ul className="flex-1 space-y-3 text-[0.9rem]">
-        {features(plan).map((f) => (
+        {features(plan, basic).map((f) => (
           <li key={f.text} className={`flex items-start gap-2.5 ${f.ok ? "text-foreground/90" : "text-muted-foreground/70"}`}>
             <span className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full ${f.ok ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-300" : "bg-muted text-muted-foreground"}`}>
               {f.ok ? <Check className="h-3 w-3" strokeWidth={3} /> : <X className="h-3 w-3" strokeWidth={3} />}
@@ -230,7 +261,7 @@ export default function PlansPage() {
             <>
               <div className="mt-10 grid gap-5 md:grid-cols-3" data-testid="plans-grid">
                 {data.plans.map((p) => (
-                  <PlanCard key={p.id} plan={p} current={p.id === data.plan} currentPlan={data.plan}
+                  <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
                     paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} />
                 ))}
               </div>
@@ -256,14 +287,14 @@ export default function PlansPage() {
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"><Gift className="h-4 w-4" /></span>
                 <span className="text-sm"><b>Get Pro free:</b> invite a friend and you both get 7 days of Pro.</span>
               </button>
-              {data.limitsOn && <Usage usage={data.usage} />}
+              {data.limitsOn && <Usage meter={data.meter} costs={data.costs} automation={data.usage.automation} />}
             </>
           )}
         </div>
       </main>
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
       {picked && data && (
-        <PlanSheet plan={picked} current={data.plans.find((p) => p.id === data.plan)} user={user} price={priceOf(picked)}
+        <PlanSheet plan={picked} current={data.plans.find((p) => p.id === data.plan)} basic={data.plans.find((p) => p.id === "basic")} user={user} price={priceOf(picked)}
           offer={offer} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
       )}
       <PlanWelcome plan={welcome?.plan} user={user} until={welcome?.until} onClose={() => setWelcome(null)}
