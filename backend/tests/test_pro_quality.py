@@ -1,5 +1,5 @@
-"""What Pro and Max get beyond the daily counts: the paid picture and video engines, Think on a premium model
-(with a daily cap on premium messages), longer videos paid for in credits and bigger uploads. Memory has no
+"""What Pro and Max get beyond a bigger usage meter: the paid picture and video engines, Think on a premium model
+(premium messages use the meter), longer videos (credits by the second) and bigger uploads. Memory has no
 plan limit. MongoDB is mongomock."""
 import asyncio
 import os
@@ -70,7 +70,7 @@ def test_plans_list_their_quality(client):
     assert plans["pro"]["price"] == 299
     assert basic["media"] == "free" and pro["media"] == "premium"
     assert pro["videoSeconds"] > basic["videoSeconds"] and pro["uploadMb"] > basic["uploadMb"]
-    assert pro["premiumDaily"] > 0 and "memory" not in pro
+    assert "memory" not in pro
     assert plans["max"]["quality"]["videoSeconds"] == 60
 
 
@@ -84,15 +84,16 @@ def test_think_uses_a_premium_model_on_pro_only(client, monkeypatch):
     assert pick(basic, True) == server.AI_MODEL
 
 
-def test_premium_messages_have_a_daily_cap(client, monkeypatch):
+def test_premium_messages_use_the_meter_by_length(client, monkeypatch):
     import limits
     import server
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
-    monkeypatch.setitem(limits.PLANS["pro"]["quality"], "premiumDaily", 2)
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": 3, "week": 100})
     uid = _user(client, "cap-pro@test.com", "pro")
-    picks = [client.portal.call(server._pick_model, uid, {}, "claude-sonnet-5-5", False) for _ in range(3)]
-    assert picks == ["claude-sonnet-5-5", "claude-sonnet-5-5", server.AI_MODEL]
-
+    pick = lambda chars: client.portal.call(server._pick_model, uid, {}, "claude-sonnet-5-5", False, chars)
+    assert pick(10) == "claude-sonnet-5-5"  # 1 credit
+    assert pick(6500) == server.AI_MODEL  # 3 credits don't fit in the 2 left: Krish Basic answers
+    assert pick(10) == "claude-sonnet-5-5"
 
 def test_uploads_follow_the_plan(client):
     import server
@@ -123,7 +124,7 @@ def test_memory_keeps_learning_when_it_is_long(client, monkeypatch):
     assert client.portal.call(facts) == ["Lives in Pune", "Has a cat", "Studies law"]  # the oldest made room
 
 
-def test_long_videos_cost_more_credits(client, monkeypatch):
+def test_long_videos_use_more_credits(client, monkeypatch):
     import limits
     import server
     from agent import tools, video
@@ -139,12 +140,12 @@ def test_long_videos_cost_more_credits(client, monkeypatch):
     assert seen == [60]
 
     async def used():
-        return (await server.db.usage.find_one({"_id": f"{uid}:{limits.today()}"}))["video"]
-    assert client.portal.call(used) == 5  # 60 seconds at 12 seconds a credit
-    monkeypatch.setitem(limits.PLANS["max"]["daily"], "video", 7)
-    with pytest.raises(ValueError, match="needs 5 credits and you have 2 left"):
+        return (await limits.summary(server.db, uid))["meter"]["session"]["used"]
+    assert client.portal.call(used) == 600  # 60 seconds on the premium engine, 10 credits a second
+    monkeypatch.setitem(limits.PLANS["max"], "meter", {"session": 900, "week": 9000})
+    with pytest.raises(ValueError, match="needs 600 credits and you have 300 left"):
         client.portal.call(tools._generate_video, ctx, {"prompt": "another trip", "seconds": 60})
-    assert client.portal.call(used) == 5  # nothing taken for the video that couldn't be made
+    assert client.portal.call(used) == 600  # nothing taken for the video that couldn't be made
 
 
 def test_long_video_is_clips_joined(monkeypatch):

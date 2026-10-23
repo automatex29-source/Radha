@@ -103,8 +103,8 @@ export default function InvitePage() {
                 <p className="flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-orange-500" /> What your {days} free Pro days include</p>
                 <ul className="mt-3 grid gap-1.5 text-sm text-muted-foreground sm:grid-cols-2">
                   <li>• Premium AI models for harder questions</li>
-                  <li>• 25 HD AI pictures every day</li>
-                  <li>• 15 slide decks and 5 videos a day</li>
+                  <li>• HD AI pictures and real AI video</li>
+                  <li>• 10x the usage of Basic, refilled every 5 hours</li>
                   <li>• Publish the apps you build</li>
                 </ul>
                 <p className="mt-3 text-xs text-muted-foreground">After {days} days you simply go back to the free plan. Nothing is charged.</p>
