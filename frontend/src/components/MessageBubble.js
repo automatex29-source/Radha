@@ -231,7 +231,7 @@ function RateButtons({ message }) {
   );
 }
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, compactSteps = false }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -352,7 +352,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             </span>
           )}
         </div>
-        <ToolSteps steps={message.steps} />
+        <ToolSteps steps={message.steps} compact={compactSteps} />
         <LiveCards items={liveCards} />
         {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}

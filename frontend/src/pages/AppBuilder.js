@@ -29,6 +29,11 @@ export default function AppBuilder() {
   const [tab, setTab] = useState(() => (window.matchMedia?.("(max-width: 767px)").matches ? "chat" : "preview"));
   const [previewKey, setPreviewKey] = useState(0);
   const [fixAsk, setFixAsk] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  useEffect(() => {
+    api.get(`/apps/${id}/preview-token`).then(({ data }) => setPreviewUrl(absoluteUrl(data.url))).catch((e) => toast.error(formatApiError(e)));
+  }, [id]);
 
   const refresh = useCallback(async () => {
     try {
@@ -102,7 +107,8 @@ export default function AppBuilder() {
         ))}
       </nav>
       <div className="flex min-h-0 flex-1">
-        <BuilderChat app={app} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk} />
+        <BuilderChat app={app} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
+          previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")} />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
             {PANES.map(([t, Icon, label]) => (
@@ -113,7 +119,7 @@ export default function AppBuilder() {
             ))}
           </nav>
           <div className="min-h-0 flex-1">
-            {(tab === "preview" || tab === "chat") && <PreviewTab appId={id} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)}
+            {(tab === "preview" || tab === "chat") && <PreviewTab url={previewUrl} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)}
               onFix={(content) => { setFixAsk({ content, at: Date.now() }); if (window.matchMedia?.("(max-width: 767px)").matches) setTab("chat"); }} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
             {tab === "terminal" && <TerminalTab appId={id} />}
@@ -127,7 +133,7 @@ export default function AppBuilder() {
 }
 
 /* ------------------------------------------------------------------ chat */
-function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
+function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, previewKey, onShowPreview }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -218,6 +224,10 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
     }
   };
 
+  // The latest reply that changed the app gets live laptop and phone previews under it.
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const lastBuild = lastAssistant?.steps?.some((s) => FILE_TOOLS.has(s.name) && s.status === "done") ? lastAssistant.id : null;
+
   useEffect(() => {
     if (ask) send(ask.content);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,8 +247,13 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
             )}
           </div>
         )}
-        {messages.map((m) => <MessageBubble key={m.id} message={m} codeProject={false} />)}
-        {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} />}
+        {messages.map((m) => (
+          <div key={m.id}>
+            <MessageBubble message={m} codeProject={false} compactSteps />
+            {!streaming && m.id === lastBuild && previewUrl && <BuildPreview url={previewUrl} reloadKey={previewKey} onOpen={onShowPreview} />}
+          </div>
+        ))}
+        {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} compactSteps />}
       </div>
       <div className="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {needsKey && <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">The builder needs an AI provider key on the backend (see .env.example).</p>}
@@ -277,14 +292,34 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask }) {
 }
 
 /* --------------------------------------------------------------- preview */
-function PreviewTab({ appId, reloadKey, onReload, onFix }) {
-  const [url, setUrl] = useState(null);
+// The app drawn at a real screen size and shrunk to fit, like a screenshot that stays live.
+function MiniScreen({ url, reloadKey, width, height, scale, label, className }) {
+  return (
+    <figure className="flex flex-col items-center gap-1">
+      <div className={`overflow-hidden border-2 border-border-strong bg-white shadow-sm ${className}`}
+        style={{ width: width * scale + 4, height: height * scale + 4 }}>
+        <iframe key={reloadKey} src={url} title={`${label} preview`} loading="lazy" tabIndex={-1} aria-hidden="true"
+          sandbox="allow-scripts allow-forms" scrolling="no"
+          style={{ width, height, transform: `scale(${scale})`, transformOrigin: "0 0", pointerEvents: "none", border: 0 }} />
+      </div>
+      <figcaption className="text-[10px] text-muted-foreground">{label}</figcaption>
+    </figure>
+  );
+}
+
+function BuildPreview({ url, reloadKey, onOpen }) {
+  return (
+    <button onClick={onOpen} title="Open the preview" data-testid="build-preview"
+      className="mt-2 flex items-end gap-3 md:ml-11 rounded-xl border border-border bg-card p-3 text-left hover:border-primary/50">
+      <MiniScreen url={url} reloadKey={reloadKey} width={1280} height={800} scale={0.16} label="Laptop" className="rounded-md" />
+      <MiniScreen url={url} reloadKey={reloadKey} width={390} height={800} scale={0.16} label="Phone" className="rounded-xl" />
+    </button>
+  );
+}
+
+function PreviewTab({ url, reloadKey, onReload, onFix }) {
   const [logs, setLogs] = useState([]);
   const frameRef = useRef(null);
-
-  useEffect(() => {
-    api.get(`/apps/${appId}/preview-token`).then(({ data }) => setUrl(absoluteUrl(data.url))).catch((e) => toast.error(formatApiError(e)));
-  }, [appId]);
 
   useEffect(() => { setLogs([]); }, [reloadKey]);
 
