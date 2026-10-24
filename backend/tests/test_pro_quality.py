@@ -82,6 +82,9 @@ def test_think_uses_a_premium_model_on_pro_only(client, monkeypatch):
     assert pick(pro, True) == "claude-sonnet-5-5"
     assert pick(pro, False) == server.AI_MODEL
     assert pick(basic, True) == server.AI_MODEL
+    counsel = lambda uid: client.portal.call(server._pick_model, uid, {"mode": "counsellor"}, server.AI_MODEL)
+    assert counsel(pro) == "claude-sonnet-5-5"  # the Counsellor on Pro always answers with the premium model
+    assert counsel(basic) == server.AI_MODEL
 
 
 def test_premium_messages_use_the_meter_by_length(client, monkeypatch):

@@ -58,6 +58,7 @@ export function PlanSheet({ plan, current, basic, user, price, offer, busy, onPa
               "Premium AI models for harder questions",
               "HD pictures and real AI video",
               "Think mode answers with our smartest model",
+              "Counsellor Pro: deeper replies that remember your last talk",
               ...(plan.quality ? [
                 `Videos up to ${plan.quality.videoSeconds} seconds, uploads up to ${plan.quality.uploadMb}MB`,
               ] : []),

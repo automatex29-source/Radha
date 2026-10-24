@@ -11,10 +11,11 @@ import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel from "@/components/CodePanel";
 import { extractFiles } from "@/lib/codeFiles";
 import ShareDialog from "@/components/ShareDialog";
+import BreatheDialog from "@/components/BreatheDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
@@ -91,6 +92,48 @@ const GREETINGS = {
     ["Late night thoughts, {name}? 🌌", "I'm all", "ears"],
   ],
 };
+// The mood check-in on the Counsellor welcome. Picks are kept in this browser only (Counsellor chats are never
+// saved to memory), so the next visit can ask whether things got better; Pro and Max also see their mood week.
+const MOODS = [
+  { id: "great", icon: Sun, label: "Great", feel: "great", tint: "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300" },
+  { id: "okay", icon: CloudSun, label: "Okay", feel: "okay", tint: "bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300" },
+  { id: "tired", icon: Moon, label: "Tired", feel: "tired", tint: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300" },
+  { id: "low", icon: CloudRain, label: "Low", feel: "low", tint: "bg-slate-200 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300" },
+  { id: "stressed", icon: Zap, label: "Stressed", feel: "stressed", tint: "bg-orange-100 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300" },
+  { id: "angry", icon: Flame, label: "Angry", feel: "angry", tint: "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" },
+];
+const MOOD_KEY = "krish-counsel-mood";
+
+// Every check-in, oldest first (an older single pick is read as a list of one).
+function moodHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MOOD_KEY) || "[]");
+    return (Array.isArray(saved) ? saved : [saved]).filter((x) => MOODS.some((m) => m.id === x?.id) && x.at);
+  } catch { return []; }
+}
+
+function readMood() {
+  const saved = moodHistory().pop();
+  const days = Math.floor((Date.now() - new Date(saved?.at).getTime()) / 86400000);
+  return saved && days >= 0 && days <= 14 ? { mood: MOODS.find((m) => m.id === saved.id), days } : null;
+}
+
+function saveMood(id) {
+  try {
+    localStorage.setItem(MOOD_KEY, JSON.stringify([...moodHistory(), { id, at: new Date().toISOString() }].slice(-30)));
+  } catch { /* optional */ }
+}
+
+// The last 7 days, each with that day's latest check-in (or none).
+function moodWeek() {
+  const byDay = {};
+  moodHistory().forEach((x) => { byDay[new Date(x.at).toDateString()] = x.id; });
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.now() - (6 - i) * 86400000);
+    return { day: i === 6 ? "Today" : d.toLocaleDateString("en", { weekday: "short" }), mood: MOODS.find((m) => m.id === byDay[d.toDateString()]) };
+  });
+}
+
 const TAGLINES = ["Let's talk!", "I'm here for you", "Smile please! 😄", "Good vibes only", "Aaj kya scene hai?"];
 
 function pickGreeting(name) {
@@ -105,12 +148,15 @@ const CODE_FILE_RE = /\.(html?|css|m?js|jsx)$/i;
 
 export default function Workspace({ mode = null }) {
   const counselling = mode === "counsellor";
+  const { user } = useAuth();
+  const proPlan = user?.plan === "pro" || user?.plan === "max";
   const t = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [projectId, setProjectId] = useState(searchParams.get("project") || null);
   const [project, setProject] = useState(null);
   const [conversations, setConversations] = useState([]);
+  const [breatheOpen, setBreatheOpen] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -721,14 +767,15 @@ export default function Workspace({ mode = null }) {
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : messages.length === 0 && !streaming ? (
-            counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} /> : <EmptyState onPick={(p) => sendMessage(p)} />
+            counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} onBreathe={() => setBreatheOpen(true)}
+              last={conversations[0]} onResume={openConversation} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
                 onEdit={!streaming && m.role === "user" && !String(m.id).startsWith("tmp-") ? (text) => editMessage(m.id, text) : undefined}
                 onAsk={i === messages.length - 1 && !streaming ? (q) => sendMessage(q) : undefined}
                 onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
-                codeActive={!!codePanel && panelMessage?.id === m.id} />)}
+                codeActive={!!codePanel && panelMessage?.id === m.id} quickReplies={counselling} />)}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
                   steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
@@ -757,8 +804,14 @@ export default function Workspace({ mode = null }) {
 
         {/* Composer */}
         {counselling && (
-          <p data-testid="counsellor-care-note" className="mx-auto w-full max-w-3xl px-5 text-center text-[11px] leading-snug text-muted-foreground">
-            Need urgent help? Tele-MANAS 14416, free 24x7 💛
+          <p data-testid="counsellor-care-note" className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-5 text-center text-[11px] leading-snug text-muted-foreground">
+            {messages.length > 0 && (
+              <button onClick={() => setBreatheOpen(true)} data-testid="breathe-button-chat"
+                className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:underline dark:text-violet-300">
+                <Wind className="h-3 w-3" /> Breathe with me
+              </button>
+            )}
+            <span>Need urgent help? Tele-MANAS 14416, free 24x7 💛</span>
           </p>
         )}
         <ComposerInput value={input} onChange={setInput} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
@@ -775,6 +828,8 @@ export default function Workspace({ mode = null }) {
           onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
           placeholder={counselling ? "Type anything… how's your day going? 😊" : undefined} />
       </div>
+      {counselling && <BreatheDialog open={breatheOpen} onOpenChange={setBreatheOpen} onDone={(text) => sendMessage(text)}
+        pro={proPlan} />}
       {codePanel && panelContent && (
         <CodePanel content={panelContent} streaming={panelLive && streaming && streamHasCode} onClose={() => setCodePanel(null)} />
       )}
@@ -955,8 +1010,66 @@ const Sparkle = ({ className }) => (
   </svg>
 );
 
-function CounselEmptyState({ onPick }) {
+function MoodWeek({ pro }) {
+  const navigate = useNavigate();
+  const week = useMemo(moodWeek, []);
+  if (!pro) {
+    return (
+      <button onClick={() => navigate("/plans")} data-testid="mood-week-locked"
+        className="mt-2.5 flex w-full items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground sm:justify-start">
+        <Lock className="h-3 w-3" /> See your mood week with <span className="font-semibold text-violet-600 dark:text-violet-300">Pro</span>
+      </button>
+    );
+  }
+  return (
+    <div data-testid="mood-week" className="mt-3 border-t border-border pt-2.5">
+      <p className="text-xs font-semibold text-muted-foreground max-sm:text-center">Your mood week</p>
+      <div className="mt-1.5 grid grid-cols-7 gap-1 text-center">
+        {week.map((d, i) => (
+          <div key={i} className="flex flex-col items-center gap-0.5">
+            <span title={d.mood?.label} className={`flex h-8 w-8 items-center justify-center rounded-full ${d.mood ? d.mood.tint : "bg-muted/60"}`}>
+              {d.mood ? <d.mood.icon className="h-4 w-4" /> : <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />}
+            </span>
+            <span className="text-[10.5px] text-muted-foreground">{d.day}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MoodCheckIn({ onPick, pro }) {
+  const [last] = useState(readMood);
+  const when = last && (last.days === 0 ? "earlier today" : last.days === 1 ? "yesterday" : `${last.days} days ago`);
+  const pick = (m) => {
+    saveMood(m.id);
+    const before = last && last.mood.id !== m.id ? ` Last time I was feeling ${last.mood.feel}.` : "";
+    onPick(`I'm feeling ${m.feel} right now.${before}`);
+  };
+  return (
+    <div data-testid="mood-check-in" className="radha-fade-up relative mt-5 rounded-2xl border border-border bg-card/70 px-4 py-3 shadow-sm backdrop-blur-sm sm:mt-6 sm:px-5">
+      <p className="text-sm font-semibold text-foreground max-sm:text-center">
+        {last ? <>You felt {last.mood.feel} {when}. How are you now?</> : "How are you feeling right now?"}
+      </p>
+      <div className="mt-2.5 flex flex-wrap justify-center gap-2 sm:justify-start">
+        {MOODS.map((m) => (
+          <button key={m.id} onClick={() => pick(m)} data-testid={`mood-${m.id}`}
+            className={`group flex items-center gap-2 rounded-full border py-1.5 pl-1.5 pr-3 transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-sm active:scale-95 ${
+              last?.mood.id === m.id ? "border-violet-300 bg-violet-50/60 dark:border-violet-400/40 dark:bg-violet-500/10" : "border-border bg-background/60"}`}>
+            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${m.tint}`}><m.icon className="h-3.5 w-3.5" /></span>
+            <span className="text-[13px] font-medium text-foreground">{m.label}</span>
+          </button>
+        ))}
+      </div>
+      <MoodWeek pro={pro} />
+    </div>
+  );
+}
+
+function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const pro = user?.plan === "pro" || user?.plan === "max";
   const first = (user?.name || "").trim().split(/\s+/)[0];
   const g = useMemo(() => pickGreeting(first), [first]);
   return (
@@ -972,6 +1085,17 @@ function CounselEmptyState({ onPick }) {
             Talk about anything: your day, exams, crush, family, big dreams. No judgement, just good vibes,
             real advice and a little Krishna wisdom when you need it ✨ Hindi, English or Hinglish, all chill.
           </p>
+          {pro ? (
+            <p data-testid="counsellor-pro-badge" className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500/15 to-pink-500/15 px-3 py-1 text-xs font-semibold text-violet-700 dark:text-violet-200">
+              <Sparkles className="h-3.5 w-3.5" /> Counsellor Pro: I remember our last talk
+            </p>
+          ) : (
+            <button onClick={() => navigate("/plans")} data-testid="counsellor-pro-upsell"
+              className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-violet-200 px-3 py-1 text-xs font-medium text-muted-foreground transition hover:text-foreground dark:border-violet-400/25">
+              <Sparkles className="h-3.5 w-3.5 text-violet-500" /> With Pro, I remember our last talk and go deeper
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          )}
         </div>
         <div className="relative shrink-0">
           <p className="krish-hand absolute -left-24 top-4 -rotate-12 text-2xl text-pink-500 max-lg:hidden dark:text-pink-300">
@@ -981,9 +1105,24 @@ function CounselEmptyState({ onPick }) {
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <div className="relative mt-5 grid w-full gap-2.5 sm:mt-6 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+      <MoodCheckIn onPick={onPick} pro={pro} />
+      <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+        <button onClick={onBreathe} data-testid="breathe-button"
+          className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-[13px] font-medium text-violet-700 transition hover:-translate-y-0.5 hover:shadow-sm dark:border-violet-400/25 dark:bg-violet-500/10 dark:text-violet-200">
+          <Wind className="h-3.5 w-3.5" /> Breathe with me
+        </button>
+        {last && (
+          <button onClick={() => onResume(last.id)} data-testid="counsellor-resume"
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] font-medium text-foreground transition hover:-translate-y-0.5 hover:shadow-sm">
+            <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 text-muted-foreground">Pick up where we left off:</span>
+            <span className="truncate">{last.title}</span>
+          </button>
+        )}
+      </div>
+      <div className="relative mt-4 grid w-full gap-2.5 sm:mt-5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
         {COUNSEL_STARTERS.map((s, i) => (
-          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} hideOnPhone={i >= 4} />
+          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} hideOnPhone={i >= 2} />
         ))}
       </div>
     </div>

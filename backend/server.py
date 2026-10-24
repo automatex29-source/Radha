@@ -1460,6 +1460,17 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     if counselling:
         agent = False  # a listening conversation: no tools, no web search
+        # Pro and Max: at the start of a new talk, the Counsellor remembers the last one.
+        if user_id and not voice and sum(1 for m in history_docs if m["role"] == "user") <= 2 \
+                and await limits.is_pro(db, user_id):
+            last = await db.conversations.find_one(
+                {"userId": user_id, "mode": counsellor.MODE, "id": {"$ne": conv_id}}, sort=[("updatedAt", -1)])
+            if last:
+                said = await db.messages.find({"conversationId": last["id"], "role": "user"}) \
+                    .sort("createdAt", -1).to_list(4)
+                note = counsellor.last_talk_note(last, list(reversed(said)))
+                if note:
+                    system_parts.append(note)
         if counsellor.is_crisis(last_user or ""):
             system_parts.append("The person's latest message may describe a crisis or danger. Follow the Safety "
                                 "instructions now: respond with care and give the helplines.")
@@ -1526,6 +1537,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     ask_related = not app_id and not counselling and not voice and not extra_system
     if ask_related:
         system_parts.append(related.PROMPT)
+    # The Counsellor offers tap-to-answer replies instead; never in a crisis, where the reply must stay plain.
+    ask_replies = counselling and not voice and not extra_system and not counsellor.is_crisis(last_user or "")
     # Free models (Groq) get only the app tools inside an app, to stay within their token budget.
     focused = bool(app_id) and agent_llm.lean(model)
     if app_id and not max_steps and (not agent_llm.lean(model) or agent_llm.token_budget(model) > 16000):
@@ -1553,6 +1566,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(extra_system)
     if voice and not app_id:
         system_parts.append(voice_prompt(voice_lang, settings_lang))
+    if ask_replies:
+        system_parts.append(counsellor.REPLIES)
     if counselling and not voice:
         system_parts.append(counsellor.BRIEF)
     system_prompt = "\n\n".join(system_parts)
@@ -1642,8 +1657,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     finally:
         content = "".join(full).strip()
         follow_ups = []
-        if ask_related:
-            content, follow_ups = related.split(content)
+        if ask_related or ask_replies:
+            content, follow_ups = related.split(content, related._REPLIES if ask_replies else related._LINE)
             if follow_ups and not stopped:
                 yield f"event: related\ndata: {_sse_json(follow_ups)}\n\n"
         if web_hint and not stopped:
@@ -1841,12 +1856,13 @@ async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = Fa
     """The model that answers: the App Builder's stronger model inside an app, and no paid
     model (Claude, GPT) for free-plan users unless the owner sets PAID_MODELS=all.
 
-    On Pro and Max, Think moves a free-model question to the strongest premium model. A premium message uses
-    credits from the plan's meter by how much is sent (the chat so far and the new message); once the meter
-    is empty the chat answers with Krish Basic."""
+    On Pro and Max, Think (and every Counsellor message) moves a free-model question to the strongest premium
+    model. A premium message uses credits from the plan's meter by how much is sent (the chat so far and the new
+    message); once the meter is empty the chat answers with Krish Basic."""
     model = requested
     pro = await limits.is_pro(db, user_id)
-    if think and pro and not conv.get("appId") and not agent_llm.paid(model):
+    # Pro and Max: the Counsellor always answers with the strongest premium model (deeper, warmer replies).
+    if (think or conv.get("mode") == counsellor.MODE) and pro and not conv.get("appId") and not agent_llm.paid(model):
         model = next((m for m in THINK_MODELS if agent_llm.configured(m)), model)
     if pro and agent_llm.paid(model) and not await limits.use_premium(db, user_id,
                                                                        new_chars + await _chat_chars(conv)):

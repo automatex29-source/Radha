@@ -1,13 +1,14 @@
 // Perplexity-style answers: [1] citations that link to web sources, and the "Related:" follow-up line.
 
-// Hides the model's trailing "Related: a | b | c" line while it streams (the server removes it when done).
+// Hides the model's trailing "Related: a | b | c" line (or the Counsellor's "Replies: ...") while it streams
+// (the server removes it when done).
 export function hideRelatedLine(text) {
   const t = text || "";
-  const at = t.search(/(^|\n)[ \t>*_#-]*\**Related\**:[^\n]*$/i);
+  const at = t.search(/(^|\n)[ \t>*_#-]*\**(?:Related|Replies)\**:[^\n]*$/i);
   if (at >= 0) return t.slice(0, at).replace(/\s+$/, "");
-  // The line is still arriving: "Rel", "Relat"...
+  // The line is still arriving: "Rel", "Relat", "Repl"...
   const last = t.slice(t.lastIndexOf("\n") + 1).replace(/^[\s*_#>-]+/, "");
-  if (last.length >= 2 && t.includes("\n") && "related:".startsWith(last.toLowerCase())) {
+  if (last.length >= 2 && t.includes("\n") && ["related:", "replies:"].some((w) => w.startsWith(last.toLowerCase()))) {
     return t.slice(0, t.lastIndexOf("\n")).replace(/\s+$/, "");
   }
   return t;

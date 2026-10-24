@@ -14,6 +14,7 @@ mongomock_motor = pytest.importorskip("mongomock_motor")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 CALLS = []
+REPLY = ["I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."]
 
 
 class _Stream:
@@ -33,7 +34,7 @@ class _Stream:
 async def _fake_completion(**kw):
     CALLS.append(kw)
     if kw.get("stream"):
-        return _Stream("I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions.")
+        return _Stream(REPLY[0])
     msg = types.SimpleNamespace(content='{"add": ["Name is Meera."], "remove": []}')
     return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg)])
 
@@ -79,6 +80,7 @@ def test_counsellor_uses_gita_prompt_without_tools_or_memory(client):
     system = call["messages"][0]["content"]
     assert "Bhagavad Gita" in system and "Tele-MANAS 14416" in system
     assert system.endswith(counsellor.BRIEF)  # short replies by default
+    assert counsellor.REPLIES in system and "Make them feel known" in system
     assert "Never call anyone \"bestie\"" in system
     assert not call.get("tools")
     assert "14416" not in body  # no crisis, no helpline block
@@ -91,6 +93,7 @@ def test_crisis_reply_always_has_helplines(client, text):
     cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
     call, body = _send(client, cid, text)
     assert "may describe a crisis" in call["messages"][0]["content"]
+    assert "Replies:" not in call["messages"][0]["content"]  # no tap-to-answer chips in a crisis
     assert "14416" in body and "1800-599-0019" in body and "112" in body
     saved = client.get(f"/api/conversations/{cid}").json()["messages"][-1]["content"]
     assert "Tele-MANAS: 14416" in saved
@@ -100,3 +103,44 @@ def test_crisis_words_are_not_matched_loosely():
     import counsellor
     assert not counsellor.is_crisis("I love grapes and want to end my day with a walk")
     assert counsellor.is_crisis("mujhe jeena nahi hai")
+
+
+def test_counsellor_offers_tap_to_answer_replies(client):
+    cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    REPLY[0] = "That sounds tiring 💛\n\nWhat made today heavy?\n\nReplies: Work was a lot | I just need to vent | Not sure, honestly"
+    try:
+        _, body = _send(client, cid, "I'm feeling tired right now 😴.")
+    finally:
+        REPLY[0] = "I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."
+    assert "event: related" in body
+    saved = client.get(f"/api/conversations/{cid}").json()["messages"][-1]
+    assert saved["content"].endswith("What made today heavy?")
+    assert saved["related"] == ["Work was a lot", "I just need to vent", "Not sure, honestly"]
+
+
+def _set_plan(client, plan):
+    import server
+
+    async def go():
+        await server.db.users.update_many({}, {"$set": {"plan": plan}})
+    client.portal.call(go)
+
+
+def test_pro_counsellor_remembers_the_last_talk(client):
+    import counsellor
+    for c in client.get("/api/conversations?mode=counsellor").json():
+        client.delete(f"/api/conversations/{c['id']}")
+    first = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    _send(client, first, "My maths exam is on Friday and I am scared")
+    second = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    call, _ = _send(client, second, "Hi again")
+    assert "Your last talk with them" not in call["messages"][0]["content"]  # Basic starts fresh
+    _set_plan(client, "pro")
+    try:
+        third = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+        call, _ = _send(client, third, "Hey")
+    finally:
+        _set_plan(client, "basic")
+    system = call["messages"][0]["content"]
+    assert "Your last talk with them" in system and "Hi again" in system  # the latest earlier talk
+    assert counsellor.last_talk_note({"title": "x"}, [{"role": "assistant", "content": "hello"}]) == ""
