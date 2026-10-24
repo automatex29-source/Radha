@@ -25,12 +25,18 @@ MAX_ITEMS = 10
 _SMALL_ASK = re.compile(r"^\s*(fix|change|make (it|the|this)|move|rename|remove|delete|undo|why|what|can you fix|"
                         r"thik|theek|sahi)\b", re.IGNORECASE)
 
+# Asks that only change what's there ("remove the dropdown", "index se footer hatao"), even as the first message
+# in an app opened from code: planning those would rebuild the app.
+_EDIT_ONLY = re.compile(r"\b(remove|delete|get rid of|take out|hata|hatao|nikal\w*|rename|replace|change|badal\w*|"
+                        r"fix|edit|update|modify)\b", re.IGNORECASE)
+
 PLAN_PROMPT = (
     "You plan web apps for Krish AI's app builder. The builder writes a static web app (HTML, CSS and JavaScript "
     "modules, libraries from CDNs, no build step). Read the user's request and the app's current files, and write "
     "the checklist the finished app must meet: 5 to {n} lines, each starting with \"- \", each one concrete thing a "
     "user can see or do (a screen, a section, a working button or form, saved data, the sample content), and a last "
-    "line naming the files to write. Pick sensible details yourself for anything the user left open. Write only the "
+    "line naming the files to write. When the app already has its own pages and the request changes part of them, "
+    "list only that change and add \"Keep everything else exactly as it is\". Pick sensible details yourself for anything the user left open. Write only the "
     "checklist, in English, with no intro and no code."
 )
 
@@ -53,6 +59,8 @@ def wants_plan(history_docs: list, model: str) -> bool:
         return False
     text = (users[-1].get("content") or "").strip()
     if not text or "```" in text or "<html" in text.lower() or _SMALL_ASK.match(text):
+        return False
+    if _EDIT_ONLY.search(text):
         return False
     return len(users) == 1 or len(text.split()) >= BIG_ASK_WORDS
 

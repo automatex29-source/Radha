@@ -6,6 +6,7 @@ import { streamSSE } from "@/lib/sse";
 import MessageBubble from "@/components/MessageBubble";
 import GitHubPushButton from "@/components/GitHubPushButton";
 import DataTab from "@/components/DataTab";
+import DevicePreview from "@/components/DevicePreview";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -250,7 +251,9 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
         {messages.map((m) => (
           <div key={m.id}>
             <MessageBubble message={m} codeProject={false} compactSteps />
-            {!streaming && m.id === lastBuild && previewUrl && <BuildPreview url={previewUrl} reloadKey={previewKey} onOpen={onShowPreview} />}
+            {!streaming && m.id === lastBuild && previewUrl && (
+              <DevicePreview url={previewUrl} reloadKey={previewKey} onOpen={onShowPreview} className="mt-2 md:ml-11" />
+            )}
           </div>
         ))}
         {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} compactSteps />}
@@ -292,31 +295,6 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
 }
 
 /* --------------------------------------------------------------- preview */
-// The app drawn at a real screen size and shrunk to fit, like a screenshot that stays live.
-function MiniScreen({ url, reloadKey, width, height, scale, label, className }) {
-  return (
-    <figure className="flex flex-col items-center gap-1">
-      <div className={`overflow-hidden border-2 border-border-strong bg-white shadow-sm ${className}`}
-        style={{ width: width * scale + 4, height: height * scale + 4 }}>
-        <iframe key={reloadKey} src={url} title={`${label} preview`} loading="lazy" tabIndex={-1} aria-hidden="true"
-          sandbox="allow-scripts allow-forms" scrolling="no"
-          style={{ width, height, transform: `scale(${scale})`, transformOrigin: "0 0", pointerEvents: "none", border: 0 }} />
-      </div>
-      <figcaption className="text-[10px] text-muted-foreground">{label}</figcaption>
-    </figure>
-  );
-}
-
-function BuildPreview({ url, reloadKey, onOpen }) {
-  return (
-    <button onClick={onOpen} title="Open the preview" data-testid="build-preview"
-      className="mt-2 flex items-end gap-3 md:ml-11 rounded-xl border border-border bg-card p-3 text-left hover:border-primary/50">
-      <MiniScreen url={url} reloadKey={reloadKey} width={1280} height={800} scale={0.16} label="Laptop" className="rounded-md" />
-      <MiniScreen url={url} reloadKey={reloadKey} width={390} height={800} scale={0.16} label="Phone" className="rounded-xl" />
-    </button>
-  );
-}
-
 function PreviewTab({ url, reloadKey, onReload, onFix }) {
   const [logs, setLogs] = useState([]);
   const frameRef = useRef(null);

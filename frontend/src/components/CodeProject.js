@@ -6,6 +6,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api, formatApiError } from "@/lib/api";
+import DevicePreview from "@/components/DevicePreview";
 import { buildPreview, extractFiles, makeZip, projectName, withImages, withKit } from "@/lib/codeFiles";
 
 /** Download ZIP and Open in App Builder for a set of code files. */
@@ -119,7 +120,9 @@ export const projectBtn = "flex h-7 items-center gap-1.5 rounded-md border borde
 /** In the chat, a reply with code files shows as a card that opens the side panel (like Claude's artifacts). */
 function CodeCard({ files, content, streaming, onOpen, active }) {
   const { name } = useProjectActions(files, content);
+  const html = useMemo(() => (streaming ? null : buildPreview(files)), [files, streaming]);
   return (
+    <>
     <div className={`mt-3 flex items-center gap-3 rounded-xl border bg-card p-3 transition ${active ? "border-primary/60 ring-2 ring-primary/15" : "border-border-strong hover:border-primary/50"}`}
       data-testid="code-project">
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left" data-testid="code-project-open-panel">
@@ -135,6 +138,8 @@ function CodeCard({ files, content, streaming, onOpen, active }) {
       </button>
       {!streaming && <DownloadMenu files={files} content={content} />}
     </div>
+    {html && <DevicePreview srcDoc={html} onOpen={onOpen} className="mt-2" />}
+    </>
   );
 }
 
