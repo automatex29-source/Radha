@@ -71,10 +71,50 @@ function Step({ step }) {
   );
 }
 
-export function ToolSteps({ steps }) {
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// One line for a finished build ("Planned the app · wrote 4 files · tested it"), like a commit summary.
+export function stepsSummary(steps) {
+  const done = steps.filter((s) => s.status === "done");
+  const count = (...names) => new Set(done.filter((s) => names.includes(s.name)).map((s) => s.args?.path || s.id)).size;
+  const parts = [];
+  if (done.some((s) => s.name === "plan_app")) parts.push("planned the app");
+  const wrote = count("write_file", "append_file");
+  const edited = count("edit_file");
+  const read = count("read_file", "search_files", "list_files");
+  if (wrote) parts.push(`wrote ${plural(wrote, "file")}`);
+  if (edited) parts.push(`edited ${plural(edited, "file")}`);
+  if (read) parts.push(`read ${plural(read, "file")}`);
+  if (done.some((s) => s.name === "run_command")) parts.push("ran tests");
+  if (done.some((s) => s.name === "check_preview" || s.name === "check_features")) parts.push("checked it");
+  if (done.some((s) => s.name === "commit")) parts.push("saved a version");
+  const failed = steps.filter((s) => s.status === "error").length;
+  if (failed) parts.push(`${failed} didn't work`);
+  const text = parts.join(" · ") || plural(steps.length, "step");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// `compact` (the App Builder) folds a finished reply's steps into one line that opens the full list.
+export function ToolSteps({ steps, compact = false }) {
+  const [open, setOpen] = useState(false);
   if (!steps?.length) return null;
+  const finished = steps.every((s) => s.status !== "running");
+  if (compact && finished && steps.length > 2 && !open) {
+    return (
+      <button onClick={() => setOpen(true)} data-testid="tool-steps-summary"
+        className="mb-3 flex max-w-full items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground">
+        <span className="truncate">{stepsSummary(steps)}</span>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+      </button>
+    );
+  }
   return (
     <div className="mb-3 space-y-1.5" data-testid="tool-steps">
+      {compact && open && (
+        <button onClick={() => setOpen(false)} className="flex items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground">
+          {stepsSummary(steps)} <ChevronRight className="h-3.5 w-3.5 rotate-90" />
+        </button>
+      )}
       {steps.map((s) => <Step key={s.id} step={s} />)}
     </div>
   );

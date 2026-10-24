@@ -88,3 +88,9 @@ def test_free_builder_plans_follows_the_plan_and_finishes_what_is_missing(monkey
     assert len(calls) == 2 and "The cart has no total" in calls[1]["messages"][-1]["content"]
     text = "".join(ev["text"] for ev in events if ev["type"] == "text")
     assert "Added the cart total." in text and "still has a problem" not in text  # checked against the plan once
+
+
+def test_edit_asks_never_start_a_plan():
+    free = "openai/gpt-oss-120b"
+    assert not build_plan.wants_plan([_user("in index remove the dropdown menu from the header")], free)
+    assert not build_plan.wants_plan([_user("index se footer hata do")], free)

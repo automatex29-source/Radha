@@ -248,8 +248,30 @@ class TestSlideshow:
             raise media.ImageError("down")
 
         monkeypatch.setattr(media, "generate_image", broken)
+        monkeypatch.setattr(slideshow, "SCENE_RETRY_SECONDS", 0)
         with pytest.raises(slideshow.SlideshowError, match="down"):
             run(slideshow.make_slideshow("x", 6))
+
+    def test_busy_scene_is_asked_again(self, monkeypatch):
+        asked = []
+
+        async def busy_once(prompt, size="1024x1024", quality=None, seed=None):
+            asked.append(prompt)
+            if len(asked) == 1:
+                raise media.ImageError("429 busy")
+            return b"img"
+
+        monkeypatch.setattr(media, "generate_image", busy_once)
+        monkeypatch.setattr(slideshow, "SCENE_RETRY_SECONDS", 0)
+        seen = {}
+
+        def fake_command(ffmpeg, paths, out, *a, **k):
+            seen["scenes"] = len(paths)
+            raise RuntimeError("stop here")
+        monkeypatch.setattr(slideshow, "build_command", fake_command)
+        with pytest.raises(RuntimeError):
+            run(slideshow.make_slideshow("x", 9, scenes=["a", "b", "c"]))
+        assert seen["scenes"] == 3 and len(asked) == 4  # the busy scene was asked again, not dropped
 
 
 class TestVideoFallback:
