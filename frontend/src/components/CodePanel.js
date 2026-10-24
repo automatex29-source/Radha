@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { AppWindow, Check, Code2, Copy, Download, Eye, Loader2, Maximize2, Minimize2, RefreshCw, X } from "lucide-react";
+import { AppWindow, Check, Code2, Copy, Eye, Loader2, Maximize2, Minimize2, RefreshCw, X } from "lucide-react";
 import { buildPreview, extractFiles } from "@/lib/codeFiles";
-import { projectBtn, useProjectActions } from "@/components/CodeProject";
+import { DownloadMenu, projectBtn, useProjectActions } from "@/components/CodeProject";
 
 /**
  * The chat's side panel for a reply with code files, like Claude's artifacts: a live Preview and the Code,
- * with Download ZIP, full screen and Open in App Builder. The chat stays beside it for follow-up changes.
+ * with Download (each file, one page, PDF, text or ZIP), full screen and Open in App Builder. The chat stays beside it for follow-up changes.
  * Desktop: a column to the right of the chat. Phone: full screen.
  */
 export default function CodePanel({ content, streaming, onClose }) {
@@ -17,7 +17,7 @@ export default function CodePanel({ content, streaming, onClose }) {
   const [full, setFull] = useState(false);
   const [reload, setReload] = useState(0);
   const [copied, setCopied] = useState(false);
-  const { name, download, openInBuilder, creating } = useProjectActions(files, content);
+  const { name, openInBuilder, creating } = useProjectActions(files, content);
 
   // While the AI is writing there's nothing to preview yet: show the code as it arrives, then the preview.
   useEffect(() => { setTab(streaming ? "code" : "preview"); }, [streaming]);
@@ -71,9 +71,7 @@ export default function CodePanel({ content, streaming, onClose }) {
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
           )}
-          <button onClick={download} disabled={streaming} className={projectBtn} data-testid="code-panel-download">
-            <Download className="h-3.5 w-3.5" /> ZIP
-          </button>
+          {!streaming && <DownloadMenu files={files} content={content} />}
           <button onClick={openInBuilder} disabled={streaming || creating} className={projectBtn} data-testid="code-panel-open-builder">
             {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AppWindow className="h-3.5 w-3.5" />}
             <span className="max-sm:hidden">Open in App Builder</span><span className="sm:hidden">Builder</span>

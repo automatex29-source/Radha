@@ -907,8 +907,9 @@ SYSTEM_PROMPT = (
     "<script>, unless the user asks for separate files or it is large. Write working code, not placeholders: every "
     "button and form does what it says, every id the script uses exists in the HTML, every function it calls is "
     "defined, it works on phones as well as computers, and data the user adds is kept in localStorage when it "
-    "should survive a reload. Say in one line what you built before "
-    "the files. Krish AI shows the user a live preview, a Download ZIP button and an Open in App Builder button for "
+    "should survive a reload. No empty sections or blank coloured bars (every header and hero has its heading and "
+    "text), and nothing wider than the screen, so a phone never scrolls sideways. Say in one line what you built before "
+    "the files. Krish AI shows the user a live preview, a Download menu (each file, one page, PDF or ZIP) and an Open in App Builder button for "
     "those files automatically. Never output base64, never pretend to attach or encode a ZIP or any other archive, "
     "and never tell the user to decode anything. When the user gives you their own code or file and asks for a "
     "change, keep everything else exactly as they wrote it (structure, styles, colors, wording) and change only "
@@ -992,7 +993,7 @@ _CODE_ASK = re.compile(
     r"\b(coding|programming|script|bug|debug|exception|stack ?trace|compile|compiler|syntax error|refactor|"
     r"algorithm|leetcode|dsa|api|endpoint|regex|sql|python|javascript|typescript|kotlin|golang|c\+\+|php|"
     r"react|next\.?js|node\.?js|django|flask|fastapi|flutter|html|css|tailwind|bash|"
-    r"github|docker|npm|pip install|unit tests?|pytest|jest)\b", re.IGNORECASE)
+    r"github|docker|npm|pip install|unit tests?|pytest|jest|ui|gui|frontend|front-end)\b", re.IGNORECASE)
 
 CODE_PROMPT = (
     "This is a coding question. Answer like a senior engineer pairing with the user. Working code matters more than "
@@ -1018,6 +1019,13 @@ CODE_PROMPT = (
     "uses, otherwise Python (JavaScript for anything in a browser). Only call functions, options and packages that "
     "really exist, prefer the standard library and well-known packages, use current, non-deprecated APIs, and give "
     "the exact install command for anything extra. If an API differs between versions, say which you wrote for.\n"
+    "- Read casual asks for what the person wants to see. When someone asks to make or build a tool, calculator, "
+    "tracker, form, page or app without naming a language, build it as a web page they can use in the live preview "
+    "(one complete, designed index.html), not a Python script. When they ask for a UI for code in this chat, even "
+    "in a few words (\"i need ui also\", \"ui bhi do\", \"make it look good\", \"web version\", \"frontend\"), "
+    "build that web page: port the logic to JavaScript so the whole thing works in the browser, follow the design "
+    "guide, and keep their earlier code only if the page needs it (for example a server it calls). Use Tkinter, "
+    "PyQt, Streamlit or another UI library only when they name it.\n"
     "- Write code a reviewer would approve: clear names, small functions, no dead code or unused imports, comments "
     "only where the reason isn't obvious, and errors handled where they can happen instead of swallowed.\n"
     "- Handle the edge cases (empty input, missing values, bad user input, network failures) and keep it safe: "

@@ -201,3 +201,11 @@ def test_coding_turns_ask_for_long_answers(monkeypatch):
     asyncio.run(go("c1", "make a calculator in python", "```python\nprint(1)\n```", "still not working"))
     asyncio.run(go("c2", "hi there"))
     assert seen == [(True, True), (False, False)]
+
+
+def test_casual_ui_asks_are_coding_and_get_a_web_page():
+    server = _server()
+    assert server._code_ask("i need ui also") and server._code_ask("iska frontend bana do")
+    assert not server._code_ask("guide me to build a house")
+    assert "port the logic to JavaScript" in server.CODE_PROMPT and "i need ui also" in server.CODE_PROMPT
+    assert "scrolls sideways" in server.SYSTEM_PROMPT
