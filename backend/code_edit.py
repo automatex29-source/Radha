@@ -41,7 +41,7 @@ _NEW_BUILD = re.compile(
 # Past this, code Krish wrote is changed with edits too: free models only see the first 2,000 characters of an
 # earlier reply, so asked to "make it blue" they rewrote the page from memory and lost parts of it.
 BIG_CODE = 3000
-RECENT_MESSAGES = 8   # how far back a follow-up ("now make the buttons blue") may refer to the code
+RECENT_MESSAGES = 20  # how far back a follow-up ("now make the buttons blue") may refer to the code
 _MAX_PART = 40000     # characters per request, so one part's edits fit in one reply
 _OUTPUT = 8000        # tokens of edits a request may write
 _PROMPT_ROOM = 1200   # tokens of instructions around each part
@@ -170,9 +170,21 @@ def should_edit(history: List[dict]) -> Optional[Tuple[Dict[str, str], str]]:
     if not files:
         return None
     theirs = origin.get("role") == "user" or origin.get("userCode")
-    if not theirs and sum(len(c) for c in files.values()) < BIG_CODE:
+    if not theirs and sum(len(c) for c in files.values()) < BIG_CODE and not _targeted(ask, files):
         return None
     return files, ask
+
+
+# A removal, or an ask that names one of the files ("remove the dropdown from index"), is a precise change: it is
+# made in place even in small code Krish wrote, so the rest of the page can't be rewritten or lost.
+_REMOVAL = re.compile(r"\b(remove|delete|get rid of|take out|hata|hatao|hata do|nikal|nikalo|nikaal\w*)\b", re.IGNORECASE)
+
+
+def _targeted(ask: str, files: Dict[str, str]) -> bool:
+    if _REMOVAL.search(ask):
+        return True
+    names = {p.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower() for p in files}
+    return any(re.search(rf"\b{re.escape(n)}\b", ask, re.IGNORECASE) for n in names if len(n) > 2)
 
 
 def editing_model(model: str) -> str:

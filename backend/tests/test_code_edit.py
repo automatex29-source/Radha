@@ -176,3 +176,12 @@ def test_nothing_matched_leaves_the_file_alone(client):
     client.post(f"/api/conversations/{cid}/stream", json={"content": attached("make the logo spin")})
     reply = client.get(f"/api/conversations/{cid}").json()["messages"][-1]["content"]
     assert reply.startswith("I couldn't make that change") and "```" not in reply
+
+
+def test_removals_and_named_files_edit_krish_code_in_place():
+    page = "<html><body><nav><select id='m'></select></nav><h1>Shop</h1></body></html>"
+    history = [{"role": "user", "content": "make a shop page"},
+               {"role": "assistant", "content": "Here it is.\n\n```html index.html\n" + page + "\n```"}]
+    assert code_edit.should_edit(history + [{"role": "user", "content": "remove the dropdown"}])
+    assert code_edit.should_edit(history + [{"role": "user", "content": "in index make the title red"}])
+    assert code_edit.should_edit(history + [{"role": "user", "content": "make the title red"}]) is None  # small: rewritten whole
