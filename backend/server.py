@@ -57,6 +57,7 @@ import help_center
 import writer
 import code_edit
 import code_check
+import build_plan
 import limits
 import billing
 import languages
@@ -1274,9 +1275,9 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
 
 
 _FILE_TOOLS = ("write_file", "append_file", "edit_file", "delete_file")
-REPAIR_STEPS = 5
+REPAIR_STEPS = 8
 SMOKE_TIMEOUT = 60  # seconds for the browser test of an app
-REPAIR_ROUNDS = 2  # rounds of automatic fixes after a builder turn leaves the app broken
+REPAIR_ROUNDS = 3  # rounds of automatic fixes after a builder turn leaves the app broken or missing a planned feature
 
 
 async def _app_problems(app_id: str):
@@ -1305,11 +1306,45 @@ async def _app_problems(app_id: str):
     yield {"type": "problems", "problems": problems}
 
 
-async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: list, use_tools: bool, max_steps: int):
-    """The agent's events. In the App Builder, when the turn changed files, the app is checked (missing files and
-    elements, scripts that don't parse) and opened in a real browser that presses its buttons. Anything that
-    breaks gets up to two rounds of fixes, and anything still wrong is told to the user instead of ending silently."""
-    said, changed = [], False
+async def _plan_events(ctx: ToolContext, model: str, request: str, llm_messages: list):
+    """Plan a new app or a big change (build_plan.make_plan) and add the plan to the builder's instructions.
+    Yields the "Planning the app" step; the last event is {"type": "plan", "items": [...]}."""
+    step_id = f"plan-{uuid.uuid4().hex[:8]}"
+    yield {"type": "tool_start", "id": step_id, "name": "plan_app", "label": "Planning the app", "args": {}}
+    items = await build_plan.make_plan(model, request, await apps.snapshot(ctx.app_id))
+    yield {"type": "tool_end", "id": step_id, "name": "plan_app", "ok": True, "output": "\n".join(f"- {i}" for i in items),
+           "media": [], "summary": f"{len(items)} things to build" if items else "Skipped"}
+    if items and llm_messages and isinstance(llm_messages[0].get("content"), str):
+        llm_messages[0] = {**llm_messages[0], "content": llm_messages[0]["content"] + "\n\n" + build_plan.plan_message(items)}
+    yield {"type": "plan", "items": items}
+
+
+async def _feature_events(ctx: ToolContext, model: str, items: list):
+    """Check the built app against its plan. Yields the "Checking every feature" step; the last event is
+    {"type": "problems", "problems": [...]} with what's still missing."""
+    step_id = f"features-{uuid.uuid4().hex[:8]}"
+    yield {"type": "tool_start", "id": step_id, "name": "check_features", "label": "Checking every feature", "args": {}}
+    missing = await build_plan.missing_features(model, items, await apps.snapshot(ctx.app_id))
+    n = len(missing)
+    yield {"type": "tool_end", "id": step_id, "name": "check_features", "ok": not missing, "output": "\n".join(missing),
+           "media": [], "summary": f"{n} thing{'s' if n != 1 else ''} to finish" if missing else "Everything in the plan is there"}
+    yield {"type": "problems", "problems": missing}
+
+
+async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: list, use_tools: bool, max_steps: int,
+                        plan_for: Optional[str] = None):
+    """The agent's events. In the App Builder, `plan_for` (a new app or a big change, on a free model) first gets a
+    plan the build follows. When the turn changed files, the app is checked (missing files and elements, scripts
+    that don't parse), opened in a real browser that presses its buttons, and compared with its plan. Anything that
+    breaks or is missing gets up to three rounds of fixes, and anything still wrong is told to the user instead of
+    ending silently."""
+    said, changed, plan = [], False, []
+    if plan_for and ctx.app_id and use_tools:
+        async for ev in _plan_events(ctx, model, plan_for, llm_messages):
+            if ev["type"] == "plan":
+                plan = ev["items"]
+            else:
+                yield ev
     async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=use_tools,
                               max_steps=max_steps):
         if ev["type"] == "text":
@@ -1319,13 +1354,20 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
         yield ev
     if not (ctx.app_id and use_tools and changed):
         return
-    problems = []
+    problems, features_checked = [], False
     for repair_round in range(REPAIR_ROUNDS + 1):
         async for ev in _app_problems(ctx.app_id):
             if ev["type"] == "problems":
                 problems = ev["problems"]
             else:
                 yield ev
+        if not problems and plan and not features_checked and repair_round < REPAIR_ROUNDS:
+            features_checked = True  # once per turn: each check is one more request on the free tier
+            async for ev in _feature_events(ctx, model, plan):
+                if ev["type"] == "problems":
+                    problems = ev["problems"]
+                else:
+                    yield ev
         if not problems or repair_round == REPAIR_ROUNDS:
             break
         if repair_round == 0:
@@ -1535,7 +1577,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                               model=model, sources=None if app_id else sources,
                               searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching)
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
-            async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS):
+            plan_for = last_user if app_id and build_plan.wants_plan(history_docs, model) else None
+            async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS,
+                                          plan_for=plan_for):
                 if ev["type"] == "text":
                     full.append(ev["text"])
                     yield f"data: {_sse_json(ev['text'])}\n\n"
