@@ -24,22 +24,23 @@ function times(plan, basic) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-// What each card lists: Basic in full, then what each bigger plan adds to the one before it.
-function highlights(plan, basic) {
+// What each card lists: Basic in full, then what each bigger plan adds to the one before it. Video lines show only
+// while making videos is switched on (VIDEO_GENERATION on the server).
+function highlights(plan, basic, video) {
   const x = times(plan, basic);
   const { automation } = plan.total;
   const { videoSeconds, uploadMb } = plan.quality;
   if (plan.id === "basic") {
     return { label: "Includes", items: ["Unlimited chat and search", "Krish AI, our free model for every question",
-      "Builds, pictures, decks and videos", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
+      video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
   }
   if (plan.id === "max") {
-    return { label: "Everything in Pro, plus", items: [`${x}x the usage of Basic`, `Videos up to ${videoSeconds} seconds`,
+    return { label: "Everything in Pro, plus", items: [`${x}x the usage of Basic`, ...(video ? [`Videos up to ${videoSeconds} seconds`] : []),
       plural(automation, "automation"), `Uploads up to ${uploadMb}MB`] };
   }
   return { label: "Everything in Basic, plus", items: [`${x}x the usage of Basic`,
     ...(plan.premium ? ["Premium AI models and Think mode"] : []),
-    ...(plan.quality.media === "premium" ? ["HD pictures and real AI video"] : []),
+    ...(plan.quality.media === "premium" ? [video ? "HD pictures and real AI video" : "HD AI pictures"] : []),
     ...(plan.publish ? ["Publish apps to the web"] : []),
     `${plural(automation, "automation")}, ${uploadMb}MB uploads`,
     ...(plan.premium ? ["Counsellor Pro"] : [])] };
@@ -99,8 +100,8 @@ function MeterBar({ label, part, idle, testid }) {
   );
 }
 
-/** The usage meter, like Claude's: every build, picture, deck and video runs it down by how big it is. */
-function Usage({ meter, costs, automation }) {
+/** The usage meter, like Claude's: every build, picture, deck (and video, when on) runs it down by how big it is. */
+function Usage({ meter, costs, automation, video }) {
   const range = (r) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}-${r[1]}`);
   return (
     <section className="plans-panel mt-6 rounded-[20px] p-6 sm:p-9" data-testid="plans-usage">
@@ -115,12 +116,12 @@ function Usage({ meter, costs, automation }) {
       </div>
       <div className="mt-6 rounded-xl bg-sunken p-4" data-testid="meter-costs">
         <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">What things use</p>
-        <p className="mt-1 text-xs text-muted-foreground">Bigger requests use more: a longer build ask, a longer video, a longer chat.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Bigger requests use more: a longer build ask{video ? ", a longer video" : ""}, a longer chat.</p>
         <ul className="mt-2 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
           <li className="flex justify-between gap-3 whitespace-nowrap"><span>App build</span><span className="tabular-nums text-muted-foreground">{range(costs.build)} credits</span></li>
           <li className="flex justify-between gap-3 whitespace-nowrap"><span>AI picture</span><span className="tabular-nums text-muted-foreground">{costs.picture} credits</span></li>
           <li className="flex justify-between gap-3 whitespace-nowrap"><span>Slide deck</span><span className="tabular-nums text-muted-foreground">{costs.deck} + pictures</span></li>
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>Video</span><span className="tabular-nums text-muted-foreground">{costs.videoSecond} a second</span></li>
+          {video && <li className="flex justify-between gap-3 whitespace-nowrap"><span>Video</span><span className="tabular-nums text-muted-foreground">{costs.videoSecond} a second</span></li>}
           <li className="flex justify-between gap-3 whitespace-nowrap"><span>Premium message</span><span className="tabular-nums text-muted-foreground">{range(costs.chat)} credits</span></li>
         </ul>
       </div>
@@ -131,12 +132,12 @@ function Usage({ meter, costs, automation }) {
   );
 }
 
-function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer }) {
+function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
   const canBuy = paymentsOn && plan.price > 0 && !lower;
   const price = offer && plan.price ? offer.prices[plan.id] ?? plan.price : plan.price;
-  const { label, items } = highlights(plan, basic);
+  const { label, items } = highlights(plan, basic, video);
   const soft = popular ? "text-background/60" : "text-muted-foreground";
   return (
     <div data-testid={`plan-${plan.id}`}
@@ -360,7 +361,7 @@ export default function PlansPage() {
             <h1 className="krish-display mt-3 text-[2.75rem] leading-[1.02] sm:text-[4.25rem]">
               Choose the plan that <em className="text-[#4F46E5] dark:text-[#A5B4FC]">fits you</em>
             </h1>
-            <p className="mx-auto mt-4 max-w-md text-[0.97rem] leading-relaxed text-muted-foreground">Chat is unlimited on every plan. Upgrade for more app builds, pictures, decks and videos.</p>
+            <p className="mx-auto mt-4 max-w-md text-[0.97rem] leading-relaxed text-muted-foreground">Chat is unlimited on every plan. Upgrade for more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.</p>
           </header>
 
           {!data ? (
@@ -370,7 +371,7 @@ export default function PlansPage() {
               <div className="mt-10 grid gap-3.5 sm:mt-14 plans-grid md:grid-cols-3 md:gap-0 md:rounded-[20px]" data-testid="plans-grid">
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
-                    paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} />
+                    paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} video={data.video} />
                 ))}
               </div>
               <CounsellorPro />
@@ -392,7 +393,7 @@ export default function PlansPage() {
                   </Button>
                 </form>
               )}
-              {data.limitsOn && <Usage meter={data.meter} costs={data.costs} automation={data.usage.automation} />}
+              {data.limitsOn && <Usage meter={data.meter} costs={data.costs} automation={data.usage.automation} video={data.video} />}
             </>
           )}
         </div>
@@ -400,7 +401,7 @@ export default function PlansPage() {
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
       {picked && data && (
         <PlanSheet plan={picked} current={data.plans.find((p) => p.id === data.plan)} basic={data.plans.find((p) => p.id === "basic")} user={user} price={priceOf(picked)}
-          offer={offer} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
+          offer={offer} video={data.video} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
       )}
       <PlanWelcome plan={welcome?.plan} user={user} until={welcome?.until} onClose={() => setWelcome(null)}
         onStart={() => { setWelcome(null); navigate("/"); }} />

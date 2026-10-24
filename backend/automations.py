@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 import limits
 import mailer
+import media
 from agent import prompt_boost
 from auth import get_user_id_from_request
 
@@ -58,8 +59,9 @@ AGENT_INSTRUCTIONS = (
 
 PLAN_SYSTEM = (
     "You turn a person's plain-language goal into a saved automation for an AI agent that has these tools: web "
-    "search, open web pages, deep research (cited PDF report), Python for calculations and charts, image and "
-    "video generation, and Excel, PowerPoint, Word/PDF, HTML, text and zip file creation. Reply with JSON only: "
+    "search, open web pages, deep research (cited PDF report), Python for calculations and charts, "
+    + ("image and video generation" if media.video_enabled() else "image generation")
+    + ", and Excel, PowerPoint, Word/PDF, HTML, text and zip file creation. Reply with JSON only: "
     '{"name": "short title, max 6 words", "task": "clear instructions for the agent: numbered steps naming the '
     'tools to use, what to look for, the output format and which files to create", "schedule": {"type": '
     '"daily|weekly|interval|manual", "time": "HH:MM", "weekday": 0-6 (0 = Monday), "minutes": 15-10080}}. '

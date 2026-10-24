@@ -69,7 +69,7 @@ def provider() -> Optional[str]:
 
 
 def available() -> bool:
-    return provider() is not None
+    return media.video_enabled() and provider() is not None
 
 
 def _http_client() -> httpx.AsyncClient:
