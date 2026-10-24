@@ -24,6 +24,8 @@ LONG_SIDE = int(os.environ.get("SLIDESHOW_LONG_SIDE", "1280"))
 FADE = 0.7
 TIMEOUT_SECONDS = int(os.environ.get("SLIDESHOW_TIMEOUT_SECONDS", "480"))
 MAX_SCENES = 6
+SCENE_TRIES = 3
+SCENE_RETRY_SECONDS = float(os.environ.get("SLIDESHOW_RETRY_SECONDS", "3"))
 
 
 class SlideshowError(Exception):
@@ -176,8 +178,16 @@ async def make_slideshow(prompt: str, seconds: int = 12, portrait: bool = False,
     limit = asyncio.Semaphore(3 if media.image_key_configured() else 1)
 
     async def one(p: str) -> bytes:
-        async with limit:
-            return await media.generate_image(p, size, seed=seed)
+        # The keyless service often turns a request away when others are running: wait and ask again, so the
+        # video keeps every scene instead of repeating the one picture that got through.
+        for attempt in range(SCENE_TRIES):
+            try:
+                async with limit:
+                    return await media.generate_image(p, size, seed=seed)
+            except Exception:
+                if attempt == SCENE_TRIES - 1:
+                    raise
+                await asyncio.sleep(SCENE_RETRY_SECONDS * (attempt + 1))
 
     results = await asyncio.gather(*(one(p) for p in prompts), return_exceptions=True)
     kept = [(i, r) for i, r in enumerate(results) if isinstance(r, bytes)]
