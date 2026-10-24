@@ -115,6 +115,27 @@ REPLIES = (
     "them fit your closing question. Keep the word \"Replies:\" in English and write nothing after that line."
 )
 
+# Pro and Max: the Counsellor remembers the person's last Counsellor talk (never Memory: only their own words
+# from that chat, read when a new talk starts).
+LAST_TALK = (
+    "Your last talk with them (private, {when}), titled \"{title}\". What they said:\n{lines}\n"
+    "Like a friend who remembers, gently check in on it once, early, when it fits (\"Last time exams were "
+    "weighing on you. How did it go?\"). Never quote it back word for word, and skip it if they bring up "
+    "something new and heavy."
+)
+
+
+def last_talk_note(conv: dict, messages: list) -> str:
+    """The LAST_TALK prompt line for an earlier Counsellor chat, or "" when the person said nothing in it."""
+    said = [" ".join((m.get("content") or "").split())[:200] for m in messages if m.get("role") == "user"]
+    said = [s for s in said if s][-4:]
+    if not said:
+        return ""
+    when = (conv.get("updatedAt") or "")[:10] or "earlier"
+    return LAST_TALK.format(when=when, title=(conv.get("title") or "Untitled")[:80],
+                            lines="\n".join(f"- {s}" for s in said))
+
+
 # Shown with every reply that touches on crisis, in case the model leaves the numbers out.
 HELPLINES = (
     "**You matter, and you don't have to face this alone.** Please reach out right now:\n"

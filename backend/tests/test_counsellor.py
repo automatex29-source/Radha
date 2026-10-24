@@ -116,3 +116,31 @@ def test_counsellor_offers_tap_to_answer_replies(client):
     saved = client.get(f"/api/conversations/{cid}").json()["messages"][-1]
     assert saved["content"].endswith("What made today heavy?")
     assert saved["related"] == ["Work was a lot", "I just need to vent", "Not sure, honestly"]
+
+
+def _set_plan(client, plan):
+    import server
+
+    async def go():
+        await server.db.users.update_many({}, {"$set": {"plan": plan}})
+    client.portal.call(go)
+
+
+def test_pro_counsellor_remembers_the_last_talk(client):
+    import counsellor
+    for c in client.get("/api/conversations?mode=counsellor").json():
+        client.delete(f"/api/conversations/{c['id']}")
+    first = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    _send(client, first, "My maths exam is on Friday and I am scared")
+    second = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    call, _ = _send(client, second, "Hi again")
+    assert "Your last talk with them" not in call["messages"][0]["content"]  # Basic starts fresh
+    _set_plan(client, "pro")
+    try:
+        third = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+        call, _ = _send(client, third, "Hey")
+    finally:
+        _set_plan(client, "basic")
+    system = call["messages"][0]["content"]
+    assert "Your last talk with them" in system and "Hi again" in system  # the latest earlier talk
+    assert counsellor.last_talk_note({"title": "x"}, [{"role": "assistant", "content": "hello"}]) == ""

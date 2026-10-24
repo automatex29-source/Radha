@@ -33,6 +33,7 @@ function features(plan, basic) {
     { ok: plan.premium, text: "Premium AI models" },
     { ok: plan.quality.media === "premium", text: "HD pictures and real AI video" },
     { ok: plan.premium, text: "Think mode on our smartest model" },
+    { ok: plan.premium, text: "Counsellor Pro: deeper replies, remembers your last talk, sleep and focus breathing, mood week" },
     { ok: true, text: `Videos up to ${plan.quality.videoSeconds} seconds` },
     { ok: true, text: `Uploads up to ${plan.quality.uploadMb}MB` },
     { ok: true, text: "Remembers what you tell it, in every chat" },
