@@ -946,11 +946,8 @@ AGENT_PROMPT = (
     "call deep_research (it writes a cited PDF report). For step-by-step guides, web_search the service's current "
     "docs first so button names are right. Live exchange rates, when given, are the source of truth for currency questions. "
     "Use run_python for any calculation, data work or chart; browser to operate websites; edit_image to change a "
-    "picture the user attached or you made (AI changes or quick fixes like crop, rotate, black and white); generate_image and "
-    "generate_video whenever the user asks to make, draw, design or animate a picture, logo, poster or video (you "
-    "can create them; never say you can't), even when the ask is misspelt (\"avideo\", \"pic bana do\"). Call the tool: "
-    "never write its settings as text or a JSON or code block instead. Pick the style that fits (ad, movie, trailer, 3d_animation, anime, "
-    "cartoon, music_video, social_reel...), write 3-6 vivid scenes, and add short captions for ads and reels. When the user asks for a file, create a real one that "
+    "picture the user attached or you made (AI changes or quick fixes like crop, rotate, black and white); {media} "
+    "When the user asks for a file, create a real one that "
     "gets a download button: create_spreadsheet (Excel), create_presentation (PowerPoint), create_document (Word "
     "or PDF), create_file (any single text or code file: txt, csv, json, py, js, css, sql...), create_zip "
     "(multi-file projects such as a Node or Python app). Never paste base64 or made-up download links. For apps, websites and games, follow the app "
@@ -959,6 +956,28 @@ AGENT_PROMPT = (
     "Never invent tool results; if a tool fails, try another way before saying you could not. Images labelled as "
     "video frames come from a video the user attached; treat them as that video."
 )
+# The media part of AGENT_PROMPT, with and without the video tool (see media.video_enabled).
+_MEDIA_WITH_VIDEO = (
+    "generate_image and generate_video whenever the user asks to make, draw, design or animate a picture, logo, poster "
+    "or video (you can create them; never say you can't), even when the ask is misspelt (\"avideo\", \"pic bana do\"). "
+    "Call the tool: never write its settings as text or a JSON or code block instead. Pick the style that fits (ad, "
+    "movie, trailer, 3d_animation, anime, cartoon, music_video, social_reel...), write 3-6 vivid scenes, and add short "
+    "captions for ads and reels."
+)
+_MEDIA_NO_VIDEO = (
+    "generate_image whenever the user asks to make, draw or design a picture, logo or poster (you can create them; "
+    "never say you can't), even when the ask is misspelt (\"pic bana do\"). Call the tool: never write its settings as "
+    "text or a JSON or code block instead. When the user asks for a video, reel, clip, trailer or animation, offer, in "
+    "one short friendly line, the two ways you make it: a slideshow (create_presentation, one slide per scene with "
+    "pictures from generate_image) or an animated web page (one HTML page in a fenced html block, with CSS "
+    "animations playing scene by scene in the live preview), and ask which they'd like. If they want it made right "
+    "away without choosing, build the animated web page. Present these as great ways to show their idea; never say you can't make videos, that video is off or "
+    "unavailable, or anything about video quality."
+)
+
+
+def agent_prompt() -> str:
+    return AGENT_PROMPT.replace("{media}", _MEDIA_WITH_VIDEO if media.video_enabled() else _MEDIA_NO_VIDEO)
 
 
 THINK_PROMPT = (
@@ -1615,7 +1634,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if app_id and not max_steps and (not agent_llm.lean(model) or agent_llm.token_budget(model) > 16000):
         max_steps = BUILDER_STEPS
     if agent and not focused:
-        system_parts.append(AGENT_PROMPT)
+        system_parts.append(agent_prompt())
     if study and not app_id and not counselling:
         system_parts.append(STUDY_PROMPT)
     # How to answer this kind of question well: code, or ideas (not in the app builder, voice or counselling).
@@ -2518,7 +2537,8 @@ def _user_from_header_or_query(authorization: Optional[str], auth: Optional[str]
 async def usage(user_id: str = Depends(current_user_id)):
     user = await db.users.find_one({"id": user_id}, {"plan": 1, "planExpiresAt": 1}) or {}
     expires = user.get("planExpiresAt") if limits.plan_from(user) != "basic" else None
-    return {**await limits.summary(db, user_id), "paymentsOn": billing.enabled(), "planExpiresAt": expires}
+    return {**await limits.summary(db, user_id), "paymentsOn": billing.enabled(), "planExpiresAt": expires,
+            "video": media.video_enabled()}
 
 
 # ------------------------------------------------------------------- billing

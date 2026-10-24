@@ -51,7 +51,7 @@ ASK_SYSTEM = SYSTEM + (
     "1. A change to the text (rewrite, add, remove, translate, write it): reply with only the new text, as above.\n"
     "2. A question, feedback or anything you can answer in words without changing the text: start with "
     "\"ANSWER:\" and then answer helpfully and briefly, in the user's language.\n"
-    "3. Something that needs more than text, like making a video, picture, slides, audio or music from it, "
+    "3. Something that needs more than text, like making a picture, slides, an animation, audio or music from it, "
     "searching the web, or sending an email: reply with \"MAKE:\" and then one short, friendly sentence saying "
     "what you'll make. Don't make it here."
 )

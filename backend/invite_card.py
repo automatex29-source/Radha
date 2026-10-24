@@ -100,6 +100,6 @@ def welcome(name: str, plan: str = "") -> bytes:
     """The picture in welcome emails: "Welcome, <Name> · to Krish AI" or "· to Krish AI Pro"."""
     who = first_name(name)
     pill = {"pro": "Pro is on", "max": "Max is on"}.get(plan, "Free to start")
-    line = ("More pictures, decks, videos and premium AI." if plan else
+    line = ("More pictures, decks, apps and premium AI." if plan else
             "Ask anything. Write, study, plan and build.")
     return _card(f"Welcome, {who}" if who else "Welcome", "to Krish ", "AI", pill, line)

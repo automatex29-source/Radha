@@ -19,7 +19,7 @@ const IDEAS = {
 const firstName = (name) => (name || "").trim().split(" ")[0];
 
 /** Opens when someone taps a paid plan: what it unlocks for them (compared with their plan now), then pay. */
-export function PlanSheet({ plan, current, basic, user, price, offer, busy, onPay, onClose }) {
+export function PlanSheet({ plan, current, basic, user, price, offer, video, busy, onPay, onClose }) {
   if (!plan) return null;
   const first = firstName(user?.name);
   const usage = (p) => Math.round(p.meter.session / Math.max(1, (basic || p).meter.session));
@@ -46,7 +46,7 @@ export function PlanSheet({ plan, current, basic, user, price, offer, busy, onPa
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Your usage</p>
           <ul className="mt-2 space-y-2" data-testid="plan-sheet-compare">
             <li className="flex items-center justify-between gap-3 rounded-xl bg-surface px-3 py-2 text-sm">
-              <span className="font-medium">Builds, pictures, decks and videos</span>
+              <span className="font-medium">{video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks"}</span>
               <span className="shrink-0 tabular-nums">
                 {current && <><span className="text-muted-foreground line-through decoration-1">{usage(current)}x</span>
                   <ArrowRight className="mx-1.5 inline h-3 w-3 text-muted-foreground" /></>}
@@ -56,11 +56,12 @@ export function PlanSheet({ plan, current, basic, user, price, offer, busy, onPa
             <li className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm"><BadgeCheck className="h-4 w-4 shrink-0 text-primary" /> Usage refills every 5 hours</li>
             {[
               "Premium AI models for harder questions",
-              "HD pictures and real AI video",
+              video ? "HD pictures and real AI video" : "HD AI pictures",
               "Think mode answers with our smartest model",
               "Counsellor Pro: deeper replies that remember your last talk",
               ...(plan.quality ? [
-                `Videos up to ${plan.quality.videoSeconds} seconds, uploads up to ${plan.quality.uploadMb}MB`,
+                video ? `Videos up to ${plan.quality.videoSeconds} seconds, uploads up to ${plan.quality.uploadMb}MB`
+                  : `Uploads up to ${plan.quality.uploadMb}MB`,
               ] : []),
               "Krish remembers what you tell it, in every chat",
               "Publish your apps to the web",

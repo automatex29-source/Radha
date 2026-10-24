@@ -210,7 +210,7 @@ export default function DocEditor() {
           <form className="mt-3 flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (instruction.trim()) runAi({ instruction }, "custom"); }}>
             <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} rows={2} data-testid="doc-ai-input"
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (instruction.trim() && !busy) runAi({ instruction }, "custom"); } }}
-              placeholder={content.trim() ? "e.g. Add a short conclusion, or make a video of it" : "e.g. Write a thank-you note to my team"}
+              placeholder={content.trim() ? "e.g. Add a short conclusion, or make slides of it" : "e.g. Write a thank-you note to my team"}
               className="min-h-[44px] flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             <Button type="submit" size="icon" disabled={!instruction.trim() || !!busy} className="h-11 w-11 shrink-0 rounded-full" aria-label="Send">
               {busy === "custom" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
