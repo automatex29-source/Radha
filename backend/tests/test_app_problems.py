@@ -148,3 +148,31 @@ def test_cut_off_tool_call_says_to_write_in_parts():
     reg = ToolRegistry().register(Tool("write_file", "Write", {"type": "object"}, h, scope="app"))
     out = asyncio.run(reg.run("write_file", '{"path": "index.html", "content": "<html><body><h1>Cake', ToolContext(None, "u", app_id="a")))
     assert not out.ok and "append_file" in out.content
+
+
+VIDEO_REPLY = ('I am generating a 12-second reel of kids playing.\n\n```json data.json\n'
+               '{"prompt": "Happy children playing on a sunny playground", "seconds": 12, "style": "social_reel", '
+               '"scenes": ["Wide shot", "Slide"], "made_up": 1}\n```')
+
+
+def test_video_call_written_as_json_is_run_for_real(monkeypatch):
+    server = _server()
+    assert server.written_media_call(VIDEO_REPLY, "MAKE AVIDEOO ONN KIDS PLAYING")[0] == "generate_video"
+    assert server.written_media_call("```json\n{\"name\": \"x\"}\n```", "make a video") is None  # not a tool call
+    assert server.written_media_call("```json\n{\"prompt\": \"a cat\"}\n```", "explain json") is None
+    calls = _fake_agent(monkeypatch, server, {}, [(None, VIDEO_REPLY)])
+    ran = []
+
+    async def run(name, raw, ctx):
+        ran.append((name, raw))
+        from agent import ToolOutput
+        return ToolOutput(content="done", summary="Video ready", media=[{"id": "v1", "contentType": "video/mp4"}])
+    monkeypatch.setattr(server.tool_registry, "run", run)
+
+    async def go():
+        return [ev async for ev in server._agent_events(None, server.ToolContext(None, "u"), "m",
+                                                        [{"role": "user", "content": "MAKE AVIDEOO ONN KIDS PLAYING"}], True, 8)]
+    events = asyncio.run(go())
+    assert len(calls) == 1 and ran and ran[0][0] == "generate_video" and "made_up" not in ran[0][1]
+    assert [e["type"] for e in events if e["type"] != "text"] == ["drop_text", "tool_start", "tool_end"]
+    assert next(e for e in events if e["type"] == "tool_end")["media"][0]["id"] == "v1"

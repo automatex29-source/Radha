@@ -72,7 +72,7 @@ import invite_card
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
-from agent.runtime import MAX_STEPS as MAX_AGENT_STEPS
+from agent.runtime import HEARTBEAT_SECONDS as _HEARTBEAT_SECONDS, MAX_STEPS as MAX_AGENT_STEPS
 
 # ---------------------------------------------------------------- infra setup
 mongo_url = os.environ["MONGO_URL"]
@@ -948,7 +948,8 @@ AGENT_PROMPT = (
     "Use run_python for any calculation, data work or chart; browser to operate websites; edit_image to change a "
     "picture the user attached or you made (AI changes or quick fixes like crop, rotate, black and white); generate_image and "
     "generate_video whenever the user asks to make, draw, design or animate a picture, logo, poster or video (you "
-    "can create them; never say you can't). Pick the style that fits (ad, movie, trailer, 3d_animation, anime, "
+    "can create them; never say you can't), even when the ask is misspelt (\"avideo\", \"pic bana do\"). Call the tool: "
+    "never write its settings as text or a JSON or code block instead. Pick the style that fits (ad, movie, trailer, 3d_animation, anime, "
     "cartoon, music_video, social_reel...), write 3-6 vivid scenes, and add short captions for ads and reels. When the user asks for a file, create a real one that "
     "gets a download button: create_spreadsheet (Excel), create_presentation (PowerPoint), create_document (Word "
     "or PDF), create_file (any single text or code file: txt, csv, json, py, js, css, sql...), create_zip "
@@ -1212,7 +1213,8 @@ _NEEDS_TOOLS = re.compile(
     _TOOL_ASK.pattern + r"|\b(file|files|pdf|excel|xlsx|csv|word|docx|ppt|pptx|powerpoint|presentation|slides?|deck|"
     r"spreadsheet|sheet|zip|image|images|picture|pic|photo|logo|poster|video|animate|edit|crop|resize|research|"
     r"report|code|run|script|app|website|site|game|page|browser|open|visit|fetch|url|link|flashcards?|quiz|"
-    r"remind|schedule|email|send|save|translate|time|date|price|rate|weather|news|today|current|latest)\b|https?://|www\.",
+    r"remind|schedule|email|send|save|translate|time|date|price|rate|weather|news|today|current|latest)\b|https?://|www\."
+    r"|vide?o+s?\b|animat|photos?\b|pictures?\b",  # inside typos too ("avideoo", "kidsphoto")
     re.IGNORECASE)
 
 
@@ -1341,6 +1343,58 @@ async def _feature_events(ctx: ToolContext, model: str, items: list):
     yield {"type": "problems", "problems": missing}
 
 
+# Free models sometimes write a picture or video tool call as a ```json block in the reply instead of calling the
+# tool. Those settings are run as the real call, and the block is taken out of the reply.
+_JSON_BLOCK = re.compile(r"```[ \t]*(?:json)?[^\n]*\n\s*(\{.*?\})\s*\n[ \t]*```", re.DOTALL)
+_VIDEO_WORDS = re.compile(r"vid|reel|animat|cartoon|trailer|short film|clip", re.IGNORECASE)
+_IMAGE_WORDS = re.compile(r"image|imge|picture|pic|photo|poster|logo|draw|wallpaper|thumbnail|banner|art", re.IGNORECASE)
+_MEDIA_TOOLS = ("generate_video", "generate_image")
+
+
+def written_media_call(text: str, ask: str) -> Optional[tuple]:
+    """(tool name, its args, the block) when `text` holds a picture or video tool call written as JSON, else None."""
+    for m in _JSON_BLOCK.finditer(text or ""):
+        try:
+            args = json.loads(m.group(1))
+        except ValueError:
+            continue
+        if not isinstance(args, dict) or not isinstance(args.get("prompt"), str) or not args["prompt"].strip():
+            continue
+        if _VIDEO_WORDS.search(ask or "") or {"scenes", "seconds"} & args.keys():
+            return "generate_video", args, m.group(0)
+        if _IMAGE_WORDS.search(ask or ""):
+            return "generate_image", args, m.group(0)
+    return None
+
+
+async def _run_written_call(ctx: ToolContext, text: str, ask: str):
+    """Run a media tool call the model wrote as text (see written_media_call), as runtime.run_agent would."""
+    found = written_media_call(text, ask)
+    if not found:
+        return
+    name, args, block = found
+    schema = next((t["function"] for t in tool_registry.schemas(ctx) if t["function"]["name"] == name), None)
+    if not schema:
+        return
+    args = {k: v for k, v in args.items() if k in schema["parameters"]["properties"]}
+    yield {"type": "drop_text", "text": block}
+    call_id = f"call-{uuid.uuid4().hex[:8]}"
+    label = next((t.label or t.name for t in tool_registry.active(ctx) if t.name == name), name)
+    yield {"type": "tool_start", "id": call_id, "name": name, "label": label, "args": args}
+    task = asyncio.create_task(tool_registry.run(name, json.dumps(args), ctx))
+    try:
+        while not task.done():
+            done, _ = await asyncio.wait({task}, timeout=_HEARTBEAT_SECONDS)
+            if not done:
+                yield {"type": "heartbeat"}
+    finally:
+        if not task.done():
+            task.cancel()
+    out = task.result()
+    yield {"type": "tool_end", "id": call_id, "name": name, "ok": out.ok, "summary": out.summary,
+           "output": out.content[:2000], "media": out.media}
+
+
 async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: list, use_tools: bool, max_steps: int,
                         plan_for: Optional[str] = None):
     """The agent's events. In the App Builder, `plan_for` (a new app or a big change, on a free model) first gets a
@@ -1348,7 +1402,7 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
     that don't parse), opened in a real browser that presses its buttons, and compared with its plan. Anything that
     breaks or is missing gets up to three rounds of fixes, and anything still wrong is told to the user instead of
     ending silently."""
-    said, changed, plan = [], False, []
+    said, changed, plan, tools_used = [], False, [], set()
     if plan_for and ctx.app_id and use_tools:
         async for ev in _plan_events(ctx, model, plan_for, llm_messages):
             if ev["type"] == "plan":
@@ -1361,7 +1415,14 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
             said.append(ev["text"])
         elif ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
             changed = True
+        if ev["type"] == "tool_start":
+            tools_used.add(ev["name"])
         yield ev
+    if not ctx.app_id and use_tools and not tools_used & set(_MEDIA_TOOLS):
+        ask = next((m["content"] for m in reversed(llm_messages) if m.get("role") == "user"
+                    and isinstance(m.get("content"), str)), "")
+        async for ev in _run_written_call(ctx, "".join(said), ask):
+            yield ev
     if not (ctx.app_id and use_tools and changed):
         return
     problems, features_checked = [], False
@@ -1593,6 +1654,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 if ev["type"] == "text":
                     full.append(ev["text"])
                     yield f"data: {_sse_json(ev['text'])}\n\n"
+                elif ev["type"] == "drop_text":
+                    # The saved reply (which the chat reloads when the stream ends) leaves the block out.
+                    full[:] = ["".join(full).replace(ev["text"], "").strip()]
                 elif ev["type"] == "tool_start":
                     steps.append({"id": ev["id"], "name": ev["name"], "label": ev["label"], "args": ev["args"], "status": "running"})
                     yield f"event: tool\ndata: {_sse_json(steps[-1])}\n\n"
