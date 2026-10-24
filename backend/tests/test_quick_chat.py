@@ -22,7 +22,8 @@ def test_small_talk_needs_no_tools():
 
 def test_tool_asks_keep_tools():
     for text in ["make a logo for my shop", "search the latest news", "give me a pdf report",
-                 "what's the weather in Pune", "open https://example.com", "build a todo app"]:
+                 "what's the weather in Pune", "open https://example.com", "build a todo app",
+                 "ek avideoo chahiye kids ka"]:
         assert not server._quick_chat([user(text)]), text
 
 
