@@ -15,7 +15,7 @@ import BreatheDialog from "@/components/BreatheDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
@@ -95,12 +95,12 @@ const GREETINGS = {
 // The mood check-in on the Counsellor welcome. Picks are kept in this browser only (Counsellor chats are never
 // saved to memory), so the next visit can ask whether things got better; Pro and Max also see their mood week.
 const MOODS = [
-  { id: "great", emoji: "😄", label: "Great", feel: "great" },
-  { id: "okay", emoji: "🙂", label: "Okay", feel: "okay" },
-  { id: "tired", emoji: "😴", label: "Tired", feel: "tired" },
-  { id: "low", emoji: "😔", label: "Low", feel: "low" },
-  { id: "stressed", emoji: "😣", label: "Stressed", feel: "stressed" },
-  { id: "angry", emoji: "😤", label: "Angry", feel: "angry" },
+  { id: "great", icon: Sun, label: "Great", feel: "great", tint: "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300" },
+  { id: "okay", icon: CloudSun, label: "Okay", feel: "okay", tint: "bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300" },
+  { id: "tired", icon: Moon, label: "Tired", feel: "tired", tint: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300" },
+  { id: "low", icon: CloudRain, label: "Low", feel: "low", tint: "bg-slate-200 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300" },
+  { id: "stressed", icon: Zap, label: "Stressed", feel: "stressed", tint: "bg-orange-100 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300" },
+  { id: "angry", icon: Flame, label: "Angry", feel: "angry", tint: "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" },
 ];
 const MOOD_KEY = "krish-counsel-mood";
 
@@ -1027,8 +1027,8 @@ function MoodWeek({ pro }) {
       <div className="mt-1.5 grid grid-cols-7 gap-1 text-center">
         {week.map((d, i) => (
           <div key={i} className="flex flex-col items-center gap-0.5">
-            <span className={`flex h-8 w-8 items-center justify-center rounded-full text-lg ${d.mood ? "bg-pink-50 dark:bg-pink-500/10" : "bg-muted/60"}`}>
-              {d.mood ? d.mood.emoji : <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />}
+            <span title={d.mood?.label} className={`flex h-8 w-8 items-center justify-center rounded-full ${d.mood ? d.mood.tint : "bg-muted/60"}`}>
+              {d.mood ? <d.mood.icon className="h-4 w-4" /> : <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />}
             </span>
             <span className="text-[10.5px] text-muted-foreground">{d.day}</span>
           </div>
@@ -1044,20 +1044,20 @@ function MoodCheckIn({ onPick, pro }) {
   const pick = (m) => {
     saveMood(m.id);
     const before = last && last.mood.id !== m.id ? ` Last time I was feeling ${last.mood.feel}.` : "";
-    onPick(`I'm feeling ${m.feel} right now ${m.emoji}.${before}`);
+    onPick(`I'm feeling ${m.feel} right now.${before}`);
   };
   return (
     <div data-testid="mood-check-in" className="radha-fade-up relative mt-5 rounded-2xl border border-border bg-card/70 px-4 py-3 shadow-sm backdrop-blur-sm sm:mt-6 sm:px-5">
       <p className="text-sm font-semibold text-foreground max-sm:text-center">
-        {last ? <>You felt {last.mood.feel} {last.mood.emoji} {when}. How are you now?</> : "How are you feeling right now?"}
+        {last ? <>You felt {last.mood.feel} {when}. How are you now?</> : "How are you feeling right now?"}
       </p>
-      <div className="mt-2.5 grid grid-cols-3 gap-2 sm:grid-cols-6">
+      <div className="mt-2.5 flex flex-wrap justify-center gap-2 sm:justify-start">
         {MOODS.map((m) => (
           <button key={m.id} onClick={() => pick(m)} data-testid={`mood-${m.id}`}
-            className={`group flex flex-col items-center gap-0.5 rounded-xl border px-2 py-2 transition-all hover:-translate-y-0.5 hover:border-pink-300 hover:bg-pink-50/70 active:scale-95 dark:hover:border-pink-400/40 dark:hover:bg-pink-500/10 ${
-              last?.mood.id === m.id ? "border-pink-300 bg-pink-50/60 dark:border-pink-400/40 dark:bg-pink-500/10" : "border-border bg-background/60"}`}>
-            <span className="text-2xl transition-transform group-hover:scale-110">{m.emoji}</span>
-            <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground">{m.label}</span>
+            className={`group flex items-center gap-2 rounded-full border py-1.5 pl-1.5 pr-3 transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-sm active:scale-95 ${
+              last?.mood.id === m.id ? "border-violet-300 bg-violet-50/60 dark:border-violet-400/40 dark:bg-violet-500/10" : "border-border bg-background/60"}`}>
+            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${m.tint}`}><m.icon className="h-3.5 w-3.5" /></span>
+            <span className="text-[13px] font-medium text-foreground">{m.label}</span>
           </button>
         ))}
       </div>
@@ -1087,7 +1087,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
           </p>
           {pro ? (
             <p data-testid="counsellor-pro-badge" className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500/15 to-pink-500/15 px-3 py-1 text-xs font-semibold text-violet-700 dark:text-violet-200">
-              <Sparkles className="h-3.5 w-3.5" /> Counsellor Pro: deeper replies, and I remember our last talk
+              <Sparkles className="h-3.5 w-3.5" /> Counsellor Pro: I remember our last talk
             </p>
           ) : (
             <button onClick={() => navigate("/plans")} data-testid="counsellor-pro-upsell"

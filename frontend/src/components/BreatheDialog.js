@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock } from "lucide-react";
+import { Heart, Lock, Wind } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // Calming breaths for the Counsellor. Everyone gets the one-minute calm; Pro and Max also get a sleep breath and
@@ -16,9 +16,9 @@ const EXERCISES = [
     phases: [IN(4), HOLD(4), OUT(4), HOLD(4, 0.55)], rounds: 4 },
 ];
 const FEELINGS = [
-  { label: "Calmer 😌", text: "I just did the breathing exercise and I feel calmer now 😌" },
-  { label: "A bit better 🙂", text: "I did the breathing exercise. I feel a little better 🙂" },
-  { label: "Still tense 😣", text: "I did the breathing exercise but I still feel tense 😣" },
+  { label: "Calmer", text: "I just did the breathing exercise and I feel calmer now." },
+  { label: "A bit better", text: "I did the breathing exercise. I feel a little better." },
+  { label: "Still tense", text: "I did the breathing exercise but I still feel tense." },
 ];
 
 export default function BreatheDialog({ open, onOpenChange, onDone, pro }) {
@@ -53,7 +53,7 @@ export default function BreatheDialog({ open, onOpenChange, onDone, pro }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm overflow-hidden text-center" data-testid="breathe-dialog">
         <DialogHeader className="items-center text-center">
-          <DialogTitle>{done ? "Well done 💛" : "Breathe with me"}</DialogTitle>
+          <DialogTitle>{done ? "Well done" : "Breathe with me"}</DialogTitle>
           <DialogDescription>
             {done ? "That was time just for you. How do you feel now?"
               : step < 0 ? "Pick one, then follow the circle." : `${exercise.name}, about ${minutes} min.`}
@@ -73,7 +73,7 @@ export default function BreatheDialog({ open, onOpenChange, onDone, pro }) {
                 <p className="text-xs opacity-90">{phase.hint}</p>
               </>
             ) : (
-              <p className="text-3xl">{done ? "🌸" : "🌬️"}</p>
+              done ? <Heart className="h-9 w-9" /> : <Wind className="h-9 w-9" />
             )}
           </div>
         </div>
