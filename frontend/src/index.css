@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Caveat:wght@600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..700&family=Noto+Serif+Devanagari:wght@400..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Caveat:wght@600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..700&family=Noto+Serif+Devanagari:wght@400..700&family=Instrument+Serif:ital@0;1&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -423,4 +423,23 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 @media (prefers-reduced-motion: reduce) {
   .krish-install, .krish-install.is-leaving, .krish-install::before, .krish-install-glow, .krish-install-phone, .krish-install-tile, .krish-install-drop,
   .krish-install-drop::after, .krish-install-word, .krish-install-sub, .krish-install-item, .krish-install-check, .krish-install-cta { animation-duration: 0.01ms; animation-iteration-count: 1; }
+}
+
+/* Counsellor breathing circle: grows and shrinks with each breath (BreatheDialog sets the duration). */
+.krish-breathe { transition-property: transform; transition-timing-function: ease-in-out; }
+@media (prefers-reduced-motion: reduce) { .krish-breathe { transition: none; } }
+
+/* Plans page (editorial): a calm warm canvas, serif display type for headings and prices, hairline panels. */
+@layer components {
+  .krish-display { font-family: 'Instrument Serif', 'Source Serif 4', Georgia, serif; font-weight: 400; letter-spacing: -0.01em; }
+  .plans-canvas { background-color: #FAF9F6; }
+  .dark .plans-canvas { background-color: #0C0D11; background-image: radial-gradient(60% 40% at 50% 0%, rgba(99, 102, 241, 0.10), transparent 70%); }
+  .plans-panel { background-color: #FFFFFF; border: 1px solid #E8E6E0; }
+  .dark .plans-panel { background-color: #121319; border-color: #1E2028; }
+  .plans-line { border-color: #E8E6E0; }
+  .dark .plans-line { border-color: #1E2028; }
+  @media (min-width: 768px) {
+    .plans-grid { background-color: #FFFFFF; border: 1px solid #E8E6E0; }
+    .dark .plans-grid { background-color: #121319; border-color: #1E2028; }
+  }
 }

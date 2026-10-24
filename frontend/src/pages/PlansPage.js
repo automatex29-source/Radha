@@ -4,9 +4,10 @@ import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Check, Crown, Gauge, Gift, Loader2, Tag, X } from "lucide-react";
+import { Check, Copy, Gauge, Loader2, Share2, Tag } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import InviteDialog from "@/components/InviteDialog";
+import InviteDialog, { WhatsAppIcon } from "@/components/InviteDialog";
+import { inviteLink, inviteMessage } from "@/lib/referral";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
 import { useNavigate } from "react-router-dom";
 
@@ -21,23 +22,35 @@ function times(plan, basic) {
   return basic ? Math.round(plan.meter.session / basic.meter.session) : 1;
 }
 
-function features(plan, basic) {
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// What each card lists: Basic in full, then what each bigger plan adds to the one before it.
+function highlights(plan, basic) {
   const x = times(plan, basic);
-  return [
-    { ok: true, text: "Unlimited chat and search" },
-    { ok: true, text: "Krish AI, our free model for every question" },
-    { ok: true, text: x > 1 ? `${x}x the usage of Basic for builds, pictures, decks and videos` : "Builds, pictures, decks and videos" },
-    { ok: true, text: "Usage refills every 5 hours" },
-    { ok: true, text: `${plan.total.automation} automation${plan.total.automation === 1 ? "" : "s"}` },
-    { ok: plan.publish, text: "Publish apps to the web" },
-    { ok: plan.premium, text: "Premium AI models" },
-    { ok: plan.quality.media === "premium", text: "HD pictures and real AI video" },
-    { ok: plan.premium, text: "Think mode on our smartest model" },
-    { ok: true, text: `Videos up to ${plan.quality.videoSeconds} seconds` },
-    { ok: true, text: `Uploads up to ${plan.quality.uploadMb}MB` },
-    { ok: true, text: "Remembers what you tell it, in every chat" },
-  ];
+  const { automation } = plan.total;
+  const { videoSeconds, uploadMb } = plan.quality;
+  if (plan.id === "basic") {
+    return { label: "Includes", items: ["Unlimited chat and search", "Krish AI, our free model for every question",
+      "Builds, pictures, decks and videos", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
+  }
+  if (plan.id === "max") {
+    return { label: "Everything in Pro, plus", items: [`${x}x the usage of Basic`, `Videos up to ${videoSeconds} seconds`,
+      plural(automation, "automation"), `Uploads up to ${uploadMb}MB`] };
+  }
+  return { label: "Everything in Basic, plus", items: [`${x}x the usage of Basic`,
+    ...(plan.premium ? ["Premium AI models and Think mode"] : []),
+    ...(plan.quality.media === "premium" ? ["HD pictures and real AI video"] : []),
+    ...(plan.publish ? ["Publish apps to the web"] : []),
+    `${plural(automation, "automation")}, ${uploadMb}MB uploads`,
+    ...(plan.premium ? ["Counsellor Pro"] : [])] };
 }
+
+const COUNSELLOR_PRO = [
+  ["Deeper replies", "Every talk answered by our strongest model."],
+  ["Remembers your last talk", "Picks up gently where you left off."],
+  ["Sleep and focus breathing", "4-7-8 for sleep, box breathing before exams."],
+  ["Mood week", "See how your last seven days felt."],
+];
 
 const ORDER = ["basic", "pro", "max"];
 
@@ -78,7 +91,7 @@ function MeterBar({ label, part, idle, testid }) {
         <span className="tabular-nums text-muted-foreground"><b className="text-foreground">{pct}%</b> used</span>
       </div>
       <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface-strong">
-        <div className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-500" : "bg-gradient-to-r from-indigo-500 to-violet-500"}`}
+        <div className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-500" : "bg-foreground"}`}
           style={{ width: `${pct}%` }} />
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">{resetText(part.resetsAt) || idle}</p>
@@ -90,9 +103,9 @@ function MeterBar({ label, part, idle, testid }) {
 function Usage({ meter, costs, automation }) {
   const range = (r) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}-${r[1]}`);
   return (
-    <section className="mt-10 rounded-3xl border border-border/70 bg-card/80 p-6 shadow-sm backdrop-blur" data-testid="plans-usage">
+    <section className="plans-panel mt-6 rounded-[20px] p-6 sm:p-9" data-testid="plans-usage">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight"><Gauge className="h-5 w-5 text-indigo-500" /> Your usage</h2>
+        <h2 className="krish-display flex items-center gap-2 text-[1.7rem] leading-none"><Gauge className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} /> Your usage</h2>
         <p className="text-xs text-muted-foreground">Chat on Krish Basic is never counted.</p>
       </div>
       <div className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
@@ -100,7 +113,7 @@ function Usage({ meter, costs, automation }) {
           idle={`Starts when you make something, then refills ${meter.session.hours} hours later`} />
         <MeterBar label="This week" part={meter.week} testid="meter-week" idle="Starts when you make something" />
       </div>
-      <div className="mt-6 rounded-2xl bg-surface p-4" data-testid="meter-costs">
+      <div className="mt-6 rounded-xl bg-sunken p-4" data-testid="meter-costs">
         <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">What things use</p>
         <p className="mt-1 text-xs text-muted-foreground">Bigger requests use more: a longer build ask, a longer video, a longer chat.</p>
         <ul className="mt-2 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
@@ -123,48 +136,145 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
   const canBuy = paymentsOn && plan.price > 0 && !lower;
   const price = offer && plan.price ? offer.prices[plan.id] ?? plan.price : plan.price;
+  const { label, items } = highlights(plan, basic);
+  const soft = popular ? "text-background/60" : "text-muted-foreground";
   return (
     <div data-testid={`plan-${plan.id}`}
-      className={`relative flex flex-col rounded-3xl p-6 transition-shadow sm:p-7 ${popular
-        ? "bg-gradient-to-b from-indigo-500/[0.07] to-violet-500/[0.03] shadow-[0_18px_50px_-20px_rgba(99,102,241,0.45)] ring-1 ring-indigo-400/50 dark:from-indigo-500/15"
-        : "border border-border/70 bg-card/80 shadow-sm backdrop-blur"}`}>
+      className={`relative flex flex-col px-6 py-8 sm:px-8 sm:py-9 ${popular
+        ? "z-[1] rounded-[20px] bg-foreground text-background shadow-[0_30px_60px_-30px_rgba(15,17,30,0.55)] max-md:order-first md:-my-px"
+        : "plans-panel rounded-[20px] md:rounded-none md:border-0 md:bg-transparent dark:md:bg-transparent"}`}>
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-xl font-extrabold tracking-tight">{plan.name}</h2>
-        {current ? <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Your plan</span>
-          : popular ? <span className="rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 px-2.5 py-1 text-[11px] font-semibold text-white">Most popular</span> : null}
+        <h2 className="font-sans text-[13px] font-semibold uppercase tracking-[0.14em]">{plan.name}</h2>
+        {current ? <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${popular ? "border-background/40 text-background/80" : "border-border text-muted-foreground"}`}>Your plan</span>
+          : popular ? <span className="rounded-full border border-background/40 px-2.5 py-0.5 text-[11px] font-medium text-background/80">Most popular</span> : null}
       </div>
-      <p className="mt-1.5 text-sm text-muted-foreground">{TAGLINE[plan.id]}</p>
-      <div className="mt-6 flex items-baseline gap-1.5">
-        {price !== plan.price && <span className="text-lg font-semibold text-muted-foreground line-through tabular-nums">₹{plan.price}</span>}
-        <span className="text-[2.6rem] font-extrabold leading-none tracking-tight tabular-nums">₹{price}</span>
-        <span className="text-sm text-muted-foreground">{plan.price ? "/ month" : "forever"}</span>
+      <div className="mt-7 flex items-baseline gap-2">
+        {price !== plan.price && <span className={`krish-display text-2xl line-through tabular-nums ${soft}`}>₹{plan.price}</span>}
+        <span className="krish-display text-[3.6rem] leading-none tabular-nums sm:text-[4rem]">₹{price}</span>
+        <span className={`text-sm ${soft}`}>{plan.price ? "per month" : "forever"}</span>
       </div>
-      <div className="my-6 h-px bg-border/70" />
+      <p className={`mt-3 text-[0.92rem] ${soft}`}>{TAGLINE[plan.id]}</p>
+      <div className={`my-6 h-px ${popular ? "bg-background/15" : "bg-border/80"}`} />
+      <p className={`mb-3.5 text-xs font-medium ${soft}`}>{label}</p>
       <ul className="flex-1 space-y-3 text-[0.9rem]">
-        {features(plan, basic).map((f) => (
-          <li key={f.text} className={`flex items-start gap-2.5 ${f.ok ? "text-foreground/90" : "text-muted-foreground/70"}`}>
-            <span className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full ${f.ok ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-300" : "bg-muted text-muted-foreground"}`}>
-              {f.ok ? <Check className="h-3 w-3" strokeWidth={3} /> : <X className="h-3 w-3" strokeWidth={3} />}
-            </span>
-            {f.text}
+        {items.map((text) => (
+          <li key={text} className="flex items-start gap-3 leading-snug">
+            <Check className={`mt-0.5 h-4 w-4 shrink-0 ${popular ? "" : "text-foreground/80"}`} strokeWidth={1.75} />
+            {text}
           </li>
         ))}
       </ul>
       <Button disabled={!canBuy || busy} onClick={() => onBuy(plan.id)} data-testid={`plan-button-${plan.id}`}
-        className={`mt-7 h-11 w-full rounded-xl font-semibold disabled:opacity-100 ${canBuy && (popular || current)
-          ? "bg-gradient-to-r from-indigo-500 to-violet-500 text-white" : canBuy ? "bg-foreground text-background"
+        className={`mt-8 h-11 w-full rounded-[10px] text-[0.92rem] font-medium shadow-none disabled:opacity-100 ${popular
+          ? "bg-background text-foreground hover:bg-background/90"
+          : canBuy ? "border border-foreground/80 bg-transparent text-foreground hover:bg-foreground hover:text-background"
           : "border border-border bg-transparent text-muted-foreground"}`}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" />
           : !plan.price ? (current ? "Current plan" : "Free")
           : !paymentsOn ? (current ? "Current plan" : "Coming soon")
-          : current ? `Add a month · ₹${price}` : lower ? "Included in your plan" : `Get ${plan.name} · ₹${price}`}
+          : current ? `Add a month · ₹${price}` : lower ? "Included in your plan" : `Get ${plan.name}`}
       </Button>
-      {current && expires && <p className="mt-2.5 text-center text-xs text-muted-foreground">Active until {untilText(expires)}</p>}
+      {current && expires && <p className={`mt-2.5 text-center text-xs ${soft}`}>Active until {untilText(expires)}</p>}
     </div>
   );
 }
 
-/** The three plans (Basic, Pro, Max), the user's current one and what they've used today. */
+/** Counsellor Pro, part of Pro and Max: what the Counsellor adds on a paid plan. */
+function CounsellorPro() {
+  return (
+    <section className="plans-panel mt-6 grid gap-8 rounded-[20px] p-6 sm:p-9 md:grid-cols-[1fr_2fr] md:gap-10" data-testid="plans-counsellor-pro">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Included in Pro and Max</p>
+        <h2 className="krish-display mt-2.5 text-[2.1rem] leading-tight">Counsellor <em>Pro</em></h2>
+        <p className="mt-2.5 text-[0.92rem] leading-relaxed text-muted-foreground">Deeper, warmer conversations on our best model, for the days you need someone to listen.</p>
+      </div>
+      <dl className="grid content-center gap-x-9 gap-y-5 sm:grid-cols-2">
+        {COUNSELLOR_PRO.map(([title, text]) => (
+          <div key={title} className="plans-line border-t pt-3.5">
+            <dt className="text-[0.92rem] font-semibold">{title}</dt>
+            <dd className="mt-1 text-[0.85rem] leading-relaxed text-muted-foreground">{text}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/** Give Pro, get Pro: the person's own invite link, ready to copy or send, and the Pro days it has earned. */
+function InviteFriends({ onMore }) {
+  const [data, setData] = useState(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api.get("/referrals").then(({ data }) => setData(data)).catch(() => {});
+  }, []);
+  const days = data?.rewardDays || 7;
+  const link = data ? inviteLink(data.code) : "";
+  const rewarded = data ? Math.round(data.daysEarned / Math.max(1, data.rewardDays)) : 0;
+  const copy = async () => {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); } catch { /* the link is on screen */ }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+    toast.success("Invite link copied");
+  };
+  return (
+    <section className="plans-panel mt-6 grid overflow-hidden rounded-[20px] md:grid-cols-[1.05fr_1fr]" data-testid="plans-invite">
+      <div className="p-6 sm:p-9">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Invite friends</p>
+        <h2 className="krish-display mt-2.5 text-[2.1rem] leading-tight">Give Pro. <em className="text-[#4F46E5] dark:text-[#A5B4FC]">Get Pro.</em></h2>
+        <p className="mt-2.5 max-w-sm text-[0.92rem] leading-relaxed text-muted-foreground">
+          When a friend joins with your link, you each get {days} days of Pro, free.
+        </p>
+        <ol className="mt-6 grid gap-3 text-[0.88rem] sm:grid-cols-3 sm:gap-4">
+          {["Share your link", "Your friend signs up", `You both get ${days} days of Pro`].map((step, i) => (
+            <li key={step} className="flex items-baseline gap-2.5 sm:flex-col sm:gap-1">
+              <span className="krish-display text-xl leading-none text-muted-foreground">{i + 1}.</span>
+              <span className="leading-snug">{step}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <div className="plans-line flex flex-col justify-center gap-3 border-t bg-sunken/60 p-6 sm:p-9 md:border-l md:border-t-0">
+        <p className="text-xs font-medium text-muted-foreground">Your invite link</p>
+        <div className="flex min-w-0 items-center gap-2 rounded-[10px] border border-border bg-background p-1.5 pl-3.5">
+          <span className="min-w-0 flex-1 truncate text-[0.88rem] font-medium" data-testid="plans-invite-link">
+            {link ? link.replace(/^https?:\/\//, "") : "Loading your link…"}
+          </span>
+          <Button onClick={copy} disabled={!link} data-testid="plans-invite-copy"
+            className="h-8 shrink-0 rounded-[7px] bg-foreground px-3.5 text-[0.82rem] font-medium text-background shadow-none hover:bg-foreground/90">
+            {copied ? <><Check className="mr-1.5 h-3.5 w-3.5" /> Copied</> : <><Copy className="mr-1.5 h-3.5 w-3.5" /> Copy</>}
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <a href={link ? `https://wa.me/?text=${encodeURIComponent(inviteMessage(link, days))}` : undefined} target="_blank" rel="noreferrer"
+            data-testid="plans-invite-whatsapp" aria-disabled={!link}
+            className="flex h-10 items-center justify-center gap-2 rounded-[10px] border border-border bg-background text-[0.85rem] font-medium transition-colors hover:bg-surface">
+            <WhatsAppIcon className="h-4 w-4 shrink-0 text-[#25D366]" /> WhatsApp
+          </a>
+          <button type="button" onClick={onMore} data-testid="plans-invite-more"
+            className="flex h-10 items-center justify-center gap-2 rounded-[10px] border border-border bg-background text-[0.85rem] font-medium transition-colors hover:bg-surface">
+            <Share2 className="h-4 w-4 shrink-0" /> More ways
+          </button>
+        </div>
+        {data && (
+          <div className="mt-2" data-testid="plans-invite-progress">
+            <div className="flex gap-1" aria-hidden="true">
+              {Array.from({ length: data.maxRewards }, (_, i) => (
+                <span key={i} className={`h-1 flex-1 rounded-full ${i < rewarded ? "bg-foreground" : "bg-border"}`} />
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {data.joined ? <><b className="font-semibold text-foreground">{data.daysEarned} Pro days</b> earned from {plural(data.joined, "friend")}, up to {data.maxRewards}.</>
+                : `No friends yet. You can earn Pro from up to ${data.maxRewards} friends.`}
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** The three plans (Basic, Pro, Max), Counsellor Pro, inviting friends, and what the user has used. */
 export default function PlansPage() {
   const [data, setData] = useState(null);
   const [buying, setBuying] = useState(null);
@@ -241,52 +351,47 @@ export default function PlansPage() {
   };
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
+    <div className="flex h-dvh w-full overflow-hidden plans-canvas max-md:flex-col">
       <IconRail />
       <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-10 sm:px-6 sm:pt-14">
+        <div className="mx-auto w-full max-w-[1100px] px-4 pb-14 pt-10 sm:px-8 sm:pt-16">
           <header className="text-center">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/70 px-3 py-1 text-xs font-medium text-muted-foreground">
-              <Crown className="h-3.5 w-3.5 text-primary" /> Plans
-            </span>
-            <h1 className="mt-4 text-[1.9rem] font-extrabold leading-[1.1] tracking-tight sm:text-[2.6rem]">
-              Choose the plan that <span className="krish-gradient-text">fits you</span>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Plans</p>
+            <h1 className="krish-display mt-3 text-[2.75rem] leading-[1.02] sm:text-[4.25rem]">
+              Choose the plan that <em className="text-[#4F46E5] dark:text-[#A5B4FC]">fits you</em>
             </h1>
-            <p className="mx-auto mt-3 max-w-md text-[0.95rem] text-muted-foreground">Chat is unlimited on every plan. Upgrade for more app builds, pictures, decks and videos.</p>
+            <p className="mx-auto mt-4 max-w-md text-[0.97rem] leading-relaxed text-muted-foreground">Chat is unlimited on every plan. Upgrade for more app builds, pictures, decks and videos.</p>
           </header>
 
           {!data ? (
             <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : (
             <>
-              <div className="mt-10 grid gap-5 md:grid-cols-3" data-testid="plans-grid">
+              <div className="mt-10 grid gap-3.5 sm:mt-14 plans-grid md:grid-cols-3 md:gap-0 md:rounded-[20px]" data-testid="plans-grid">
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
                     paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} />
                 ))}
               </div>
-              <p className="mt-5 text-center text-xs text-muted-foreground">
+              <CounsellorPro />
+              <InviteFriends onMore={() => setInviteOpen(true)} />
+              <p className="mt-8 text-center text-xs text-muted-foreground">
                 {data.paymentsOn
                   ? "Pay once for 30 days with UPI, card, net banking or a wallet. No auto-renewal: pay again whenever you like to add another month."
                   : "Payments are coming soon. Pro and Max will open here when they're ready."}
               </p>
               {data.paymentsOn && (
-                <form onSubmit={applyCode} className="mx-auto mt-6 flex max-w-sm items-center gap-2" data-testid="offer-code-form">
+                <form onSubmit={applyCode} className="mx-auto mt-4 flex max-w-sm items-center gap-2" data-testid="offer-code-form">
                   <div className="relative flex-1">
                     <Tag className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input value={codeText} onChange={(e) => setCodeText(e.target.value)} placeholder="Have an offer code?" maxLength={24}
-                      className="h-10 rounded-xl pl-9 uppercase placeholder:normal-case" data-testid="offer-code-input" />
+                      className="h-10 rounded-[10px] bg-background pl-9 uppercase placeholder:normal-case" data-testid="offer-code-input" />
                   </div>
-                  <Button type="submit" variant="outline" disabled={checking || !codeText.trim()} className="h-10 rounded-xl" data-testid="offer-code-apply">
+                  <Button type="submit" variant="outline" disabled={checking || !codeText.trim()} className="h-10 rounded-[10px]" data-testid="offer-code-apply">
                     {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : offer ? "Applied" : "Apply"}
                   </Button>
                 </form>
               )}
-              <button type="button" onClick={() => setInviteOpen(true)} data-testid="plans-invite"
-                className="mx-auto mt-8 flex w-full max-w-xl items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-left transition-colors hover:bg-emerald-500/10">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"><Gift className="h-4 w-4" /></span>
-                <span className="text-sm"><b>Get Pro free:</b> invite a friend and you both get 7 days of Pro.</span>
-              </button>
               {data.limitsOn && <Usage meter={data.meter} costs={data.costs} automation={data.usage.automation} />}
             </>
           )}

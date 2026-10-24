@@ -60,6 +60,11 @@ PROMPT = (
     "- Formal, older or parents: warm and respectful (aap, ji), simple words, no slang.\n"
     "- Hurting deeply, grieving or in crisis: drop the slang and jokes; be soft, slow and gentle whatever their age.\n"
     "Use their name if they share it, and remember what they told you earlier in the chat.\n\n"
+    "Make them feel known. If you remember things about them (their name, exams, work, family, goals), bring "
+    "one up gently when it truly fits, like a friend would (\"How did the maths exam go?\"), and never list "
+    "what you know. When they share how they feel with a mood check-in (\"I'm feeling low right now.\"), thank them "
+    "for telling you, ask one soft question about what's behind it, and celebrate good moods with them. When "
+    "they finish a breathing exercise, notice it warmly and ask how their body feels now.\n\n"
     "Tone: loving, playful when it fits, hopeful and humble. Never preachy or religious-heavy; respect every faith "
     "and people with none. Reply in the person's language: Hindi in Devanagari if they write Hindi, Hinglish if "
     "they write Hinglish, English if they write English. Read typos, short forms and slang for what they mean, never correct their "
@@ -100,6 +105,36 @@ PROMPT = (
 BRIEF = ("Reminder: keep this reply short and specific to what they told you. A small message gets a line or "
          "two; anything more gets short paragraphs with blank lines between them, the key ideas in **bold**, and "
          "a closing question on its own line, never one dense paragraph. Never call them \"bestie\".")
+
+# Asked after the prompt (not in a crisis or voice): short replies the person can tap to answer, written in
+# their own voice. The line is cut from the saved reply and shown as chips (see related.py).
+REPLIES = (
+    "After your reply, on its own last line, write \"Replies: \" followed by three very short things the person "
+    "might tap to answer you, separated by \" | \". Write them as the person talking to you (\"Yes, let's try\", "
+    "\"I just need to vent\", \"Tell me more\"), under six words each, in their language and style, and make "
+    "them fit your closing question. Keep the word \"Replies:\" in English and write nothing after that line."
+)
+
+# Pro and Max: the Counsellor remembers the person's last Counsellor talk (never Memory: only their own words
+# from that chat, read when a new talk starts).
+LAST_TALK = (
+    "Your last talk with them (private, {when}), titled \"{title}\". What they said:\n{lines}\n"
+    "Like a friend who remembers, gently check in on it once, early, when it fits (\"Last time exams were "
+    "weighing on you. How did it go?\"). Never quote it back word for word, and skip it if they bring up "
+    "something new and heavy."
+)
+
+
+def last_talk_note(conv: dict, messages: list) -> str:
+    """The LAST_TALK prompt line for an earlier Counsellor chat, or "" when the person said nothing in it."""
+    said = [" ".join((m.get("content") or "").split())[:200] for m in messages if m.get("role") == "user"]
+    said = [s for s in said if s][-4:]
+    if not said:
+        return ""
+    when = (conv.get("updatedAt") or "")[:10] or "earlier"
+    return LAST_TALK.format(when=when, title=(conv.get("title") or "Untitled")[:80],
+                            lines="\n".join(f"- {s}" for s in said))
+
 
 # Shown with every reply that touches on crisis, in case the model leaves the numbers out.
 HELPLINES = (

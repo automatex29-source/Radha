@@ -155,6 +155,20 @@ function RelatedQuestions({ items, onAsk, id }) {
   );
 }
 
+// The Counsellor's tap-to-answer replies, written in the person's own voice.
+function QuickReplies({ items, onAsk, id }) {
+  return (
+    <div className="mt-4 flex flex-wrap gap-2" data-testid={`quick-replies-${id}`}>
+      {items.map((q, i) => (
+        <button key={q} onClick={() => onAsk(q)} data-testid={`quick-reply-${i + 1}`} dir="auto"
+          className="rounded-full border border-pink-200 bg-gradient-to-r from-pink-50 to-amber-50 px-3.5 py-1.5 text-[13.5px] font-medium text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-pink-300 hover:shadow active:scale-[0.98] dark:border-pink-400/25 dark:from-pink-500/10 dark:to-amber-500/10">
+          {q}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Only fenced code gets the box and copy button; `inline code` stays in the sentence.
 function CodeBlock({ node, children }) {
   const [copied, setCopied] = useState(false);
@@ -231,7 +245,7 @@ function RateButtons({ message }) {
   );
 }
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, compactSteps = false }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, quickReplies, compactSteps = false }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -392,7 +406,9 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             {message.conversationId && message.id !== "streaming" && <RateButtons message={message} />}
           </div>
         )}
-        {!streaming && onAsk && message.related?.length > 0 && <RelatedQuestions items={message.related} onAsk={onAsk} id={message.id} />}
+        {!streaming && onAsk && message.related?.length > 0 && (quickReplies
+          ? <QuickReplies items={message.related} onAsk={onAsk} id={message.id} />
+          : <RelatedQuestions items={message.related} onAsk={onAsk} id={message.id} />)}
       </div>
     </div>
   );
