@@ -2,7 +2,7 @@ import { useState } from "react";
 import { mediaUrl } from "@/lib/api";
 import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, CheckCircle2, XCircle, ChevronRight, FileDown,
   FileSpreadsheet, Presentation, FileText, Clapperboard, MousePointerClick, Eye, FilePen, FileSearch, FileX,
-  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree, CircleStop } from "lucide-react";
+  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree, CircleStop, ListChecks, ClipboardCheck } from "lucide-react";
 import { fileKind, KIND_META } from "@/components/PreviewPanel";
 
 const ICONS = {
@@ -11,6 +11,7 @@ const ICONS = {
   browser: MousePointerClick,
   write_file: FilePen, edit_file: FilePen, read_file: FileSearch, delete_file: FileX, list_files: FolderTree,
   run_command: SquareTerminal, check_preview: MonitorCheck, commit: GitCommitHorizontal,
+  plan_app: ListChecks, check_features: ClipboardCheck,
 };
 
 function argPreview(step) {
@@ -26,7 +27,7 @@ function argPreview(step) {
   if (step.name === "run_command") return a.command;
   if (step.name === "commit") return a.message;
   if (step.name === "check_preview") return a.path || "index.html";
-  if (step.name === "list_files") return "";
+  if (["list_files", "plan_app", "check_features"].includes(step.name)) return "";
   if (step.name === "browser") {
     return [a.action, a.url || (a.ref != null ? `#${a.ref}` : ""), a.text ? `“${a.text}”` : "", a.key || "", a.direction || ""]
       .filter(Boolean).join(" ");

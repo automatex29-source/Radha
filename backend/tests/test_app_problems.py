@@ -90,7 +90,8 @@ def test_broken_build_gets_a_repair_round(monkeypatch):
 def test_unfixed_problem_is_told_to_the_user(monkeypatch):
     server = _server()
     files = {}
-    calls = _fake_agent(monkeypatch, server, files, [({"index.html": CAKE_HTML, "app.js": CAKE_JS}, ""), (None, ""), (None, "")])
+    calls = _fake_agent(monkeypatch, server, files, [({"index.html": CAKE_HTML, "app.js": CAKE_JS}, "")]
+                        + [(None, "")] * server.REPAIR_ROUNDS)
     out = _texts(server, server.ToolContext(None, "u", app_id="a1"))
     assert "still has a problem" in out and "#cart-btn" in out
     assert len(calls) == 1 + server.REPAIR_ROUNDS
