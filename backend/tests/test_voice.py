@@ -101,3 +101,46 @@ def test_voice_prompt_follows_spoken_language():
     assert "reply in Tamil" in server.voice_prompt("ta", "hi")
     assert "use Hindi" in server.voice_prompt("auto", "hi")
     assert "use" not in server.voice_prompt(None, None).split("Hindi and English, mix the same way.")[-1]
+
+
+def test_whisper_is_steered_by_language_and_last_words(fake_openai):
+    fake_openai.setenv("GROQ_API_KEY", "gsk_test")
+    FakeClient.text, FakeClient.language = "मेरा phone बंद है", "hindi"
+    asyncio.run(media.transcribe_detect(b"a", "a.webm", hint="hi", context="mera order kab aayega"))
+    call = FakeClient.calls[-1]
+    assert call["model"] == media.GROQ_STT_MODEL and call["temperature"] == 0
+    assert "help" in call["prompt"] and call["prompt"].endswith("mera order kab aayega")
+    assert "language" not in call  # a hint steers; it never forces the language
+    assert media.stt_prompt(None, None) is None
+
+
+def test_hindi_written_in_urdu_script_is_heard_again_as_hindi(fake_openai):
+    fake_openai.setenv("GROQ_API_KEY", "gsk_test")
+    FakeClient.text, FakeClient.language = "آپ کیسے ہیں", "urdu"
+    text, lang = asyncio.run(media.transcribe_detect(b"a", "a.webm", hint="hi"))
+    assert lang == "hi" and FakeClient.calls[-1]["language"] == "hi"
+    # Someone who speaks Urdu keeps Urdu.
+    FakeClient.calls = []
+    assert asyncio.run(media.transcribe_detect(b"a", "a.webm", hint="ur"))[1] == "ur"
+    assert len(FakeClient.calls) == 1
+
+
+def test_turbo_whisper_takes_over_when_large_fails(fake_openai):
+    fake_openai.setenv("GROQ_API_KEY", "gsk_test")
+    real = FakeClient.__init__
+
+    def init(self, api_key=None, base_url=None):
+        real(self, api_key, base_url)
+        create = self.audio.transcriptions.create
+
+        async def flaky(**kw):
+            if kw["model"] == media.GROQ_STT_MODEL:
+                FakeClient.calls.append(kw)
+                raise RuntimeError("rate limited")
+            return await create(**kw)
+        self.audio.transcriptions.create = flaky
+
+    fake_openai.setattr(FakeClient, "__init__", init)
+    FakeClient.text = "hello"
+    assert asyncio.run(media.transcribe(b"a", "a.webm")) == "hello"
+    assert FakeClient.calls[-1]["model"] == media.GROQ_STT_FALLBACK
