@@ -1,6 +1,9 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 
-const SILENCE_MS = 1300;
+// How long a pause ends a turn: short after a quick question, a little longer once they've talked a while
+// (people pause to think mid-sentence).
+const SILENCE_MS = 900;
+const SILENCE_LONG_MS = 1300;
 const NO_SPEECH_MS = 8000;
 const MAX_MS = 60000;
 const SPEECH_RMS = 0.035;
@@ -60,7 +63,9 @@ export function useRecorder() {
       const buf = new Float32Array(analyser.fftSize);
       const started = performance.now();
       let heard = false;
+      let firstLoud = 0;
       let lastLoud = started;
+      let floor = 0; // background noise level, so a fan or traffic doesn't count as talking
       const tick = () => {
         analyser.getFloatTimeDomainData(buf);
         let sum = 0;
@@ -68,8 +73,11 @@ export function useRecorder() {
         const rms = Math.sqrt(sum / buf.length);
         setLevel(Math.min(1, rms * 8));
         const now = performance.now();
-        if (rms > SPEECH_RMS) { heard = true; lastLoud = now; }
-        if (autoStop && ((heard && now - lastLoud > SILENCE_MS) || (!heard && now - started > NO_SPEECH_MS))) {
+        // Falls to quiet moments at once, rises only slowly, so it follows the room and not the voice.
+        floor = !floor || rms < floor ? rms : floor + (rms - floor) * 0.001;
+        if (rms > Math.max(SPEECH_RMS, floor * 3)) { if (!heard) firstLoud = now; heard = true; lastLoud = now; }
+        const pause = heard && lastLoud - firstLoud > 4000 ? SILENCE_LONG_MS : SILENCE_MS;
+        if (autoStop && ((heard && now - lastLoud > pause) || (!heard && now - started > NO_SPEECH_MS))) {
           if (!heard) st.cancelled = true;
           stop();
           return;

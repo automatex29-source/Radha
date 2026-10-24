@@ -55,6 +55,8 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
   const bargeRef = useRef(bargeIn);
   bargeRef.current = bargeIn;
   const runningRef = useRef(false);
+  const lastLangRef = useRef(null); // language and words heard last, to help hear the next turn right
+  const lastHeardRef = useRef("");
   // Live view: "camera" or "screen"; each question sends Krish one picture of what it shows.
   const [view, setView] = useState(null);
   const [facing, setFacing] = useState("environment");
@@ -122,7 +124,7 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
         if (!activeRef.current || nextRef.current === "pause") break;
         if (!blob) { setPhase("idle"); break; } // nobody spoke for a while: pause
         setPhase("transcribing");
-        const result = await transcribeDetect(blob);
+        const result = await transcribeDetect(blob, { hint: lastLangRef.current, context: lastHeardRef.current });
         const text = result.text.trim();
         if (!activeRef.current || nextRef.current === "pause") break;
         if (!text) continue;
@@ -132,6 +134,8 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
           : VOICE_LANGS.some((l) => l.id === result.language) ? result.language
           : settingsLangRef.current;
         if (picked === "auto") setSpoken(replyLang);
+        lastLangRef.current = replyLang;
+        lastHeardRef.current = text;
         setHeard(text);
         setReply("");
         setPhase("thinking");
