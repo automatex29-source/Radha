@@ -65,6 +65,7 @@ import abuse
 import daily_verse
 import google_signin
 import monitor
+import owner_dashboard
 import promos
 import referrals
 import growth_mail
@@ -370,6 +371,7 @@ async def register(body: RegisterIn, request: Request):
         "loginCount": 1,
     }
     await db.users.insert_one(doc)
+    await monitor.login(db, doc["id"], "signup")
     referral = await referrals.apply(db, doc, body.ref)
     if referral:
         doc = await db.users.find_one({"id": doc["id"]})
@@ -406,6 +408,7 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
     if doc:
         await db.users.update_one({"id": doc["id"]}, {"$set": {"googleId": info["sub"], "lastLoginAt": ts, "lastSeenAt": ts},
                                                       "$inc": {"loginCount": 1}})
+        await monitor.login(db, doc["id"], "google")
     else:
         abuse.require("signup", abuse.client_ip(request))  # Google confirmed the email, so no email check
         doc = {
@@ -420,6 +423,7 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
             if not doc:
                 raise
         else:
+            await monitor.login(db, doc["id"], "signup")
             referral = await referrals.apply(db, doc, body.ref)
             _welcome_emails(doc, referral)
     doc = await db.users.find_one({"id": doc["id"]})
@@ -458,6 +462,7 @@ async def login(body: LoginIn):
     ts = now_iso()
     await db.users.update_one({"id": doc["id"]}, {"$set": {"lastLoginAt": ts, "lastSeenAt": ts},
                                                   "$inc": {"loginCount": 1}})
+    await monitor.login(db, doc["id"], "password")
     token = create_access_token(doc["id"], email)
     return {"token": token, "user": public_user(doc)}
 
@@ -532,6 +537,7 @@ async def reset_password(body: ResetPasswordIn):
     if not user:
         raise HTTPException(status_code=400, detail="This account no longer exists.")
     await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.password), "updatedAt": now_iso()}})
+    await monitor.login(db, user["id"], "reset")
     # Any other links sent earlier stop working too.
     await db.password_resets.update_many({"userId": user["id"], "usedAt": None}, {"$set": {"usedAt": now_iso()}})
     _login_failures.pop(user["email"], None)
@@ -567,7 +573,8 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     await db.messages.delete_many({"conversationId": {"$in": conv_ids}})
     await media.delete_media(db, {"userId": user_id})
     for name in ("conversations", "files", "chunks", "memories", "projects", "decks", "docs", "pages",
-                 "help_reports", "password_resets", "push_subscriptions", "message_feedback", "activity"):
+                 "help_reports", "password_resets", "push_subscriptions", "message_feedback", "activity",
+                 "usage_events", "logins"):
         await db[name].delete_many({"userId": user_id})
     await db.referrals.delete_many({"$or": [{"inviterId": user_id}, {"friendId": user_id}]})
     await db.usage.delete_many({"_id": {"$regex": f"^{re.escape(user_id)}:"}})
@@ -617,6 +624,35 @@ async def admin_stats(days: int = Query(14, ge=1, le=60), user_id: str = Depends
     """Owner only: people and features used each day, 👍 / 👎 on answers, and the latest problems."""
     await _require_owner(user_id)
     return await monitor.stats(db, days)
+
+
+@api.get("/admin/dashboard")
+async def admin_dashboard(range: str = Query("24h", pattern="^(24h|7d|30d|90d|1y)$"),
+                          user_id: str = Depends(current_user_id)):
+    """Owner only: sign-ins, active people, plans sold, revenue and profit, use per person, what people ask."""
+    await _require_owner(user_id)
+    return await owner_dashboard.overview(db, range)
+
+
+class OwnerCostsIn(BaseModel):
+    hostingMonthly: Optional[float] = Field(default=None, ge=0)
+    paymentFeePercent: Optional[float] = Field(default=None, ge=0, le=100)
+    chat: Optional[float] = Field(default=None, ge=0)
+    counsellor: Optional[float] = Field(default=None, ge=0)
+    web: Optional[float] = Field(default=None, ge=0)
+    voice: Optional[float] = Field(default=None, ge=0)
+    think: Optional[float] = Field(default=None, ge=0)
+    build: Optional[float] = Field(default=None, ge=0)
+    picture: Optional[float] = Field(default=None, ge=0)
+    deck: Optional[float] = Field(default=None, ge=0)
+    video: Optional[float] = Field(default=None, ge=0)
+
+
+@api.put("/admin/dashboard/costs")
+async def admin_dashboard_costs(body: OwnerCostsIn, user_id: str = Depends(current_user_id)):
+    """Owner only: the hosting bill and the cost of each AI request (rupees), for the profit estimate."""
+    await _require_owner(user_id)
+    return await owner_dashboard.set_costs(db, {k: v for k, v in body.model_dump().items() if v is not None})
 
 
 class PromoIn(BaseModel):
@@ -3100,6 +3136,10 @@ async def startup():
     await db.message_feedback.create_index("createdAt")
     await db.errors.create_index("createdAt")
     await db.activity.create_index("day")
+    await db.usage_events.create_index("at")
+    await db.logins.create_index("at")
+    await db.messages.create_index("createdAt")
+    await db.payments.create_index("paidAt", sparse=True)
     monitor.start(db)
     await monitor.clean_old(db)
     if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":

@@ -204,10 +204,12 @@ async def use_premium(db, user_id: str, size: int = 0) -> bool:
 async def use(db, user_id: str, kind: str, size: Optional[int] = None) -> None:
     """Use the credits one build, picture, deck or video takes (see cost). Raises LimitReached when the meter
     doesn't cover it."""
-    if not enabled():
-        return
-    plan = await plan_of(db, user_id)
-    await _spend(db, user_id, plan, kind, cost(kind, size, plan))
+    if enabled():
+        plan = await plan_of(db, user_id)
+        await _spend(db, user_id, plan, kind, cost(kind, size, plan))
+    if kind in ("picture", "deck", "video"):  # for the owner's numbers; builds are counted with their message
+        import monitor  # imported here: monitor imports limits
+        await monitor.count(db, user_id, kind)
 
 
 async def check_left(db, user_id: str, kind: str, size: Optional[int] = None) -> None:

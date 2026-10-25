@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, Users } from "lucide-react";
+import { LayoutDashboard, Loader2, Search, Users } from "lucide-react";
 import { AnswersTab, OfferCodesTab, ProblemsTab, UsageTab } from "@/components/OwnerInsights";
 
 const TABS = [["users", "Users"], ["usage", "Usage"], ["answers", "Answers"], ["problems", "Problems"], ["codes", "Offer codes"]];
@@ -58,6 +58,9 @@ export default function AdminUsersPage() {
               <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/70 px-3 py-1 text-xs font-medium text-muted-foreground">
                 <Users className="h-3.5 w-3.5 text-primary" /> Owner only
               </span>
+              <Link to="/admin" className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline" data-testid="admin-users-dashboard-link">
+                <LayoutDashboard className="h-3.5 w-3.5" /> Dashboard
+              </Link>
               <h1 className="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">Users</h1>
               {data && (
                 <p className="mt-1 text-sm text-muted-foreground" data-testid="admin-users-summary">

@@ -14,6 +14,7 @@ const DecksPage = lazy(() => import("@/pages/DecksPage"));
 const DeckEditor = lazy(() => import("@/pages/DeckEditor"));
 const HelpPage = lazy(() => import("@/pages/HelpPage"));
 const AdminUsersPage = lazy(() => import("@/pages/AdminUsersPage"));
+const OwnerDashboard = lazy(() => import("@/pages/OwnerDashboard"));
 const AssistantInvite = lazy(() => import("@/pages/AssistantInvite"));
 const DocsPage = lazy(() => import("@/pages/DocsPage"));
 const DocEditor = lazy(() => import("@/pages/DocEditor"));
@@ -98,6 +99,7 @@ function Gate() {
       <Route path="/decks/:id" element={<DeckEditor />} />
       <Route path="/automations" element={<AutomationsPage />} />
       <Route path="/help" element={<HelpPage />} />
+      <Route path="/admin" element={<OwnerDashboard />} />
       <Route path="/admin/users" element={<AdminUsersPage />} />
       <Route path="/discover" element={<DiscoverPage />} />
       <Route path="/assistant/:code" element={<AssistantInvite />} />
