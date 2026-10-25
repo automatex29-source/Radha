@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/context/AuthContext";
 import MemoryDialog from "@/components/MemoryDialog";
-import SettingsDialog from "@/components/SettingsDialog";
+import { openSettings } from "@/lib/settingsNav";
 import InviteDialog from "@/components/InviteDialog";
 import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
@@ -54,7 +54,6 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [editValue, setEditValue] = useState("");
   const [deleteId, setDeleteId] = useState(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
 
   // Search also looks inside messages (server side), with a short snippet of where the words appear.
@@ -200,7 +199,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                 <Users className="mr-2 h-4 w-4" /> Users
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem data-testid="menu-settings" onClick={() => setSettingsOpen(true)}>
+            <DropdownMenuItem data-testid="menu-settings" onClick={() => openSettings()}>
               <Settings className="mr-2 h-4 w-4" /> {t("settings")}
             </DropdownMenuItem>
             <DropdownMenuItem data-testid="menu-theme-toggle" onClick={() => setTheme(dark ? "light" : "dark")}>
@@ -214,7 +213,6 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       </div>
 
       <MemoryDialog open={memoryOpen} onOpenChange={setMemoryOpen} />
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>

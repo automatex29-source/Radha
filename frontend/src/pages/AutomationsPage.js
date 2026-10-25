@@ -12,13 +12,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { AppLogo } from "@/components/BrandLogos";
+import { openSettings } from "@/lib/settingsNav";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   Workflow, Plus, Loader2, Play, Webhook, Clock, Copy, Trash2, CheckCircle2, XCircle, MessageSquare, Pencil, ArrowLeft,
-  Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp,
+  Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp, Check,
 } from "lucide-react";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -33,7 +35,7 @@ const EXAMPLES = [
 const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } };
 const blank = () => ({
   name: "", prompt: "", schedule: { type: "daily", time: "08:00", weekday: 0, minutes: 60, timezone: localTz() }, model: "",
-  memory: true, thorough: false, emailResult: false, notifyUrl: "",
+  memory: true, thorough: false, emailResult: false, notifyUrl: "", sendTo: [],
 });
 
 export default function AutomationsPage() {
@@ -118,7 +120,7 @@ export default function AutomationsPage() {
         </div>
         <div className={`min-w-0 flex-1 ${phoneDetail ? "" : "max-md:hidden"}`}>
           {current ? <AutomationDetail key={current.id} automation={current} onChanged={load} onBack={() => setPhoneDetail(false)}
-            onEdit={() => setEditing({ ...current, schedule: { ...blank().schedule, ...current.schedule }, model: current.model || "", notifyUrl: current.notifyUrl || "" })} /> : (
+            onEdit={() => setEditing({ ...current, schedule: { ...blank().schedule, ...current.schedule }, model: current.model || "", notifyUrl: current.notifyUrl || "", sendTo: current.sendTo || [] })} /> : (
             <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
               <Workflow className="h-10 w-10 text-primary" />
               <p className="mt-3 text-sm">Create an automation to see its runs here.</p>
@@ -146,6 +148,12 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setSchedule = (patch) => setForm((f) => ({ ...f, schedule: { ...f.schedule, ...patch } }));
   const s = form.schedule;
+  const [apps, setApps] = useState(null); // connected Telegram, WhatsApp, Slack and Discord (Settings > Connectors)
+  useEffect(() => {
+    api.get("/connectors").then(({ data }) => setApps(data.connectors.filter((c) => c.category === "messaging" && c.connected)))
+      .catch(() => setApps([]));
+  }, []);
+  const toggleApp = (id) => set({ sendTo: (form.sendTo || []).includes(id) ? form.sendTo.filter((x) => x !== id) : [...(form.sendTo || []), id] });
 
   const save = async () => {
     setBusy(true);
@@ -156,6 +164,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
     const body = {
       name: form.name, prompt: form.prompt, schedule, model: form.model || null,
       memory: form.memory, thorough: form.thorough, emailResult: form.emailResult, notifyUrl: form.notifyUrl.trim(),
+      sendTo: form.sendTo || [],
     };
     try {
       const { data } = form.id ? await api.patch(`/automations/${form.id}`, body) : await api.post("/automations", body);
@@ -258,8 +267,28 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
             <OptionRow icon={Mail} title="Email me the result"
               hint={options.email ? "Sent to your account email after each run." : "Email isn't set up on the server yet."}
               checked={form.emailResult} disabled={!options.email && !form.emailResult} onChange={(v) => set({ emailResult: v })} testid="opt-email" />
+            <div className="space-y-1.5" data-testid="opt-send-to">
+              <Label className="flex items-center gap-1.5 text-sm"><Send className="h-3.5 w-3.5 text-primary" /> Send the result to my apps</Label>
+              {apps === null ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : apps.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {apps.map((c) => {
+                    const on = (form.sendTo || []).includes(c.id);
+                    return (
+                      <button key={c.id} type="button" onClick={() => toggleApp(c.id)} aria-pressed={on} data-testid={`opt-send-${c.id}`}
+                        className={`flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm transition-colors ${on ? "border-primary bg-primary/10" : "border-border hover:bg-surface"}`}>
+                        <AppLogo id={c.id} size="sm" className="!h-6 !w-6 rounded-full" /> {c.name}{on && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[12px] text-muted-foreground">
+                  <button type="button" onClick={() => { onClose(); openSettings("connectors"); }} className="font-medium text-primary hover:underline">Connect Telegram, WhatsApp, Slack or Discord</button> to get results there.
+                </p>
+              )}
+            </div>
             <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5 text-sm"><Send className="h-3.5 w-3.5 text-primary" /> Send to Discord or Slack (optional)</Label>
+              <Label className="flex items-center gap-1.5 text-sm"><Send className="h-3.5 w-3.5 text-primary" /> Or post to any webhook (optional)</Label>
               <Input value={form.notifyUrl} onChange={(e) => set({ notifyUrl: e.target.value })} className="bg-background" data-testid="opt-notify-url"
                 placeholder="https://discord.com/api/webhooks/…" />
               <p className="text-[11px] text-muted-foreground">Paste a channel webhook link and every result is posted there.</p>
@@ -409,6 +438,7 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
               {a.thorough && <Feature icon={Gauge} text="Thorough" />}
               {a.emailResult && <Feature icon={Mail} text="Emails you" />}
               {a.notifyUrl && <Feature icon={Send} text="Posts to webhook" />}
+              {(a.sendTo || []).map((id) => <Feature key={id} icon={Send} text={`Sends to ${({ telegram: "Telegram", whatsapp: "WhatsApp", slack: "Slack", discord: "Discord" })[id]}`} />)}
             </div>
           </div>
           <Button size="sm" variant="outline" onClick={onEdit} className="gap-1.5 border-border bg-card"><Pencil className="h-3.5 w-3.5" /> Edit</Button>
