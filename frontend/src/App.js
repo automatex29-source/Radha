@@ -30,6 +30,7 @@ import { installPlanLimitToasts } from "@/lib/planLimits";
 import PlanLimitDialog from "@/components/PlanLimitDialog";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import InstallBanner from "@/components/InstallBanner";
+import { SettingsHost } from "@/components/SettingsDialog";
 
 installPlanLimitToasts();
 
@@ -83,6 +84,7 @@ function Gate() {
   return (
     <>
     <InstallBanner />
+    <SettingsHost />
     <Routes>
       <Route path="/login" element={<Navigate to={takeRememberedPath()} replace />} />
       <Route path="/" element={<Workspace key="chat" />} />

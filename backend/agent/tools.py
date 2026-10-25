@@ -36,6 +36,8 @@ class ToolContext:
     searches_left: Optional[int] = None  # None means no limit
     web: bool = True  # False when the user hasn't turned web search on: web_search and deep_research are hidden
     limit_hit: Optional[str] = None  # set when a plan limit stopped a tool, so the app can offer an upgrade
+    connected: frozenset = frozenset()  # the apps the user connected (connectors.py); their tools need them
+    plugins_off: frozenset = frozenset()  # plugins the user switched off (plugins.py); their tools are hidden
 
 
 @dataclass
@@ -59,6 +61,8 @@ class Tool:
     available: Callable[[], bool] = lambda: True
     scope: str = "general"  # "app" tools are only offered inside an app-builder conversation
     needs_web: bool = False  # searches the web, so only offered when web search is on
+    connector: str = ""  # uses an app the user connects in Settings, so only offered once it's connected
+    plugin: str = ""  # part of a plugin, so hidden when the user switches the plugin off
 
     def usable(self, ctx: Optional[ToolContext]) -> bool:
         if self.scope == "app" and not (ctx and ctx.app_id):
@@ -66,6 +70,10 @@ class Tool:
         if self.scope != "app" and ctx and ctx.app_id and ctx.focused:
             return False
         if self.needs_web and ctx and not ctx.web:
+            return False
+        if self.connector and not (ctx and self.connector in ctx.connected):
+            return False
+        if self.plugin and ctx and self.plugin in ctx.plugins_off:
             return False
         return self.available()
 
@@ -592,7 +600,7 @@ def default_registry() -> ToolRegistry:
                 "quality": {"type": "string", "description": "high (default) or standard (faster, 720p)"},
                 "filename": {"type": "string", "description": "Short file name without extension"},
             }, "required": ["prompt"]},
-            handler=_generate_video, available=video.available))
+            handler=_generate_video, available=video.available, plugin="video"))
         .register(Tool(
             name="browser", label="Browser",
             description="Control a real web browser to use websites interactively (search forms, navigation, "

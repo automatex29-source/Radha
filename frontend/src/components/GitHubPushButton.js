@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { openSettings } from "@/lib/settingsNav";
 import { toast } from "sonner";
 import { Github, Loader2, ExternalLink } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
@@ -23,12 +24,20 @@ export default function GitHubPushButton({ app, onPushed }) {
   const [remember, setRemember] = useState(true);
   const [isPrivate, setIsPrivate] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [linked, setLinked] = useState(null); // the GitHub account connected in Settings > Connectors
+  useEffect(() => {
+    if (!open) return;
+    api.get("/connectors").then(({ data }) => {
+      const gh = data.connectors.find((c) => c.id === "github" && c.connected);
+      setLinked(gh ? gh.account || "GitHub" : null);
+    }).catch(() => setLinked(null));
+  }, [open]);
 
   const push = async () => {
     setBusy(true);
     try {
-      const { data } = await api.post(`/apps/${app.id}/github`, { repo: repo.trim(), token: token.trim(), private: isPrivate });
-      try { remember ? localStorage.setItem(TOKEN_KEY, token.trim()) : localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+      const { data } = await api.post(`/apps/${app.id}/github`, { repo: repo.trim(), token: linked ? "" : token.trim(), private: isPrivate });
+      if (!linked) try { remember ? localStorage.setItem(TOKEN_KEY, token.trim()) : localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
       toast.success(data.created ? `Created ${data.repo} on GitHub` : `Pushed to ${data.repo}`, {
         action: { label: "Open", onClick: () => window.open(data.url, "_blank", "noopener") },
       });
@@ -61,6 +70,9 @@ export default function GitHubPushButton({ app, onPushed }) {
             <Label htmlFor="gh-repo">Repository</Label>
             <Input id="gh-repo" value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="my-app" className="bg-card" />
           </div>
+          {linked ? (
+            <p className="rounded-lg bg-surface px-3 py-2 text-sm">Pushing as <b>{linked}</b>, connected in Settings.</p>
+          ) : <>
           <div className="space-y-1.5">
             <Label htmlFor="gh-token">GitHub token</Label>
             <Input id="gh-token" type="password" value={token} onChange={(e) => setToken(e.target.value)}
@@ -70,10 +82,13 @@ export default function GitHubPushButton({ app, onPushed }) {
             </a>
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} /> Make a new repository private
-          </label>
-          <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Remember the token on this device
+          </label>
+          <button type="button" onClick={() => { setOpen(false); openSettings("connectors"); }} className="text-left text-xs text-primary hover:underline">
+            Or connect GitHub once in Settings, and skip the token next time</button>
+          </>}
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} /> Make a new repository private
           </label>
           {app.github?.url && (
             <a href={app.github.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
@@ -82,7 +97,7 @@ export default function GitHubPushButton({ app, onPushed }) {
           )}
         </div>
         <DialogFooter>
-          <Button onClick={push} disabled={busy || !repo.trim() || token.trim().length < 10} data-testid="github-push-submit">
+          <Button onClick={push} disabled={busy || !repo.trim() || (!linked && token.trim().length < 10)} data-testid="github-push-submit">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Push"}
           </Button>
         </DialogFooter>

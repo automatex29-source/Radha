@@ -69,6 +69,9 @@ import promos
 import referrals
 import growth_mail
 import invite_card
+import connectors
+import connector_tools
+import plugins
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -128,6 +131,8 @@ appdata.init(db)
 site_images.init(db)
 appcloud.init(db)
 apps.register_tools(tool_registry)
+connector_tools.register_tools(tool_registry)
+plugins.register_tools(tool_registry)
 
 # The web app owns /docs and the API owns /api/docs (both the Docs writing space), so FastAPI's own
 # API reference pages are turned off: at /api/docs they hid the Docs list and broke the Docs page.
@@ -552,6 +557,7 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
         raise HTTPException(status_code=403, detail="Type your account email exactly to confirm.")
     for app in await db.apps.find({"userId": user_id}, {"id": 1}).to_list(None):
         await apps.delete_app(app["id"], user_id)
+    await connectors.delete_user(user_id)
     for auto in await db.automations.find({"userId": user_id}, {"id": 1}).to_list(None):
         await automations.delete_automation(auto["id"], user_id)
     async for f in db.files.find({"userId": user_id}, {"storage_path": 1}):
@@ -709,6 +715,61 @@ async def set_language(body: LanguageIn, user_id: str = Depends(current_user_id)
     if not doc:
         raise HTTPException(status_code=401, detail="User not found")
     return public_user(doc)
+
+
+class ProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+@api.put("/auth/profile")
+async def set_profile(body: ProfileIn, user_id: str = Depends(current_user_id)):
+    """Settings > Account: change the name Krish calls you."""
+    name = " ".join(body.name.split())
+    if not name:
+        raise HTTPException(status_code=400, detail="Type your name.")
+    await db.users.update_one({"id": user_id}, {"$set": {"name": name, "updatedAt": now_iso()}})
+    doc = await db.users.find_one({"id": user_id})
+    if not doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    return public_user(doc)
+
+
+@api.get("/account/export")
+async def export_account(user_id: str = Depends(current_user_id)):
+    """Settings > Privacy: a copy of your chats, memory, projects and settings, as one JSON file."""
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    hide = {"_id": 0}
+    convs = await db.conversations.find({"userId": user_id}, hide).sort("createdAt", 1).to_list(None)
+    by_conv = {}
+    async for m in db.messages.find({"conversationId": {"$in": [c["id"] for c in convs]}},
+                                    {"_id": 0, "conversationId": 1, "role": 1, "content": 1, "createdAt": 1}).sort("createdAt", 1):
+        by_conv.setdefault(m.pop("conversationId"), []).append(m)
+    data = {
+        "exportedAt": now_iso(), "account": public_user(user),
+        "conversations": [{**{k: c.get(k) for k in ("id", "title", "createdAt", "updatedAt", "projectId")},
+                           "messages": by_conv.get(c["id"], [])} for c in convs],
+        "memory": await db.memories.find({"userId": user_id}, hide).to_list(None),
+        "projects": await db.projects.find({"userId": user_id}, hide).to_list(None),
+        "connectedApps": [{"app": c["connector"], "account": c.get("account"), "since": c.get("createdAt")}
+                          async for c in db.connections.find({"userId": user_id})],
+        "plugins": await plugins.state(user_id),
+        "payments": await db.payments.find({"userId": user_id}, {"_id": 0, "plan": 1, "amount": 1, "status": 1,
+                                                                 "createdAt": 1}).to_list(None),
+    }
+    return Response(content=json.dumps(data, indent=2, default=str), media_type="application/json",
+                    headers={"Content-Disposition": 'attachment; filename="krish-ai-my-data.json"'})
+
+
+@api.get("/billing/payments")
+async def billing_payments(user_id: str = Depends(current_user_id)):
+    """Settings > Billing: the user's payments, newest first."""
+    rows = await db.payments.find({"userId": user_id, "status": {"$in": ["paid", "captured"]}},
+                                  {"_id": 0, "orderId": 1, "plan": 1, "amount": 1, "currency": 1, "status": 1,
+                                   "createdAt": 1, "paidAt": 1, "promoCode": 1}).sort("createdAt", -1).to_list(50)
+    return {"payments": [{**r, "planName": limits.PLANS.get(r.get("plan"), {}).get("name", r.get("plan")),
+                          "amount": (r.get("amount") or 0) / 100} for r in rows]}
 
 
 @api.get("/models")
@@ -1238,7 +1299,9 @@ _NEEDS_TOOLS = re.compile(
     _TOOL_ASK.pattern + r"|\b(file|files|pdf|excel|xlsx|csv|word|docx|ppt|pptx|powerpoint|presentation|slides?|deck|"
     r"spreadsheet|sheet|zip|image|images|picture|pic|photo|logo|poster|video|animate|edit|crop|resize|research|"
     r"report|code|run|script|app|website|site|game|page|browser|open|visit|fetch|url|link|flashcards?|quiz|"
-    r"remind|schedule|email|send|save|translate|time|date|price|rate|weather|news|today|current|latest)\b|https?://|www\."
+    r"remind|schedule|email|send|save|translate|time|date|price|rate|weather|news|today|current|latest|"
+    r"drive|calendar|gmail|inbox|mails?|github|repo|notion|telegram|whatsapp|slack|discord|meeting|events?|"
+    r"panchang|tithi|muhurat|nakshatra|festivals?|ekadashi|cricket|score|match|forecast|rain)\b|https?://|www\."
     r"|vide?o+s?\b|animat|photos?\b|pictures?\b",  # inside typos too ("avideoo", "kidsphoto")
     re.IGNORECASE)
 
@@ -1532,6 +1595,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
     system_parts = [base, f"Today is {datetime.now(timezone.utc).strftime('%A, %d %B %Y')} (UTC)."]
+    connected, plugin_state = frozenset(), {}  # Settings > Connectors and Plugins (see below)
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
@@ -1544,6 +1608,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             system_parts.append(remembered)
         owner = await db.users.find_one({"id": user_id}, {"language": 1})
         settings_lang = (owner or {}).get("language")
+        connected = frozenset(await connectors.active(user_id))
+        plugin_state = await plugins.state(user_id)
+        if connected and not counselling:
+            system_parts.append(connectors.prompt_line(connected))
         lang_line = languages.prompt_line(settings_lang)
         if lang_line and not voice:  # voice replies follow the language spoken (see voice_prompt)
             system_parts.append(lang_line)
@@ -1599,7 +1667,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     # Web search runs only when the user turns it on (or asks for a search in words); automations and the app
     # builder keep it. Otherwise a question that needs fresh facts gets a "Search the web" suggestion.
     asked = live_search.asks_for_search(last_user or "")
-    searching = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked
+    searching = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked \
+        or plugin_state.get("auto_search", False)
     web = web or asked
     web_hint = not searching and not counselling and not voice and live_search.suggests_web(last_user or "")
     if not searching and not counselling:
@@ -1686,7 +1755,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             searched = any(s.get("type") in ("web", "video") for s in sources)
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model, sources=None if app_id else sources,
-                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching)
+                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching,
+                              connected=connected,
+                              plugins_off=frozenset(k for k, on in plugin_state.items() if not on))
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
             plan_for = last_user if app_id and build_plan.wants_plan(history_docs, model) else None
             async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS,
@@ -2887,6 +2958,10 @@ app.include_router(decks.router)
 writer.init(db, AI_MODEL)
 app.include_router(writer.router)
 automations.init(db, run_turn, AI_MODEL)
+connectors.init(db, run_turn, AI_MODEL)
+plugins.init(db)
+app.include_router(connectors.router)
+app.include_router(plugins.router)
 app.include_router(automations.router)
 help_center.init(db)
 app.include_router(help_center.router)

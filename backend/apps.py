@@ -1216,7 +1216,7 @@ class CommandIn(BaseModel):
 
 class GitHubIn(BaseModel):
     repo: str = Field(min_length=1, max_length=140)
-    token: str = Field(min_length=10, max_length=300)
+    token: str = Field(default="", max_length=300)  # empty: use the GitHub connected in Settings > Connectors
     private: bool = True
 
 
@@ -1398,8 +1398,15 @@ async def push_to_github(app_id: str, body: GitHubIn, user_id: str = Depends(cur
     app = await owned_app(app_id, user_id)
     head = await head_commit(app_id)
     message = f"{app['name']}: {head['message']}" if head else f"{app['name']} from Krish AI"
+    token = body.token.strip()
+    if not token:
+        import connectors
+        try:
+            token = (await connectors.secret_for(user_id, "github"))["access"]
+        except connectors.ConnectError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     try:
-        result = await github_push.push(portable(await snapshot(app_id)), body.token, body.repo, message, private=body.private)
+        result = await github_push.push(portable(await snapshot(app_id)), token, body.repo, message, private=body.private)
     except github_push.PushError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     await db.apps.update_one({"id": app_id}, {"$set": {"github": {"repo": result["repo"], "url": result["url"], "pushedAt": _now()}}})

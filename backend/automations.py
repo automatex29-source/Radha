@@ -17,7 +17,7 @@ import secrets
 import socket
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -25,6 +25,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+import connectors
 import limits
 import mailer
 import media
@@ -297,6 +298,8 @@ async def _deliver(auto: dict, run: dict) -> list:
         jobs.append(("email", _email(auto, run)))
     if auto.get("notifyUrl"):
         jobs.append(("webhook", _notify_webhook(auto["notifyUrl"], auto, run)))
+    for app in auto.get("sendTo") or []:
+        jobs.append((app, connectors.send(auto["userId"], app, _summary_text(auto, run, 20_000))))
     out = []
     for channel, job in jobs:
         try:
@@ -347,6 +350,10 @@ async def stop_scheduler():
 
 
 # ---------------------------------------------------------------- HTTP API
+def _clean_send_to(apps: Optional[List[str]]) -> List[str]:
+    return [a for a in connectors.MESSAGING if a in (apps or [])]
+
+
 class AutomationIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     prompt: str = Field(min_length=1, max_length=8000)
@@ -357,6 +364,7 @@ class AutomationIn(BaseModel):
     thorough: bool = False  # a bigger step budget for long multi-step jobs
     emailResult: bool = False
     notifyUrl: Optional[str] = Field(default=None, max_length=500)  # Discord/Slack/any webhook
+    sendTo: List[str] = Field(default_factory=list, max_length=4)  # connected apps: telegram, whatsapp, slack, discord
 
 
 class AutomationPatch(BaseModel):
@@ -369,6 +377,7 @@ class AutomationPatch(BaseModel):
     thorough: Optional[bool] = None
     emailResult: Optional[bool] = None
     notifyUrl: Optional[str] = Field(default=None, max_length=500)  # "" removes it
+    sendTo: Optional[List[str]] = Field(default=None, max_length=4)
 
 
 class PlanIn(BaseModel):
@@ -383,6 +392,7 @@ def public_automation(doc: dict) -> dict:
         "lastStatus": doc.get("lastStatus"),
         "memory": doc.get("memory", True), "thorough": bool(doc.get("thorough")),
         "emailResult": bool(doc.get("emailResult")), "notifyUrl": doc.get("notifyUrl"),
+        "sendTo": doc.get("sendTo") or [],
         "webhookUrl": f"/api/hooks/{doc['webhookSecret']}" if doc.get("webhookSecret") else None,
         "createdAt": doc["createdAt"],
     }
@@ -466,7 +476,7 @@ async def create_automation(body: AutomationIn, user_id: str = Depends(current_u
     doc = {"id": str(uuid.uuid4()), "userId": user_id, "name": body.name.strip(), "prompt": body.prompt.strip(),
            "schedule": schedule, "model": body.model, "enabled": body.enabled,
            "memory": body.memory, "thorough": body.thorough, "emailResult": body.emailResult,
-           "notifyUrl": await _clean_notify_url(body.notifyUrl),
+           "notifyUrl": await _clean_notify_url(body.notifyUrl), "sendTo": _clean_send_to(body.sendTo),
            "nextRunAt": _iso(next_run(schedule, now)) if body.enabled else None,
            "lastRunAt": None, "lastStatus": None, "lockedUntil": None, "webhookSecret": None, "createdAt": _iso(now)}
     await db.automations.insert_one(doc)
@@ -484,6 +494,8 @@ async def update_automation(aid: str, body: AutomationPatch, user_id: str = Depe
     updates = body.model_dump(exclude_none=True)
     if body.notifyUrl is not None:
         updates["notifyUrl"] = await _clean_notify_url(body.notifyUrl)
+    if body.sendTo is not None:
+        updates["sendTo"] = _clean_send_to(body.sendTo)
     if body.schedule:
         updates["schedule"] = validate_schedule(body.schedule).model_dump()
     merged = {**doc, **updates}
