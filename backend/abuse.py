@@ -102,8 +102,10 @@ async def _domain_takes_mail(domain: str) -> bool:
             return True
         except dns.resolver.NXDOMAIN:
             return False
-        except (dns.resolver.NoAnswer, dns.resolver.NoNameservers):
+        except dns.resolver.NoAnswer:
             continue
+        except dns.resolver.NoNameservers:  # the DNS servers failed to answer, so we can't tell: let them in
+            return True
         except Exception:  # a timeout or other DNS trouble: don't block real people
             return True
     return False

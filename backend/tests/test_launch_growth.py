@@ -269,6 +269,28 @@ def test_made_up_email_domain_is_turned_away(client, monkeypatch):
     assert r.status_code == 400 and "nowhere-zz.com" in r.json()["detail"]
 
 
+def test_dns_trouble_never_blocks_a_real_signup(monkeypatch):
+    import asyncio
+    import abuse
+    import dns.asyncresolver
+    import dns.resolver
+
+    def resolver_raising(error):
+        class Resolver:
+            lifetime = 0
+
+            async def resolve(self, domain, record):
+                raise error()
+        return Resolver
+
+    # Every DNS server failing (SERVFAIL) says nothing about the domain, so the person gets in.
+    monkeypatch.setattr(dns.asyncresolver, "Resolver", resolver_raising(dns.resolver.NoNameservers))
+    assert asyncio.run(abuse._domain_takes_mail("gmail.com"))
+    # A domain that answers but has no mail or web address at all is still turned away.
+    monkeypatch.setattr(dns.asyncresolver, "Resolver", resolver_raising(dns.resolver.NoAnswer))
+    assert not asyncio.run(abuse._domain_takes_mail("nowhere-zz.com"))
+
+
 def test_only_a_few_signups_an_hour_from_one_connection(client, monkeypatch):
     import abuse
     monkeypatch.setenv("ABUSE_LIMITS", "on")
