@@ -124,7 +124,7 @@ export default function AuthPage() {
           {invited && (
             <p className="mt-4 flex items-start gap-2 rounded-xl bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-700 dark:text-emerald-300" data-testid="invite-note">
               <Gift className="mt-0.5 h-4 w-4 shrink-0" />
-              A friend invited you. Sign up and you both get {config.inviteDays || 7} days of Pro free.
+              A friend invited you. Sign up and get {config.inviteDays || 7} days of Pro free.
             </p>
           )}
 

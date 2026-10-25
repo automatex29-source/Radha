@@ -125,14 +125,13 @@ def test_invite_gives_both_people_a_week_of_pro(client):
     assert _register(client, "nobody-ref@test.com", ref="ZZZZZZZ")["user"]["plan"] == "basic"
 
 
-def test_invites_by_google_count_too_and_stop_paying_after_the_cap(client, monkeypatch):
-    import referrals
-    monkeypatch.setattr(referrals, "MAX_REWARDS", 1)
+def test_invites_by_google_count_too_and_the_inviter_is_rewarded_once(client):
     inviter = _register(client, "capped@test.com")
     code = client.get("/api/referrals", headers=_h(inviter["token"])).json()["code"]
     g = client.post("/api/auth/google", json=_google("gfriend@gmail.com", code)).json()
     assert g["invited"] and g["user"]["plan"] == "pro"
-    _register(client, "second-friend@test.com", ref=code)
+    second = _register(client, "second-friend@test.com", ref=code)
+    assert second["user"]["plan"] == "pro"  # the friend still gets their days
     summary = client.get("/api/referrals", headers=_h(inviter["token"])).json()
     assert summary["joined"] == 2 and summary["daysEarned"] == 7
     me = client.get("/api/auth/me", headers=_h(inviter["token"])).json()
@@ -404,7 +403,7 @@ def test_invite_link_preview_is_personal():
     out = server._invite_preview(page, {"code": "ABC1234", "name": "Ra\\vi <b>", "days": 7}, "https://k.ai")
     assert 'og:title" content="Ra\\vi &lt;b&gt; invited you to Krish AI' in out
     assert 'og:image" content="https://k.ai/api/cards/invite/ABC1234.png"' in out
-    assert "both get 7 days" in out and "<title>Ra\\vi &lt;b&gt; invited you" in out
+    assert "get 7 days" in out and "<title>Ra\\vi &lt;b&gt; invited you" in out
 
 
 def test_welcome_and_plan_emails_read_well():

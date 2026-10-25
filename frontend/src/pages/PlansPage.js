@@ -219,12 +219,12 @@ function InviteFriends({ onMore }) {
       <div className="min-w-0">
         <h2 className="krish-display text-[1.25rem] leading-none">Give Pro. <em className="text-[#4F46E5] dark:text-[#A5B4FC]">Get Pro.</em></h2>
         <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
-          A friend joins with your link and you each get {days} days of Pro, free.
-          {data && (data.joined
-            ? <> <b className="font-semibold text-foreground">{data.daysEarned} Pro days</b> earned so far.</>
-            : ` Earn from up to ${data.maxRewards} friends.`)}
+          A friend joins with your link and gets {days} days of Pro, free. You get {days} days too, once.
+          {data && (data.daysEarned
+            ? <> <b className="font-semibold text-foreground">Your {data.daysEarned} Pro days are claimed.</b> Friends still get theirs.</>
+            : null)}
         </p>
-        {data && (
+        {data && data.maxRewards > 1 && (
           <div className="mt-1.5 flex max-w-[12rem] gap-1 max-md:hidden" aria-hidden="true" data-testid="plans-invite-progress">
             {Array.from({ length: data.maxRewards }, (_, i) => (
               <span key={i} className={`h-1 flex-1 rounded-full ${i < rewarded ? "bg-foreground" : "bg-border"}`} />

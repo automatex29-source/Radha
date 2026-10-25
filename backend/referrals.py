@@ -2,8 +2,8 @@
 free days of Pro.
 
 The link is the app address with ?ref=CODE. The app keeps the code while the friend signs up (by email or
-Google) and sends it with the sign-up. A person can be rewarded for at most MAX_REWARDS friends, so made-up
-accounts can't farm Pro forever. Paid days are never lost: free days add to a running plan (see billing).
+Google) and sends it with the sign-up. The friend always gets their days, but the inviter is
+rewarded only once (MAX_REWARDS), so inviting more friends or made-up accounts can't keep anyone on free Pro. Paid days are never lost: free days add to a running plan (see billing).
 """
 import secrets
 from datetime import datetime, timezone
@@ -12,7 +12,7 @@ from typing import Optional
 import billing
 
 REWARD_DAYS = 7
-MAX_REWARDS = 10
+MAX_REWARDS = 1  # the inviter's reward is one-time
 _ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I, so a code read aloud is typed right
 
 

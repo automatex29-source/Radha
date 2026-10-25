@@ -3002,7 +3002,7 @@ def _invite_preview(page: str, info: dict, base: str) -> str:
     import html as _html
     who = _html.escape(info["name"]) or "A friend"
     title = f"{who} invited you to Krish AI 🎁"
-    desc = (f"Join with this link and you both get {info['days']} days of Krish AI Pro, free. "
+    desc = (f"Join with this link and get {info['days']} days of Krish AI Pro, free. "
             "Chat, study, build apps and get calm advice from the Bhagavad Gita.")
     picture = f"{base}/api/cards/invite/{info['code']}.png"
     values = {"og:title": title, "twitter:title": title, "og:description": desc, "twitter:description": desc,

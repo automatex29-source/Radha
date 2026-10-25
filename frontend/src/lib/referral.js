@@ -25,7 +25,7 @@ export function inviteMessage(link, days) {
   return [
     "I've been using Krish AI and thought you'd like it. It answers anything, helps with study and writing, and makes slides, pictures and even apps.",
     "",
-    `Join with my link and we both get ${days} days of Pro, free:`,
+    `Join with my link and get ${days} days of Pro, free:`,
     link,
   ].join("\n");
 }
