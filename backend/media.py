@@ -29,6 +29,12 @@ PREMIUM_MEDIA = contextvars.ContextVar("premium_media", default=True)
 def premium_media() -> bool:
     return PREMIUM_MEDIA.get() or os.environ.get("PAID_MEDIA", "").strip().lower() == "all"
 
+
+def video_enabled() -> bool:
+    """Making videos is switched off until there is a video service good enough to show. VIDEO_GENERATION=on brings
+    back the generate_video tool, its prompt lines and the video lines on the Plans page."""
+    return os.environ.get("VIDEO_GENERATION", "").strip().lower() in ("1", "on", "true", "yes")
+
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
 STT_MODEL = os.environ.get("STT_MODEL", "gpt-4o-mini-transcribe")
 TTS_MODEL = os.environ.get("TTS_MODEL", "gpt-4o-mini-tts")

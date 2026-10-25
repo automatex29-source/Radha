@@ -25,12 +25,12 @@ TRY_FREE = [
 TRY_PAID = {
     "pro": [
         ("Premium AI models", "Pick a premium model for harder questions, longer writing and sharper code."),
-        ("Create much more", "10x the usage of Basic for pictures, decks, videos and app builds, refilled every 5 hours."),
+        ("Create much more", "10x the usage of Basic for pictures, decks and app builds, refilled every 5 hours."),
         ("Publish your apps", "Put the apps you build on the web with one tap and share the link."),
     ],
     "max": [
         ("The strongest AI models", "Use every premium model for research, writing and code."),
-        ("Create at full speed", "30x the usage of Basic, refilled every 5 hours, and videos up to a minute long."),
+        ("Create at full speed", "30x the usage of Basic, refilled every 5 hours, for the biggest projects."),
         ("Automate your work", "Up to 30 automations that run on their own and send you the results."),
     ],
 }
@@ -77,7 +77,7 @@ def welcome(app_url: str, name: str, inviter_name: str = "", days: int = 0) -> t
         subject = f"{_first(inviter_name)} gave you {days} days of Krish AI Pro 🎁"
         heading = f"Welcome, {first}! Your Pro days have started" if first else "Welcome! Your Pro days have started"
         intro = (f"Thanks to <b>{inviter}</b>'s invite, you have <b>{days} days of Pro, free</b>: premium AI models and "
-                 "lots more pictures, decks and videos every day. Here's a good way to start:")
+                 "lots more pictures, decks and apps every day. Here's a good way to start:")
     else:
         subject = f"Welcome to Krish AI, {first} 👋" if first else "Welcome to Krish AI 👋"
         heading = f"Hi {first}, welcome to Krish AI" if first else "Welcome to Krish AI"
