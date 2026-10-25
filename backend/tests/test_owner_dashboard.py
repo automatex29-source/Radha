@@ -86,6 +86,11 @@ def test_dashboard_numbers(client):
     m = d["money"]
     assert m["aiCost"] == pytest.approx(0.05 + 0.20 + 2.00)
     assert m["profit"] == pytest.approx(299 - m["aiCost"] - m["hostingCost"] - m["paymentFees"], abs=0.02)
+    assert sum(r["revenue"] for r in d["series"]) == 299 and sum(r["messages"] for r in d["series"]) >= 1
+    assert sum(sum(row) for row in d["heat"]) >= 2 and len(d["heat"]) == 7 and len(d["heat"][0]) == 24
+    r = d["ratios"]
+    assert r["checkoutConversion"] == 50.0 and r["avgOrder"] == 299 and r["arpu"] > 0
+    assert r["newActive"] + r["returningActive"] == k["activeUsers"]["value"]
     me = next(p for p in d["people"] if p["email"] == "dash-asha@test.com")
     assert me["messages"] == 1 and me["made"] == 1 and me["paid"] == 299
     assert any(x["email"] == "dash-asha@test.com" and x["method"] == "password" for x in d["logins"])
@@ -100,6 +105,8 @@ def test_dashboard_numbers(client):
     assert week["bucket"] == "day" and len(week["series"]) == 7
     assert week["kpis"]["revenue"]["value"] == 299 + 699
     assert week["kpis"]["messages"]["value"] >= 1
+    assert sum(r["revenue"] for r in week["series"]) == 299 + 699
+    assert all("prevActive" in r and r["cost"] > 0 for r in week["series"])
 
 
 def test_owner_sets_costs(client):

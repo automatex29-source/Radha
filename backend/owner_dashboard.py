@@ -170,29 +170,38 @@ async def overview(db, range_key: str = "24h") -> dict:
         start = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=23)
         labels = [(start + timedelta(hours=h)).isoformat() for h in range(24)]
 
-        def bucket(iso: str):
+        def bucket(iso: str, back: bool = False):
             t = _parse(iso)
             if not t:
                 return None
-            i = int((t - start).total_seconds() // 3600)
+            i = int((t + timedelta(days=1 if back else 0) - start).total_seconds() // 3600)
             return i if 0 <= i < 24 else None
     else:
         labels = days
         index = {d: i for i, d in enumerate(days)}
+        prev_index = {d: i for i, d in enumerate(prev_days)}
 
-        def bucket(iso: str):
-            return index.get(_ist_day(iso))
-    series = [{"t": t, "active": 0, "logins": 0, "signups": 0, "revenue": 0.0, "messages": 0} for t in labels]
+        def bucket(iso: str, back: bool = False):
+            return (prev_index if back else index).get(_ist_day(iso))
+    # Each bucket also carries the same bucket of the period before ("prev..."), for the comparison lines.
+    series = [{"t": t, "active": 0, "logins": 0, "signups": 0, "revenue": 0.0, "messages": 0, "cost": 0.0,
+               "prevActive": 0, "prevLogins": 0, "prevSignups": 0, "prevRevenue": 0.0, "prevMessages": 0}
+              for t in labels]
+
+    def add(iso: str, key: str, n=1) -> None:
+        back = iso < since
+        i = bucket(iso, back)
+        if i is not None:
+            k = "prev" + key[0].upper() + key[1:] if back else key
+            series[i][k] += n
 
     # Payments: what sold, for how much, and who paid.
     paid = await db.payments.find({"status": "paid", "paidAt": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
     now_paid = [p for p in paid if p["paidAt"] >= since]
     revenue = sum(p["amount"] for p in now_paid) / 100
     prev_revenue = sum(p["amount"] for p in paid if p["paidAt"] < since) / 100
-    for p in now_paid:
-        i = bucket(p["paidAt"])
-        if i is not None:
-            series[i]["revenue"] += p["amount"] / 100
+    for p in paid:
+        add(p["paidAt"], "revenue", p["amount"] / 100)
     started = await db.payments.count_documents({"createdAt": {"$gte": since}})
     sold = []
     for plan in limits.ORDER[1:]:
@@ -211,10 +220,8 @@ async def overview(db, range_key: str = "24h") -> dict:
     # Sign-ins and sign-ups.
     logins = await db.logins.find({"at": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
     now_logins = [x for x in logins if x["at"] >= since]
-    for x in now_logins:
-        i = bucket(x["at"])
-        if i is not None:
-            series[i]["logins"] += 1
+    for x in logins:
+        add(x["at"], "logins")
     login_rows = [{**who(x["userId"]), "method": x["method"], "at": x["at"]}
                   for x in sorted(now_logins, key=lambda x: x["at"], reverse=True)]
     logged = {x["userId"] for x in now_logins}
@@ -224,35 +231,54 @@ async def overview(db, range_key: str = "24h") -> dict:
     login_rows.sort(key=lambda r: r["at"], reverse=True)
     signups = [u for u in users.values() if u.get("createdAt", "") >= since]
     prev_signups = sum(1 for u in users.values() if prev_since <= u.get("createdAt", "") < since)
-    for u in signups:
-        i = bucket(u["createdAt"])
-        if i is not None:
-            series[i]["signups"] += 1
+    for u in users.values():
+        if u.get("createdAt", "") >= prev_since:
+            add(u["createdAt"], "signups")
 
     # Active people and use.
-    events = await db.usage_events.find({"at": {"$gte": since}}, {"_id": 0}).to_list(None)
+    all_events = await db.usage_events.find({"at": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
+    events = [e for e in all_events if e["at"] >= since]
     per_user = defaultdict(Counter)
-    hour_people = defaultdict(set)
-    for e in events:
+    bucket_people = defaultdict(set)
+    heat = [[0] * 24 for _ in range(7)]  # India-time weekday (Monday first) x hour
+    for e in all_events:
         kinds = [k for k in e.get("kinds", []) if k in FEATURE_LABELS]
-        per_user[e["userId"]].update(kinds)
-        per_user[e["userId"]]["_requests"] += 1 if kinds else 0
-        i = bucket(e["at"])
-        if i is not None:
-            hour_people[i].add(e["userId"])
-            if hourly:
-                series[i]["messages"] += sum(1 for k in kinds if k in MESSAGE_KINDS)
+        back = e["at"] < since
+        if not back:
+            per_user[e["userId"]].update(kinds)
+            t = _parse(e["at"])
+            if t and kinds:
+                local = t.astimezone(limits.IST)
+                heat[local.weekday()][local.hour] += 1
+        if hourly:
+            i = bucket(e["at"], back)
+            if i is not None:
+                bucket_people[(back, i)].add(e["userId"])
+                series[i]["prevMessages" if back else "messages"] += sum(1 for k in kinds if k in MESSAGE_KINDS)
+                if not back:
+                    series[i]["cost"] += sum(costs[k] for k in kinds)
     if hourly:
-        for i, people in hour_people.items():
-            series[i]["active"] = len(people)
+        for (back, i), people in bucket_people.items():
+            series[i]["prevActive" if back else "active"] = len(people)
     else:
         by_day = Counter()
-        async for a in db.activity.find({"day": {"$in": days}}, {"day": 1}):
+        async for a in db.activity.find({"day": {"$in": days + prev_days}}, {"day": 1}):
             by_day[a["day"]] += 1
-        async for d in db.feature_daily.find({"_id": {"$in": days}}):
-            series[index[d["_id"]]]["messages"] = sum(d.get(k, 0) for k in MESSAGE_KINDS)
+        async for d in db.feature_daily.find({"_id": {"$in": days + prev_days}}):
+            msgs = sum(d.get(k, 0) for k in MESSAGE_KINDS)
+            if d["_id"] in index:
+                series[index[d["_id"]]]["messages"] = msgs
+                series[index[d["_id"]]]["cost"] += sum(d.get(k, 0) * costs[k] for k in FEATURE_LABELS)
+            elif d["_id"] in prev_index:
+                series[prev_index[d["_id"]]]["prevMessages"] = msgs
         for i, d in enumerate(days):
             series[i]["active"] = by_day.get(d, 0)
+            series[i]["prevActive"] = by_day.get(prev_days[i], 0)
+    # Hosting spread evenly, and the payment fee where the money came in.
+    hosting_per_bucket = costs["hostingMonthly"] * days_n / 30 / len(series)
+    for row in series:
+        row["cost"] = round(row["cost"] + hosting_per_bucket + row["revenue"] * costs["paymentFeePercent"] / 100, 2)
+        row["revenue"], row["prevRevenue"] = round(row["revenue"], 2), round(row["prevRevenue"], 2)
     active = await _active_ids(db, days, since, until, hourly)
     prev_active = await _active_ids(db, prev_days, prev_since, since, hourly)
     online_cut = (now - timedelta(minutes=ONLINE_MINUTES)).isoformat()
@@ -280,6 +306,27 @@ async def overview(db, range_key: str = "24h") -> dict:
     people.sort(key=lambda p: (p["messages"] + p["made"] + p["builds"], p["paid"], p["lastSeenAt"] or ""),
                 reverse=True)
 
+    # Ratios an analyst would look at first.
+    n_active = len(active)
+    messages = sum(features.get(k, 0) for k in MESSAGE_KINDS)
+    paying_active = sum(1 for uid in active if limits.plan_from(users.get(uid) or {}) != "basic")
+    new_active = sum(1 for uid in active if users.get(uid, {}).get("createdAt", "") >= since)
+    peak = max(range(len(series)), key=lambda i: series[i]["active"]) if any(r["active"] for r in series) else None
+    ratios = {
+        "arpu": round(revenue / n_active, 2) if n_active else 0,
+        "costPerActive": round((money["aiCost"] + money["hostingCost"]) / n_active, 2) if n_active else 0,
+        "messagesPerActive": round(messages / n_active, 1) if n_active else 0,
+        "margin": round(money["profit"] / revenue * 100, 1) if revenue else None,
+        "checkoutConversion": round(len(now_paid) / started * 100, 1) if started else None,
+        "payingShare": round(paying_active / n_active * 100, 1) if n_active else 0,
+        "newActive": new_active, "returningActive": n_active - new_active,
+        "retained": len(active & prev_active), "retention": round(len(active & prev_active) / len(prev_active) * 100, 1)
+        if prev_active else None,
+        "peak": series[peak]["t"] if peak is not None else None,
+        "peakActive": series[peak]["active"] if peak is not None else 0,
+        "avgOrder": round(revenue / len(now_paid), 2) if now_paid else 0,
+    }
+
     return {
         "range": range_key, "since": since, "generatedAt": until, "bucket": "hour" if hourly else "day",
         "kpis": {
@@ -293,7 +340,7 @@ async def overview(db, range_key: str = "24h") -> dict:
             "onlineNow": len(online), "totalUsers": len(users),
             "paidUsers": subscribers.get("pro", 0) + subscribers.get("max", 0), "mrr": mrr,
         },
-        "money": money, "series": series,
+        "money": money, "series": series, "ratios": ratios, "heat": heat,
         "plans": {"sold": sold, "subscribers": {p: subscribers.get(p, 0) for p in limits.ORDER},
                   "checkoutsStarted": started, "checkoutsPaid": len(now_paid), "recentPayments": recent_payments},
         "features": [{"kind": k, "label": v, "count": features.get(k, 0)} for k, v in FEATURE_LABELS.items()],
