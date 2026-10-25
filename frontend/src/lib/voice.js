@@ -59,13 +59,18 @@ export async function transcribe(blob) {
   return (await transcribeDetect(blob)).text;
 }
 
-/** Speech to text plus the language that was spoken ({ text, language }). */
-export async function transcribeDetect(blob) {
+/**
+ * Speech to text plus the language that was spoken ({ text, language }).
+ * `hint` (the language spoken last) and `context` (what was said last) help it hear the next words right.
+ */
+export async function transcribeDetect(blob, { hint, context } = {}) {
   const type = (blob.type || "audio/webm").split(";")[0];
   const fd = new FormData();
   fd.append("file", blob, `speech.${EXT[type] || "webm"}`);
   const lang = getVoiceLang();
   if (lang !== "auto") fd.append("language", lang);
+  else if (hint) fd.append("hint", hint);
+  if (context) fd.append("context", context.slice(-400));
   const { data } = await api.post("/audio/transcribe", fd, { headers: { "Content-Type": "multipart/form-data" } });
   return { text: data.text || "", language: data.language || null };
 }
@@ -281,6 +286,11 @@ export function createSpeaker({ voice, onStart, lang } = {}) {
       // Start talking after the first sentence; after that, gather a little more per clip.
       if (!started && queue.length === 0) break;
       if (cut > 160) break;
+    }
+    // A long first sentence: start talking at its first comma instead of waiting for the full stop.
+    if (cut < 0 && !final && !started && queue.length === 0 && rest.length > 90) {
+      const comma = rest.slice(40).search(/[,;:،]\s/);
+      if (comma >= 0) cut = 40 + comma + 2;
     }
     if (final) cut = rest.length;
     if (cut <= 0) return;

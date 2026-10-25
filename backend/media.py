@@ -38,7 +38,10 @@ def video_enabled() -> bool:
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
 STT_MODEL = os.environ.get("STT_MODEL", "gpt-4o-mini-transcribe")
 TTS_MODEL = os.environ.get("TTS_MODEL", "gpt-4o-mini-tts")
-GROQ_STT_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+# Full Whisper large-v3 hears Hindi, Hinglish and the other Indian languages better than the turbo model;
+# turbo (its own free limit) takes over when large-v3 is busy or out of free minutes.
+GROQ_STT_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3")
+GROQ_STT_FALLBACK = os.environ.get("GROQ_STT_FALLBACK", "whisper-large-v3-turbo")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 TTS_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]
 IMAGE_SIZES = {"1024x1024", "1536x1024", "1024x1536", "1920x1080", "1080x1920", "auto"}
@@ -379,23 +382,72 @@ WHISPER_NAMES = {"english": "en", "hindi": "hi", "bengali": "bn", "marathi": "mr
                  "punjabi": "pa", "panjabi": "pa", "spanish": "es", "french": "fr", "german": "de", "arabic": "ar"}
 
 
-async def transcribe_detect(data: bytes, filename: str, language: Optional[str] = None) -> tuple:
-    """Speech to text plus the language that was spoken: (text, ISO-639-1 code or None)."""
-    extra = {"language": language} if language else {}
+# A short example of how people talk steers Whisper to the right script and to mixed Hindi and English
+# (Hinglish) instead of translating it or writing Hindi in Urdu script.
+STT_HINTS = {
+    "hi": "नमस्ते Krish, मुझे एक help चाहिए। मेरा phone काम नहीं कर रहा, क्या आप बता सकते हो?",
+    "ur": "السلام علیکم Krish، مجھے ایک مدد چاہیے۔",
+    "bn": "নমস্কার Krish, আমার একটা help লাগবে।",
+    "mr": "नमस्कार Krish, मला एक मदत हवी आहे।",
+    "gu": "નમસ્તે Krish, મને એક મદદ જોઈએ છે।",
+    "ta": "வணக்கம் Krish, எனக்கு ஒரு help வேணும்.",
+    "te": "నమస్తే Krish, నాకు ఒక help కావాలి.",
+    "kn": "ನಮಸ್ಕಾರ Krish, ನನಗೆ ಒಂದು help ಬೇಕು.",
+    "ml": "നമസ്കാരം Krish, എനിക്ക് ഒരു help വേണം.",
+    "pa": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ Krish, ਮੈਨੂੰ ਇੱਕ help ਚਾਹੀਦੀ ਹੈ।",
+}
+
+
+def stt_prompt(hint: Optional[str] = None, context: Optional[str] = None) -> Optional[str]:
+    """Whisper's prompt: the last thing said (so names and topics carry over) plus an example in the
+    language the person usually speaks. Whisper reads only the last ~224 tokens, so keep it short."""
+    parts = [STT_HINTS.get(hint or "", "")]
+    if context:
+        parts.append(re.sub(r"\s+", " ", context).strip()[-200:])
+    prompt = " ".join(p for p in parts if p)
+    return prompt or None
+
+
+async def _whisper(data: bytes, filename: str, extra: dict) -> tuple:
     if openai_configured():
         resp = await _client().audio.transcriptions.create(model=STT_MODEL, file=(filename, data), **extra)
-        text, heard = resp.text, None
-    else:
-        if not os.environ.get("GROQ_API_KEY"):
-            raise MediaUnavailable("Set GROQ_API_KEY (free) or OPENAI_API_KEY on the backend to enable voice input.")
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=GROQ_BASE_URL)
-        resp = await client.audio.transcriptions.create(model=GROQ_STT_MODEL, file=(filename, data),
-                                                        response_format="verbose_json", **extra)
-        text, heard = resp.text, getattr(resp, "language", None)
+        return resp.text, None
+    if not os.environ.get("GROQ_API_KEY"):
+        raise MediaUnavailable("Set GROQ_API_KEY (free) or OPENAI_API_KEY on the backend to enable voice input.")
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=GROQ_BASE_URL)
+    models = [GROQ_STT_MODEL] + [m for m in [GROQ_STT_FALLBACK] if m and m != GROQ_STT_MODEL]
+    for i, model in enumerate(models):
+        try:
+            resp = await client.audio.transcriptions.create(model=model, file=(filename, data),
+                                                            response_format="verbose_json", temperature=0, **extra)
+            return resp.text, getattr(resp, "language", None)
+        except Exception as exc:
+            if i == len(models) - 1:
+                raise
+            logger.info("Groq %s failed, trying %s: %s", model, models[i + 1], str(exc)[:200])
+
+
+async def transcribe_detect(data: bytes, filename: str, language: Optional[str] = None,
+                            hint: Optional[str] = None, context: Optional[str] = None) -> tuple:
+    """Speech to text plus the language that was spoken: (text, ISO-639-1 code or None).
+    `language` forces the language; `hint` is the one the person usually speaks (it only steers);
+    `context` is what they said last."""
+    extra = {"language": language} if language else {}
+    prompt = stt_prompt(language or hint, context)
+    if prompt:
+        extra["prompt"] = prompt
+    text, heard = await _whisper(data, filename, extra)
     code = language or WHISPER_NAMES.get((heard or "").strip().lower()) or (heard if heard in WHISPER_NAMES.values() else None)
     # The script it was written in is the surest sign (Whisper can say "urdu" for Hindi and vice versa).
-    return text, script_language(text) or code
+    found = script_language(text) or code
+    if not language and found == "ur" and hint in ("hi", "en", None) and text.strip():
+        # Spoken Hindi and Urdu sound alike: someone who doesn't use Urdu most likely spoke Hindi, so hear it
+        # again as Hindi (in Devanagari, which the Hindi voice reads well).
+        again, _ = await _whisper(data, filename, {"language": "hi", "prompt": stt_prompt("hi", context)})
+        if again.strip():
+            return again, "hi"
+    return text, found
 
 
 # Free natural voices (Microsoft Edge's online neural voices, no key) when there's no OpenAI key.

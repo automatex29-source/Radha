@@ -1156,10 +1156,16 @@ def voice_prompt(lang: Optional[str], fallback: Optional[str] = None) -> str:
                 "Hindi and English, mix the same way." + (f" If you can't tell, use {usual}." if usual else ""))
     return (
         "Voice mode is on: the user is talking to you out loud and your reply will be read aloud by a voice. "
-        "Answer like a warm, natural person on a phone call: usually one to three short sentences, the most useful "
-        "part first. Offer to say more instead of giving long lists. Never use markdown, bullet points, tables, "
-        "emoji, links, URLs or code; write numbers and symbols the way they are spoken. The words come from "
-        "speech-to-text and can be misheard: answer what the user most likely said. " + reply_in
+        "Answer like a warm, knowledgeable friend on a phone call. Start with the direct answer in the very first "
+        "sentence (no greeting, no repeating the question, no \"great question\"), then add only the one or two "
+        "details that matter most; usually one to three short sentences. Be correct and specific: real numbers, "
+        "names and steps, not vague advice. If you are not sure of a fact, say so briefly instead of guessing. "
+        "Offer to say more instead of giving long lists. Never use markdown, bullet points, tables, emoji, links, "
+        "URLs or code; write numbers and symbols the way they are spoken. The words come from speech-to-text and "
+        "can be misheard, cut off or written in the wrong script: answer what the user most likely meant, and "
+        "only if it truly makes no sense, ask one short question to check. "
+        "In Hindi and Hinglish, keep everyday English words (phone, app, online, problem) in English letters "
+        "and write the Hindi in Devanagari, so the voice says both naturally. " + reply_in
     )
 
 
@@ -2759,6 +2765,7 @@ async def preview_media(mid: str, user_id: str = Depends(current_user_id)):
 # ---------------------------------------------------------------------- voice
 @api.post("/audio/transcribe")
 async def transcribe_audio(file: UploadFile = File(...), language: Optional[str] = Form(None),
+                           hint: Optional[str] = Form(None), context: Optional[str] = Form(None),
                            user_id: str = Depends(current_user_id)):
     abuse.require("media", user_id)
     data = await file.read()
@@ -2768,12 +2775,16 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
         raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
     try:
         lang = language if language in media.VOICE_LANGUAGES else None
-        text, heard = await media.transcribe_detect(data, file.filename or "audio.webm", lang)
+        owner = await db.users.find_one({"id": user_id}, {"language": 1}) if not lang else None
+        settings_lang = (owner or {}).get("language")
+        # The language they spoke last (sent by voice mode), else their Settings language, steers Whisper.
+        steer = hint if hint in media.VOICE_LANGUAGES else settings_lang
+        text, heard = await media.transcribe_detect(data, file.filename or "audio.webm", lang,
+                                                    hint=steer, context=(context or "")[:400] or None)
         text = media.clean_transcript(text)
         if heard in ("hi", "ur") and not lang:
             # Spoken Hindi and Urdu sound alike; lean on the language they chose in Settings.
-            owner = await db.users.find_one({"id": user_id}, {"language": 1})
-            if (owner or {}).get("language") in ("hi", "ur") and not media.script_language(text):
+            if settings_lang in ("hi", "ur") and not media.script_language(text):
                 heard = owner["language"]
     except media.MediaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
