@@ -68,7 +68,7 @@ def test_dashboard_numbers(client):
                                       "status": "paid", "createdAt": old, "paidAt": old})
         for conv_id, mode, text in (("c1", "chat", "Write python code for my app, mail me at a@b.com or 9876543210"),
                                     ("c2", "counsellor", "I feel very anxious about my exams")):
-            await db.conversations.insert_one({"id": conv_id, "userId": asha["user"]["id"], "mode": mode})
+            await db.conversations.insert_one({"id": conv_id, "userId": asha["user"]["id"], "mode": mode, "createdAt": now})
             await db.messages.insert_one({"id": conv_id + "m", "conversationId": conv_id, "role": "user",
                                           "content": text, "createdAt": now})
         await client.server.monitor.count(db, asha["user"]["id"], "chat", "web")
@@ -100,6 +100,12 @@ def test_dashboard_numbers(client):
     assert all("anxious" not in r["text"] for r in asks["recent"])
     q = asks["recent"][0]
     assert "a@b.com" not in q["text"] and "9876543210" not in q["text"] and q["topic"] == "Coding & apps"
+
+    assert next(c for c in d["content"] if c["key"] == "conversations")["period"] >= 2
+    assert d["subscriptions"]["newCustomers"] == 0 and d["subscriptions"]["returningCustomers"] == 1
+    assert d["subscriptions"]["lifetimeRevenue"] == 299 + 699 and d["subscriptions"]["customersEver"] == 1
+    assert d["engagement"]["mau"] >= 1 and d["growth"]["signupMethods"]["email"] >= 2
+    assert d["quality"]["satisfaction"] is None and d["health"]["total"] >= 0
 
     week = client.get("/api/admin/dashboard?range=7d", headers=_h(boss["token"])).json()
     assert week["bucket"] == "day" and len(week["series"]) == 7

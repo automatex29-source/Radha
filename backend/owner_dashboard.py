@@ -158,7 +158,8 @@ async def overview(db, range_key: str = "24h") -> dict:
 
     users = {u["id"]: u async for u in db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1, "plan": 1,
                                                           "planExpiresAt": 1, "createdAt": 1, "lastSeenAt": 1,
-                                                          "lastLoginAt": 1, "loginCount": 1})}
+                                                          "lastLoginAt": 1, "loginCount": 1,
+                                                          "googleId": 1, "language": 1})}
 
     def who(uid: str) -> dict:
         u = users.get(uid) or {}
@@ -347,6 +348,110 @@ async def overview(db, range_key: str = "24h") -> dict:
         "people": people[:100], "logins": login_rows[:100],
         "asks": await _asks(db, since, who),
         "costs": costs,
+        **await _more(db, since, prev_since, now, users, who, signups),
+    }
+
+
+CONTENT = [  # what people made: (key, label, collection, extra filter)
+    ("conversations", "Chats", "conversations", {}),
+    ("projects", "Projects", "projects", {}),
+    ("files", "Files uploaded", "files", {"is_deleted": {"$ne": True}}),
+    ("apps", "Apps built", "apps", {}),
+    ("published", "Apps published", "apps", {"published.slug": {"$type": "string"}}),
+    ("decks", "Decks", "decks", {}),
+    ("docs", "Docs", "docs", {}),
+    ("automations", "Automations", "automations", {}),
+    ("pages", "Answers shared", "pages", {}),
+]
+
+
+async def _more(db, since: str, prev_since: str, now: datetime, users: dict, who, signups: list) -> dict:
+    """Everything else the owner may want: content made, answer ratings, errors, renewals, growth, engagement."""
+    content = []
+    for key, label, name, extra in CONTENT:
+        col = db[name]
+        content.append({"key": key, "label": label, "total": await col.count_documents(extra),
+                        "period": await col.count_documents({**extra, "createdAt": {"$gte": since}}),
+                        "prev": await col.count_documents({**extra, "createdAt": {"$gte": prev_since, "$lt": since}})})
+
+    # Answer quality: 👍 / 👎.
+    fb = await db.message_feedback.find({"createdAt": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
+    up = sum(1 for f in fb if f["createdAt"] >= since and f["rating"] == "up")
+    down = sum(1 for f in fb if f["createdAt"] >= since and f["rating"] == "down")
+    prev_up = sum(1 for f in fb if f["createdAt"] < since and f["rating"] == "up")
+    prev_down = sum(1 for f in fb if f["createdAt"] < since and f["rating"] == "down")
+    disliked = [{**who(f["userId"]), "question": _snippet(f.get("question", ""), 140),
+                 "answer": _snippet(f.get("answer", ""), 180), "model": f.get("model"), "at": f["createdAt"]}
+                for f in sorted((f for f in fb if f["createdAt"] >= since and f["rating"] == "down"),
+                                key=lambda f: f["createdAt"], reverse=True)[:6]]
+
+    # App health: crashes in the app and errors on the server.
+    errors = await db.errors.find({"createdAt": {"$gte": prev_since}}, {"_id": 0, "detail": 0}).to_list(None)
+    now_errors = [e for e in errors if e["createdAt"] >= since]
+    by_source = Counter(e.get("source", "server") for e in now_errors)
+    common = Counter(e.get("message", "")[:120] for e in now_errors).most_common(6)
+
+    # Subscriptions: renewals due, plans that ran out, new vs returning customers.
+    week = (now + timedelta(days=7)).isoformat()
+    now_iso = now.isoformat()
+    renewals_due = sorted(({**who(u["id"]), "expiresAt": u["planExpiresAt"]} for u in users.values()
+                           if u.get("plan") in ("pro", "max") and u.get("planExpiresAt")
+                           and now_iso <= u["planExpiresAt"] <= week), key=lambda r: r["expiresAt"])
+    lapsed = sorted(({**who(u["id"]), "plan": u.get("plan"), "expiresAt": u["planExpiresAt"]} for u in users.values()
+                     if u.get("plan") in ("pro", "max") and u.get("planExpiresAt")
+                     and since <= u["planExpiresAt"] < now_iso), key=lambda r: r["expiresAt"], reverse=True)
+    all_paid = await db.payments.find({"status": "paid"}, {"_id": 0, "userId": 1, "amount": 1, "paidAt": 1}).to_list(None)
+    first_paid = {}
+    for p in sorted(all_paid, key=lambda p: p["paidAt"]):
+        first_paid.setdefault(p["userId"], p["paidAt"])
+    period_paid = [p for p in all_paid if p["paidAt"] >= since]
+    new_customers = len({p["userId"] for p in period_paid if first_paid[p["userId"]] >= since})
+    returning_customers = len({p["userId"] for p in period_paid if first_paid[p["userId"]] < since})
+    lifetime = sum(p["amount"] for p in all_paid) / 100
+
+    # Growth: invites, offer codes, how people sign up, languages.
+    refs = await db.referrals.find({"createdAt": {"$gte": since}}, {"_id": 0}).to_list(None)
+    inviters = Counter(r["inviterId"] for r in refs)
+    codes = await db.promo_codes.find({}, {"_id": 0}).sort("uses", -1).to_list(20)
+    google_all = sum(1 for u in users.values() if u.get("googleId"))
+    google_new = sum(1 for u in signups if u.get("googleId"))
+    languages = Counter((u.get("language") or "en") for u in users.values())
+
+    # Engagement: daily, weekly and monthly active people (India-time days).
+    days30 = _ist_days(30)
+    per_day = defaultdict(set)
+    async for a in db.activity.find({"day": {"$in": days30}}, {"day": 1, "userId": 1}):
+        per_day[a["day"]].add(a["userId"])
+    dau = len(per_day.get(days30[-1], set()))
+    wau = len(set().union(*(per_day.get(d, set()) for d in days30[-7:])))
+    mau = len(set().union(*(per_day.get(d, set()) for d in days30)))
+    avg_dau = round(sum(len(per_day.get(d, set())) for d in days30) / 30, 1)
+
+    return {
+        "content": content,
+        "quality": {"up": up, "down": down, "prevUp": prev_up, "prevDown": prev_down,
+                    "satisfaction": round(up / (up + down) * 100, 1) if up + down else None, "disliked": disliked},
+        "health": {"total": len(now_errors), "prev": len(errors) - len(now_errors),
+                   "app": by_source.get("app", 0), "server": by_source.get("server", 0),
+                   "common": [{"message": m, "count": c} for m, c in common],
+                   "latest": sorted(now_errors, key=lambda e: e["createdAt"], reverse=True)[:8]},
+        "subscriptions": {"renewalsDue": renewals_due[:20], "renewalsDueCount": len(renewals_due),
+                          "renewalsDueValue": sum(limits.PLANS[r["plan"]]["price"] for r in renewals_due),
+                          "lapsed": lapsed[:20], "lapsedCount": len(lapsed),
+                          "newCustomers": new_customers, "returningCustomers": returning_customers,
+                          "customersEver": len(first_paid), "lifetimeRevenue": lifetime,
+                          "ltv": round(lifetime / len(first_paid), 2) if first_paid else 0},
+        "growth": {"invited": len(refs), "invitedRewarded": sum(1 for r in refs if r.get("rewarded")),
+                   "topInviters": [{**who(uid), "count": c} for uid, c in inviters.most_common(5)],
+                   "codes": [{"code": c["code"], "percentOff": c["percentOff"], "uses": c.get("uses", 0),
+                              "maxUses": c.get("maxUses", 0), "active": c.get("active", True)} for c in codes],
+                   "signupMethods": {"google": google_new, "email": len(signups) - google_new},
+                   "accountMethods": {"google": google_all, "email": len(users) - google_all},
+                   "languages": [{"code": code, "count": c} for code, c in languages.most_common(8)]},
+        "engagement": {"dau": dau, "wau": wau, "mau": mau, "avgDau": avg_dau,
+                       "stickiness": round(dau / mau * 100, 1) if mau else None,
+                       "signinsPerPerson": round(sum(u.get("loginCount", 0) for u in users.values()) / len(users), 1)
+                       if users else 0},
     }
 
 

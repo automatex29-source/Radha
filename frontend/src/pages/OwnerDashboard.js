@@ -4,7 +4,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Respons
 import { toast } from "sonner";
 import {
   AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronUp, Clock, Download, Eye, EyeOff, Lightbulb, Loader2, Minus,
-  Pencil, Search, ShieldCheck, TrendingDown, TrendingUp, Users,
+  Pencil, Search, ShieldCheck, ThumbsDown, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -233,7 +233,12 @@ function insightsFrom(d, range) {
   if (top?.cost && d.money.aiCost) out.push({ tone: "info", text: `${top.label} is the biggest AI cost: ${inr(top.cost)}, ${pct(top.cost, d.money.aiCost)} of AI spend.` });
   const topic = d.asks.topics.find((t) => t.name !== "Other");
   if (topic) out.push({ tone: "info", text: `People ask most about ${topic.name.toLowerCase()} (${pct(topic.count, d.asks.total)} of questions).` });
-  return out.slice(0, 6);
+  const sub = d.subscriptions;
+  if (sub.renewalsDueCount) out.push({ tone: "warn", text: `${sub.renewalsDueCount} paid plan${sub.renewalsDueCount === 1 ? "" : "s"} run out in the next 7 days (${inr(sub.renewalsDueValue)} a month). Remind them to renew.` });
+  if (sub.lapsedCount) out.push({ tone: "down", text: `${sub.lapsedCount} paid plan${sub.lapsedCount === 1 ? "" : "s"} ran out in this period without renewing.` });
+  if (d.quality.satisfaction !== null) out.push({ tone: d.quality.satisfaction >= 80 ? "up" : "warn", text: `${d.quality.satisfaction}% of rated answers got a thumbs up (${d.quality.up} up, ${d.quality.down} down).` });
+  if (d.health.total) out.push({ tone: "warn", text: `${d.health.total} error${d.health.total === 1 ? "" : "s"} in this period (${d.health.app} in the app, ${d.health.server} on the server).` });
+  return out.slice(0, 10);
 }
 
 const TONE = {
@@ -268,6 +273,42 @@ function Heatmap({ heat }) {
     </div>
   );
 }
+
+const LANG = (() => { try { return new Intl.DisplayNames(["en"], { type: "language" }); } catch { return null; } })();
+const langName = (c) => { try { return LANG?.of(c) || c; } catch { return c; } };
+
+function SectionTitle({ id, children, note }) {
+  return (
+    <div id={id} className="mt-8 mb-3 flex scroll-mt-16 items-baseline justify-between gap-3 border-b border-border/70 pb-2">
+      <h2 className="text-sm font-bold uppercase tracking-wider">{children}</h2>
+      {note && <p className="text-[11.5px] text-muted-foreground">{note}</p>}
+    </div>
+  );
+}
+
+function StatStrip({ children, cols = "lg:grid-cols-6", testId }) {
+  return (
+    <div className={`grid grid-cols-2 divide-x divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:grid-cols-3 ${cols} lg:divide-y-0`} data-testid={testId}>
+      {children}
+    </div>
+  );
+}
+
+function PeopleList({ rows, empty, right }) {
+  if (!rows.length) return <p className="py-8 text-center text-sm text-muted-foreground">{empty}</p>;
+  return (
+    <ul className="divide-y divide-border/40">
+      {rows.map((p, i) => (
+        <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-[13px]">
+          <div className="min-w-0"><p className="truncate font-medium">{p.name}</p><p className="truncate text-[11px] text-muted-foreground">{p.email}</p></div>
+          <div className="shrink-0 text-right">{right(p)}</div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const SECTIONS = [["overview", "Overview"], ["money", "Money"], ["customers", "Customers"], ["usage", "Usage"], ["content", "Content"], ["quality", "Quality"], ["growth", "Growth"], ["people", "People"]];
 
 function downloadCsv(name, rows) {
   const csv = rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -360,11 +401,18 @@ export default function OwnerDashboard() {
             </div>
           </header>
 
+          <nav className="sticky top-0 z-10 -mx-4 mt-4 flex gap-1 overflow-x-auto border-b border-border/70 bg-[var(--viz-page)]/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6" data-testid="owner-dash-sections">
+            {SECTIONS.map(([id, label]) => (
+              <a key={id} href={`#${id}`} onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); }}
+                className="shrink-0 rounded-md px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">{label}</a>
+            ))}
+          </nav>
+
           {error && !data ? <p className="mt-10 text-center text-sm text-destructive">{error}</p> : !data ? (
             <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : (
             <>
-              <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="owner-dash-kpis">
+              <div id="overview" className="mt-5 grid scroll-mt-16 grid-cols-2 gap-3 lg:grid-cols-4" data-testid="owner-dash-kpis">
                 <Kpi label="Revenue" value={inr(k.revenue.value)} kpi={k.revenue} series={data.series} k="revenue" foot={`${inr(k.revenue.prev)} in the ${PREV[range]}`} />
                 <Kpi label="Profit (est.)" value={inr(k.profit.value)} kpi={k.profit} series={data.series.map((s) => ({ ...s, profit: s.revenue - s.cost }))} k="profit"
                   foot={r.margin !== null ? `${r.margin}% margin · costs ${inr(m.revenue - m.profit)}` : `Costs ${inr(m.revenue - m.profit)}`} />
@@ -392,7 +440,8 @@ export default function OwnerDashboard() {
                 </ul>
               </Panel>
 
-              <div className="mt-3 grid gap-3 lg:grid-cols-3">
+              <SectionTitle id="money" note={`Last ${rangeLabel}`}>Trends and money</SectionTitle>
+              <div className="grid gap-3 lg:grid-cols-3">
                 <Panel className="lg:col-span-2" title={`${metricName} over time`} subtitle={`${data.bucket === "hour" ? "Each hour" : "Each day (India time)"}, compared with the ${PREV[range]}`}
                   testId="owner-dash-activity"
                   action={
@@ -459,6 +508,15 @@ export default function OwnerDashboard() {
                 </Panel>
               </div>
 
+              <SectionTitle id="customers" note="Plans, payments and renewals">Customers</SectionTitle>
+              <StatStrip testId="owner-dash-customers">
+                <Stat label="New customers" value={num(data.subscriptions.newCustomers)} hint="First payment ever in this period" />
+                <Stat label="Repeat customers" value={num(data.subscriptions.returningCustomers)} hint="Paid before, and paid again in this period" />
+                <Stat label="Customers ever" value={num(data.subscriptions.customersEver)} />
+                <Stat label="Lifetime revenue" value={inr(data.subscriptions.lifetimeRevenue)} />
+                <Stat label="Lifetime value" value={inr(data.subscriptions.ltv)} hint="Lifetime revenue per paying customer (LTV)" />
+                <Stat label="Due in 7 days" value={inr(data.subscriptions.renewalsDueValue)} hint="Monthly value of paid plans that run out in the next 7 days" />
+              </StatStrip>
               <div className="mt-3 grid gap-3 lg:grid-cols-2">
                 <Panel title="Plans" subtitle="Sales in this period and people on each plan now" testId="owner-dash-plans" flush>
                   <table className="w-full text-[13px] tabular-nums">
@@ -505,6 +563,26 @@ export default function OwnerDashboard() {
                 </Panel>
               </div>
 
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                <Panel title="Renewals due" subtitle={`${num(data.subscriptions.renewalsDueCount)} paid plans run out in the next 7 days`} testId="owner-dash-renewals" flush>
+                  <PeopleList rows={data.subscriptions.renewalsDue} empty="No paid plans run out in the next 7 days."
+                    right={(p) => <><PlanTag plan={p.plan} /><p className="text-[11px] text-muted-foreground">{new Date(p.expiresAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</p></>} />
+                </Panel>
+                <Panel title="Plans that ran out" subtitle={`${num(data.subscriptions.lapsedCount)} in this period, not renewed`} testId="owner-dash-lapsed" flush>
+                  <PeopleList rows={data.subscriptions.lapsed} empty="No paid plans ran out in this period."
+                    right={(p) => <><PlanTag plan={p.plan} /><p className="text-[11px] text-muted-foreground">{ago(p.expiresAt)}</p></>} />
+                </Panel>
+              </div>
+
+              <SectionTitle id="usage" note="Engagement, timing and what people use">Usage</SectionTitle>
+              <StatStrip testId="owner-dash-engagement">
+                <Stat label="Active today" value={num(data.engagement.dau)} hint="Daily active people (DAU), India time" />
+                <Stat label="Active this week" value={num(data.engagement.wau)} hint="Weekly active people (WAU), last 7 days" />
+                <Stat label="Active this month" value={num(data.engagement.mau)} hint="Monthly active people (MAU), last 30 days" />
+                <Stat label="Average per day" value={num(data.engagement.avgDau)} hint="Average daily active people over 30 days" />
+                <Stat label="Stickiness" value={data.engagement.stickiness === null ? "–" : `${data.engagement.stickiness}%`} hint="Today's active people out of this month's (DAU / MAU)" />
+                <Stat label="Sign-ins per person" value={num(data.engagement.signinsPerPerson)} hint="Average sign-ins per account, all time" />
+              </StatStrip>
               <div className="mt-3 grid gap-3 lg:grid-cols-5">
                 <Panel className="lg:col-span-3" title="When people use Krish" subtitle="Requests by weekday and hour, in this period" testId="owner-dash-heatmap">
                   <Heatmap heat={data.heat} />
@@ -588,7 +666,107 @@ export default function OwnerDashboard() {
                 </Panel>
               </div>
 
-              <Panel className="mt-3" title="Use per person" subtitle={`${num(people.length)} people active or paying in this period. Tap a column to sort.`} testId="owner-dash-people" flush
+              <SectionTitle id="content" note="Everything people made with Krish">Content</SectionTitle>
+              <Panel title="Content created" subtitle={`In the last ${rangeLabel}, and all time`} testId="owner-dash-content" flush>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-[13px] tabular-nums">
+                    <thead><tr className="border-b border-border/60"><Th>Type</Th><Th right>This period</Th><Th right>Change</Th><Th right>All time</Th></tr></thead>
+                    <tbody>
+                      {data.content.map((c) => (
+                        <tr key={c.key} className="border-b border-border/40 last:border-0">
+                          <td className="px-4 py-2">{c.label}</td>
+                          <td className="px-4 py-2 text-right font-semibold">{num(c.period)}</td>
+                          <td className="px-4 py-2 text-right"><Delta value={c.period} prev={c.prev} small /></td>
+                          <td className="px-4 py-2 text-right text-muted-foreground">{num(c.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Panel>
+
+              <SectionTitle id="quality" note="Answer ratings and errors">Quality and health</SectionTitle>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <Panel title="Answer ratings" subtitle="Thumbs up and down on Krish's answers" testId="owner-dash-quality" flush>
+                  <div className="grid grid-cols-3 divide-x divide-border/60 border-b border-border/60">
+                    <Stat label="Satisfaction" value={data.quality.satisfaction === null ? "–" : `${data.quality.satisfaction}%`} hint="Thumbs up out of all ratings" />
+                    <Stat label="Thumbs up" value={num(data.quality.up)} kpi={{ value: data.quality.up, prev: data.quality.prevUp }} />
+                    <Stat label="Thumbs down" value={num(data.quality.down)} kpi={{ value: data.quality.down, prev: data.quality.prevDown }} invert />
+                  </div>
+                  {!data.quality.disliked.length ? <p className="py-8 text-center text-sm text-muted-foreground">No answers marked thumbs down in this period.</p> : (
+                    <ul className="max-h-80 divide-y divide-border/40 overflow-y-auto">
+                      {data.quality.disliked.map((f, i) => (
+                        <li key={i} className="px-4 py-2.5 text-[13px]">
+                          <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground"><ThumbsDown className="h-3 w-3 text-rose-500" /><span className="font-semibold text-foreground">{f.name}</span>{f.model ? `${f.model} · ` : ""}{ago(f.at)}</p>
+                          <p className="mt-0.5 font-medium">{f.question || "(question not found)"}</p>
+                          <p className="mt-0.5 line-clamp-2 text-muted-foreground">{f.answer}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Panel>
+                <Panel title="App health" subtitle="Crashes in the app and errors on the server" testId="owner-dash-health" flush>
+                  <div className="grid grid-cols-3 divide-x divide-border/60 border-b border-border/60">
+                    <Stat label="Errors" value={num(data.health.total)} kpi={{ value: data.health.total, prev: data.health.prev }} invert />
+                    <Stat label="In the app" value={num(data.health.app)} />
+                    <Stat label="On the server" value={num(data.health.server)} />
+                  </div>
+                  {!data.health.common.length ? <p className="py-8 text-center text-sm text-muted-foreground">No errors in this period.</p> : (
+                    <table className="w-full text-[13px] tabular-nums">
+                      <thead><tr className="border-b border-border/60"><Th>Most common</Th><Th right>Times</Th></tr></thead>
+                      <tbody>
+                        {data.health.common.map((e, i) => (
+                          <tr key={i} className="border-b border-border/40 last:border-0">
+                            <td className="max-w-0 truncate px-4 py-2 font-mono text-xs" title={e.message}>{e.message || "(no message)"}</td>
+                            <td className="px-4 py-2 text-right">{num(e.count)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </Panel>
+              </div>
+
+              <SectionTitle id="growth" note="Invites, offer codes, sign-up methods and languages">Growth</SectionTitle>
+              <StatStrip cols="lg:grid-cols-4" testId="owner-dash-growth">
+                <Stat label="Friends invited" value={num(data.growth.invited)} hint="People who joined from an invite link in this period" />
+                <Stat label="Invites rewarded" value={num(data.growth.invitedRewarded)} />
+                <Stat label="Sign-ups with Google" value={pct(data.growth.signupMethods.google, data.growth.signupMethods.google + data.growth.signupMethods.email)} hint="New accounts in this period made with Google" />
+                <Stat label="Accounts with Google" value={pct(data.growth.accountMethods.google, k.totalUsers)} hint="All accounts that sign in with Google" />
+              </StatStrip>
+              <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                <Panel title="Offer codes" subtitle="Uses so far" testId="owner-dash-codes" flush>
+                  {!data.growth.codes.length ? <p className="py-8 text-center text-sm text-muted-foreground">No offer codes yet.</p> : (
+                    <table className="w-full text-[13px] tabular-nums">
+                      <thead><tr className="border-b border-border/60"><Th>Code</Th><Th right>Off</Th><Th right>Used</Th></tr></thead>
+                      <tbody>
+                        {data.growth.codes.map((c) => (
+                          <tr key={c.code} className={`border-b border-border/40 last:border-0 ${c.active ? "" : "text-muted-foreground"}`}>
+                            <td className="px-4 py-2 font-mono text-xs font-semibold">{c.code}{!c.active && " (off)"}</td>
+                            <td className="px-4 py-2 text-right">{c.percentOff}%</td>
+                            <td className="px-4 py-2 text-right">{num(c.uses)}{c.maxUses ? ` / ${num(c.maxUses)}` : ""}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </Panel>
+                <Panel title="Top inviters" subtitle="Friends who joined in this period" testId="owner-dash-inviters" flush>
+                  <PeopleList rows={data.growth.topInviters} empty="No one joined from an invite in this period."
+                    right={(p) => <span className="font-semibold tabular-nums">{num(p.count)}</span>} />
+                </Panel>
+                <Panel title="Languages" subtitle="App language of all accounts" testId="owner-dash-languages">
+                  {data.growth.languages.map((l) => (
+                    <div key={l.code} className="mb-2.5">
+                      <div className="mb-1 flex justify-between text-[13px]"><span>{langName(l.code)}</span><span className="tabular-nums text-muted-foreground">{num(l.count)} · {pct(l.count, k.totalUsers)}</span></div>
+                      <ShareBar value={l.count} max={data.growth.languages[0].count} />
+                    </div>
+                  ))}
+                </Panel>
+              </div>
+
+              <SectionTitle id="people" note="Everyone active or paying in this period">People</SectionTitle>
+              <Panel title="Use per person" subtitle={`${num(people.length)} people active or paying in this period. Tap a column to sort.`} testId="owner-dash-people" flush
                 action={
                   <div className="flex w-full items-center gap-2 sm:w-auto">
                     <div className="relative flex-1 sm:w-56 sm:flex-none"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
