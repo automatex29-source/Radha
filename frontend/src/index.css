@@ -443,3 +443,7 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
     .dark .plans-grid { background-color: #121319; border-color: #1E2028; }
   }
 }
+
+/* Owner dashboard charts: one blue for single series, orange for Max. Light and dark steps chosen separately. */
+.owner-viz { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-grid: rgba(15, 23, 42, 0.07); --viz-axis: #737373; --viz-surface: #ffffff; }
+.dark .owner-viz { --viz-1: #3987e5; --viz-2: #d95926; --viz-grid: rgba(255, 255, 255, 0.07); --viz-axis: #a3a3a3; --viz-surface: #121319; }

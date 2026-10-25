@@ -22,6 +22,7 @@ import mailer
 logger = logging.getLogger("radha.monitor")
 
 KEEP_DAYS = 30
+EVENT_KEEP_DAYS = 400  # sign-ins and use, for the owner dashboard's longer views
 ALERT_EVERY_SECONDS = 3600
 FEATURES = ("chat", "counsellor", "web", "voice", "think", "build", "picture", "deck", "video")
 
@@ -125,8 +126,18 @@ async def count(db, user_id: str, *features: str) -> None:
         inc = {f: 1 for f in features if f in FEATURES}
         if inc:
             await db.feature_daily.update_one({"_id": day}, {"$inc": inc}, upsert=True)
+        # One timed row per visit or request, so the owner dashboard can show the last 24 hours and each person.
+        await db.usage_events.insert_one({"userId": user_id, "kinds": list(inc) or ["visit"], "at": _now().isoformat()})
     except Exception as exc:  # counting must never break a chat
         logger.warning("Usage count failed: %s", exc)
+
+
+async def login(db, user_id: str, method: str) -> None:
+    """Note one sign-in ("password", "google", "signup" or "reset") for the owner dashboard."""
+    try:
+        await db.logins.insert_one({"userId": user_id, "method": method, "at": _now().isoformat()})
+    except Exception as exc:
+        logger.warning("Login note failed: %s", exc)
 
 
 def _ist_day_range(day: str) -> tuple:
@@ -144,15 +155,11 @@ async def stats(db, days: int = 14) -> dict:
         day = (today - timedelta(days=back)).isoformat()
         start, end = _ist_day_range(day)
         features = await db.feature_daily.find_one({"_id": day}) or {}
-        made = {k: 0 for k in ("picture", "deck", "video")}
-        async for u in db.usage.find({"day": day}):
-            for k in made:
-                made[k] += u.get(k, 0)
         rows.append({
             "day": day,
             "activeUsers": await db.activity.count_documents({"day": day}),
             "signups": await db.users.count_documents({"createdAt": {"$gte": start, "$lt": end}}),
-            "features": {f: features.get(f, 0) for f in FEATURES if f not in made} | made,
+            "features": {f: features.get(f, 0) for f in FEATURES},
             "thumbsUp": await db.message_feedback.count_documents({"rating": "up", "createdAt": {"$gte": start, "$lt": end}}),
             "thumbsDown": await db.message_feedback.count_documents({"rating": "down", "createdAt": {"$gte": start, "$lt": end}}),
             "problems": await db.errors.count_documents({"createdAt": {"$gte": start, "$lt": end}}),
@@ -167,3 +174,6 @@ async def clean_old(db) -> None:
     """Forget problems older than KEEP_DAYS (run once a day)."""
     cutoff = (_now() - timedelta(days=KEEP_DAYS)).isoformat()
     await db.errors.delete_many({"createdAt": {"$lt": cutoff}})
+    events_cutoff = (_now() - timedelta(days=EVENT_KEEP_DAYS)).isoformat()
+    await db.usage_events.delete_many({"at": {"$lt": events_cutoff}})
+    await db.logins.delete_many({"at": {"$lt": events_cutoff}})
