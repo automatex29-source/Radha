@@ -108,39 +108,40 @@
     --heading-gradient: linear-gradient(170deg, #0F172A 0%, #3730A3 70%, #6366F1 130%);
   }
 
-  /* Dark theme (Obsidian Studio) */
+  /* Dark theme (Midnight): deep blue-charcoal, not pure black, with clear steps between
+     page, panels, cards and menus so every surface reads apart. */
   .dark {
-    --background: 222 30% 4%;      /* #07080B */
-    --foreground: 220 14% 96%;     /* #F3F4F6 */
-    --card: 224 26% 9%;            /* #11141D */
-    --card-foreground: 220 14% 96%;
-    --popover: 224 26% 9%;
-    --popover-foreground: 220 14% 96%;
+    --background: 232 30% 6%;      /* #0A0C14 page */
+    --foreground: 225 33% 95%;     /* #EEF0F6 */
+    --card: 226 21% 11%;           /* #161A22 cards, composer */
+    --card-foreground: 225 33% 95%;
+    --popover: 226 21% 13%;        /* #1A1E28 menus, dialogs, toasts */
+    --popover-foreground: 225 33% 95%;
     --primary: 239 84% 67%;        /* #6366F1 */
     --primary-foreground: 0 0% 100%;
-    --secondary: 225 20% 13%;
-    --secondary-foreground: 220 14% 96%;
-    --muted: 225 20% 13%;
-    --muted-foreground: 217 12% 62%;
-    --accent: 226 22% 15%;
-    --accent-foreground: 220 14% 96%;
-    --destructive: 0 84% 60%;
+    --secondary: 226 19% 15%;
+    --secondary-foreground: 225 33% 95%;
+    --muted: 226 19% 15%;
+    --muted-foreground: 224 16% 68%; /* #A2A9BC, readable on every surface */
+    --accent: 230 24% 17%;
+    --accent-foreground: 225 33% 95%;
+    --destructive: 0 78% 62%;
     --destructive-foreground: 0 0% 100%;
-    --border: 226 24% 15%;         /* #1E2330 */
-    --input: 226 24% 15%;
-    --ring: 239 84% 67%;
+    --border: 225 18% 17%;         /* #232733 */
+    --input: 225 17% 21%;          /* #2C303D */
+    --ring: 238 90% 74%;
 
-    --sunken: 227 29% 6%;          /* #0B0D14 */
-    --surface: 225 24% 12%;        /* #171B26 */
-    --surface-strong: 224 25% 15%; /* #1D2230 */
-    --border-strong: 225 24% 20%;  /* #262C3E */
-    --brand: 230 94% 82%;          /* #A5B4FC */
-    --brand-soft: 228 96% 89%;     /* #C7D2FE */
+    --sunken: 227 21% 10%;         /* #13161D sidebar, rail, code */
+    --surface: 226 19% 15%;        /* #1F2330 hover */
+    --surface-strong: 236 28% 20%; /* #262A42 selected, faint indigo */
+    --border-strong: 225 16% 25%;  /* #363B4A */
+    --brand: 233 92% 80%;          /* #A3AFFC */
+    --brand-soft: 230 94% 87%;     /* #C3CCFD */
 
-    --scrollbar: 225 24% 20%;
-    --scrollbar-hover: 225 22% 26%;
+    --scrollbar: 225 16% 24%;
+    --scrollbar-hover: 225 14% 32%;
     --grid-line: rgba(255, 255, 255, 0.025);
-    --glow: rgba(99, 102, 241, 0.10);
+    --glow: rgba(99, 102, 241, 0.12);
     --heading-gradient: linear-gradient(170deg, #FFFFFF 0%, #C7D2FE 60%, #818CF8 130%);
   }
 }
@@ -283,14 +284,57 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 /* --- Refreshed look: soft pastel canvas, glass panels, colourful cards --- */
 .krish-canvas { background-color: hsl(var(--background)); }
 .dark .krish-canvas {
+  /* night sky: indigo light from the top, a violet rise at the bottom, deep navy in between */
   background-image:
-    radial-gradient(50% 45% at 20% 0%, rgba(99, 102, 241, 0.30), transparent 70%),
-    radial-gradient(40% 45% at 100% 10%, rgba(56, 189, 248, 0.16), transparent 70%),
-    radial-gradient(45% 45% at 0% 100%, rgba(236, 72, 153, 0.16), transparent 70%),
-    radial-gradient(45% 45% at 100% 100%, rgba(139, 92, 246, 0.22), transparent 70%);
+    radial-gradient(70% 55% at 50% -15%, rgba(99, 102, 241, 0.28), transparent 70%),
+    radial-gradient(40% 40% at 100% 0%, rgba(168, 85, 247, 0.14), transparent 70%),
+    radial-gradient(60% 35% at 50% 115%, rgba(139, 92, 246, 0.16), transparent 70%),
+    linear-gradient(180deg, #0D1020 0%, #0A0C14 45%, #0A0B12 100%);
 }
+
+/* --- Dark theme polish: lit edges, glass panels, glowing composer --- */
+.dark .krish-glass {
+  background: linear-gradient(180deg, rgba(129, 140, 248, 0.06), transparent 40%), hsl(var(--sunken) / 0.82);
+  backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+}
+/* cards catch light on their top edge and float on a soft shadow */
+.dark .krish-hero, .dark .krish-card, .dark .krish-topic-card, .dark [data-testid="user-profile-menu-button"],
+.dark .radha-prose pre, .dark .radha-prose table, .dark [role="menu"], .dark [role="dialog"], .dark [role="listbox"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px -20px rgba(0, 0, 0, 0.75);
+}
+.dark .krish-card:hover, .dark .krish-topic-card:hover {
+  border-color: rgba(129, 140, 248, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 40px -16px rgba(99, 102, 241, 0.35);
+}
+/* hero: gradient frame that fades from indigo to nothing */
+.dark .krish-hero {
+  border-color: transparent;
+  background:
+    linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(23, 26, 38, 0.85) 45%, rgba(168, 85, 247, 0.10)) padding-box,
+    linear-gradient(135deg, rgba(129, 140, 248, 0.55), rgba(255, 255, 255, 0.06) 40%, rgba(168, 85, 247, 0.35)) border-box;
+}
+/* composer: the same lit frame, glowing brighter while you type */
+.dark [data-testid="composer-box"] {
+  border-color: transparent;
+  background:
+    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+    linear-gradient(135deg, rgba(129, 140, 248, 0.45), rgba(255, 255, 255, 0.07) 45%, rgba(168, 85, 247, 0.35)) border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 20px 50px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+.dark [data-testid="composer-box"]:focus-within {
+  background:
+    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+    linear-gradient(135deg, #818CF8, rgba(129, 140, 248, 0.25) 45%, #A855F7) border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 20px 60px -18px rgba(99, 102, 241, 0.55);
+}
+.dark .radha-prose pre { background: #090B12 !important; }
+.dark .radha-prose code { background: rgba(129, 140, 248, 0.10); border-color: rgba(129, 140, 248, 0.18); }
+.dark .radha-prose pre code { background: transparent; }
 .krish-glass { background: rgba(255, 255, 255, 0.55); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
-.dark .krish-glass { background: hsl(var(--sunken) / 0.72); }
+/* Toasts match the menus instead of sonner's own pure black. */
+html.dark [data-sonner-toaster][data-sonner-theme] {
+  --normal-bg: hsl(var(--popover)); --normal-border: hsl(var(--border-strong)); --normal-text: hsl(var(--popover-foreground));
+}
 
 .krish-gradient-text {
   background: linear-gradient(100deg, #5b5cf6 0%, #8b5cf6 50%, #a855f7 100%);
@@ -330,7 +374,7 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 .krish-aurora span:nth-child(1) { width: 45%; height: 80%; left: -10%; top: -30%; background: rgba(255, 138, 30, 0.35); animation: krish-drift-a 14s ease-in-out infinite; }
 .krish-aurora span:nth-child(2) { width: 40%; height: 75%; right: -8%; top: 10%; background: rgba(99, 140, 255, 0.30); animation: krish-drift-b 17s ease-in-out infinite; }
 .krish-aurora span:nth-child(3) { width: 35%; height: 70%; left: 35%; bottom: -45%; background: rgba(236, 72, 153, 0.20); animation: krish-drift-c 20s ease-in-out infinite; }
-.dark .krish-aurora { opacity: 0.35; }
+.dark .krish-aurora { opacity: 0.28; }
 html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none; } /* light theme stays plain white */
 @keyframes krish-drift-a { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(30%, 25%) scale(1.15); } }
 @keyframes krish-drift-b { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-35%, -20%) scale(0.9); } }

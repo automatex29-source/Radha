@@ -100,7 +100,7 @@ export default function AuthPage() {
       {/* Form panel */}
       <div className="relative flex items-center justify-center overflow-hidden px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:p-10">
         <ThemeToggle className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10" />
-        <div className="krish-glass relative w-full max-w-md rounded-3xl border border-white/70 p-6 shadow-[0_20px_60px_rgba(99,102,241,0.12)] radha-fade-up dark:border-white/5 sm:p-8">
+        <div className="krish-glass relative w-full max-w-md rounded-3xl border border-white/70 p-6 shadow-[0_20px_60px_rgba(99,102,241,0.12)] radha-fade-up dark:border-border sm:p-8">
           <div className="mb-6 flex items-center gap-3 lg:hidden">
             <BrandMark className="h-11 w-11" />
             <div className="leading-none">

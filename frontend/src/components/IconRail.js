@@ -26,7 +26,7 @@ export default function IconRail({ mobileBar = true }) {
 
   return (
     <>
-      <div className="hidden h-full w-[68px] shrink-0 flex-col items-center border-r border-white/60 bg-white/35 py-5 backdrop-blur-xl dark:border-border dark:bg-background/40 md:flex">
+      <div className="hidden h-full w-[68px] shrink-0 flex-col items-center border-r border-white/60 bg-white/35 py-5 backdrop-blur-xl dark:border-border dark:bg-sunken/85 md:flex">
         <BrandMark className="mb-6 h-9 w-9" />
         <nav className="flex flex-col gap-2.5">
           {ITEMS.map((it) => {
@@ -55,7 +55,7 @@ export default function IconRail({ mobileBar = true }) {
 
       {mobileBar && (
         <nav data-testid="mobile-tab-bar"
-          className="krish-tabbar order-last flex shrink-0 border-t border-white/70 bg-white/80 dark:border-border dark:bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
+          className="krish-tabbar order-last flex shrink-0 border-t border-white/70 bg-white/80 dark:border-border dark:bg-sunken/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
           {ITEMS.filter((it) => !it.desktopOnly).map((it) => {
             const active = it.match(pathname);
             return (
