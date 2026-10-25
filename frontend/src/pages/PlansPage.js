@@ -10,6 +10,7 @@ import InviteDialog, { WhatsAppIcon } from "@/components/InviteDialog";
 import { inviteLink, inviteMessage } from "@/lib/referral";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
 import { useNavigate } from "react-router-dom";
+import UpiPayDialog, { UpiPending } from "@/components/UpiPayDialog";
 
 const TAGLINE = {
   basic: "Everything you need to get started.",
@@ -297,7 +298,13 @@ export default function PlansPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const [upiFor, setUpiFor] = useState(null); // the plan being paid by UPI
+
   const buy = async (planId) => {
+    if (data.payWith === "upi") {
+      setUpiFor(data.plans.find((p) => p.id === planId));
+      return;
+    }
     setBuying(planId);
     try {
       const [{ data: order }] = await Promise.all([api.post("/billing/order", { plan: planId, code: offer && offer.prices[planId] ? offer.code : "" }), loadCheckout()]);
@@ -367,11 +374,14 @@ export default function PlansPage() {
                     shown={p.id === shownId} />
                 ))}
               </div>
+              <UpiPending pending={data.upiPending} />
               <CounsellorPro />
               <InviteFriends onMore={() => setInviteOpen(true)} />
               <div className="mt-3 flex flex-col items-center gap-2 md:flex-row md:justify-between">
                 <p className="text-center text-[11px] text-muted-foreground md:text-left">
-                  {data.paymentsOn
+                  {data.payWith === "upi"
+                    ? "Pay once for 30 days by UPI. Your plan starts once the payment is checked. No auto-renewal."
+                    : data.paymentsOn
                     ? "Pay once for 30 days with UPI, card, net banking or a wallet. No auto-renewal."
                     : "Payments are coming soon. Pro and Max will open here when they're ready."}
                 </p>
@@ -397,6 +407,11 @@ export default function PlansPage() {
       {picked && data && (
         <PlanSheet plan={picked} current={data.plans.find((p) => p.id === data.plan)} basic={data.plans.find((p) => p.id === "basic")} user={user} price={priceOf(picked)}
           offer={offer} video={data.video} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
+      )}
+      {upiFor && data?.upi && (
+        <UpiPayDialog plan={upiFor} price={priceOf(upiFor)} upi={data.upi} code={offer && offer.prices[upiFor.id] ? offer.code : ""}
+          onClose={() => setUpiFor(null)}
+          onSent={() => { setUpiFor(null); setOffer(null); setCodeText(""); toast.success("Thanks! We'll switch your plan on as soon as the payment is checked."); load(); }} />
       )}
       <PlanWelcome plan={welcome?.plan} user={user} until={welcome?.until} onClose={() => setWelcome(null)}
         onStart={() => { setWelcome(null); navigate("/"); }} />

@@ -2614,7 +2614,10 @@ def _user_from_header_or_query(authorization: Optional[str], auth: Optional[str]
 async def usage(user_id: str = Depends(current_user_id)):
     user = await db.users.find_one({"id": user_id}, {"plan": 1, "planExpiresAt": 1}) or {}
     expires = user.get("planExpiresAt") if limits.plan_from(user) != "basic" else None
-    return {**await limits.summary(db, user_id), "paymentsOn": billing.enabled(), "planExpiresAt": expires,
+    pay_with = billing.pay_with()
+    return {**await limits.summary(db, user_id), "paymentsOn": bool(pay_with), "payWith": pay_with,
+            "upi": billing.upi_info() if pay_with == "upi" else None,
+            "upiPending": await billing.upi_pending_for(db, user_id), "planExpiresAt": expires,
             "video": media.video_enabled()}
 
 
@@ -2662,6 +2665,42 @@ async def billing_verify(body: PaymentDoneIn, user_id: str = Depends(current_use
     except billing.BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return public_user(await db.users.find_one({"id": user_id}))
+
+
+class UpiPaidIn(CheckoutIn):
+    utr: str = Field(min_length=1, max_length=40)
+
+
+@api.post("/billing/upi")
+async def billing_upi(body: UpiPaidIn, user_id: str = Depends(current_user_id)):
+    """The user paid by UPI and sends the UPI reference; the plan starts once the owner approves it."""
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    try:
+        return await billing.upi_request(db, user, body.plan, body.utr, body.code)
+    except billing.BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+class UpiDecisionIn(BaseModel):
+    approve: bool
+
+
+@api.get("/admin/payments")
+async def admin_payments(status: Literal["pending", "paid", "rejected"] = "pending", user_id: str = Depends(current_user_id)):
+    """Owner only: UPI payments to check in the bank app."""
+    await _require_owner(user_id)
+    return {"payments": await billing.upi_list(db, status)}
+
+
+@api.post("/admin/payments/{order_id}")
+async def admin_decide_payment(order_id: str, body: UpiDecisionIn, user_id: str = Depends(current_user_id)):
+    await _require_owner(user_id)
+    try:
+        return await billing.upi_decide(db, order_id, body.approve)
+    except billing.BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @api.post("/billing/webhook")

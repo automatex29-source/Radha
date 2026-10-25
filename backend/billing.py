@@ -13,9 +13,16 @@ Set on the server (Render > Environment):
   RAZORPAY_KEY_SECRET      the secret shown once when the key is made
   RAZORPAY_WEBHOOK_SECRET  any password you choose, typed again when adding the webhook
 Without the two key settings the Plans page keeps saying "Coming soon".
+
+Pay by UPI (no gateway, no KYC): set UPI_ID (e.g. yourname@okaxis) and optionally UPI_NAME.
+Users scan a QR for the exact amount, pay straight into that UPI account and type the
+12-digit UPI reference (UTR). The owner checks it in their bank app and taps Approve on the
+Users page > Payments, which gives the plan exactly like a Razorpay payment. When Razorpay
+keys are set too, the Razorpay checkout is used instead.
 """
 import asyncio
 import hashlib
+import re
 import hmac
 import logging
 import os
@@ -26,6 +33,7 @@ import httpx
 
 import growth_mail
 import limits
+import mailer
 import promos
 
 logger = logging.getLogger("radha.billing")
@@ -89,20 +97,7 @@ async def create_order(db, user: dict, plan: str, code: str = "") -> dict:
     `code` is an optional offer code (e.g. LAUNCH50) that takes a percentage off this payment."""
     if not enabled():
         raise BillingError("Payments are coming soon.")
-    if plan not in limits.PLANS or not limits.PLANS[plan]["price"]:
-        raise BillingError("Pick Pro or Max to upgrade.")
-    current = limits.plan_from(user)
-    if limits.ORDER.index(plan) < limits.ORDER.index(current):
-        raise BillingError(f"You're on {limits.PLANS[current]['name']} already, which includes everything in "
-                           f"{limits.PLANS[plan]['name']}.")
-    amount = limits.PLANS[plan]["price"] * 100  # paise
-    promo = None
-    if code.strip():
-        try:
-            promo = await promos.check(db, code, user["id"], plan)
-        except promos.PromoError as exc:
-            raise BillingError(str(exc))
-        amount = promos.discounted(amount, promo["percentOff"])
+    amount, promo = await _price(db, user, plan, code)
     receipt = uuid.uuid4().hex[:20]
     notes = {"userId": user["id"], "plan": plan, **({"promoCode": promo["code"]} if promo else {})}
     order = await _create_razorpay_order(amount, receipt, notes)
@@ -193,3 +188,118 @@ async def webhook(db, body: bytes, signature: str, event: dict) -> bool:
         if order_id and payment.get("id"):
             await _activate(db, order_id, payment["id"], payment.get("amount"))
     return True
+
+
+# ------------------------------------------------------------- pay by UPI
+UTR = re.compile(r"^\d{12}$")
+
+
+def upi_id() -> str:
+    return os.environ.get("UPI_ID", "").strip()
+
+
+def upi_enabled() -> bool:
+    return bool(upi_id()) and "@" in upi_id()
+
+
+def pay_with() -> str:
+    """How the Plans page takes money: Razorpay's checkout, the owner's UPI, or not yet ("")."""
+    return "razorpay" if enabled() else "upi" if upi_enabled() else ""
+
+
+def upi_info() -> dict:
+    return {"id": upi_id(), "name": os.environ.get("UPI_NAME", "").strip() or "Krish AI"}
+
+
+async def _price(db, user: dict, plan: str, code: str):
+    """The amount in paise for a month of `plan` with an optional offer code, and the code's details."""
+    if plan not in limits.PLANS or not limits.PLANS[plan]["price"]:
+        raise BillingError("Pick Pro or Max to upgrade.")
+    current = limits.plan_from(user)
+    if limits.ORDER.index(plan) < limits.ORDER.index(current):
+        raise BillingError(f"You're on {limits.PLANS[current]['name']} already, which includes everything in "
+                           f"{limits.PLANS[plan]['name']}.")
+    amount = limits.PLANS[plan]["price"] * 100
+    promo = None
+    if code.strip():
+        try:
+            promo = await promos.check(db, code, user["id"], plan)
+        except promos.PromoError as exc:
+            raise BillingError(str(exc))
+        amount = promos.discounted(amount, promo["percentOff"])
+    return amount, promo
+
+
+async def upi_request(db, user: dict, plan: str, utr: str, code: str = "") -> dict:
+    """The user says they paid by UPI: keep it as a pending payment for the owner to approve."""
+    if not upi_enabled():
+        raise BillingError("Payments are coming soon.")
+    utr = re.sub(r"\s", "", utr or "")
+    if not UTR.match(utr):
+        raise BillingError("The UPI reference is the 12-digit number in your UPI app's payment details "
+                           "(called UTR, UPI Ref No. or Transaction ID).")
+    if await db.payments.find_one({"method": "upi", "utr": utr, "status": {"$in": ["pending", "paid"]}}):
+        raise BillingError("That UPI reference has already been sent.")
+    if await db.payments.find_one({"userId": user["id"], "method": "upi", "status": "pending"}):
+        raise BillingError("Your last UPI payment is still being checked. You'll get your plan as soon as it's approved.")
+    amount, promo = await _price(db, user, plan, code)
+    doc = {"orderId": f"upi_{uuid.uuid4().hex[:16]}", "userId": user["id"], "plan": plan, "amount": amount,
+           "currency": "INR", "method": "upi", "utr": utr, "status": "pending", "createdAt": _now().isoformat(),
+           "promoCode": promo["code"] if promo else None}
+    await db.payments.insert_one(doc)
+    logger.info("UPI payment to check: user %s, %s, ₹%s, UTR %s", user["id"], plan, amount // 100, utr)
+    _tell_owner(user, doc)
+    return public_upi(doc)
+
+
+def _tell_owner(user: dict, doc: dict) -> None:
+    """Email the owner (first OWNER_EMAIL) that a UPI payment is waiting to be checked."""
+    owner = next((e.strip() for e in os.environ.get("OWNER_EMAIL", "").split(",") if e.strip()), "")
+    if not owner or not mailer.configured():
+        return
+    rupees, name = doc["amount"] // 100, limits.PLANS[doc["plan"]]["name"]
+    who = html.escape(f"{user.get('name', '')} ({user.get('email', '')})")
+    link = f"{growth_mail.app_url()}/admin/users" if growth_mail.app_url() else "the Users page"
+    text = (f"{user.get('name', '')} ({user.get('email', '')}) says they paid ₹{rupees} by UPI for {name}.\n"
+            f"UPI reference: {doc['utr']}\n\nCheck your bank or UPI app, then approve it on {link} > Payments.")
+    body = (f"<p>{who} says they paid <b>₹{rupees}</b> by UPI for <b>{name}</b>.</p>"
+            f"<p>UPI reference: <b>{doc['utr']}</b></p><p>Check your bank or UPI app, then approve it on "
+            f"<a href=\"{html.escape(link)}\">the Users page</a> &gt; Payments.</p>")
+    task = asyncio.create_task(mailer.send(owner, f"UPI payment to check: ₹{rupees} for {name}", body, text))
+    _TASKS.add(task)
+    task.add_done_callback(_TASKS.discard)
+
+
+def public_upi(doc: dict) -> dict:
+    return {"orderId": doc["orderId"], "plan": doc["plan"], "planName": limits.PLANS[doc["plan"]]["name"],
+            "amount": doc["amount"] // 100, "utr": doc["utr"], "status": doc["status"], "createdAt": doc["createdAt"],
+            "promoCode": doc.get("promoCode")}
+
+
+async def upi_pending_for(db, user_id: str):
+    doc = await db.payments.find_one({"userId": user_id, "method": "upi", "status": "pending"})
+    return public_upi(doc) if doc else None
+
+
+async def upi_list(db, status: str = "pending") -> list:
+    """Owner: UPI payments to check (newest first), with who sent them."""
+    docs = await db.payments.find({"method": "upi", "status": status}).sort("createdAt", -1).to_list(200)
+    ids = list({d["userId"] for d in docs})
+    users = {u["id"]: u async for u in db.users.find({"id": {"$in": ids}}, {"id": 1, "name": 1, "email": 1})}
+    return [{**public_upi(d), "name": users.get(d["userId"], {}).get("name", ""),
+             "email": users.get(d["userId"], {}).get("email", "")} for d in docs]
+
+
+async def upi_decide(db, order_id: str, approve: bool) -> dict:
+    """Owner: approve (the money arrived, give the plan) or reject (it didn't) a pending UPI payment."""
+    pay = await db.payments.find_one({"orderId": order_id, "method": "upi"})
+    if not pay:
+        raise BillingError("No such payment.")
+    if pay["status"] != "pending":
+        raise BillingError(f"This payment was already {'approved' if pay['status'] == 'paid' else 'rejected'}.")
+    if approve:
+        await _activate(db, order_id, f"utr_{pay['utr']}")
+    else:
+        await db.payments.update_one({"orderId": order_id, "status": "pending"},
+                                     {"$set": {"status": "rejected", "rejectedAt": _now().isoformat()}})
+    return public_upi(await db.payments.find_one({"orderId": order_id}))

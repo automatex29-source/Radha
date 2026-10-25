@@ -4,10 +4,12 @@ import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, Users } from "lucide-react";
+import { Check, Loader2, Search, Users, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { AnswersTab, OfferCodesTab, ProblemsTab, UsageTab } from "@/components/OwnerInsights";
 
-const TABS = [["users", "Users"], ["usage", "Usage"], ["answers", "Answers"], ["problems", "Problems"], ["codes", "Offer codes"]];
+const TABS = [["users", "Users"], ["payments", "Payments"], ["usage", "Usage"], ["answers", "Answers"], ["problems", "Problems"], ["codes", "Offer codes"]];
 
 function ago(iso) {
   if (!iso) return "Not yet";
@@ -21,6 +23,61 @@ function ago(iso) {
 
 function when(iso) {
   return iso ? new Date(iso).toLocaleString() : "";
+}
+
+/** UPI payments people say they made: check each one in your bank or UPI app, then approve or reject it. */
+function PaymentsTab() {
+  const [status, setStatus] = useState("pending");
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState("");
+  const load = (s = status) => api.get(`/admin/payments?status=${s}`).then(({ data }) => setRows(data.payments))
+    .catch((e) => toast.error(formatApiError(e)));
+  useEffect(() => { setRows(null); load(status); }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const decide = async (p, approve) => {
+    if (!approve && !window.confirm(`Reject ₹${p.amount} from ${p.email}? They won't get ${p.planName}.`)) return;
+    setBusy(p.orderId);
+    try {
+      await api.post(`/admin/payments/${p.orderId}`, { approve });
+      toast.success(approve ? `${p.name || p.email} is on ${p.planName} now` : "Rejected");
+      load();
+    } catch (e) { toast.error(formatApiError(e)); } finally { setBusy(""); }
+  };
+
+  return (
+    <section className="mt-6" data-testid="owner-payments">
+      <p className="text-sm text-muted-foreground">Open your bank or UPI app and find a payment with the same amount and UPI reference. Approve only when you can see the money arrived.</p>
+      <div className="mt-3 flex gap-1.5">
+        {[["pending", "To check"], ["paid", "Approved"], ["rejected", "Rejected"]].map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setStatus(id)}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold ${status === id ? "border-primary bg-primary text-white" : "border-border text-muted-foreground"}`}>{label}</button>
+        ))}
+      </div>
+      {!rows ? <div className="flex justify-center py-14"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+        : !rows.length ? <p className="py-14 text-center text-sm text-muted-foreground">{status === "pending" ? "No payments waiting." : "None yet."}</p>
+        : (
+          <ul className="mt-4 space-y-2">
+            {rows.map((p) => (
+              <li key={p.orderId} className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/70 bg-card/80 px-4 py-3 shadow-sm" data-testid="owner-payment">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">₹{p.amount} · {p.planName}{p.promoCode ? ` · ${p.promoCode}` : ""}</p>
+                  <p className="text-xs text-muted-foreground">{p.name} · {p.email} · {when(p.createdAt)}</p>
+                  <p className="mt-0.5 font-mono text-sm tracking-wide">UPI ref {p.utr}</p>
+                </div>
+                {status === "pending" && (
+                  <div className="flex gap-1.5">
+                    <Button size="sm" disabled={busy === p.orderId} onClick={() => decide(p, true)} data-testid="owner-payment-approve">
+                      {busy === p.orderId ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Check className="mr-1 h-4 w-4" /> Approve</>}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy === p.orderId} onClick={() => decide(p, false)}><X className="mr-1 h-4 w-4" /> Reject</Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+    </section>
+  );
 }
 
 export default function AdminUsersPage() {
@@ -80,7 +137,7 @@ export default function AdminUsersPage() {
             ))}
           </div>
 
-          {tab === "usage" ? <UsageTab /> : tab === "answers" ? <AnswersTab /> : tab === "problems" ? <ProblemsTab />
+          {tab === "payments" ? <PaymentsTab /> : tab === "usage" ? <UsageTab /> : tab === "answers" ? <AnswersTab /> : tab === "problems" ? <ProblemsTab />
             : tab === "codes" ? <OfferCodesTab /> : error ? (
             <p className="mt-10 text-center text-sm text-destructive">{error}</p>
           ) : !data ? (

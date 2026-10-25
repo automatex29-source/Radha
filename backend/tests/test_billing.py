@@ -148,3 +148,46 @@ def test_order_never_returns_the_secret(client):
     order = client.post("/api/billing/order", headers=h, json={"plan": "pro"})
     assert SECRET not in order.text and HOOK not in order.text
     assert SECRET not in client.get("/api/usage", headers=h).text
+
+
+def test_pay_by_upi_waits_for_the_owner(client, monkeypatch):
+    import billing
+    monkeypatch.delenv("RAZORPAY_KEY_ID")
+    monkeypatch.setenv("UPI_ID", "owner@okaxis")
+    monkeypatch.setenv("OWNER_EMAIL", "boss-upi@test.com")
+    boss = _user(client, "boss-upi@test.com")
+    h = _user(client, "upi1@test.com")
+    usage = client.get("/api/usage", headers=h).json()
+    assert usage["payWith"] == "upi" and usage["paymentsOn"] and usage["upi"]["id"] == "owner@okaxis"
+    assert client.post("/api/billing/order", headers=h, json={"plan": "pro"}).status_code == 400
+
+    bad = client.post("/api/billing/upi", headers=h, json={"plan": "pro", "utr": "12345"})
+    assert bad.status_code == 400 and "12-digit" in bad.json()["detail"]
+    r = client.post("/api/billing/upi", headers=h, json={"plan": "pro", "utr": "4321 1234 5678"})
+    assert r.status_code == 200 and r.json()["status"] == "pending" and r.json()["amount"] == 299
+    # Still Basic until the owner approves; a second claim waits, and the same reference can't be reused.
+    assert client.get("/api/auth/me", headers=h).json()["plan"] == "basic"
+    assert client.get("/api/usage", headers=h).json()["upiPending"]["utr"] == "432112345678"
+    assert client.post("/api/billing/upi", headers=h, json={"plan": "pro", "utr": "999912345678"}).status_code == 400
+    other = _user(client, "upi2@test.com")
+    assert client.post("/api/billing/upi", headers=other, json={"plan": "pro", "utr": "432112345678"}).status_code == 400
+
+    # Only the owner sees and approves payments.
+    assert client.get("/api/admin/payments", headers=h).status_code == 404
+    assert client.post(f"/api/admin/payments/{r.json()['orderId']}", headers=h, json={"approve": True}).status_code == 404
+    pending = client.get("/api/admin/payments", headers=boss).json()["payments"]
+    assert [p["email"] for p in pending] == ["upi1@test.com"]
+    ok = client.post(f"/api/admin/payments/{r.json()['orderId']}", headers=boss, json={"approve": True})
+    assert ok.status_code == 200 and ok.json()["status"] == "paid"
+    me = client.get("/api/auth/me", headers=h).json()
+    assert me["plan"] == "pro" and me["planExpiresAt"]
+    again = client.post(f"/api/admin/payments/{r.json()['orderId']}", headers=boss, json={"approve": True})
+    assert again.status_code == 400
+    assert client.get("/api/auth/me", headers=h).json()["planExpiresAt"] == me["planExpiresAt"]
+
+    # A rejected claim gives nothing.
+    r2 = client.post("/api/billing/upi", headers=other, json={"plan": "max", "utr": "111122223333"}).json()
+    assert r2["amount"] == 699
+    client.post(f"/api/admin/payments/{r2['orderId']}", headers=boss, json={"approve": False})
+    assert client.get("/api/auth/me", headers=other).json()["plan"] == "basic"
+    assert billing.pay_with() == "upi"
