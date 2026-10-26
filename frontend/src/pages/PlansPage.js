@@ -306,7 +306,7 @@ export default function PlansPage() {
           key: order.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
           name: "Krish AI", description: `${order.planName} plan · 1 month`,
           prefill: { name: order.name, email: order.email },
-          theme: { color: "#6366f1" },
+          theme: { color: "#111111" },
           handler: async (res) => {
             try {
               const { data: account } = await api.post("/billing/verify", {
