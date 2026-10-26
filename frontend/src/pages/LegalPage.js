@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
 import BrandMark from "@/components/BrandMark";
 
-const UPDATED = "21 October 2026";
+const UPDATED = "26 October 2026";
 
 const PRIVACY = {
   title: "Privacy Policy",
@@ -77,7 +77,9 @@ const TERMS = {
     ]],
     ["Plans and limits", [
       "Chat is free. Some features have daily limits on the free Basic plan.",
-      "Pro (₹299) and Max (₹699) are paid once for 30 days, through Razorpay. They do not renew by themselves: when the 30 days end you go back to Basic, and nothing in your account is deleted. Paying again for the same plan adds 30 more days.",
+      "Pro (₹299 a month, launch price; regular price ₹999) and Max (₹699 a month, launch price; regular price ₹1,999) are paid through Razorpay.",
+      "By default a paid plan renews every month by UPI Autopay or card, at the price shown when you subscribed. You can turn autopay off at any time in Settings > Billing: you keep the plan until the end of the month you paid for, then go back to Basic, and nothing in your account is deleted.",
+      "A payment made with an offer code is a one-time payment for 30 days and does not renew.",
       "Refunds and cancellations are explained in the Refund Policy.",
       "We may change features and limits as the service grows.",
     ]],
@@ -100,12 +102,13 @@ const REFUNDS = {
   intro: "This page explains how payments for the Pro and Max plans of Krish AI work, and when you can get your money back.",
   sections: [
     ["What you pay for", [
-      "Pro costs ₹299 and Max costs ₹699, each for 30 days of the plan. Prices include all charges shown at checkout.",
+      "Pro costs ₹299 and Max costs ₹699 a month at launch prices (regular prices ₹999 and ₹1,999). Each payment gives 30 days of the plan. Prices include all charges shown at checkout.",
       "Payments are made through Razorpay with UPI, debit or credit card, net banking or a wallet. Krish AI is a digital service: nothing is shipped, and the plan starts as soon as the payment goes through.",
     ]],
-    ["No automatic renewal", [
-      "A plan does not renew by itself and we never charge you again without you paying. When the 30 days end your account goes back to the free Basic plan and all your work stays.",
-      "You can stop at any time simply by not paying again, so there is nothing to cancel.",
+    ["Autopay and cancelling", [
+      "Paid plans renew every month by UPI Autopay or card, which you approve once at checkout. Your bank or UPI app may notify you before each charge.",
+      "Cancel any time in Settings > Billing > Turn off autopay. No further charges are made, and you keep the plan until the end of the month you already paid for.",
+      "Payments made with an offer code are one-time and never renew.",
     ]],
     ["Refunds", [
       "If you were charged but your plan did not switch on, or you were charged twice for the same order, we refund the extra payment in full.",

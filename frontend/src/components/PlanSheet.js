@@ -23,6 +23,9 @@ export function PlanSheet({ plan, current, basic, user, price, offer, video, bus
   if (!plan) return null;
   const first = firstName(user?.name);
   const usage = (p) => Math.round(p.meter.session / Math.max(1, (basic || p).meter.session));
+  // An offer code makes it a one-time 30-day payment; otherwise it's autopay, renewing every month.
+  const oneTime = !!(offer && price !== plan.price);
+  const was = plan.listPrice || plan.price;
   const perks = [
     "Premium AI models for harder questions",
     video ? "HD pictures and real AI video" : "HD AI pictures",
@@ -79,20 +82,22 @@ export function PlanSheet({ plan, current, basic, user, price, offer, video, bus
 
         <div className="border-t border-border px-6 pb-5 pt-4 md:col-start-1 md:row-start-2 md:border-0 md:bg-foreground md:pb-6 md:pt-2 md:text-background">
           <div className="flex items-baseline justify-between">
-            <span className="text-sm text-muted-foreground md:text-background/60">30 days of {plan.name}</span>
+            <span className="text-sm text-muted-foreground md:text-background/60">{oneTime ? `30 days of ${plan.name}` : `${plan.name}, per month`}</span>
             <span className="text-right">
-              {price !== plan.price && <span className="mr-2 text-sm text-muted-foreground line-through md:text-background/50">₹{plan.price}</span>}
+              {price !== was && <span className="mr-2 text-sm text-muted-foreground line-through md:text-background/50">₹{was}</span>}
               <span className="krish-display text-[1.8rem] leading-none tabular-nums">₹{price}</span>
             </span>
           </div>
-          {offer && price !== plan.price && <p className="mt-1 text-right text-xs text-muted-foreground md:text-background/60">{offer.code}: {offer.percentOff}% off applied</p>}
+          <p className="mt-1 text-right text-xs text-muted-foreground md:text-background/60">
+            {oneTime ? `${offer.code}: ${offer.percentOff}% off, one-time payment` : was > price ? "Launch price" : ""}
+          </p>
           <Button onClick={onPay} disabled={busy} data-testid="plan-sheet-pay"
             className="mt-3.5 h-11 w-full rounded-lg bg-foreground text-[0.95rem] font-medium text-background shadow-none hover:bg-foreground/90 md:bg-background md:text-foreground md:hover:bg-background/90">
             {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : `Pay ₹${price}`}
           </Button>
           <div className="mt-2.5 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground md:text-background/55">
             <span className="flex items-center gap-1"><Lock className="h-3 w-3" /> Secure payment by Razorpay</span>
-            <span className="flex items-center gap-1"><RefreshCcw className="h-3 w-3" /> No auto-renewal</span>
+            <span className="flex items-center gap-1"><RefreshCcw className="h-3 w-3" /> {oneTime ? "No auto-renewal" : "Renews monthly, cancel anytime"}</span>
           </div>
         </div>
       </DialogContent>

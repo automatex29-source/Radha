@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -148,3 +149,110 @@ def test_order_never_returns_the_secret(client):
     order = client.post("/api/billing/order", headers=h, json={"plan": "pro"})
     assert SECRET not in order.text and HOOK not in order.text
     assert SECRET not in client.get("/api/usage", headers=h).text
+
+
+@pytest.fixture
+def fake_rzp_api(monkeypatch):
+    """Razorpay's plans / subscriptions / cancel calls, recorded."""
+    import billing
+    calls = []
+
+    async def rzp(method, path, body=None):
+        calls.append((method, path, body))
+        if path == "/plans":
+            return {"id": f"plan_{uuid.uuid4().hex[:8]}"}
+        if path == "/subscriptions":
+            return {"id": f"sub_{uuid.uuid4().hex[:10]}"}
+        return {"id": path.split("/")[2], "status": "cancelled"}
+
+    monkeypatch.setattr(billing, "_rzp", rzp)
+    return calls
+
+
+def _sub_pay(client, h, sub, payment_id):
+    sig = _sig(SECRET, f"{payment_id}|{sub['subscriptionId']}".encode())
+    return client.post("/api/billing/subscribe/verify", headers=h,
+                       json={"subscriptionId": sub["subscriptionId"], "paymentId": payment_id, "signature": sig})
+
+
+def _hook(client, event):
+    body = json.dumps(event).encode()
+    return client.post("/api/billing/webhook", content=body, headers={"X-Razorpay-Signature": _sig(HOOK, body)})
+
+
+def _charged(sub_id, payment_id, amount):
+    return {"event": "subscription.charged", "payload": {
+        "subscription": {"entity": {"id": sub_id, "status": "active"}},
+        "payment": {"entity": {"id": payment_id, "amount": amount}}}}
+
+
+def test_autopay_renews_every_month_until_cancelled(client, fake_rzp_api):
+    h = _user(client, "auto1@test.com")
+    sub = client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"}).json()
+    assert sub["amount"] == 29900 and sub["subscriptionId"].startswith("sub_")
+    assert [c[1] for c in fake_rzp_api] == ["/plans", "/subscriptions"]
+    # A second subscribe reuses the Razorpay plan made the first time.
+    client.post("/api/billing/subscribe", headers=_user(client, "auto1b@test.com"), json={"plan": "pro"})
+    assert [c[1] for c in fake_rzp_api].count("/plans") == 1
+
+    assert client.post("/api/billing/subscribe/verify", headers=h, json={
+        "subscriptionId": sub["subscriptionId"], "paymentId": "pay_a1", "signature": "bad"}).status_code == 400
+    first = _sub_pay(client, h, sub, "pay_a1").json()
+    assert first["plan"] == "pro"
+    usage = client.get("/api/usage", headers=h).json()
+    assert usage["autopay"]["plan"] == "pro" and usage["autopay"]["status"] == "active"
+
+    # The webhook for the same first payment adds nothing; next month's charge adds 30 days.
+    _hook(client, _charged(sub["subscriptionId"], "pay_a1", 29900))
+    assert client.get("/api/auth/me", headers=h).json()["planExpiresAt"] == first["planExpiresAt"]
+    _hook(client, _charged(sub["subscriptionId"], "pay_a2", 29900))
+    later = client.get("/api/auth/me", headers=h).json()["planExpiresAt"]
+    gap = datetime.fromisoformat(later) - datetime.fromisoformat(first["planExpiresAt"])
+    assert timedelta(days=29) < gap <= timedelta(days=30)
+    # A wrong amount is ignored.
+    _hook(client, _charged(sub["subscriptionId"], "pay_a3", 100))
+    assert client.get("/api/auth/me", headers=h).json()["planExpiresAt"] == later
+
+    # While autopay is on, buying the same plan again is refused (no double charge).
+    assert client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"}).status_code == 400
+    assert client.post("/api/billing/order", headers=h, json={"plan": "pro"}).status_code == 400
+
+    # Turning it off cancels at Razorpay; the paid days stay.
+    assert client.post("/api/billing/autopay/cancel", headers=h).status_code == 200
+    assert ("POST", f"/subscriptions/{sub['subscriptionId']}/cancel", {"cancel_at_cycle_end": 0}) in fake_rzp_api
+    me = client.get("/api/auth/me", headers=h).json()
+    assert me["plan"] == "pro" and me["planExpiresAt"] == later
+    assert client.get("/api/usage", headers=h).json()["autopay"] is None
+    assert client.post("/api/billing/autopay/cancel", headers=h).status_code == 400
+
+
+def test_moving_to_max_stops_the_pro_autopay(client, fake_rzp_api):
+    h = _user(client, "auto2@test.com")
+    pro = client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"}).json()
+    _sub_pay(client, h, pro, "pay_b1")
+    mx = client.post("/api/billing/subscribe", headers=h, json={"plan": "max"}).json()
+    assert mx["amount"] == 69900
+    assert _sub_pay(client, h, mx, "pay_b2").json()["plan"] == "max"
+    assert ("POST", f"/subscriptions/{pro['subscriptionId']}/cancel", {"cancel_at_cycle_end": 0}) in fake_rzp_api
+    assert client.get("/api/usage", headers=h).json()["autopay"]["plan"] == "max"
+
+
+def test_halted_autopay_is_off(client, fake_rzp_api):
+    h = _user(client, "auto3@test.com")
+    sub = client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"}).json()
+    _sub_pay(client, h, sub, "pay_c1")
+    _hook(client, {"event": "subscription.halted", "payload": {"subscription": {"entity": {"id": sub["subscriptionId"]}}}})
+    assert client.get("/api/usage", headers=h).json()["autopay"] is None
+    assert client.get("/api/auth/me", headers=h).json()["plan"] == "pro"  # paid days stay
+
+
+def test_autopay_unavailable_says_503_so_the_app_pays_once(client, monkeypatch):
+    import billing
+
+    async def refused(method, path, body=None):
+        raise billing.GatewayError("Payments aren't working right now.")
+
+    monkeypatch.setattr(billing, "_rzp", refused)
+    h = _user(client, "auto4@test.com")
+    assert client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"}).status_code == 503
+    assert client.post("/api/billing/order", headers=h, json={"plan": "pro"}).status_code == 200

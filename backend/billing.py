@@ -5,6 +5,12 @@ the Razorpay checkout takes the money, and the plan is switched on either when t
 sends back the signed payment (verify) or when Razorpay's webhook says the order was paid,
 whichever comes first. Both paths are safe to run twice: a payment upgrades the user once.
 
+Autopay (the default): the checkout sets up a Razorpay subscription (UPI Autopay or a card
+mandate) that charges the plan's price every month. Each charge (`subscription.charged`
+webhook, or the checkout's own signed result for the first one) adds 30 days, once per
+payment. The user can turn autopay off in Settings > Billing; the days already paid for stay.
+A payment with an offer code is a one-time 30-day payment instead.
+
 Paying again for the same plan adds 30 days to what is left. Moving from Pro to Max starts
 a fresh 30 days of Max. A lower plan can't be bought while a higher one is still running.
 
@@ -37,6 +43,10 @@ _TASKS: set = set()  # emails being sent, kept so they finish
 
 class BillingError(Exception):
     """A problem the user should see, e.g. payments are off or the payment didn't check out."""
+
+
+class GatewayError(BillingError):
+    """Razorpay refused or failed a call (e.g. Subscriptions not switched on for the account yet)."""
 
 
 def key_id() -> str:
@@ -95,6 +105,9 @@ async def create_order(db, user: dict, plan: str, code: str = "") -> dict:
     if limits.ORDER.index(plan) < limits.ORDER.index(current):
         raise BillingError(f"You're on {limits.PLANS[current]['name']} already, which includes everything in "
                            f"{limits.PLANS[plan]['name']}.")
+    on = await autopay_of(db, user["id"])
+    if on and limits.ORDER.index(on["plan"]) >= limits.ORDER.index(plan):
+        raise BillingError(f"Autopay for {limits.PLANS[on['plan']]['name']} is on, so it renews by itself.")
     amount = limits.PLANS[plan]["price"] * 100  # paise
     promo = None
     if code.strip():
@@ -188,8 +201,145 @@ async def webhook(db, body: bytes, signature: str, event: dict) -> bool:
     payload = event.get("payload") or {}
     payment = (payload.get("payment") or {}).get("entity") or {}
     order = (payload.get("order") or {}).get("entity") or {}
-    if event.get("event") in ("order.paid", "payment.captured"):
+    if (event.get("event") or "").startswith("subscription."):
+        await _subscription_event(db, event["event"], payload)
+    elif event.get("event") in ("order.paid", "payment.captured"):
         order_id = order.get("id") or payment.get("order_id")
         if order_id and payment.get("id"):
             await _activate(db, order_id, payment["id"], payment.get("amount"))
     return True
+
+
+# ------------------------------------------------------------------ autopay
+LIVE_SUB = ("created", "authenticated", "active", "pending")  # Razorpay states that can still charge
+
+
+async def _rzp(method: str, path: str, body: dict = None) -> dict:
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.request(method, f"{API}{path}", auth=(key_id(), _secret()), json=body)
+    if r.status_code >= 400:
+        logger.warning("Razorpay %s %s failed (%s): %s", method, path, r.status_code, r.text[:300])
+        raise GatewayError("Payments aren't working right now. Please try again in a few minutes.")
+    return r.json()
+
+
+async def _rzp_plan(db, plan: str, amount: int) -> str:
+    """The Razorpay plan id for a monthly `plan` at `amount` paise, made once per key (test and live differ)."""
+    cache_id = f"{key_id()}:{plan}:{amount}"
+    doc = await db.rzp_plans.find_one({"_id": cache_id})
+    if doc:
+        return doc["planId"]
+    made = await _rzp("POST", "/plans", {"period": "monthly", "interval": 1, "item": {
+        "name": f"Krish AI {limits.PLANS[plan]['name']}", "amount": amount, "currency": "INR",
+        "description": f"Krish AI {limits.PLANS[plan]['name']}, every month"}})
+    await db.rzp_plans.update_one({"_id": cache_id}, {"$setOnInsert": {"planId": made["id"]}}, upsert=True)
+    return (await db.rzp_plans.find_one({"_id": cache_id}))["planId"]
+
+
+async def autopay_of(db, user_id: str):
+    """The user's subscription that is on (or being set up and already charged), or None."""
+    return await db.subscriptions.find_one({"userId": user_id, "status": {"$in": ["active", "authenticated"]}},
+                                           sort=[("createdAt", -1)])
+
+
+def public_autopay(sub) -> dict:
+    if not sub:
+        return None
+    return {"plan": sub["plan"], "planName": limits.PLANS[sub["plan"]]["name"], "amount": sub["amount"] // 100,
+            "status": sub["status"], "since": sub.get("activatedAt") or sub["createdAt"]}
+
+
+async def subscribe(db, user: dict, plan: str) -> dict:
+    """Start autopay for `plan`: makes a Razorpay subscription for the checkout to open."""
+    if not enabled():
+        raise BillingError("Payments are coming soon.")
+    if plan not in limits.PLANS or not limits.PLANS[plan]["price"]:
+        raise BillingError("Pick Pro or Max to upgrade.")
+    current = limits.plan_from(user)
+    if limits.ORDER.index(plan) < limits.ORDER.index(current):
+        raise BillingError(f"You're on {limits.PLANS[current]['name']} already, which includes everything in "
+                           f"{limits.PLANS[plan]['name']}.")
+    on = await autopay_of(db, user["id"])
+    if on and limits.ORDER.index(on["plan"]) >= limits.ORDER.index(plan):
+        raise BillingError(f"Autopay for {limits.PLANS[on['plan']]['name']} is already on, so it renews by itself.")
+    amount = limits.PLANS[plan]["price"] * 100
+    plan_id = await _rzp_plan(db, plan, amount)
+    sub = await _rzp("POST", "/subscriptions", {"plan_id": plan_id, "total_count": 60, "quantity": 1,
+                                                "customer_notify": 1, "notes": {"userId": user["id"], "plan": plan}})
+    await db.subscriptions.insert_one({"id": sub["id"], "userId": user["id"], "plan": plan, "amount": amount,
+                                       "status": "created", "createdAt": _now().isoformat()})
+    return {"subscriptionId": sub["id"], "amount": amount, "currency": "INR", "keyId": key_id(), "plan": plan,
+            "planName": limits.PLANS[plan]["name"], "name": user.get("name", ""), "email": user.get("email", "")}
+
+
+def subscription_signature_ok(payment_id: str, subscription_id: str, signature: str) -> bool:
+    expected = _sign(_secret(), f"{payment_id}|{subscription_id}".encode())
+    return bool(signature) and hmac.compare_digest(expected, signature)
+
+
+async def _charged(db, sub_id: str, payment_id: str, amount=None) -> bool:
+    """One monthly autopay charge went through: add 30 days, once per payment. False if unknown or done."""
+    sub = await db.subscriptions.find_one({"id": sub_id})
+    if not sub:
+        logger.warning("Charge for an unknown subscription %s", sub_id)
+        return False
+    if amount is not None and int(amount) != sub["amount"]:
+        logger.warning("Subscription %s charged %s, expected %s", sub_id, amount, sub["amount"])
+        return False
+    res = await db.payments.update_one({"paymentId": payment_id}, {"$setOnInsert": {
+        "orderId": f"sub_{payment_id}", "paymentId": payment_id, "subscriptionId": sub_id, "userId": sub["userId"],
+        "plan": sub["plan"], "amount": sub["amount"], "currency": "INR", "status": "paid", "autopay": True,
+        "createdAt": _now().isoformat(), "paidAt": _now().isoformat()}}, upsert=True)
+    if res.upserted_id is None:
+        return False
+    first = sub["status"] not in ("active", "authenticated")
+    await db.subscriptions.update_one({"id": sub_id}, {"$set": {
+        "status": "active", **({"activatedAt": _now().isoformat()} if first else {})}})
+    if first:
+        await _stop_others(db, sub["userId"], sub_id)
+    expires = await grant_days(db, sub["userId"], sub["plan"], DAYS)
+    logger.info("Autopay: user %s is on %s until %s (subscription %s)", sub["userId"], sub["plan"], expires, sub_id)
+    if first:
+        await _thank_you(db, sub["userId"], expires)
+    return True
+
+
+async def _stop_others(db, user_id: str, keep: str) -> None:
+    """Moving to a new plan's autopay (e.g. Pro to Max): the old one must not charge again."""
+    async for old in db.subscriptions.find({"userId": user_id, "id": {"$ne": keep}, "status": {"$in": list(LIVE_SUB)}}):
+        try:
+            await _rzp("POST", f"/subscriptions/{old['id']}/cancel", {"cancel_at_cycle_end": 0})
+        except BillingError:
+            logger.warning("Couldn't cancel old subscription %s", old["id"])
+        await db.subscriptions.update_one({"id": old["id"]}, {"$set": {"status": "cancelled", "cancelledAt": _now().isoformat()}})
+
+
+async def verify_subscription(db, user_id: str, sub_id: str, payment_id: str, signature: str) -> None:
+    sub = await db.subscriptions.find_one({"id": sub_id, "userId": user_id})
+    if not sub or not subscription_signature_ok(payment_id, sub_id, signature):
+        raise BillingError("We couldn't confirm that payment. If money was taken, it will show up within a few "
+                           "minutes, or write to us from the Help Center.")
+    await _charged(db, sub_id, payment_id)
+
+
+async def cancel_autopay(db, user_id: str) -> None:
+    """Settings > Billing: stop future charges now. The days already paid for stay."""
+    found = False
+    async for sub in db.subscriptions.find({"userId": user_id, "status": {"$in": list(LIVE_SUB)}}):
+        found = True
+        await _rzp("POST", f"/subscriptions/{sub['id']}/cancel", {"cancel_at_cycle_end": 0})
+        await db.subscriptions.update_one({"id": sub["id"]}, {"$set": {"status": "cancelled", "cancelledAt": _now().isoformat()}})
+    if not found:
+        raise BillingError("Autopay isn't on.")
+
+
+async def _subscription_event(db, event: str, payload: dict) -> None:
+    sub = (payload.get("subscription") or {}).get("entity") or {}
+    payment = (payload.get("payment") or {}).get("entity") or {}
+    if not sub.get("id"):
+        return
+    if event == "subscription.charged" and payment.get("id"):
+        await _charged(db, sub["id"], payment["id"], payment.get("amount"))
+    elif event in ("subscription.cancelled", "subscription.halted", "subscription.completed"):
+        await db.subscriptions.update_one({"id": sub["id"]}, {"$set": {
+            "status": event.split(".")[1], "endedAt": _now().isoformat()}})

@@ -132,10 +132,13 @@ function Usage({ meter, costs, automation, video }) {
   );
 }
 
-function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown }) {
+function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
-  const canBuy = paymentsOn && plan.price > 0 && !lower;
+  // Autopay on for this plan (or a bigger one) already renews it, so there's nothing to buy here.
+  const renews = autopay && ORDER.indexOf(autopay.plan) >= ORDER.indexOf(plan.id);
+  const canBuy = paymentsOn && plan.price > 0 && !lower && !renews;
+  const was = plan.listPrice || plan.price; // the launch price is struck through from the regular price
   const price = offer && plan.price ? offer.prices[plan.id] ?? plan.price : plan.price;
   const { label, items } = highlights(plan, basic, video);
   const soft = popular ? "text-background/60" : "text-muted-foreground";
@@ -150,10 +153,15 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
           : popular ? <span className="rounded-full border border-background/40 px-2 py-px text-[10.5px] font-medium text-background/80">Most popular</span> : null}
       </div>
       <div className="mt-3 flex items-baseline gap-1.5">
-        {price !== plan.price && <span className={`krish-display text-lg line-through tabular-nums ${soft}`}>₹{plan.price}</span>}
+        {price !== was && <span className={`krish-display text-lg line-through tabular-nums ${soft}`}>₹{was}</span>}
         <span className="krish-display text-[2.5rem] leading-none tabular-nums">₹{price}</span>
         <span className={`text-xs ${soft}`}>{plan.price ? "per month" : "forever"}</span>
       </div>
+      {plan.listPrice > plan.price && (
+        <p className={`mt-1 text-[11px] font-medium ${popular ? "text-background/80" : "text-foreground/80"}`} data-testid={`plan-launch-${plan.id}`}>
+          Launch price · {Math.round((1 - plan.price / plan.listPrice) * 100)}% off
+        </p>
+      )}
       <p className={`mt-1 text-[0.8rem] ${soft}`}>{TAGLINE[plan.id]}</p>
       <div className={`my-3.5 h-px ${popular ? "bg-background/15" : "bg-border/80"}`} />
       <p className={`mb-2 text-[11px] font-medium ${soft}`}>{label}</p>
@@ -173,9 +181,11 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
         {busy ? <Loader2 className="h-4 w-4 animate-spin" />
           : !plan.price ? (current ? "Current plan" : "Free")
           : !paymentsOn ? (current ? "Current plan" : "Coming soon")
+          : renews ? (current ? "Renews automatically" : "Included in your plan")
           : current ? `Add a month · ₹${price}` : lower ? "Included in your plan" : `Get ${plan.name}`}
       </Button>
-      {current && expires && <p className={`mt-1.5 text-center text-[11px] ${soft}`}>Active until {untilText(expires)}</p>}
+      {current && expires && <p className={`mt-1.5 text-center text-[11px] ${soft}`}>
+        {renews ? `Next renewal ${untilText(expires)}` : `Active until ${untilText(expires)}`}</p>}
     </div>
   );
 }
@@ -299,19 +309,34 @@ export default function PlansPage() {
 
   const buy = async (planId) => {
     setBuying(planId);
+    // Autopay (a monthly Razorpay subscription) unless an offer code is on: that's a one-time 30-day payment.
+    let oneTime = !!(offer && offer.prices[planId]);
     try {
-      const [{ data: order }] = await Promise.all([api.post("/billing/order", { plan: planId, code: offer && offer.prices[planId] ? offer.code : "" }), loadCheckout()]);
+      const start = async () => {
+        if (oneTime) return api.post("/billing/order", { plan: planId, code: offer.code });
+        try {
+          return await api.post("/billing/subscribe", { plan: planId });
+        } catch (e) {
+          if (e?.response?.status !== 503) throw e;
+          oneTime = true; // autopay isn't available yet: pay once for 30 days instead
+          return api.post("/billing/order", { plan: planId, code: "" });
+        }
+      };
+      const [{ data: order }] = await Promise.all([start(), loadCheckout()]);
       await new Promise((resolve) => {
         const rzp = new window.Razorpay({
-          key: order.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
-          name: "Krish AI", description: `${order.planName} plan · 1 month`,
+          key: order.keyId, ...(oneTime ? { order_id: order.orderId, amount: order.amount, currency: order.currency }
+            : { subscription_id: order.subscriptionId }),
+          name: "Krish AI", description: oneTime ? `${order.planName} plan · 1 month` : `${order.planName} plan · renews monthly`,
           prefill: { name: order.name, email: order.email },
           theme: { color: "#111111" },
           handler: async (res) => {
             try {
-              const { data: account } = await api.post("/billing/verify", {
-                orderId: res.razorpay_order_id, paymentId: res.razorpay_payment_id, signature: res.razorpay_signature,
-              });
+              const { data: account } = oneTime
+                ? await api.post("/billing/verify", {
+                  orderId: res.razorpay_order_id, paymentId: res.razorpay_payment_id, signature: res.razorpay_signature })
+                : await api.post("/billing/subscribe/verify", {
+                  subscriptionId: res.razorpay_subscription_id, paymentId: res.razorpay_payment_id, signature: res.razorpay_signature });
               setUser?.(account);
               setWelcome({ plan: data.plans.find((p) => p.id === planId),
                 until: account.planExpiresAt ? untilText(account.planExpiresAt) : "" });
@@ -364,7 +389,7 @@ export default function PlansPage() {
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
                     paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} video={data.video}
-                    shown={p.id === shownId} />
+                    shown={p.id === shownId} autopay={data.autopay} />
                 ))}
               </div>
               <CounsellorPro />
@@ -372,7 +397,7 @@ export default function PlansPage() {
               <div className="mt-3 flex flex-col items-center gap-2 md:flex-row md:justify-between">
                 <p className="text-center text-[11px] text-muted-foreground md:text-left">
                   {data.paymentsOn
-                    ? "Pay once for 30 days with UPI, card, net banking or a wallet. No auto-renewal."
+                    ? "Renews every month by UPI Autopay or card. Turn it off anytime in Settings > Billing. With an offer code you pay once for 30 days."
                     : "Payments are coming soon. Pro and Max will open here when they're ready."}
                 </p>
                 {data.paymentsOn && (
