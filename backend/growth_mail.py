@@ -114,7 +114,8 @@ def plan_started(app_url: str, name: str, plan: str, until: str) -> tuple:
     subject = f"You're on Krish AI {plan_name}, {first} ✨" if first else f"You're on Krish AI {plan_name} ✨"
     heading = f"Thank you, {first}. {plan_name} is on!" if first else f"Thank you. {plan_name} is on!"
     intro = (f"Your payment went through and <b>Krish AI {plan_name}</b> is active until <b>{_html.escape(until)}</b>. "
-             "There's no auto-renewal, so you're never charged by surprise. Here's what's new for you:")
+             "With autopay it renews by itself, and you can turn that off any time in Settings &gt; Billing. "
+             "Here's what's new for you:")
     tries = TRY_PAID.get(plan, TRY_PAID["pro"])
     body = _layout(picture, heading, intro, tries, f"Start using {plan_name}", app_url,
                    "Need help or a receipt? Write to us from the Help Center inside the app.")

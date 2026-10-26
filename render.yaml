@@ -59,7 +59,8 @@ services:
       - key: RAZORPAY_KEY_SECRET
         sync: false
       # A password you choose; type the same one when adding the webhook in Razorpay
-      # (URL https://<your-app>/api/billing/webhook, events order.paid and payment.captured).
+      # (URL https://<your-app>/api/billing/webhook, events order.paid, payment.captured,
+      # subscription.charged, subscription.cancelled, subscription.halted and subscription.completed).
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
       # The free plan has 512 MB of memory; a headless Chrome would exceed it.

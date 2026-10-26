@@ -803,7 +803,7 @@ async def billing_payments(user_id: str = Depends(current_user_id)):
     """Settings > Billing: the user's payments, newest first."""
     rows = await db.payments.find({"userId": user_id, "status": {"$in": ["paid", "captured"]}},
                                   {"_id": 0, "orderId": 1, "plan": 1, "amount": 1, "currency": 1, "status": 1,
-                                   "createdAt": 1, "paidAt": 1, "promoCode": 1}).sort("createdAt", -1).to_list(50)
+                                   "createdAt": 1, "paidAt": 1, "promoCode": 1, "autopay": 1}).sort("createdAt", -1).to_list(50)
     return {"payments": [{**r, "planName": limits.PLANS.get(r.get("plan"), {}).get("name", r.get("plan")),
                           "amount": (r.get("amount") or 0) / 100} for r in rows]}
 
@@ -2651,6 +2651,7 @@ async def usage(user_id: str = Depends(current_user_id)):
     user = await db.users.find_one({"id": user_id}, {"plan": 1, "planExpiresAt": 1}) or {}
     expires = user.get("planExpiresAt") if limits.plan_from(user) != "basic" else None
     return {**await limits.summary(db, user_id), "paymentsOn": billing.enabled(), "planExpiresAt": expires,
+            "autopay": billing.public_autopay(await billing.autopay_of(db, user_id)),
             "video": media.video_enabled()}
 
 
@@ -2698,6 +2699,51 @@ async def billing_verify(body: PaymentDoneIn, user_id: str = Depends(current_use
     except billing.BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return public_user(await db.users.find_one({"id": user_id}))
+
+
+class SubscribeIn(BaseModel):
+    plan: Literal["pro", "max"]
+
+
+class SubscriptionDoneIn(BaseModel):
+    subscriptionId: str = Field(min_length=1, max_length=64)
+    paymentId: str = Field(min_length=1, max_length=64)
+    signature: str = Field(min_length=1, max_length=256)
+
+
+@api.post("/billing/subscribe")
+async def billing_subscribe(body: SubscribeIn, user_id: str = Depends(current_user_id)):
+    """Start autopay for Pro or Max: returns the Razorpay subscription the checkout opens."""
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    try:
+        return await billing.subscribe(db, user, body.plan)
+    except billing.GatewayError as exc:
+        # 503: autopay isn't available right now (e.g. not switched on in Razorpay); the app pays once instead.
+        raise HTTPException(status_code=503, detail=str(exc))
+    except billing.BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@api.post("/billing/subscribe/verify")
+async def billing_subscribe_verify(body: SubscriptionDoneIn, user_id: str = Depends(current_user_id)):
+    """Autopay's first payment went through: confirm it and switch the plan on. Returns the updated account."""
+    try:
+        await billing.verify_subscription(db, user_id, body.subscriptionId, body.paymentId, body.signature)
+    except billing.BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return public_user(await db.users.find_one({"id": user_id}))
+
+
+@api.post("/billing/autopay/cancel")
+async def billing_cancel_autopay(user_id: str = Depends(current_user_id)):
+    """Settings > Billing: turn autopay off. The plan stays until the days already paid for end."""
+    try:
+        await billing.cancel_autopay(db, user_id)
+    except billing.BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True}
 
 
 @api.post("/billing/webhook")

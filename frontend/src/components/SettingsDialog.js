@@ -394,7 +394,19 @@ function Billing({ onClose }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [payments, setPayments] = useState(null);
+  const [autopay, setAutopay] = useState(null);
+  const [stopping, setStopping] = useState(false);
   useEffect(() => { api.get("/billing/payments").then(({ data }) => setPayments(data.payments)).catch(() => setPayments([])); }, []);
+  useEffect(() => { api.get("/usage").then(({ data }) => setAutopay(data.autopay)).catch(() => {}); }, []);
+  const stopAutopay = async () => {
+    if (!window.confirm(`Turn off autopay? You keep ${autopay.planName} until ${fmtDate(user.planExpiresAt)}, then go back to Basic.`)) return;
+    setStopping(true);
+    try {
+      await api.post("/billing/autopay/cancel");
+      setAutopay(null);
+      toast.success("Autopay is off. You won't be charged again.");
+    } catch (e) { toast.error(formatApiError(e)); } finally { setStopping(false); }
+  };
   const plan = user?.plan || "basic";
   const plans = () => { onClose(); navigate("/plans"); };
 
@@ -413,13 +425,23 @@ function Billing({ onClose }) {
           </div>
           <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${plan === "basic" ? "bg-surface" : "bg-white/20"}`}>{PLAN_COPY[plan].tag}</span>
         </div>
-        {user?.planExpiresAt && <p className="mt-3 text-[13px] text-white/90">Active until <b>{fmtDate(user.planExpiresAt)}</b>. Plans don't renew on their own, so you're never charged by surprise.</p>}
+        {user?.planExpiresAt && <p className="mt-3 text-[13px] text-white/90">{autopay
+          ? <>Renews on <b>{fmtDate(user.planExpiresAt)}</b> for ₹{autopay.amount}, by autopay.</>
+          : <>Active until <b>{fmtDate(user.planExpiresAt)}</b>. Autopay is off, so it won't renew by itself.</>}</p>}
         <Button onClick={plans} data-testid="billing-plans"
           className={`mt-4 h-10 rounded-xl ${plan === "basic" ? "bg-gradient-to-r from-indigo-500 to-violet-500 text-white" : "bg-white text-indigo-700 hover:bg-white/90"}`}>
           {plan === "max" ? "See plans" : plan === "pro" ? "Renew or move to Max" : "Upgrade to Pro"}
         </Button>
       </div>
-      <Block title="Payment method" icon={CreditCard} hint="Pay each time with UPI, cards, net banking or wallets, through Razorpay. Krish never stores your card." />
+      <Block title="Autopay" icon={CreditCard} testid="billing-autopay"
+        hint={autopay ? `On: ₹${autopay.amount} every month for ${autopay.planName}, through Razorpay (UPI Autopay or card). Krish never stores your card.`
+          : "Off. Paid plans renew every month by UPI Autopay or card once you turn it on from the Plans page."}>
+        {autopay && (
+          <Button variant="outline" onClick={stopAutopay} disabled={stopping} className="h-9 rounded-lg" data-testid="billing-autopay-off">
+            {stopping ? <Loader2 className="h-4 w-4 animate-spin" /> : "Turn off autopay"}
+          </Button>
+        )}
+      </Block>
       <Block title="Payment history" testid="billing-history">
         {payments === null ? <Loader2 className="h-4 w-4 animate-spin text-primary" />
           : payments.length === 0 ? <p className="text-[13px] text-muted-foreground">No payments yet.</p>
@@ -428,7 +450,7 @@ function Billing({ onClose }) {
                 {payments.map((p) => (
                   <div key={p.orderId} className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 text-sm last:border-0">
                     <div className="min-w-0">
-                      <p className="font-medium">Krish {p.planName}, 30 days</p>
+                      <p className="font-medium">Krish {p.planName}, {p.autopay ? "monthly autopay" : "30 days"}</p>
                       <p className="text-xs text-muted-foreground">{fmtDate(p.paidAt || p.createdAt)}{p.promoCode ? ` · ${p.promoCode}` : ""}</p>
                     </div>
                     <span className="shrink-0 tabular-nums">₹{p.amount}</span>

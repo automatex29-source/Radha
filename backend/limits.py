@@ -28,14 +28,14 @@ PLANS = {
         "quality": {"media": "free", "videoSeconds": 8, "uploadMb": 20},
     },
     "pro": {
-        "name": "Pro", "price": 299,
+        "name": "Pro", "price": 299, "listPrice": 999,
         "meter": {"session": 400, "week": 2000},
         "total": {"automation": 10},
         "publish": True, "premium": True,
         "quality": {"media": "premium", "videoSeconds": 12, "uploadMb": 50},
     },
     "max": {
-        "name": "Max", "price": 699,
+        "name": "Max", "price": 699, "listPrice": 1999,
         "meter": {"session": 1200, "week": 6000},
         "total": {"automation": 30},
         "publish": True, "premium": True,
