@@ -73,8 +73,8 @@ export default function InvitePage() {
               </h1>
               <p className="mt-4 max-w-md text-base text-muted-foreground sm:text-lg">
                 {invite
-                  ? <>Your smart helper for questions, study, writing and creating. Join now and you <b className="text-foreground">both get {days} days of Pro, free</b>.</>
-                  : "Your smart helper for questions, study, writing and creating. Free to start."}
+                  ? <>Your saarthi for every task: questions, study, writing and creating. Join now and you <b className="text-foreground">both get {days} days of Pro, free</b>.</>
+                  : "Your saarthi for every task: questions, study, writing and creating. Free to start."}
               </p>
               <Button onClick={start} data-testid="invite-claim"
                 className="group mt-7 h-12 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-7 text-base font-bold text-white shadow-[0_10px_30px_rgba(249,115,22,0.35)] hover:from-orange-500 hover:to-amber-600">

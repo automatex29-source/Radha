@@ -81,7 +81,7 @@ def welcome(app_url: str, name: str, inviter_name: str = "", days: int = 0) -> t
     else:
         subject = f"Welcome to Krish AI, {first} 👋" if first else "Welcome to Krish AI 👋"
         heading = f"Hi {first}, welcome to Krish AI" if first else "Welcome to Krish AI"
-        intro = ("Krish is your smart helper for questions, study, writing, planning and building. "
+        intro = ("Krish is your saarthi for every task: questions, study, writing, planning and building. "
                  "Chat is free and unlimited. Here's a good way to start:")
     footer = ("Tip: invite a friend from the menu in the app. When they join, you both get 7 days of Pro, free.")
     body = _layout(picture, heading, intro, TRY_FREE, "Open Krish AI", app_url, footer)
