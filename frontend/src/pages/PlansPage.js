@@ -4,12 +4,13 @@ import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Check, Copy, Gauge, Loader2, Share2, Tag } from "lucide-react";
+import { Check, Copy, Loader2, Lock, RefreshCcw, Share2, Tag } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import InviteDialog, { WhatsAppIcon } from "@/components/InviteDialog";
 import { inviteLink, inviteMessage } from "@/lib/referral";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
 import { useNavigate } from "react-router-dom";
+import { openSettings } from "@/lib/settingsNav";
 
 const TAGLINE = {
   basic: "Everything you need to get started.",
@@ -46,12 +47,6 @@ function highlights(plan, basic, video) {
     ...(plan.premium ? ["Counsellor Pro"] : [])] };
 }
 
-const COUNSELLOR_PRO = [
-  ["Deeper replies", "Every talk answered by our strongest model."],
-  ["Remembers your last talk", "Picks up gently where you left off."],
-  ["Sleep and focus breathing", "4-7-8 for sleep, box breathing before exams."],
-  ["Mood week", "See how your last seven days felt."],
-];
 
 const ORDER = ["basic", "pro", "max"];
 
@@ -73,65 +68,6 @@ function untilText(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-function resetText(ts) {
-  if (!ts) return null;
-  const mins = Math.max(1, Math.round((ts * 1000 - Date.now()) / 60000));
-  if (mins < 20 * 60) {
-    const at = new Date(ts * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    return `Refills at ${at} (in ${mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`})`;
-  }
-  return `Refills on ${new Date(ts * 1000).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`;
-}
-
-function MeterBar({ label, part, idle, testid }) {
-  const pct = Math.min(100, Math.round((part.used / Math.max(1, part.limit)) * 100));
-  return (
-    <div data-testid={testid}>
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-semibold">{label}</span>
-        <span className="tabular-nums text-muted-foreground"><b className="text-foreground">{pct}%</b> used</span>
-      </div>
-      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface-strong">
-        <div className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-500" : "bg-foreground"}`}
-          style={{ width: `${pct}%` }} />
-      </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">{resetText(part.resetsAt) || idle}</p>
-    </div>
-  );
-}
-
-/** The usage meter, like Claude's: every build, picture, deck (and video, when on) runs it down by how big it is. */
-function Usage({ meter, costs, automation, video }) {
-  const range = (r) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}-${r[1]}`);
-  return (
-    <section className="plans-panel mt-6 rounded-2xl p-5 sm:p-6" data-testid="plans-usage">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="krish-display flex items-center gap-2 text-[1.7rem] leading-none"><Gauge className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} /> Your usage</h2>
-        <p className="text-xs text-muted-foreground">Chat on Krish Basic is never counted.</p>
-      </div>
-      <div className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        <MeterBar label="This session" part={meter.session} testid="meter-session"
-          idle={`Starts when you make something, then refills ${meter.session.hours} hours later`} />
-        <MeterBar label="This week" part={meter.week} testid="meter-week" idle="Starts when you make something" />
-      </div>
-      <div className="mt-6 rounded-xl bg-sunken p-4" data-testid="meter-costs">
-        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">What things use</p>
-        <p className="mt-1 text-xs text-muted-foreground">Bigger requests use more: a longer build ask{video ? ", a longer video" : ""}, a longer chat.</p>
-        <ul className="mt-2 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>App build</span><span className="tabular-nums text-muted-foreground">{range(costs.build)} credits</span></li>
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>AI picture</span><span className="tabular-nums text-muted-foreground">{costs.picture} credits</span></li>
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>Slide deck</span><span className="tabular-nums text-muted-foreground">{costs.deck} + pictures</span></li>
-          {video && <li className="flex justify-between gap-3 whitespace-nowrap"><span>Video</span><span className="tabular-nums text-muted-foreground">{costs.videoSecond} a second</span></li>}
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>Premium message</span><span className="tabular-nums text-muted-foreground">{range(costs.chat)} credits</span></li>
-        </ul>
-      </div>
-      <p className="mt-4 text-xs text-muted-foreground" data-testid="meter-automations">
-        Automations: {automation.used} of {automation.limit}
-      </p>
-    </section>
-  );
-}
-
 function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
@@ -141,71 +77,56 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
   const was = plan.listPrice || plan.price; // the launch price is struck through from the regular price
   const price = offer && plan.price ? offer.prices[plan.id] ?? plan.price : plan.price;
   const { label, items } = highlights(plan, basic, video);
-  const soft = popular ? "text-background/60" : "text-muted-foreground";
+  const off = plan.listPrice > plan.price ? Math.round((1 - plan.price / plan.listPrice) * 100) : 0;
   return (
     <div data-testid={`plan-${plan.id}`}
-      className={`relative flex-col px-5 py-5 lg:px-6 ${shown ? "flex" : "hidden md:flex"} ${popular
-        ? "z-[1] rounded-2xl bg-foreground text-background shadow-[0_24px_50px_-28px_rgba(15,17,30,0.55)] md:-my-px"
-        : "plans-panel rounded-2xl md:rounded-none md:border-0 md:bg-transparent dark:md:bg-transparent"}`}>
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="font-sans text-[12px] font-semibold uppercase tracking-[0.14em]">{plan.name}</h2>
-        {current ? <span className={`rounded-full border px-2 py-px text-[10.5px] font-medium ${popular ? "border-background/40 text-background/80" : "border-border text-muted-foreground"}`}>Your plan</span>
-          : popular ? <span className="rounded-full border border-background/40 px-2 py-px text-[10.5px] font-medium text-background/80">Most popular</span> : null}
-      </div>
-      <div className="mt-3 flex items-baseline gap-1.5">
-        {price !== was && <span className={`krish-display text-lg line-through tabular-nums ${soft}`}>₹{was}</span>}
-        <span className="krish-display text-[2.5rem] leading-none tabular-nums">₹{price}</span>
-        <span className={`text-xs ${soft}`}>{plan.price ? "per month" : "forever"}</span>
-      </div>
-      {plan.listPrice > plan.price && (
-        <p className={`mt-1 text-[11px] font-medium ${popular ? "text-background/80" : "text-foreground/80"}`} data-testid={`plan-launch-${plan.id}`}>
-          Launch price · {Math.round((1 - plan.price / plan.listPrice) * 100)}% off
-        </p>
+      className={`plans-card relative flex-col rounded-2xl p-5 transition-transform duration-200 md:hover:-translate-y-1 ${shown ? "flex" : "hidden md:flex"} ${popular
+        ? "plans-card-pop md:-translate-y-2 md:hover:-translate-y-3" : ""}`}>
+      {popular && !current && (
+        <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-foreground px-3 py-1 text-[11px] font-semibold text-background">Most popular</span>
       )}
-      <p className={`mt-1 text-[0.8rem] ${soft}`}>{TAGLINE[plan.id]}</p>
-      <div className={`my-3.5 h-px ${popular ? "bg-background/15" : "bg-border/80"}`} />
-      <p className={`mb-2 text-[11px] font-medium ${soft}`}>{label}</p>
-      <ul className="flex-1 space-y-1.5 text-[0.8rem]">
-        {items.map((text) => (
-          <li key={text} className="flex items-start gap-2 leading-snug">
-            <Check className={`mt-px h-3.5 w-3.5 shrink-0 ${popular ? "" : "text-foreground/80"}`} strokeWidth={1.75} />
-            {text}
-          </li>
-        ))}
-      </ul>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-[15px] font-semibold">{plan.name}</h2>
+        {current && <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">Your plan</span>}
+      </div>
+      <p className="mt-0.5 text-[12.5px] text-muted-foreground">{TAGLINE[plan.id]}</p>
+      <div className="mt-3.5 flex items-end gap-2">
+        <span className="text-[2.3rem] font-semibold leading-none tracking-tight tabular-nums">₹{price}</span>
+        <span className="pb-1 text-[13px] text-muted-foreground">{plan.price ? "/ month" : "forever"}</span>
+      </div>
+      <div className="mt-2 flex h-5 items-center gap-2 text-[12px]">
+        {price !== was && <span className="tabular-nums text-muted-foreground line-through">₹{was}</span>}
+        {off > 0 && <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium" data-testid={`plan-launch-${plan.id}`}>Launch price · {off}% off</span>}
+      </div>
       <Button disabled={!canBuy || busy} onClick={() => onBuy(plan.id)} data-testid={`plan-button-${plan.id}`}
-        className={`mt-4 h-9 w-full rounded-lg text-[0.82rem] font-medium shadow-none disabled:opacity-100 ${popular
-          ? "bg-background text-foreground hover:bg-background/90"
-          : canBuy ? "border border-foreground/80 bg-transparent text-foreground hover:bg-foreground hover:text-background"
-          : "border border-border bg-transparent text-muted-foreground"}`}>
+        className={`mt-3.5 h-10 w-full rounded-lg text-[0.88rem] font-medium shadow-none disabled:opacity-100 ${canBuy && popular
+          ? "bg-foreground text-background hover:bg-foreground/90"
+          : canBuy ? "border border-border bg-background text-foreground hover:bg-muted"
+          : "border border-border bg-muted/50 text-muted-foreground"}`}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" />
           : !plan.price ? (current ? "Current plan" : "Free")
           : !paymentsOn ? (current ? "Current plan" : "Coming soon")
           : renews ? (current ? "Renews automatically" : "Included in your plan")
           : current ? `Add a month · ₹${price}` : lower ? "Included in your plan" : `Get ${plan.name}`}
       </Button>
-      {current && expires && <p className={`mt-1.5 text-center text-[11px] ${soft}`}>
-        {renews ? `Next renewal ${untilText(expires)}` : `Active until ${untilText(expires)}`}</p>}
+      <p className="mt-1.5 h-4 text-center text-[11px] text-muted-foreground">
+        {current && expires ? (renews ? `Next renewal ${untilText(expires)}` : `Active until ${untilText(expires)}`)
+          : plan.price ? "Cancel anytime" : ""}
+      </p>
+      <div className="my-3.5 h-px bg-border" />
+      <p className="mb-2 text-[12px] font-medium text-muted-foreground">{label}</p>
+      <ul className="flex-1 space-y-1.5 text-[13px]">
+        {items.map((text) => (
+          <li key={text} className="flex items-start gap-2.5 leading-snug">
+            <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
+            {text}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-/** Counsellor Pro, part of Pro and Max: what the Counsellor adds on a paid plan. */
-function CounsellorPro() {
-  return (
-    <section className="plans-panel mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl px-4 py-3 max-md:py-2.5" data-testid="plans-counsellor-pro">
-      <div className="min-w-0">
-        <h2 className="krish-display text-[1.25rem] leading-none">Counsellor <em>Pro</em></h2>
-        <p className="mt-1 text-[11px] text-muted-foreground max-md:hidden">Included in Pro and Max</p>
-      </div>
-      <ul className="-mx-4 flex min-w-0 gap-1.5 overflow-x-auto px-4 text-[11.5px] max-md:w-[calc(100%+2rem)] md:mx-0 md:ml-auto md:flex-wrap md:px-0 [&::-webkit-scrollbar]:hidden">
-        {COUNSELLOR_PRO.map(([title, text]) => (
-          <li key={title} title={text} className="shrink-0 whitespace-nowrap rounded-full border border-border px-2.5 py-1">{title}</li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 /** Give Pro, get Pro: the person's own invite link, ready to copy or send, and the Pro days it has earned. */
 function InviteFriends({ onMore }) {
@@ -225,9 +146,9 @@ function InviteFriends({ onMore }) {
     toast.success("Invite link copied");
   };
   return (
-    <section className="plans-panel mt-3 grid items-center gap-2 rounded-2xl px-4 py-3 max-md:py-2.5 md:grid-cols-[1fr_1.15fr] md:gap-5" data-testid="plans-invite">
+    <section className="plans-card grid items-center gap-3 rounded-2xl px-5 py-3.5 md:grid-cols-[1fr_1.15fr] md:gap-6" data-testid="plans-invite">
       <div className="min-w-0">
-        <h2 className="krish-display text-[1.25rem] leading-none">Give Pro. <em className="text-[#4F46E5] dark:text-[#A5B4FC]">Get Pro.</em></h2>
+        <h2 className="text-[15px] font-semibold">Give Pro, get Pro</h2>
         <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
           A friend joins with your link and you each get {days} days of Pro, free.
           {data && (data.joined
@@ -274,6 +195,7 @@ export default function PlansPage() {
   const [codeText, setCodeText] = useState("");
   const [offer, setOffer] = useState(null); // {code, percentOff, prices: {pro, max}} once a code checks out
   const [checking, setChecking] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
 
   const applyCode = async (e) => {
     e.preventDefault();
@@ -364,7 +286,7 @@ export default function PlansPage() {
     <div className="flex h-dvh w-full overflow-hidden plans-canvas max-md:flex-col">
       <IconRail />
       <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1000px] px-4 pb-10 pt-5 sm:px-6 sm:pt-7">
+        <div className="mx-auto w-full max-w-[1040px] px-4 pb-8 pt-5 sm:px-6 sm:pt-7">
           <header className="text-center">
             <h1 className="krish-display text-[1.9rem] leading-[1.05] sm:text-[2.5rem]">
               Choose the plan that <em className="text-[#4F46E5] dark:text-[#A5B4FC]">fits you</em>
@@ -377,7 +299,7 @@ export default function PlansPage() {
           ) : (
             <>
               {/* Phones show one plan at a time, so all of it fits on the screen. */}
-              <div role="tablist" aria-label="Plans" className="mx-auto mt-4 grid max-w-xs grid-cols-3 gap-1 rounded-xl bg-muted p-1 md:hidden" data-testid="plans-tabs">
+              <div role="tablist" aria-label="Plans" className="mx-auto mt-5 grid max-w-xs grid-cols-3 gap-1 rounded-xl bg-muted p-1 md:hidden" data-testid="plans-tabs">
                 {data.plans.map((p) => (
                   <button key={p.id} role="tab" aria-selected={p.id === shownId} onClick={() => setShown(p.id)} data-testid={`plans-tab-${p.id}`}
                     className={`rounded-lg py-1.5 text-[0.8rem] font-medium transition-colors ${p.id === shownId ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>
@@ -385,35 +307,41 @@ export default function PlansPage() {
                   </button>
                 ))}
               </div>
-              <div className="mt-3 grid md:mt-6 plans-grid md:grid-cols-3 md:rounded-2xl" data-testid="plans-grid">
+              <div className="mt-6 grid gap-4 md:mt-8 md:grid-cols-3 md:items-stretch md:gap-5" data-testid="plans-grid">
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
                     paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} video={data.video}
                     shown={p.id === shownId} autopay={data.autopay} />
                 ))}
               </div>
-              <CounsellorPro />
-              <InviteFriends onMore={() => setInviteOpen(true)} />
-              <div className="mt-3 flex flex-col items-center gap-2 md:flex-row md:justify-between">
-                <p className="text-center text-[11px] text-muted-foreground md:text-left">
-                  {data.paymentsOn
-                    ? "Renews every month by UPI Autopay or card. Turn it off anytime in Settings > Billing. With an offer code you pay once for 30 days."
-                    : "Payments are coming soon. Pro and Max will open here when they're ready."}
-                </p>
-                {data.paymentsOn && (
-                  <form onSubmit={applyCode} className="flex w-full max-w-[17rem] shrink-0 items-center gap-1.5" data-testid="offer-code-form">
-                    <div className="relative flex-1">
-                      <Tag className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input value={codeText} onChange={(e) => setCodeText(e.target.value)} placeholder="Offer code" maxLength={24}
-                        className="h-8 rounded-lg bg-background pl-8 text-[0.8rem] uppercase placeholder:normal-case" data-testid="offer-code-input" />
-                    </div>
-                    <Button type="submit" variant="outline" disabled={checking || !codeText.trim()} className="h-8 rounded-lg px-3 text-[0.8rem]" data-testid="offer-code-apply">
-                      {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : offer ? "Applied" : "Apply"}
-                    </Button>
-                  </form>
+
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-muted-foreground" data-testid="plans-trust">
+                <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> Secure payments by Razorpay</span>
+                <span>UPI · Cards · Net banking</span>
+                <span className="flex items-center gap-1.5"><RefreshCcw className="h-3.5 w-3.5" /> {data.paymentsOn ? "Renews monthly, cancel anytime" : "Payments open soon"}</span>
+                {data.paymentsOn && !codeOpen && !offer && (
+                  <button type="button" onClick={() => setCodeOpen(true)} className="underline underline-offset-2 hover:text-foreground" data-testid="offer-code-open">Have an offer code?</button>
                 )}
               </div>
-              {data.limitsOn && <Usage meter={data.meter} costs={data.costs} automation={data.usage.automation} video={data.video} />}
+              {data.paymentsOn && (codeOpen || offer) && (
+                <form onSubmit={applyCode} className="mx-auto mt-3 flex w-full max-w-[18rem] items-center gap-1.5" data-testid="offer-code-form">
+                  <div className="relative flex-1">
+                    <Tag className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={codeText} onChange={(e) => setCodeText(e.target.value)} placeholder="Offer code" maxLength={24} autoFocus
+                      className="h-9 rounded-lg bg-background pl-8 text-[0.82rem] uppercase placeholder:normal-case" data-testid="offer-code-input" />
+                  </div>
+                  <Button type="submit" variant="outline" disabled={checking || !codeText.trim()} className="h-9 rounded-lg px-3 text-[0.82rem]" data-testid="offer-code-apply">
+                    {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : offer ? "Applied" : "Apply"}
+                  </Button>
+                </form>
+              )}
+              {offer && <p className="mt-1.5 text-center text-[11px] text-muted-foreground">{offer.code} applied: a one-time payment for 30 days, no autopay.</p>}
+
+              <div className="mt-5"><InviteFriends onMore={() => setInviteOpen(true)} /></div>
+              <p className="mt-4 text-center text-[12px] text-muted-foreground">
+                See how much you've used in <button type="button" onClick={() => openSettings("usage")} className="underline underline-offset-2 hover:text-foreground" data-testid="plans-usage-link">Settings &gt; Usage</button>
+                {" "}· Questions? <a href="/refunds" className="underline underline-offset-2 hover:text-foreground">Refunds and cancelling</a>
+              </p>
             </>
           )}
         </div>
