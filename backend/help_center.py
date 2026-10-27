@@ -1,8 +1,7 @@
 """Help Center: people report a bug, send feedback or ask a question from inside the app.
 
 Every report is saved in MongoDB (`help_reports`) and, when email is set up (see mailer.py),
-emailed to the team: SUPPORT_EMAIL if set, otherwise MAIL_FROM (the sender you verified, which
-is usually your own inbox). People see their own past reports on the Help page.
+emailed to the team: SUPPORT_EMAIL if set, otherwise EmpireX's help email (HELP_EMAIL). People see their own past reports on the Help page.
 """
 import html
 import logging
@@ -44,8 +43,12 @@ class ReportIn(BaseModel):
     device: Optional[str] = Field(default=None, max_length=400)
 
 
+# EmpireX's help email, shown across the app; bug reports and feedback go there unless SUPPORT_EMAIL says otherwise.
+HELP_EMAIL = "empirex.offical@gmail.com"
+
+
 def _support_inbox() -> str:
-    return (os.environ.get("SUPPORT_EMAIL") or os.environ.get("MAIL_FROM") or "").strip()
+    return (os.environ.get("SUPPORT_EMAIL") or HELP_EMAIL).strip()
 
 
 def _public(doc: dict) -> dict:

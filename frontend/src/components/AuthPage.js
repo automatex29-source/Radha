@@ -12,6 +12,7 @@ import BrandMark from "@/components/BrandMark";
 import Mascot from "@/components/Mascot";
 import GoogleButton from "@/components/GoogleButton";
 import { getRef } from "@/lib/referral";
+import { HELP_EMAIL } from "@/lib/contact";
 
 export default function AuthPage() {
   const { login, register, googleLogin, formatApiError } = useAuth();
@@ -182,6 +183,9 @@ export default function AuthPage() {
             {tab === "register" ? "By creating an account you agree to the " : "By continuing you agree to the "}
             <a href="/terms" className="font-medium text-foreground hover:underline">Terms</a> and{" "}
             <a href="/privacy" className="font-medium text-foreground hover:underline">Privacy Policy</a>.
+          </p>
+          <p className="mt-2 text-center text-xs text-muted-foreground" data-testid="auth-help-email">
+            Need help? <a href={`mailto:${HELP_EMAIL}`} className="font-medium text-foreground hover:underline">{HELP_EMAIL}</a>
           </p>
           </>)}
         </div>

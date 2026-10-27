@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
 import BrandMark from "@/components/BrandMark";
+import { HELP_EMAIL } from "@/lib/contact";
 
 const UPDATED = "26 October 2026";
 
@@ -49,7 +50,7 @@ const PRIVACY = {
       "Krish AI is not meant for children under 13. If you are under 18, use it with a parent's or guardian's permission.",
     ]],
     ["Changes and contact", [
-      "If we change this policy we will update the date at the top. For any privacy question or request, write to us from the Help Center inside the app.",
+      `If we change this policy we will update the date at the top. For any privacy question or request, email us at ${HELP_EMAIL} or write to us from the Help Center inside the app.`,
     ]],
   ],
 };
@@ -92,7 +93,7 @@ const TERMS = {
     ]],
     ["Law and changes", [
       "These terms are governed by the laws of India. If we change them we will update the date at the top; using the app after that means you accept the new terms.",
-      "Questions? Write to us from the Help Center inside the app.",
+      `Questions? Email us at ${HELP_EMAIL} or write to us from the Help Center inside the app.`,
     ]],
   ],
 };
@@ -116,10 +117,17 @@ const REFUNDS = {
       "Approved refunds go back to the same UPI, card or bank account through Razorpay, usually within 5 to 7 working days. Your account returns to Basic when a refund is made.",
     ]],
     ["How to ask", [
-      "Write to us from the Help Center inside the app with the email of your account and the payment date. We reply within 2 working days.",
+      `Email us at ${HELP_EMAIL}, or write to us from the Help Center inside the app, with the email of your account and the payment date. We reply within 2 working days.`,
     ]],
   ],
 };
+
+// Turns the help email inside a line into a link that opens the mail app.
+function WithEmailLink({ text }) {
+  const [before, ...rest] = text.split(HELP_EMAIL);
+  if (!rest.length) return text;
+  return <>{before}<a href={`mailto:${HELP_EMAIL}`} className="font-medium text-primary underline-offset-2 hover:underline">{HELP_EMAIL}</a>{rest.join(HELP_EMAIL)}</>;
+}
 
 const DOCS = { privacy: PRIVACY, terms: TERMS, refunds: REFUNDS };
 const OTHER = [["/privacy", "privacy", "Privacy Policy"], ["/terms", "terms", "Terms of Service"], ["/refunds", "refunds", "Refund Policy"]];
@@ -147,7 +155,7 @@ export default function LegalPage({ kind }) {
           <section key={heading} className="mt-8">
             <h2 className="text-lg font-semibold">{heading}</h2>
             <ul className="mt-2 list-disc space-y-2 pl-5 leading-relaxed text-muted-foreground">
-              {items.map((t) => <li key={t}>{t}</li>)}
+              {items.map((t) => <li key={t}><WithEmailLink text={t} /></li>)}
             </ul>
           </section>
         ))}
