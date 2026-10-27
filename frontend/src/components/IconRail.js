@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
-import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy, FileText, Compass } from "lucide-react";
+import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, LifeBuoy, FileText, Compass, LayoutDashboard } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 import BrandMark from "@/components/BrandMark";
 import { useT } from "@/lib/i18n";
 import { accentStyle } from "@/components/PageHero";
@@ -23,6 +24,7 @@ export default function IconRail({ mobileBar = true }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const t = useT();
+  const { user } = useAuth();
 
   return (
     <>
@@ -43,8 +45,17 @@ export default function IconRail({ mobileBar = true }) {
             );
           })}
         </nav>
+        {user?.isOwner && (
+          <button onClick={() => navigate("/admin")} data-testid="nav-owner-dashboard" title="Owner dashboard" aria-label="Owner dashboard"
+            className={`mt-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
+              pathname.startsWith("/admin") ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_8px_22px_rgba(99,102,241,0.45)]"
+                : "text-muted-foreground hover:-translate-y-0.5 hover:bg-white/80 hover:text-primary hover:shadow-sm dark:hover:bg-surface"
+            }`}>
+            <LayoutDashboard className="h-5 w-5" />
+          </button>
+        )}
         <button onClick={() => navigate("/help")} data-testid="nav-help" title={t("helpCenter")} aria-label={t("helpCenter")}
-          className={`mt-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
+          className={`${user?.isOwner ? "" : "mt-auto "}mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
             pathname.startsWith("/help") ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-[0_8px_22px_rgba(99,102,241,0.45)]"
               : "text-muted-foreground hover:-translate-y-0.5 hover:bg-white/80 hover:text-primary hover:shadow-sm dark:hover:bg-surface"
           }`}>

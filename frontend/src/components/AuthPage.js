@@ -81,7 +81,7 @@ export default function AuthPage() {
           <div className="max-w-md">
             <Mascot className="krish-float -ml-2 mb-6 h-32 w-auto" />
             <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-foreground xl:text-5xl">
-              Meet <span className="krish-gradient-text">Krish AI</span>, your smart helper.
+              Meet <span className="krish-gradient-text">Krish AI</span>, your saarthi for every task.
             </h1>
             <p className="mt-4 text-base text-muted-foreground">
               Ask anything, write, code, study and plan. All your chats are saved for you.
@@ -106,6 +106,7 @@ export default function AuthPage() {
             <div className="leading-none">
               <p className="text-3xl leading-none"><KrishWordmark /></p>
               <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by EmpireX</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">Your saarthi for every task.</p>
             </div>
           </div>
 

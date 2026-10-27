@@ -81,7 +81,7 @@ def welcome(app_url: str, name: str, inviter_name: str = "", days: int = 0) -> t
     else:
         subject = f"Welcome to Krish AI, {first} 👋" if first else "Welcome to Krish AI 👋"
         heading = f"Hi {first}, welcome to Krish AI" if first else "Welcome to Krish AI"
-        intro = ("Krish is your smart helper for questions, study, writing, planning and building. "
+        intro = ("Krish is your saarthi for every task: questions, study, writing, planning and building. "
                  "Chat is free and unlimited. Here's a good way to start:")
     footer = ("Tip: invite a friend from the menu in the app. When they join, they get 7 days of Pro, free, and so do you (once).")
     body = _layout(picture, heading, intro, TRY_FREE, "Open Krish AI", app_url, footer)
@@ -114,7 +114,8 @@ def plan_started(app_url: str, name: str, plan: str, until: str) -> tuple:
     subject = f"You're on Krish AI {plan_name}, {first} ✨" if first else f"You're on Krish AI {plan_name} ✨"
     heading = f"Thank you, {first}. {plan_name} is on!" if first else f"Thank you. {plan_name} is on!"
     intro = (f"Your payment went through and <b>Krish AI {plan_name}</b> is active until <b>{_html.escape(until)}</b>. "
-             "There's no auto-renewal, so you're never charged by surprise. Here's what's new for you:")
+             "With autopay it renews by itself, and you can turn that off any time in Settings &gt; Billing. "
+             "Here's what's new for you:")
     tries = TRY_PAID.get(plan, TRY_PAID["pro"])
     body = _layout(picture, heading, intro, tries, f"Start using {plan_name}", app_url,
                    "Need help or a receipt? Write to us from the Help Center inside the app.")
