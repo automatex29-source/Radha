@@ -52,7 +52,7 @@ def test_bug_report_is_saved_and_emailed(client, monkeypatch):
                                                "area": "Decks", "page": "/decks", "device": "Android"})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "received"
-    assert SENT and SENT[-1]["to"] == "owner@test.com"
+    assert SENT and SENT[-1]["to"] == "empirex.offical@gmail.com"  # EmpireX's help email, not the sender
     assert SENT[-1]["subject"] == "[Krish AI] Bug report: Decks <b>won't</b> open"
     assert "&lt;b&gt;" in SENT[-1]["html"] and "<b>won't" not in SENT[-1]["html"]
     assert "asha@test.com" in SENT[-1]["text"]
@@ -68,6 +68,14 @@ def test_feedback_goes_to_support_email(client, monkeypatch):
     r = client.post("/api/help/reports", json={"kind": "feedback", "message": "Love the Counsellor", "rating": 5})
     assert r.status_code == 200
     assert SENT[-1]["to"] == "help@test.com" and "5/5" in SENT[-1]["text"]
+
+
+def test_krish_gives_the_help_email():
+    import counsellor
+    import daily_verse
+    import server
+    assert "empirex.offical@gmail.com" in server.ABOUT_EMPIREX and "empirex.offical@gmail.com" in counsellor.PROMPT
+    assert daily_verse._contact() == "mailto:empirex.offical@gmail.com"
 
 
 def test_saved_without_email(client, monkeypatch):

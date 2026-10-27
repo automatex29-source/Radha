@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
+import { HELP_EMAIL } from "@/lib/contact";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { toast } from "sonner";
 import { Bug, CheckCircle2, LifeBuoy, Loader2, MessageSquareHeart, Search, Send, Star, CircleHelp } from "lucide-react";
 
 const FAQS = [
+  { q: "How do I contact the Krish AI team?", a: `Email us at ${HELP_EMAIL}, or use Report bug or Send feedback on this page. We reply by email, usually within 2 working days.` },
   { q: "What is Krish AI?", a: "Krish AI by EmpireX is your AI helper. Chat to ask anything, talk to the Counsellor when you feel low, make presentations in Decks, build small apps in Apps, and let Automations do tasks for you on a schedule." },
   { q: "Is Krish AI free?", a: "Yes. The Basic plan is free forever, and chat is unlimited on every plan. Basic includes a few app builds, pictures and decks each day. Pro (₹299 a month) and Max (₹699 a month) give much more, let you publish apps, and add premium AI models. Open the menu with your name and choose Plans to compare them." },
   { q: "I forgot my password. What do I do?", a: "On the sign-in page, tap \"Forgot password?\" and enter your email. We'll send you a link to choose a new password. The link works once and expires soon, so use it right away. Check your spam folder if you don't see it." },
@@ -161,6 +163,9 @@ export default function HelpPage() {
             </div>
             <h1 className="radha-heading-gradient mt-4 text-3xl font-extrabold tracking-tighter sm:text-4xl">Help Center</h1>
             <p className="mt-2 text-sm text-muted-foreground">Find answers, report a problem, or tell us what you think.</p>
+            <p className="mt-1 text-sm text-muted-foreground" data-testid="help-email">
+              Or email us at <a href={`mailto:${HELP_EMAIL}`} className="font-medium text-primary underline-offset-2 hover:underline">{HELP_EMAIL}</a>
+            </p>
           </div>
 
           <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-3" data-testid="help-sections">

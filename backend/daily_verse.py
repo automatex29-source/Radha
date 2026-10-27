@@ -19,6 +19,8 @@ import anyio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+import help_center
+
 logger = logging.getLogger("radha.verse")
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -112,8 +114,7 @@ async def ensure_keys() -> dict:
 
 
 def _contact() -> str:
-    owner = (os.environ.get("OWNER_EMAIL", "").split(",")[0] or "").strip()
-    return f"mailto:{owner or 'support@empirex.app'}"
+    return f"mailto:{help_center.HELP_EMAIL}"
 
 
 def _send_sync(sub: dict, payload: str, private_pem: str) -> int:
