@@ -73,7 +73,7 @@ export default function InvitePage() {
               </h1>
               <p className="mt-4 max-w-md text-base text-muted-foreground sm:text-lg">
                 {invite
-                  ? <>Your saarthi for every task: questions, study, writing and creating. Join now and you <b className="text-foreground">both get {days} days of Pro, free</b>.</>
+                  ? <>Your saarthi for every task: questions, study, writing and creating. Join now and <b className="text-foreground">get {days} days of Pro, free</b>.</>
                   : "Your saarthi for every task: questions, study, writing and creating. Free to start."}
               </p>
               <Button onClick={start} data-testid="invite-claim"

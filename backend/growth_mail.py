@@ -83,7 +83,7 @@ def welcome(app_url: str, name: str, inviter_name: str = "", days: int = 0) -> t
         heading = f"Hi {first}, welcome to Krish AI" if first else "Welcome to Krish AI"
         intro = ("Krish is your saarthi for every task: questions, study, writing, planning and building. "
                  "Chat is free and unlimited. Here's a good way to start:")
-    footer = ("Tip: invite a friend from the menu in the app. When they join, you both get 7 days of Pro, free.")
+    footer = ("Tip: invite a friend from the menu in the app. When they join, they get 7 days of Pro, free, and so do you (once).")
     body = _layout(picture, heading, intro, TRY_FREE, "Open Krish AI", app_url, footer)
     return subject, body, _text(heading, intro, TRY_FREE, app_url)
 
@@ -99,8 +99,8 @@ def friend_joined(app_url: str, inviter_name: str, friend_name: str, days: int, 
     else:
         subject = f"{friend} joined Krish AI with your link"
         heading = f"{friend} joined with your link!"
-        intro = (f"Thank you, {_html.escape(first)}. {_html.escape(friend)} now has free Pro days. You've already earned "
-                 "the most free days invites can give, so this one is a gift to your friend.")
+        intro = (f"Thank you, {_html.escape(first)}. {_html.escape(friend)} now has free Pro days. You've already had "
+                 "your one-time free Pro reward for inviting, so this one is a gift to your friend.")
     tries = TRY_PAID["pro"]
     body = _layout(picture, heading, intro, tries, "Use your Pro days", app_url,
                    "Keep sharing: open the menu in Krish AI and tap Invite friends.")

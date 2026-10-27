@@ -67,7 +67,7 @@ export default function InviteDialog({ open, onOpenChange }) {
             Give Pro. <span className="text-[#ffb048]">Get Pro.</span>
           </DialogTitle>
           <DialogDescription className="relative mt-1.5 text-sm leading-relaxed text-white/70">
-            When a friend joins with your link, you each get {data?.rewardDays || 7} days of Krish AI Pro, on us.
+            When a friend joins with your link, they get {data?.rewardDays || 7} days of Krish AI Pro, on us. You get {data?.rewardDays || 7} days too, once.
           </DialogDescription>
           {data && (
             <img src={picture} alt="The picture your friends see with your link" data-testid="invite-picture"
@@ -116,16 +116,12 @@ export default function InviteDialog({ open, onOpenChange }) {
               <div className="mt-5 border-t border-border/70 pt-4" data-testid="invite-progress">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium">Your rewards</span>
-                  <span className="text-muted-foreground tabular-nums">{rewarded} of {data.maxRewards} friends</span>
-                </div>
-                <div className="mt-2 flex gap-1" aria-hidden="true">
-                  {Array.from({ length: data.maxRewards }, (_, i) => (
-                    <span key={i} className={`h-1.5 flex-1 rounded-full ${i < rewarded ? "bg-[#ff9a2e]" : "bg-surface-strong"}`} />
-                  ))}
+                  <span className="text-muted-foreground tabular-nums">{rewarded >= data.maxRewards ? "Claimed" : `${data.rewardDays} Pro days, once`}</span>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  {data.joined ? <><b className="font-semibold text-foreground">{data.daysEarned} Pro days</b> earned from {data.joined} {data.joined === 1 ? "friend" : "friends"}.</>
-                    : "No friends yet. Your first invite is the start."}
+                  {data.daysEarned
+                    ? <><b className="font-semibold text-foreground">{data.daysEarned} Pro days</b> earned. {data.joined} {data.joined === 1 ? "friend has" : "friends have"} joined, and every new friend still gets {data.rewardDays} days.</>
+                    : `No friends yet. Your first friend to join earns you ${data.rewardDays} days of Pro.`}
                 </p>
               </div>
             </div>
