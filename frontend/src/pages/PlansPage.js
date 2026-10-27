@@ -4,12 +4,13 @@ import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Check, ChevronDown, Copy, Gauge, Loader2, Lock, RefreshCcw, Share2, Tag } from "lucide-react";
+import { Check, Copy, Loader2, Lock, RefreshCcw, Share2, Tag } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import InviteDialog, { WhatsAppIcon } from "@/components/InviteDialog";
 import { inviteLink, inviteMessage } from "@/lib/referral";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
 import { useNavigate } from "react-router-dom";
+import { openSettings } from "@/lib/settingsNav";
 
 const TAGLINE = {
   basic: "Everything you need to get started.",
@@ -67,65 +68,6 @@ function untilText(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-function resetText(ts) {
-  if (!ts) return null;
-  const mins = Math.max(1, Math.round((ts * 1000 - Date.now()) / 60000));
-  if (mins < 20 * 60) {
-    const at = new Date(ts * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    return `Refills at ${at} (in ${mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`})`;
-  }
-  return `Refills on ${new Date(ts * 1000).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`;
-}
-
-function MeterBar({ label, part, idle, testid }) {
-  const pct = Math.min(100, Math.round((part.used / Math.max(1, part.limit)) * 100));
-  return (
-    <div data-testid={testid}>
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-semibold">{label}</span>
-        <span className="tabular-nums text-muted-foreground"><b className="text-foreground">{pct}%</b> used</span>
-      </div>
-      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface-strong">
-        <div className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-500" : "bg-foreground"}`}
-          style={{ width: `${pct}%` }} />
-      </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">{resetText(part.resetsAt) || idle}</p>
-    </div>
-  );
-}
-
-/** The usage meter, like Claude's: every build, picture, deck (and video, when on) runs it down by how big it is. */
-function Usage({ meter, costs, automation, video }) {
-  const range = (r) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}-${r[1]}`);
-  return (
-    <section className="mt-4 rounded-2xl border border-border bg-card p-5 sm:p-6" data-testid="plans-usage">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold"><Gauge className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} /> Your usage</h2>
-        <p className="text-xs text-muted-foreground">Chat on Krish Basic is never counted.</p>
-      </div>
-      <div className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        <MeterBar label="This session" part={meter.session} testid="meter-session"
-          idle={`Starts when you make something, then refills ${meter.session.hours} hours later`} />
-        <MeterBar label="This week" part={meter.week} testid="meter-week" idle="Starts when you make something" />
-      </div>
-      <div className="mt-6 rounded-xl bg-sunken p-4" data-testid="meter-costs">
-        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">What things use</p>
-        <p className="mt-1 text-xs text-muted-foreground">Bigger requests use more: a longer build ask{video ? ", a longer video" : ""}, a longer chat.</p>
-        <ul className="mt-2 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>App build</span><span className="tabular-nums text-muted-foreground">{range(costs.build)} credits</span></li>
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>AI picture</span><span className="tabular-nums text-muted-foreground">{costs.picture} credits</span></li>
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>Slide deck</span><span className="tabular-nums text-muted-foreground">{costs.deck} + pictures</span></li>
-          {video && <li className="flex justify-between gap-3 whitespace-nowrap"><span>Video</span><span className="tabular-nums text-muted-foreground">{costs.videoSecond} a second</span></li>}
-          <li className="flex justify-between gap-3 whitespace-nowrap"><span>Premium message</span><span className="tabular-nums text-muted-foreground">{range(costs.chat)} credits</span></li>
-        </ul>
-      </div>
-      <p className="mt-4 text-xs text-muted-foreground" data-testid="meter-automations">
-        Automations: {automation.used} of {automation.limit}
-      </p>
-    </section>
-  );
-}
-
 function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
@@ -138,8 +80,8 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
   const off = plan.listPrice > plan.price ? Math.round((1 - plan.price / plan.listPrice) * 100) : 0;
   return (
     <div data-testid={`plan-${plan.id}`}
-      className={`relative flex-col rounded-2xl bg-card p-6 ${shown ? "flex" : "hidden md:flex"} ${popular
-        ? "border-2 border-foreground shadow-[0_20px_50px_-30px_rgba(0,0,0,0.45)]" : "border border-border"}`}>
+      className={`plans-card relative flex-col rounded-2xl p-5 transition-transform duration-200 md:hover:-translate-y-1 ${shown ? "flex" : "hidden md:flex"} ${popular
+        ? "plans-card-pop md:-translate-y-2 md:hover:-translate-y-3" : ""}`}>
       {popular && !current && (
         <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-foreground px-3 py-1 text-[11px] font-semibold text-background">Most popular</span>
       )}
@@ -147,9 +89,9 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
         <h2 className="text-[15px] font-semibold">{plan.name}</h2>
         {current && <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">Your plan</span>}
       </div>
-      <p className="mt-1 text-[13px] text-muted-foreground">{TAGLINE[plan.id]}</p>
-      <div className="mt-5 flex items-end gap-2">
-        <span className="text-[2.6rem] font-semibold leading-none tracking-tight tabular-nums">₹{price}</span>
+      <p className="mt-0.5 text-[12.5px] text-muted-foreground">{TAGLINE[plan.id]}</p>
+      <div className="mt-3.5 flex items-end gap-2">
+        <span className="text-[2.3rem] font-semibold leading-none tracking-tight tabular-nums">₹{price}</span>
         <span className="pb-1 text-[13px] text-muted-foreground">{plan.price ? "/ month" : "forever"}</span>
       </div>
       <div className="mt-2 flex h-5 items-center gap-2 text-[12px]">
@@ -157,7 +99,7 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
         {off > 0 && <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium" data-testid={`plan-launch-${plan.id}`}>Launch price · {off}% off</span>}
       </div>
       <Button disabled={!canBuy || busy} onClick={() => onBuy(plan.id)} data-testid={`plan-button-${plan.id}`}
-        className={`mt-5 h-10 w-full rounded-lg text-[0.88rem] font-medium shadow-none disabled:opacity-100 ${canBuy && popular
+        className={`mt-3.5 h-10 w-full rounded-lg text-[0.88rem] font-medium shadow-none disabled:opacity-100 ${canBuy && popular
           ? "bg-foreground text-background hover:bg-foreground/90"
           : canBuy ? "border border-border bg-background text-foreground hover:bg-muted"
           : "border border-border bg-muted/50 text-muted-foreground"}`}>
@@ -167,16 +109,16 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
           : renews ? (current ? "Renews automatically" : "Included in your plan")
           : current ? `Add a month · ₹${price}` : lower ? "Included in your plan" : `Get ${plan.name}`}
       </Button>
-      <p className="mt-2 h-4 text-center text-[11px] text-muted-foreground">
+      <p className="mt-1.5 h-4 text-center text-[11px] text-muted-foreground">
         {current && expires ? (renews ? `Next renewal ${untilText(expires)}` : `Active until ${untilText(expires)}`)
           : plan.price ? "Cancel anytime" : ""}
       </p>
-      <div className="my-5 h-px bg-border" />
-      <p className="mb-3 text-[12px] font-medium text-muted-foreground">{label}</p>
-      <ul className="flex-1 space-y-2.5 text-[13.5px]">
+      <div className="my-3.5 h-px bg-border" />
+      <p className="mb-2 text-[12px] font-medium text-muted-foreground">{label}</p>
+      <ul className="flex-1 space-y-1.5 text-[13px]">
         {items.map((text) => (
           <li key={text} className="flex items-start gap-2.5 leading-snug">
-            <Check className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} />
+            <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
             {text}
           </li>
         ))}
@@ -185,12 +127,6 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
   );
 }
 
-const FAQ = [
-  ["Can I cancel anytime?", "Yes. Turn off autopay in Settings > Billing. You keep your plan until the month you paid for ends, then go back to Basic. Nothing is deleted."],
-  ["How do I pay?", "UPI (GPay, PhonePe, Paytm), debit or credit cards and net banking, through Razorpay. Krish never sees or stores your card."],
-  ["What happens to my work if I stop?", "Everything you made stays in your account. Only the bigger limits and premium features pause."],
-  ["Can I get a refund?", "If you're not happy, ask within 7 days of paying from the Help Center and we refund it in full. See the Refund Policy."],
-];
 
 /** Give Pro, get Pro: the person's own invite link, ready to copy or send, and the Pro days it has earned. */
 function InviteFriends({ onMore }) {
@@ -210,7 +146,7 @@ function InviteFriends({ onMore }) {
     toast.success("Invite link copied");
   };
   return (
-    <section className="grid items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 md:grid-cols-[1fr_1.15fr] md:gap-6" data-testid="plans-invite">
+    <section className="plans-card grid items-center gap-3 rounded-2xl px-5 py-3.5 md:grid-cols-[1fr_1.15fr] md:gap-6" data-testid="plans-invite">
       <div className="min-w-0">
         <h2 className="text-[15px] font-semibold">Give Pro, get Pro</h2>
         <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
@@ -350,12 +286,12 @@ export default function PlansPage() {
     <div className="flex h-dvh w-full overflow-hidden plans-canvas max-md:flex-col">
       <IconRail />
       <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1040px] px-4 pb-14 pt-6 sm:px-6 sm:pt-12">
+        <div className="mx-auto w-full max-w-[1040px] px-4 pb-8 pt-5 sm:px-6 sm:pt-7">
           <header className="text-center">
-            <h1 className="text-[1.9rem] font-semibold leading-tight tracking-tight sm:text-[2.6rem]">Simple pricing for everyone</h1>
-            <p className="mx-auto mt-2 max-w-lg text-[0.9rem] text-muted-foreground max-sm:text-[0.82rem]">
-              Chat is unlimited on every plan. Upgrade for more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.
-            </p>
+            <h1 className="krish-display text-[1.9rem] leading-[1.05] sm:text-[2.5rem]">
+              Choose the plan that <em className="text-[#4F46E5] dark:text-[#A5B4FC]">fits you</em>
+            </h1>
+            <p className="mx-auto mt-1.5 max-w-lg text-[0.8rem] leading-snug text-muted-foreground max-sm:hidden">Chat is unlimited on every plan. Upgrade for more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.</p>
           </header>
 
           {!data ? (
@@ -371,7 +307,7 @@ export default function PlansPage() {
                   </button>
                 ))}
               </div>
-              <div className="mt-6 grid gap-4 md:mt-10 md:grid-cols-3 md:items-stretch" data-testid="plans-grid">
+              <div className="mt-6 grid gap-4 md:mt-8 md:grid-cols-3 md:items-stretch md:gap-5" data-testid="plans-grid">
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
                     paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} video={data.video}
@@ -379,7 +315,7 @@ export default function PlansPage() {
                 ))}
               </div>
 
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-muted-foreground" data-testid="plans-trust">
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-muted-foreground" data-testid="plans-trust">
                 <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> Secure payments by Razorpay</span>
                 <span>UPI · Cards · Net banking</span>
                 <span className="flex items-center gap-1.5"><RefreshCcw className="h-3.5 w-3.5" /> {data.paymentsOn ? "Renews monthly, cancel anytime" : "Payments open soon"}</span>
@@ -401,22 +337,11 @@ export default function PlansPage() {
               )}
               {offer && <p className="mt-1.5 text-center text-[11px] text-muted-foreground">{offer.code} applied: a one-time payment for 30 days, no autopay.</p>}
 
-              <div className="mt-10"><InviteFriends onMore={() => setInviteOpen(true)} /></div>
-              {data.limitsOn && <Usage meter={data.meter} costs={data.costs} automation={data.usage.automation} video={data.video} />}
-
-              <section className="mt-10" data-testid="plans-faq">
-                <h2 className="text-center text-[15px] font-semibold">Questions</h2>
-                <div className="mx-auto mt-4 max-w-2xl divide-y divide-border rounded-2xl border border-border bg-card">
-                  {FAQ.map(([q, a]) => (
-                    <details key={q} className="group px-5 py-4">
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] font-medium">
-                        {q}<ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                      </summary>
-                      <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{a}</p>
-                    </details>
-                  ))}
-                </div>
-              </section>
+              <div className="mt-5"><InviteFriends onMore={() => setInviteOpen(true)} /></div>
+              <p className="mt-4 text-center text-[12px] text-muted-foreground">
+                See how much you've used in <button type="button" onClick={() => openSettings("usage")} className="underline underline-offset-2 hover:text-foreground" data-testid="plans-usage-link">Settings &gt; Usage</button>
+                {" "}· Questions? <a href="/refunds" className="underline underline-offset-2 hover:text-foreground">Refunds and cancelling</a>
+              </p>
             </>
           )}
         </div>
