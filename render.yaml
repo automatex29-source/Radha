@@ -49,7 +49,7 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
-      # Optional: where Help Center bug reports and feedback are emailed (defaults to empirex.offical@gmail.com).
+      # Optional: where Help Center bug reports and feedback are emailed (defaults to empirex.support@gmail.com).
       - key: SUPPORT_EMAIL
         sync: false
       # Payments for Pro and Max (Razorpay: UPI, cards, net banking). From https://dashboard.razorpay.com

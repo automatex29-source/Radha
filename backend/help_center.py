@@ -44,7 +44,7 @@ class ReportIn(BaseModel):
 
 
 # EmpireX's help email, shown across the app; bug reports and feedback go there unless SUPPORT_EMAIL says otherwise.
-HELP_EMAIL = "empirex.offical@gmail.com"
+HELP_EMAIL = "empirex.support@gmail.com"
 
 
 def _support_inbox() -> str:
