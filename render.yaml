@@ -34,7 +34,12 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      # Paid: Pro and Max chat and app builds on Claude (Krish Swift = Haiku 5.5, Krish Ultra = Sonnet 5.5).
       - key: ANTHROPIC_API_KEY
+        sync: false
+      # Paid: Pro and Max pictures on Google's image model (about $0.04 each). Use a key from a SEPARATE Google
+      # project with billing on, so GEMINI_API_KEY above stays on the free tier for Basic chat.
+      - key: GEMINI_IMAGE_KEY
         sync: false
       # Optional, free: raises the image/video limits (https://enter.pollinations.ai, sign in with GitHub).
       - key: POLLINATIONS_API_KEY

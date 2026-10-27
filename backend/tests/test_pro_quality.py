@@ -91,11 +91,13 @@ def test_premium_messages_use_the_meter_by_length(client, monkeypatch):
     import limits
     import server
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
-    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": 3, "week": 100})
+    short, long = (limits.cost("chat", chars, "pro", "claude-sonnet-5-5") for chars in (10, 30000))
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": short * 2 + 1, "week": 1000})
     uid = _user(client, "cap-pro@test.com", "pro")
     pick = lambda chars: client.portal.call(server._pick_model, uid, {}, "claude-sonnet-5-5", False, chars)
-    assert pick(10) == "claude-sonnet-5-5"  # 1 credit
-    assert pick(6500) == server.AI_MODEL  # 3 credits don't fit in the 2 left: Krish Basic answers
+    assert pick(10) == "claude-sonnet-5-5"
+    assert long > short + 1
+    assert pick(30000) == server.AI_MODEL  # a long chat doesn't fit in what's left: Krish Basic answers
     assert pick(10) == "claude-sonnet-5-5"
 
 def test_uploads_follow_the_plan(client):
@@ -132,6 +134,8 @@ def test_long_videos_use_more_credits(client, monkeypatch):
     import server
     from agent import tools, video
     uid = _user(client, "long-max@test.com", "max")
+    minute = limits.cost("video", 60, "max")  # 60 seconds on the premium engine
+    monkeypatch.setitem(limits.PLANS["max"], "meter", {"session": minute * 3 // 2, "week": minute * 10})
     seen = []
 
     async def fake(prompt, seconds, *rest):
@@ -144,11 +148,10 @@ def test_long_videos_use_more_credits(client, monkeypatch):
 
     async def used():
         return (await limits.summary(server.db, uid))["meter"]["session"]["used"]
-    assert client.portal.call(used) == 600  # 60 seconds on the premium engine, 10 credits a second
-    monkeypatch.setitem(limits.PLANS["max"], "meter", {"session": 900, "week": 9000})
-    with pytest.raises(ValueError, match="needs 600 credits and you have 300 left"):
+    assert client.portal.call(used) == minute
+    with pytest.raises(ValueError, match=f"needs {minute} credits and you have {minute * 3 // 2 - minute} left"):
         client.portal.call(tools._generate_video, ctx, {"prompt": "another trip", "seconds": 60})
-    assert client.portal.call(used) == 600  # nothing taken for the video that couldn't be made
+    assert client.portal.call(used) == minute  # nothing taken for the video that couldn't be made
 
 
 def test_long_video_is_clips_joined(monkeypatch):
@@ -185,10 +188,12 @@ def test_long_video_is_clips_joined(monkeypatch):
 
 
 def test_video_length_follows_the_plan(client, monkeypatch):
+    import limits
     import media
     import server
     from agent import tools, video
     basic, pro = _user(client, "vid-basic@test.com"), _user(client, "vid-pro@test.com", "pro")
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": 10**5, "week": 10**5})
     seen = []
 
     async def fake(prompt, seconds, *rest):

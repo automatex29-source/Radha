@@ -103,7 +103,7 @@ _GEMINI_FALLBACKS = (_GEMINI_FALLBACK, "cerebras/gpt-oss-120b")
 _CODER_FALLBACKS = ("cerebras/gpt-oss-120b", _GEMINI_FALLBACK)
 _GEMINI_RETRY_PAUSE = 1.0
 # Google retires Gemini models for new keys; chats saved with an old name use the current one.
-_RENAMED = {"gemini-2.5-flash": "gemini-3.5-flash-lite"}
+_RENAMED = {"gemini-2.5-flash": "gemini-3.5-flash-lite", "claude-haiku-4-5-20251001": "claude-haiku-5-5"}
 # Gemini 3 wants each tool call sent back with the "thought signature" it came with. LiteLLM's streaming
 # drops it, so calls are sent back with Google's documented placeholder instead.
 _SKIP_SIGNATURE = "skip_thought_signature_validator"

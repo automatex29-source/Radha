@@ -141,15 +141,16 @@ def test_three_plans_and_prices():
 def test_paid_plans_get_more_and_switch_off_has_no_limits(db, monkeypatch):
     async def scenario():
         await db.users.insert_many([{"id": "pro", "plan": "pro"}, {"id": "max", "plan": "max"}])
-        for _ in range(20):
-            await limits.use(db, "pro", "build", 10**6)  # 20 x 20 = Pro's 400
-        with pytest.raises(limits.LimitReached, match="Upgrade to Max"):
-            await limits.use(db, "pro", "build")
-        for _ in range(21):
+        fits = limits.PLANS["pro"]["meter"]["session"] // 20
+        for _ in range(fits):
+            await limits.use(db, "pro", "build", 10**6)  # 20 credits each on the free builder
+        with pytest.raises(limits.LimitReached):
+            await limits.use(db, "pro", "build", 10**6)
+        for _ in range(fits + 1):
             await limits.use(db, "max", "build", 10**6)
         assert await limits.is_pro(db, "max") and not await limits.is_pro(db, "u")
         assert await limits.use_premium(db, "max", 5000)
-        assert not await limits.use_premium(db, "pro", 0)  # an empty meter: the chat falls back to Krish Basic
+        assert not await limits.use_premium(db, "pro", 0, "claude-sonnet-5-5")  # an empty meter: the chat falls back to Krish Basic
 
         monkeypatch.setenv("FREE_LIMITS", "off")
         await db.automations.insert_many([{"id": "a1", "userId": "u"}, {"id": "a2", "userId": "u"}])
@@ -194,3 +195,32 @@ def test_picture_tool_refunds_on_failure_and_explains_the_limit(db, monkeypatch)
         assert "refills" in ctx.limit_hit  # streamed to the app, which pops up the upgrade message
 
     run(scenario())
+
+
+def test_paid_credits_follow_what_each_engine_really_costs(monkeypatch):
+    # A paid plan's week is its AI budget: 60% of the price after Razorpay's fee, over a month of weeks.
+    for plan in ("pro", "max"):
+        price, week = limits.PLANS[plan]["price"], limits.PLANS[plan]["meter"]["week"]
+        month_rupees = week * limits.WEEKS_PER_MONTH * limits.CREDIT_RUPEES
+        assert month_rupees <= price * (1 - limits.RAZORPAY_FEE) * limits.AI_SHARE + 1
+        assert limits.PLANS[plan]["meter"]["session"] >= limits.cost("build", 0, plan, "claude-sonnet-5-5")
+    assert limits.paid_meter(599)["week"] > limits.PLANS["pro"]["meter"]["week"]  # a higher price, a bigger meter
+
+    haiku, sonnet = (limits.cost("chat", 12000, "pro", m) for m in ("claude-haiku-5-5", "claude-sonnet-5-5"))
+    assert haiku * 5 < sonnet  # Swift is many times cheaper than Ultra
+    assert limits.cost("chat", 12000, "pro", "claude-sonnet-5-5", think=True) > sonnet
+    assert limits.cost("chat", 0, "pro", "some-new-model") >= limits.cost("chat", 0, "pro", "claude-sonnet-5-5")
+    assert limits.cost("build", 0, "pro", "claude-sonnet-5-5") > limits.cost("build", 0, "pro", "claude-haiku-5-5")
+    assert limits.cost("build", 0, "pro", "cerebras/gpt-oss-120b") == limits.cost("build", 0, "basic")
+
+    # Pictures cost what the premium engine charges: Gemini on its own billed key is the cheapest good one.
+    for key in ("FAL_KEY", "OPENAI_API_KEY", "GEMINI_IMAGE_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    assert limits.cost("picture", 1, "pro") == limits.cost("picture", 1, "basic") == 2  # free engines only
+    monkeypatch.setenv("GEMINI_IMAGE_KEY", "k")
+    gemini = limits.cost("picture", 1, "pro")
+    monkeypatch.setenv("FAL_KEY", "k")
+    assert limits.cost("picture", 1, "pro") == gemini  # Gemini still goes first
+    monkeypatch.delenv("GEMINI_IMAGE_KEY")
+    assert limits.cost("picture", 1, "pro") > gemini * 3  # Nano Banana Pro costs about 4x more
+    assert limits.cost("picture", 1, "basic") == 2

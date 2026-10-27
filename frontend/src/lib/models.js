@@ -11,6 +11,7 @@ export const MODEL_INFO = {
   "openai/gpt-oss-20b": KRISH,
   "cerebras/gpt-oss-120b": KRISH,
   "claude-sonnet-5-5": { label: "Krish Ultra", icon: Crown },
+  "claude-haiku-5-5": { label: "Krish Swift", icon: Rocket },
   "claude-haiku-4-5-20251001": { label: "Krish Swift", icon: Rocket },
   "gpt-5.4": { label: "Krish Vision", icon: Eye },
 };

@@ -10,6 +10,8 @@ _MODELS = {
     "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-haiku-4-5-20251001",
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5",
 }
 
 
