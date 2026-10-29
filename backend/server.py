@@ -95,10 +95,11 @@ CODER_MODEL = os.environ.get("CODER_MODEL", "").strip() or "openrouter/qwen/qwen
 AUTO_MODEL = agent_llm.AUTO
 AVAILABLE_MODELS = [
     {"id": AUTO_MODEL, "label": "Krish Basic", "description": "Free, and picks the best engine for each question", "pro": False},
-    {"id": "claude-sonnet-5-5", "label": "Krish Ultra", "description": "Our smartest, for deep thinking", "pro": True},
-    {"id": "claude-haiku-4-5-20251001", "label": "Krish Swift", "description": "Quick and sharp for daily work", "pro": True},
-    {"id": "gpt-5.4", "label": "Krish Vision", "description": "A strong all-rounder for any task", "pro": True},
+    {"id": agent_llm.PRO, "label": "Krish Pro", "description": "Picks the best engine for each question: quick for "
+     "everyday, our smartest for code and apps", "pro": True},
 ]
+# The models Krish Pro picks from (see _pro_model); older chats that saved one of these by name keep working.
+PRO_QUICK, PRO_SMART = agent_llm.PRO_MODELS
 # The App Builder's models: BUILDER_MODEL (any model above, the owner's choice for every user) wins;
 # otherwise free-tier builds (Groq or Gemini) move to Krish Coder when it's set up (it writes better code, and hands
 # over to Cerebras when its free allowance runs out), else to Cerebras, since it fits about 4x more per request.
@@ -1983,7 +1984,7 @@ def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool 
 async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think, len(body.content))
+    model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think, len(body.content), body.content)
 
     image_ids = []
     for mid in body.images:
@@ -1992,7 +1993,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
             raise HTTPException(status_code=400, detail="Unknown image attachment")
         image_ids.append(mid)
     if conv.get("appId"):  # chat is unlimited; an App Builder message uses credits by how much it asks for
-        await limits.require(db, user_id, "build", size=len(body.content))
+        await limits.require(db, user_id, "build", size=len(body.content), model=model)
 
     content, ready_reply = body.content, None
     if conv.get("appId"):
@@ -2060,21 +2061,56 @@ async def _chat_chars(conv: dict) -> int:
     return sum(len(d.get("content") or "") for d in docs)
 
 
-async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = False, new_chars: int = 0) -> str:
+PRO_LONG_ASK_CHARS = 1500
+
+
+def _pro_model(conv: dict, text: str, think: bool) -> str:
+    """The engine Krish Pro answers with: Claude Sonnet for app builds, Think, the Counsellor, code and long asks;
+    Claude Haiku (about 20x cheaper, and good at everyday reasoning) for everything else."""
+    smart = bool(conv.get("appId")) or think or conv.get("mode") == counsellor.MODE \
+        or _code_ask(text) or len(text) >= PRO_LONG_ASK_CHARS
+    wanted = (PRO_SMART, PRO_QUICK) if smart else (PRO_QUICK, PRO_SMART)
+    return next((m for m in wanted if agent_llm.configured(m)), agent_llm.concrete(agent_llm.PRO))
+
+
+async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = False, new_chars: int = 0,
+                      text: str = "") -> str:
     """The model that answers: the App Builder's stronger model inside an app, and no paid
     model (Claude, GPT) for free-plan users unless the owner sets PAID_MODELS=all.
 
     On Pro and Max, Think (and every Counsellor message) moves a free-model question to the strongest premium
-    model. A premium message uses credits from the plan's meter by how much is sent (the chat so far and the new
-    message); once the meter is empty the chat answers with Krish Basic."""
+    model. A premium message uses credits from the plan's meter by what it costs on that model for how much is
+    sent (the chat so far and the new message); once the meter is empty the chat answers with Krish Basic. In the
+    App Builder the build itself uses the credits (see stream_message); when the meter can't cover a premium build,
+    the free builder makes it."""
     model = requested
     pro = await limits.is_pro(db, user_id)
+    if model == agent_llm.PRO and pro:
+        model = _pro_model(conv, text or "", think)
     # Pro and Max: the Counsellor always answers with the strongest premium model (deeper, warmer replies).
     if (think or conv.get("mode") == counsellor.MODE) and pro and not conv.get("appId") and not agent_llm.paid(model):
         model = next((m for m in THINK_MODELS if agent_llm.configured(m)), model)
-    if pro and agent_llm.paid(model) and not await limits.use_premium(db, user_id,
-                                                                       new_chars + await _chat_chars(conv)):
+    if pro and agent_llm.paid(model) and not conv.get("appId"):
+        chars = new_chars + await _chat_chars(conv)
+        # What's left on the meter can't cover Sonnet: Krish Pro answers with Haiku, then Krish Basic.
+        fallbacks = [model] + ([PRO_QUICK] if requested == agent_llm.PRO and model != PRO_QUICK
+                               and agent_llm.configured(PRO_QUICK) else [])
+        for candidate in fallbacks:
+            if await limits.use_premium(db, user_id, chars, candidate, think):
+                return candidate
         return AI_MODEL
+    if pro and agent_llm.paid(model) and conv.get("appId"):
+        candidates = [model] + ([PRO_QUICK] if requested == agent_llm.PRO and model != PRO_QUICK
+                                and agent_llm.configured(PRO_QUICK) else [])
+        for candidate in candidates:
+            try:
+                await limits.check_left(db, user_id, "build", new_chars, candidate)
+                model = candidate
+                break
+            except limits.LimitReached:
+                continue
+        else:
+            model = AUTO_MODEL
     if model == AUTO_MODEL and conv.get("appId"):
         model = agent_llm.concrete(model)
     if conv.get("appId"):
@@ -2202,10 +2238,11 @@ def _background(coro):
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
-    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think)
+    last = await db.messages.find_one({"conversationId": conv_id, "role": "user"}, sort=[("createdAt", -1)])
+    model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think,
+                              text=(last or {}).get("content") or "")
     if conv.get("appId"):  # chat is unlimited; an App Builder message uses credits by how much it asks for
-        last = await db.messages.find_one({"conversationId": conv_id, "role": "user"}, sort=[("createdAt", -1)])
-        await limits.require(db, user_id, "build", size=len((last or {}).get("content") or ""))
+        await limits.require(db, user_id, "build", size=len((last or {}).get("content") or ""), model=model)
 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     if not history_docs:
@@ -2234,9 +2271,9 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think,
-                              len(body.content))
+                              len(body.content), body.content)
     if conv.get("appId"):
-        await limits.require(db, user_id, "build", size=len(body.content))
+        await limits.require(db, user_id, "build", size=len(body.content), model=model)
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
     index = next((i for i, m in enumerate(history_docs) if m["id"] == message_id), None)
     if index is None or history_docs[index]["role"] != "user":

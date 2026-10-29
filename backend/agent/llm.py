@@ -23,10 +23,17 @@ _FREE = ("groq", "cerebras")
 # model that is set up.
 AUTO = "krish-auto"
 FREE_MODELS = ("gemini-3.5-flash-lite", "openai/gpt-oss-120b", "cerebras/gpt-oss-120b")
+# Krish Pro: the one premium model people see on Pro and Max. Like Krish AI it isn't a real model: server._pro_model
+# picks Claude Haiku for everyday questions and Claude Sonnet for code, app builds, Think and hard questions.
+PRO = "krish-pro"
+PRO_MODELS = ("claude-haiku-5-5", "claude-sonnet-5-5")
 
 
 def concrete(model: str) -> str:
-    """The real model for `model`: Krish AI becomes the first free model that is set up."""
+    """The real model for `model`: Krish AI becomes the first free model that is set up, Krish Pro the first
+    premium one."""
+    if model == PRO:
+        return next((m for m in PRO_MODELS if configured(m)), PRO_MODELS[0])
     if model != AUTO:
         return model
     return next((m for m in FREE_MODELS if configured(m)), FREE_MODELS[0])
@@ -103,7 +110,7 @@ _GEMINI_FALLBACKS = (_GEMINI_FALLBACK, "cerebras/gpt-oss-120b")
 _CODER_FALLBACKS = ("cerebras/gpt-oss-120b", _GEMINI_FALLBACK)
 _GEMINI_RETRY_PAUSE = 1.0
 # Google retires Gemini models for new keys; chats saved with an old name use the current one.
-_RENAMED = {"gemini-2.5-flash": "gemini-3.5-flash-lite"}
+_RENAMED = {"gemini-2.5-flash": "gemini-3.5-flash-lite", "claude-haiku-4-5-20251001": "claude-haiku-5-5"}
 # Gemini 3 wants each tool call sent back with the "thought signature" it came with. LiteLLM's streaming
 # drops it, so calls are sent back with Google's documented placeholder instead.
 _SKIP_SIGNATURE = "skip_thought_signature_validator"
@@ -150,7 +157,7 @@ def token_budget(model: str = "") -> int:
 
 def litellm_model(model: str) -> str:
     """The model name LiteLLM expects: provider-prefixed, without doubling a prefix already there."""
-    model = _RENAMED.get(model, model)
+    model = _RENAMED.get(concrete(model) if model == PRO else model, model)
     provider = provider_for(model)
     return model if model.startswith(provider + "/") else f"{provider}/{model}"
 

@@ -91,11 +91,13 @@ def test_premium_messages_use_the_meter_by_length(client, monkeypatch):
     import limits
     import server
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
-    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": 3, "week": 100})
+    short, long = (limits.cost("chat", chars, "pro", "claude-sonnet-5-5") for chars in (10, 30000))
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": short * 2 + 1, "week": 1000})
     uid = _user(client, "cap-pro@test.com", "pro")
     pick = lambda chars: client.portal.call(server._pick_model, uid, {}, "claude-sonnet-5-5", False, chars)
-    assert pick(10) == "claude-sonnet-5-5"  # 1 credit
-    assert pick(6500) == server.AI_MODEL  # 3 credits don't fit in the 2 left: Krish Basic answers
+    assert pick(10) == "claude-sonnet-5-5"
+    assert long > short + 1
+    assert pick(30000) == server.AI_MODEL  # a long chat doesn't fit in what's left: Krish Basic answers
     assert pick(10) == "claude-sonnet-5-5"
 
 def test_uploads_follow_the_plan(client):
@@ -132,6 +134,8 @@ def test_long_videos_use_more_credits(client, monkeypatch):
     import server
     from agent import tools, video
     uid = _user(client, "long-max@test.com", "max")
+    minute = limits.cost("video", 60, "max")  # 60 seconds on the premium engine
+    monkeypatch.setitem(limits.PLANS["max"], "meter", {"session": minute * 3 // 2, "week": minute * 10})
     seen = []
 
     async def fake(prompt, seconds, *rest):
@@ -144,11 +148,10 @@ def test_long_videos_use_more_credits(client, monkeypatch):
 
     async def used():
         return (await limits.summary(server.db, uid))["meter"]["session"]["used"]
-    assert client.portal.call(used) == 600  # 60 seconds on the premium engine, 10 credits a second
-    monkeypatch.setitem(limits.PLANS["max"], "meter", {"session": 900, "week": 9000})
-    with pytest.raises(ValueError, match="needs 600 credits and you have 300 left"):
+    assert client.portal.call(used) == minute
+    with pytest.raises(ValueError, match=f"needs {minute} credits and you have {minute * 3 // 2 - minute} left"):
         client.portal.call(tools._generate_video, ctx, {"prompt": "another trip", "seconds": 60})
-    assert client.portal.call(used) == 600  # nothing taken for the video that couldn't be made
+    assert client.portal.call(used) == minute  # nothing taken for the video that couldn't be made
 
 
 def test_long_video_is_clips_joined(monkeypatch):
@@ -185,10 +188,12 @@ def test_long_video_is_clips_joined(monkeypatch):
 
 
 def test_video_length_follows_the_plan(client, monkeypatch):
+    import limits
     import media
     import server
     from agent import tools, video
     basic, pro = _user(client, "vid-basic@test.com"), _user(client, "vid-pro@test.com", "pro")
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": 10**5, "week": 10**5})
     seen = []
 
     async def fake(prompt, seconds, *rest):
@@ -200,3 +205,27 @@ def test_video_length_follows_the_plan(client, monkeypatch):
         client.portal.call(tools._generate_video, ctx, {"prompt": "a sunrise", "seconds": 30})
     assert seen == [(8, False), (12, True)]
     assert media.PREMIUM_MEDIA.get() is True  # set only while the video is made
+
+
+def test_krish_pro_picks_the_engine_for_each_question(client, monkeypatch):
+    import limits
+    import server
+    from agent import llm
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    assert [m["id"] for m in server.AVAILABLE_MODELS if m["pro"]] == [llm.PRO]  # one premium choice in the menu
+    uid = _user(client, "krish-pro@test.com", "pro")
+    pick = lambda conv, text, think=False: client.portal.call(server._pick_model, uid, conv, llm.PRO, think,
+                                                               len(text), text)
+    assert pick({}, "what should I cook tonight?") == "claude-haiku-5-5"  # everyday: the quick one
+    assert pick({}, "fix this python error: TypeError in my function") == "claude-sonnet-5-5"  # code: the smart one
+    assert pick({}, "plan my week", think=True) == "claude-sonnet-5-5"
+    assert pick({"appId": "a1"}, "make a todo app") == "claude-sonnet-5-5"  # app builds
+
+    # When what's left can't cover Sonnet, Krish Pro answers with Haiku before falling back to Krish Basic.
+    sonnet = limits.cost("chat", 60, "pro", "claude-sonnet-5-5")
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": sonnet - 1, "week": 1000})
+    uid = _user(client, "krish-pro-low@test.com", "pro")  # a fresh meter
+    assert pick({}, "fix this python error: TypeError in my function") == "claude-haiku-5-5"
+
+    basic = _user(client, "krish-pro-basic@test.com")
+    assert client.portal.call(server._pick_model, basic, {}, llm.PRO, False, 5, "hello") == server.AI_MODEL
