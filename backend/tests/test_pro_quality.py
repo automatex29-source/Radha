@@ -205,3 +205,27 @@ def test_video_length_follows_the_plan(client, monkeypatch):
         client.portal.call(tools._generate_video, ctx, {"prompt": "a sunrise", "seconds": 30})
     assert seen == [(8, False), (12, True)]
     assert media.PREMIUM_MEDIA.get() is True  # set only while the video is made
+
+
+def test_krish_pro_picks_the_engine_for_each_question(client, monkeypatch):
+    import limits
+    import server
+    from agent import llm
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    assert [m["id"] for m in server.AVAILABLE_MODELS if m["pro"]] == [llm.PRO]  # one premium choice in the menu
+    uid = _user(client, "krish-pro@test.com", "pro")
+    pick = lambda conv, text, think=False: client.portal.call(server._pick_model, uid, conv, llm.PRO, think,
+                                                               len(text), text)
+    assert pick({}, "what should I cook tonight?") == "claude-haiku-5-5"  # everyday: the quick one
+    assert pick({}, "fix this python error: TypeError in my function") == "claude-sonnet-5-5"  # code: the smart one
+    assert pick({}, "plan my week", think=True) == "claude-sonnet-5-5"
+    assert pick({"appId": "a1"}, "make a todo app") == "claude-sonnet-5-5"  # app builds
+
+    # When what's left can't cover Sonnet, Krish Pro answers with Haiku before falling back to Krish Basic.
+    sonnet = limits.cost("chat", 60, "pro", "claude-sonnet-5-5")
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": sonnet - 1, "week": 1000})
+    uid = _user(client, "krish-pro-low@test.com", "pro")  # a fresh meter
+    assert pick({}, "fix this python error: TypeError in my function") == "claude-haiku-5-5"
+
+    basic = _user(client, "krish-pro-basic@test.com")
+    assert client.portal.call(server._pick_model, basic, {}, llm.PRO, False, 5, "hello") == server.AI_MODEL
