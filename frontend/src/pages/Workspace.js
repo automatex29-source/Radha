@@ -24,7 +24,7 @@ import ModelMenu from "@/components/ModelMenu";
 import { menuModel, modelLabel } from "@/lib/models";
 import { showPlanLimit } from "@/lib/planLimits";
 import { useT } from "@/lib/i18n";
-import { COUNSEL_AGENTS, counselAgent } from "@/lib/counselAgents";
+import { AGENTS_FOR_ALL, COUNSEL_AGENTS, counselAgent } from "@/lib/counselAgents";
 import AgentPortrait, { AgentArt } from "@/components/AgentPortrait";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
@@ -152,6 +152,7 @@ export default function Workspace({ mode = null }) {
   const counselling = mode === "counsellor";
   const { user } = useAuth();
   const proPlan = user?.plan === "pro" || user?.plan === "max";
+  const agentsOpen = proPlan || AGENTS_FOR_ALL;
   const t = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -178,12 +179,12 @@ export default function Workspace({ mode = null }) {
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
   // The Pro Counsellor agent picked for a new talk (or sent here by the welcome questions as ?agent=).
-  const [agentId, setAgentId] = useState(() => (counselling && proPlan && counselAgent(searchParams.get("agent"))
+  const [agentId, setAgentId] = useState(() => (counselling && agentsOpen && counselAgent(searchParams.get("agent"))
     ? searchParams.get("agent") : null));
   const linkedAgent = searchParams.get("agent");
   useEffect(() => {
-    if (counselling && proPlan && counselAgent(linkedAgent)) setAgentId(linkedAgent);
-  }, [counselling, proPlan, linkedAgent]);
+    if (counselling && agentsOpen && counselAgent(linkedAgent)) setAgentId(linkedAgent);
+  }, [counselling, agentsOpen, linkedAgent]);
   const [previewItem, setPreviewItem] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
   // Think (careful answers) and Study (tutor) stay on for this browser until turned off.
@@ -1200,7 +1201,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, agentId, onPickA
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <AgentPicker pro={pro} agentId={agentId} onPick={onPickAgent} onCall={onCallAgent} suggested={user?.suggestedAgents || []} />
+      <AgentPicker pro={pro || AGENTS_FOR_ALL} agentId={agentId} onPick={onPickAgent} onCall={onCallAgent} suggested={user?.suggestedAgents || []} />
       <MoodCheckIn onPick={onPick} pro={pro} />
       <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
         <button onClick={onBreathe} data-testid="breathe-button"

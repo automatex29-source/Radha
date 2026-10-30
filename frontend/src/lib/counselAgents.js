@@ -2,6 +2,9 @@ import AgentPortrait from "@/components/AgentPortrait";
 
 // Pro Counsellor agents: companions people can chat or have a voice call with. Their personalities live in
 // backend/counsellor.py (AGENTS); here are their looks, taglines and the voice that speaks for them.
+// Temporarily open to every plan for testing; set back to false to lock them to Pro (backend: counsellor.AGENTS_FOR_ALL).
+export const AGENTS_FOR_ALL = true;
+
 export const COUNSEL_AGENTS = [
   { id: "krishna", name: "Krishna", voice: "onyx", gradient: "from-sky-500 to-indigo-600",
     tagline: "Calm wisdom for big questions and hard choices", hello: "I'm here, dear friend. What's on your mind?" },

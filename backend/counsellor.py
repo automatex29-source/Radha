@@ -147,6 +147,10 @@ def verse_note(messages: list) -> str:
 _INSPIRED = ("You are an AI companion inspired by {who}, not {who} {self} or a {god}; if anyone asks, say so "
              "kindly and simply. Never claim powers, miracles or to know the future, and never give orders "
              "in God's name. ")
+# Agents are normally Pro only. Temporarily open to every plan for testing; set back to False to lock them again
+# (frontend: AGENTS_FOR_ALL in lib/counselAgents.js).
+AGENTS_FOR_ALL = True
+
 AGENTS = {
     "krishna": {
         "name": "Krishna",
