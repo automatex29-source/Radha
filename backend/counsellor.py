@@ -339,3 +339,66 @@ def tidy(text: str) -> str:
     """Closes the gap a cut word leaves (\"ke  hai\" -> \"ke hai\", \"word .\" -> \"word.\")."""
     text = re.sub(r"(?<=\S) {2,}(?=\S)", " ", text)
     return re.sub(r"(?<=\w) +(?=[.,!?])", "", text)
+
+
+# The welcome questions everyone answers once after signing in: what to call them, what they do, what
+# they want most and where they live. They pick the Counsellor agents suggested to them.
+WORK = {"student": "a student", "working": "working", "business": "running a business", "homemaker": "a homemaker",
+        "job_seeker": "looking for work", "retired": "retired", "other": None}
+WANTS = {"peace": "peace of mind", "career": "career and money", "study": "focus in studies",
+         "love": "love and relationships", "confidence": "confidence", "spiritual": "spiritual growth",
+         "joy": "more happiness and fun"}
+_FOR_WANT = {
+    "peace": {"krishna": 3, "radha": 2, "ananya": 2},
+    "career": {"kabir": 3, "krishna": 1, "hanuman": 1},
+    "study": {"kabir": 3, "hanuman": 2},
+    "love": {"radha": 3, "ananya": 2},
+    "confidence": {"hanuman": 3, "ananya": 2, "kabir": 1},
+    "spiritual": {"krishna": 3, "bal_krishna": 2, "radha": 2},
+    "joy": {"bal_krishna": 3, "ananya": 1},
+}
+_FOR_WORK = {"student": {"kabir": 1}, "job_seeker": {"kabir": 2, "hanuman": 1}, "retired": {"krishna": 1},
+             "homemaker": {"ananya": 1, "radha": 1}, "business": {"kabir": 1, "krishna": 1}}
+_DIVINE = ("krishna", "bal_krishna", "radha", "hanuman")
+# Where Krishna, Radha and Hanuman are part of everyday life; elsewhere the everyday guides come first.
+_DEVOTIONAL = {"india", "nepal", "mauritius", "fiji", "bhutan"}
+
+
+def suggest(about) -> list:
+    """The three Counsellor agents that fit someone's welcome answers best, best first."""
+    if not about:
+        return []
+    score = {k: 0 for k in AGENTS}
+    for want in about.get("wants") or []:
+        for agent, points in _FOR_WANT.get(want, {}).items():
+            score[agent] += points
+    for agent, points in _FOR_WORK.get(about.get("does"), {}).items():
+        score[agent] += points
+    devotional = (about.get("country") or "").strip().lower() in _DEVOTIONAL
+    for agent in score:
+        if agent in _DIVINE:
+            score[agent] += 1 if devotional else -1
+        else:
+            score[agent] += 0 if devotional else 2
+    order = list(AGENTS)
+    return sorted(order, key=lambda a: (-score[a], order.index(a)))[:3]
+
+
+def about_line(about) -> str:
+    """The system-prompt line with their welcome answers, or "" when they skipped it."""
+    if not about:
+        return ""
+    bits = []
+    if about.get("callMe"):
+        bits.append(f"call them \"{about['callMe']}\"")
+    if WORK.get(about.get("does")):
+        bits.append(f"they are {WORK[about['does']]}")
+    wants = [WANTS[w] for w in about.get("wants") or [] if w in WANTS]
+    if wants:
+        bits.append("what they want most right now: " + ", ".join(wants))
+    if about.get("country"):
+        bits.append(f"they live in {about['country']}")
+    if not bits:
+        return ""
+    return ("About them (from the questions they answered when they joined): " + "; ".join(bits) + ". Use this "
+            "gently to make your help fit their life; never list it back to them.")

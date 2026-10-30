@@ -227,3 +227,23 @@ def test_app_shows_the_same_agents():
     import counsellor
     js = (Path(__file__).resolve().parents[2] / "frontend/src/lib/counselAgents.js").read_text()
     assert re.findall(r'\{ id: "(\w+)"', js) == list(counsellor.AGENTS)
+
+
+def test_welcome_questions_pick_counsellors_and_reach_the_prompt(client):
+    import counsellor
+    me = client.get("/api/auth/me").json()
+    assert me["needsWelcome"] is True and me["suggestedAgents"] == []
+    assert client.put("/api/auth/about", json={"does": "astronaut"}).status_code == 422
+    assert client.put("/api/auth/about", json={"wants": ["peace", "love", "joy", "study"]}).status_code == 422
+    me = client.put("/api/auth/about", json={"callMe": " Meeru ", "does": "student", "wants": ["study", "confidence"],
+                                             "country": "India"}).json()
+    assert me["needsWelcome"] is False and me["about"]["callMe"] == "Meeru"
+    assert me["suggestedAgents"] == ["hanuman", "kabir", "ananya"]
+    cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    call, _ = _send(client, cid, "exams are close and I panic")
+    system = call["messages"][0]["content"]
+    assert 'call them "Meeru"' in system and "they are a student" in system and "they live in India" in system
+    # Outside India the everyday guides come first; skipping saves nothing but stops the questions.
+    assert counsellor.suggest({"wants": ["peace"], "country": "Canada"})[0] == "ananya"
+    me = client.put("/api/auth/about", json={"skipped": True}).json()
+    assert me["needsWelcome"] is False and me["about"] is None and me["suggestedAgents"] == []

@@ -177,7 +177,13 @@ export default function Workspace({ mode = null }) {
   const [streamSteps, setStreamSteps] = useState([]);
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [agentId, setAgentId] = useState(null); // the Pro Counsellor agent picked for a new talk
+  // The Pro Counsellor agent picked for a new talk (or sent here by the welcome questions as ?agent=).
+  const [agentId, setAgentId] = useState(() => (counselling && proPlan && counselAgent(searchParams.get("agent"))
+    ? searchParams.get("agent") : null));
+  const linkedAgent = searchParams.get("agent");
+  useEffect(() => {
+    if (counselling && proPlan && counselAgent(linkedAgent)) setAgentId(linkedAgent);
+  }, [counselling, proPlan, linkedAgent]);
   const [previewItem, setPreviewItem] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
   // Think (careful answers) and Study (tutor) stay on for this browser until turned off.
@@ -970,7 +976,7 @@ function TypingLine() {
 function EmptyState({ onPick }) {
   const t = useT();
   const { user } = useAuth();
-  const first = (user?.name || "").trim().split(/\s+/)[0];
+  const first = user?.about?.callMe || (user?.name || "").trim().split(/\s+/)[0];
   const [topic, setTopic] = useState("popular");
   const items = TOPICS.find((x) => x.id === topic)?.items || [];
   return (
@@ -1076,9 +1082,12 @@ function MoodCheckIn({ onPick, pro }) {
 }
 
 // Pro: pick a companion to chat with, or call them and talk out loud (see lib/counselAgents.js).
-function AgentPicker({ pro, agentId, onPick, onCall }) {
+function AgentPicker({ pro, agentId, onPick, onCall, suggested = [] }) {
   const navigate = useNavigate();
   const picked = counselAgent(agentId);
+  // The agents suggested from their welcome answers come first, marked "For you".
+  const agents = [...COUNSEL_AGENTS].sort((a, b) => (suggested.includes(a.id) ? suggested.indexOf(a.id) : 9)
+    - (suggested.includes(b.id) ? suggested.indexOf(b.id) : 9));
   const choose = (fn, id) => (pro ? fn(id) : navigate("/plans"));
   return (
     <section data-testid="counsellor-agents" className="mt-6">
@@ -1096,7 +1105,7 @@ function AgentPicker({ pro, agentId, onPick, onCall }) {
         )}
       </div>
       <div className="krish-no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 xl:grid-cols-6">
-        {COUNSEL_AGENTS.map((a) => {
+        {agents.map((a) => {
           const on = a.id === agentId;
           return (
             <div key={a.id} data-testid={`counsellor-agent-${a.id}`}
@@ -1105,6 +1114,10 @@ function AgentPicker({ pro, agentId, onPick, onCall }) {
                 <AgentArt id={a.id} className="transition duration-500 group-hover:scale-105" />
                 <span className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
               </button>
+              {suggested.includes(a.id) && (
+                <span data-testid={`counsellor-agent-for-you-${a.id}`}
+                  className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-slate-900 backdrop-blur">For you</span>
+              )}
               {!pro && (
                 <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 backdrop-blur">
                   <Lock className="h-3.5 w-3.5 text-white" />
@@ -1146,7 +1159,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, agentId, onPickA
   const { user } = useAuth();
   const navigate = useNavigate();
   const pro = user?.plan === "pro" || user?.plan === "max";
-  const first = (user?.name || "").trim().split(/\s+/)[0];
+  const first = user?.about?.callMe || (user?.name || "").trim().split(/\s+/)[0];
   const g = useMemo(() => pickGreeting(first), [first]);
   return (
     <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
@@ -1181,7 +1194,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, agentId, onPickA
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <AgentPicker pro={pro} agentId={agentId} onPick={onPickAgent} onCall={onCallAgent} />
+      <AgentPicker pro={pro} agentId={agentId} onPick={onPickAgent} onCall={onCallAgent} suggested={user?.suggestedAgents || []} />
       <MoodCheckIn onPick={onPick} pro={pro} />
       <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
         <button onClick={onBreathe} data-testid="breathe-button"

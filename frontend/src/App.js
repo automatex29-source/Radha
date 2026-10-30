@@ -27,6 +27,7 @@ const LegalPage = lazy(() => import("@/pages/LegalPage"));
 const InvitePage = lazy(() => import("@/pages/InvitePage"));
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
+import WelcomeQuestions from "@/components/WelcomeQuestions";
 import { installPlanLimitToasts } from "@/lib/planLimits";
 import PlanLimitDialog from "@/components/PlanLimitDialog";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -86,6 +87,7 @@ function Gate() {
     <>
     <InstallBanner />
     <SettingsHost />
+    {user.needsWelcome && <WelcomeQuestions />}
     <Routes>
       <Route path="/login" element={<Navigate to={takeRememberedPath()} replace />} />
       <Route path="/" element={<Workspace key="chat" />} />

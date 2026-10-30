@@ -259,6 +259,10 @@ def public_user(doc: dict) -> dict:
         "isOwner": is_owner_email(doc["email"]),
         "hasPassword": bool(doc.get("password_hash")),
         "google": bool(doc.get("googleId")),
+        # The welcome questions (counsellor.WORK / WANTS): asked once, and they pick the suggested agents.
+        "about": doc.get("about"),
+        "needsWelcome": not doc.get("aboutAt"),
+        "suggestedAgents": counsellor.suggest(doc.get("about")),
     }
 
 
@@ -749,6 +753,29 @@ async def set_language(body: LanguageIn, user_id: str = Depends(current_user_id)
     if body.language not in languages.LANGUAGES:
         raise HTTPException(status_code=400, detail="That language isn't available.")
     await db.users.update_one({"id": user_id}, {"$set": {"language": body.language, "updatedAt": now_iso()}})
+    doc = await db.users.find_one({"id": user_id})
+    if not doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    return public_user(doc)
+
+
+class AboutIn(BaseModel):
+    callMe: Optional[str] = Field(default=None, max_length=40)
+    does: Optional[Literal[tuple(counsellor.WORK)]] = None
+    wants: List[Literal[tuple(counsellor.WANTS)]] = Field(default_factory=list, max_length=3)
+    country: Optional[str] = Field(default=None, max_length=60)
+    skipped: bool = False
+
+
+@api.put("/auth/about")
+async def set_about(body: AboutIn, user_id: str = Depends(current_user_id)):
+    """The welcome questions after signing in (or Skip): what to call them, what they do, what they want
+    most and where they live. Saved once; the Counsellor uses them and suggests agents from them."""
+    about = None
+    if not body.skipped:
+        about = {"callMe": " ".join((body.callMe or "").split()) or None, "does": body.does,
+                 "wants": list(dict.fromkeys(body.wants)), "country": " ".join((body.country or "").split()) or None}
+    await db.users.update_one({"id": user_id}, {"$set": {"about": about, "aboutAt": now_iso(), "updatedAt": now_iso()}})
     doc = await db.users.find_one({"id": user_id})
     if not doc:
         raise HTTPException(status_code=401, detail="User not found")
@@ -1652,8 +1679,11 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         remembered = await memory.prompt_section(db, user_id, project_id)
         if remembered:
             system_parts.append(remembered)
-        owner = await db.users.find_one({"id": user_id}, {"language": 1})
+        owner = await db.users.find_one({"id": user_id}, {"language": 1, "about": 1})
         settings_lang = (owner or {}).get("language")
+        about = counsellor.about_line((owner or {}).get("about"))
+        if about:
+            system_parts.append(about)
         connected = frozenset(await connectors.active(user_id))
         plugin_state = await plugins.state(user_id)
         if connected and not counselling:
