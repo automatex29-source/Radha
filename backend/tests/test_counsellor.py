@@ -202,8 +202,13 @@ def test_counsellor_skips_a_verse_right_after_one(client):
 
 def test_counsellor_agents_are_pro_and_speak_in_their_own_voice(client):
     import counsellor
-    off = client.post("/api/conversations", json={"mode": "counsellor", "agent": "krishna"})
+    import pytest
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(counsellor, "AGENTS_FOR_ALL", False)
+        off = client.post("/api/conversations", json={"mode": "counsellor", "agent": "krishna"})
     assert off.status_code == 403  # Basic can't start a talk with an agent
+    if counsellor.AGENTS_FOR_ALL:  # opened to every plan for testing
+        assert client.post("/api/conversations", json={"mode": "counsellor", "agent": "krishna"}).status_code == 200
     assert client.post("/api/conversations", json={"agent": "krishna"}).status_code == 400
     _set_plan(client, "pro")
     try:

@@ -861,7 +861,7 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
     if body.agent:
         if body.mode != counsellor.MODE or body.agent not in counsellor.AGENTS:
             raise HTTPException(status_code=400, detail="That Counsellor agent isn't available.")
-        if not await limits.is_pro(db, user_id):
+        if not counsellor.AGENTS_FOR_ALL and not await limits.is_pro(db, user_id):
             raise HTTPException(status_code=403, detail="Counsellor agents are part of Pro. Upgrade to talk with them.")
     ts = now_iso()
     doc = {
