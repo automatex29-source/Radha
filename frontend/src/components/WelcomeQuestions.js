@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, Compass, Image, LayoutGrid, Loader2, MessageCircle,
-  Presentation, FileText, Heart, Zap } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, ChevronRight, Code2, Compass, FileText, Globe, GraduationCap,
+  Heart, Home, Image, LayoutGrid, Leaf, Loader2, MapPin, MessageCircle, Palette, PenLine, Presentation, Rocket, Search,
+  Sparkles, TrendingUp, Zap } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import BrandMark from "@/components/BrandMark";
@@ -9,23 +10,23 @@ import BrandMark from "@/components/BrandMark";
 // Asked once after signing in (backend: PUT /auth/about). The answers shape every Krish reply, and the end
 // screen points them to the parts of Krish AI that fit what they want to do.
 const WORK = [
-  { id: "student", label: "Student", emoji: "📚" },
-  { id: "working", label: "Working", emoji: "💼" },
-  { id: "business", label: "Running a business", emoji: "🚀" },
-  { id: "homemaker", label: "Homemaker", emoji: "🏡" },
-  { id: "job_seeker", label: "Looking for work", emoji: "🔎" },
-  { id: "retired", label: "Retired", emoji: "🌿" },
-  { id: "other", label: "Something else", emoji: "✨" },
+  { id: "student", label: "Student", icon: GraduationCap, tone: "from-amber-400 to-orange-500" },
+  { id: "working", label: "Working", icon: Briefcase, tone: "from-sky-500 to-indigo-600" },
+  { id: "business", label: "Running a business", icon: Rocket, tone: "from-violet-500 to-fuchsia-500" },
+  { id: "homemaker", label: "Homemaker", icon: Home, tone: "from-rose-400 to-pink-500" },
+  { id: "job_seeker", label: "Looking for work", icon: Search, tone: "from-cyan-500 to-blue-600" },
+  { id: "retired", label: "Retired", icon: Leaf, tone: "from-emerald-500 to-teal-600" },
+  { id: "other", label: "Something else", icon: Sparkles, tone: "from-slate-500 to-slate-700" },
 ];
 const USES = [
-  { id: "study", label: "Study & homework", emoji: "📚" },
-  { id: "coding", label: "Coding & building apps", emoji: "💻" },
-  { id: "work", label: "Work, writing & emails", emoji: "✍️" },
-  { id: "business", label: "Business & marketing", emoji: "📈" },
-  { id: "slides", label: "Presentations & documents", emoji: "📊" },
-  { id: "create", label: "Pictures & videos", emoji: "🎨" },
-  { id: "talk", label: "Life advice & someone to talk to", emoji: "💛" },
-  { id: "everyday", label: "Everyday questions & news", emoji: "🌍" },
+  { id: "study", label: "Study & homework", icon: BookOpen, tone: "from-amber-400 to-orange-500" },
+  { id: "coding", label: "Coding & apps", icon: Code2, tone: "from-sky-500 to-indigo-600" },
+  { id: "work", label: "Writing & emails", icon: PenLine, tone: "from-emerald-500 to-teal-600" },
+  { id: "business", label: "Business & marketing", icon: TrendingUp, tone: "from-violet-500 to-fuchsia-500" },
+  { id: "slides", label: "Slides & documents", icon: Presentation, tone: "from-rose-500 to-pink-500" },
+  { id: "create", label: "Pictures & videos", icon: Palette, tone: "from-fuchsia-500 to-purple-600" },
+  { id: "talk", label: "Life advice & a friend", icon: Heart, tone: "from-pink-500 to-rose-500" },
+  { id: "everyday", label: "Everyday answers & news", icon: Globe, tone: "from-cyan-500 to-blue-600" },
 ];
 // The part of Krish AI each use leads to on the end screen. `study` turns Study mode on (see Workspace).
 const FEATURES = {
@@ -59,13 +60,39 @@ function guessCountry() {
   return "";
 }
 
-function Chip({ on, onClick, emoji, label, testid }) {
+const PICKED = "border-violet-500 bg-violet-500/10 ring-2 ring-violet-500/30";
+const UNPICKED = "border-border bg-card hover:border-violet-300 active:scale-[0.98]";
+
+function Tile({ icon: Icon, tone }) {
+  return (
+    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${tone} text-white shadow-sm`}>
+      <Icon className="h-5 w-5" />
+    </span>
+  );
+}
+
+/** One answer in a list (what they do). */
+function Chip({ on, onClick, icon, tone, label, testid }) {
   return (
     <button type="button" onClick={onClick} data-testid={testid}
-      className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${on ? "border-violet-500 bg-violet-500/10 text-foreground ring-2 ring-violet-500/30" : "border-border bg-card text-foreground hover:-translate-y-0.5 hover:shadow-sm"}`}>
-      <span className="text-lg" aria-hidden="true">{emoji}</span>
+      className={`flex items-center gap-3 rounded-2xl border p-2.5 pr-4 text-left text-[15px] font-semibold text-foreground transition ${on ? PICKED : UNPICKED}`}>
+      <Tile icon={icon} tone={tone} />
       <span className="flex-1">{label}</span>
-      {on && <Check className="h-4 w-4 text-violet-600 dark:text-violet-300" />}
+      {on ? <Check className="h-4 w-4 text-violet-600 dark:text-violet-300" /> : <ChevronRight className="h-4 w-4 text-muted-foreground/60" />}
+    </button>
+  );
+}
+
+/** One answer in a two-column grid (what they'll use Krish AI for); several can be picked. */
+function Card({ on, onClick, icon, tone, label, testid }) {
+  return (
+    <button type="button" onClick={onClick} data-testid={testid} aria-pressed={on}
+      className={`relative flex min-h-[104px] flex-col justify-between gap-3 rounded-2xl border p-3.5 text-left text-sm font-semibold leading-snug text-foreground transition ${on ? PICKED : UNPICKED}`}>
+      <Tile icon={icon} tone={tone} />
+      <span>{label}</span>
+      <span className={`absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border ${on ? "border-violet-600 bg-violet-600 text-white" : "border-border"}`}>
+        {on && <Check className="h-3 w-3" strokeWidth={3} />}
+      </span>
     </button>
   );
 }
@@ -117,46 +144,62 @@ export default function WelcomeQuestions() {
   const questions = [
     { title: "What should we call you?", hint: "Your name, a nickname, anything you like." },
     { title: `What do you do, ${callMe.trim() || "friend"}?`, hint: "So the advice fits your days." },
-    { title: "What will you use Krish AI for most?", hint: "Pick up to 3." },
+    { title: "What will you use Krish AI for?", hint: "Pick up to 3. We'll set things up for you." },
     { title: "Where do you live?", hint: "So prices, exams, news and examples fit your country." },
   ];
 
   if (saved) {
     const picks = (saved.about?.uses || []).map((u) => [u, FEATURES[u]]).filter(([, f]) => f);
     return (
-      <div className="fixed inset-0 z-[70] overflow-y-auto bg-background" data-testid="welcome-results">
-        <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center px-5 py-10">
-          <p className="text-sm font-semibold text-violet-600 dark:text-violet-300">All set, {saved.about?.callMe || callMe} ✨</p>
+      <div className="fixed inset-0 z-[70] flex flex-col bg-background" data-testid="welcome-results">
+        <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto flex min-h-full max-w-3xl flex-col px-5 pb-6 pt-10 sm:justify-center">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-pink-500 text-white shadow-lg shadow-violet-500/30">
+            <Check className="h-7 w-7" strokeWidth={3} />
+          </span>
+          <p className="mt-5 text-sm font-semibold text-violet-600 dark:text-violet-300">All set, {saved.about?.callMe || callMe}</p>
           <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">Krish AI, made for you</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Krish will now answer with your life{saved.about?.country ? ` in ${saved.about.country}` : ""} in mind. Start with these:
-          </p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          {saved.about?.country && (
+            <p className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-3 py-1 text-xs font-medium text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5" /> Answers set for {saved.about.country}
+            </p>
+          )}
+          <p className="mt-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Picked for you</p>
+          <div className="mt-3 grid gap-2.5 sm:grid-cols-3 sm:gap-3">
             {picks.map(([id, f]) => {
               const Icon = f.icon;
               return (
                 <button key={id} onClick={() => finish(f.path, f.flag)} data-testid={`welcome-feature-${id}`}
-                  className="group flex flex-col rounded-3xl border border-border bg-card p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-                  <span className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${f.tone} text-white shadow-md`}>
+                  className="group flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3.5 text-left shadow-sm transition active:scale-[0.98] sm:flex-col sm:items-start sm:rounded-3xl sm:p-5 sm:hover:-translate-y-1 sm:hover:shadow-lg">
+                  <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${f.tone} text-white shadow-md`}>
                     <Icon className="h-6 w-6" />
                   </span>
-                  <span className="mt-4 text-base font-bold text-foreground">{f.title}</span>
-                  <span className="mt-1 flex-1 text-sm leading-snug text-muted-foreground">{f.text}</span>
-                  <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-violet-600 dark:text-violet-300">
+                  <span className="min-w-0 flex-1 sm:mt-1">
+                    <span className="block text-[15px] font-bold text-foreground sm:text-base">{f.title}</span>
+                    <span className="mt-0.5 block text-[13px] leading-snug text-muted-foreground sm:text-sm">{f.text}</span>
+                  </span>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-300 sm:hidden">
+                    <ArrowRight className="h-4 w-4" />
+                  </span>
+                  <span className="hidden items-center gap-1 text-sm font-semibold text-violet-600 dark:text-violet-300 sm:inline-flex">
                     Try it <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
                   </span>
                 </button>
               );
             })}
           </div>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
+        </div>
+        </div>
+        <div className="border-t border-border/60 bg-background/90 backdrop-blur sm:border-0">
+          <div className="mx-auto flex max-w-3xl flex-col gap-2 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:gap-4 sm:pb-10">
             <button onClick={() => finish("/")} data-testid="welcome-start-chat"
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-pink-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:opacity-90">
+              className="flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-pink-500 px-6 text-[15px] font-semibold text-white shadow-lg shadow-violet-500/25 hover:opacity-90">
               <MessageCircle className="h-4 w-4" /> Start chatting with Krish
             </button>
             {!pro && (
-              <button onClick={() => finish("/plans")} data-testid="welcome-see-pro" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
-                <Briefcase className="h-4 w-4" /> See what Pro adds
+              <button onClick={() => finish("/plans")} data-testid="welcome-see-pro"
+                className="inline-flex h-10 items-center justify-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+                <Sparkles className="h-4 w-4" /> See what Pro adds
               </button>
             )}
           </div>
@@ -167,22 +210,32 @@ export default function WelcomeQuestions() {
 
   const q = questions[step];
   return (
-    <div className="fixed inset-0 z-[70] overflow-y-auto bg-background" data-testid="welcome-questions">
-      <div className="mx-auto flex min-h-full max-w-xl flex-col px-5 py-6">
-        <div className="flex items-center justify-between">
-          <BrandMark className="h-9 w-9" />
+    <div className="fixed inset-0 z-[70] flex flex-col bg-background" data-testid="welcome-questions">
+      <div className="mx-auto w-full max-w-xl px-5 pt-[max(1rem,env(safe-area-inset-top))]">
+        <div className="flex h-12 items-center justify-between">
+          <BrandMark className="h-8 w-8" />
+          <span className="text-xs font-semibold text-muted-foreground">{step + 1} of {questions.length}</span>
           <button onClick={() => save(true)} disabled={saving} data-testid="welcome-skip"
-            className="text-sm font-medium text-muted-foreground hover:text-foreground">Skip for now</button>
+            className="rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-surface hover:text-foreground">Skip</button>
         </div>
-        <div className="mt-6 flex gap-1.5" aria-hidden="true">
+        <div className="mt-2 flex gap-1.5" aria-hidden="true">
           {questions.map((_, i) => (
-            <span key={i} className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-gradient-to-r from-violet-500 to-pink-500" : "bg-border"}`} />
+            <span key={i} className={`h-1 flex-1 rounded-full transition-colors ${i <= step ? "bg-gradient-to-r from-violet-500 to-pink-500" : "bg-border"}`} />
           ))}
         </div>
-        <div className="flex flex-1 flex-col justify-center py-8">
-          {step === 0 && <p className="mb-2 text-sm font-semibold text-violet-600 dark:text-violet-300">Welcome to Krish AI 👋 4 quick questions</p>}
-          <h1 className="text-[1.9rem] font-extrabold leading-tight tracking-tight text-foreground sm:text-4xl">{q.title}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{q.hint}</p>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto flex min-h-full max-w-xl flex-col px-5 pb-6 pt-8 sm:justify-center sm:pt-6">
+          {step === 0 && (
+            <div className="mb-6 flex items-center gap-3">
+              <img src="/agents/krish_robo.webp" alt="" className="h-16 w-16 rounded-2xl object-cover shadow-md" />
+              <div className="rounded-2xl rounded-tl-sm bg-surface px-4 py-2.5 text-sm text-foreground">
+                Hi! I'm Krish. Four quick questions and I'll set everything up for you.
+              </div>
+            </div>
+          )}
+          <h1 className="text-[1.75rem] font-extrabold leading-[1.15] tracking-tight text-foreground sm:text-4xl">{q.title}</h1>
+          <p className="mt-2 text-[15px] text-muted-foreground">{q.hint}</p>
           <div className="mt-6">
             {step === 0 && (
               <input autoFocus value={callMe} onChange={(e) => setCallMe(e.target.value.slice(0, 40))} data-testid="welcome-name"
@@ -196,15 +249,21 @@ export default function WelcomeQuestions() {
               </div>
             )}
             {step === 2 && (
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                {USES.map((u) => <Chip key={u.id} {...u} on={uses.includes(u.id)} testid={`welcome-use-${u.id}`}
+              <div className="grid grid-cols-2 gap-2.5">
+                {USES.map((u) => <Card key={u.id} {...u} on={uses.includes(u.id)} testid={`welcome-use-${u.id}`}
                   onClick={() => toggleUse(u.id)} />)}
               </div>
             )}
             {step === 3 && (
               <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  {[...new Set([initialCountry, "India", "United States", "United Kingdom", "Canada", "United Arab Emirates", "Australia"].filter(Boolean))].slice(0, 6).map((c) => (
+                    <button key={c} type="button" onClick={() => setCountry(c)} data-testid={`welcome-country-${c}`}
+                      className={`rounded-full border px-3.5 py-2 text-sm font-medium text-foreground transition ${country === c ? PICKED : UNPICKED}`}>{c}</button>
+                  ))}
+                </div>
                 <select value={country} onChange={(e) => setCountry(e.target.value)} data-testid="welcome-country"
-                  className="h-14 w-full rounded-2xl border border-border bg-card px-4 text-lg text-foreground outline-none focus:border-violet-500">
+                  className="w-full rounded-2xl border border-border bg-card px-4 py-3.5 text-base text-foreground outline-none focus:border-violet-500">
                   <option value="">Choose your country</option>
                   {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -219,7 +278,9 @@ export default function WelcomeQuestions() {
           </div>
           {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
         </div>
-        <div className="flex items-center gap-3 pb-2">
+      </div>
+      <div className="border-t border-border/60 bg-background/90 backdrop-blur sm:border-0">
+        <div className="mx-auto flex max-w-xl items-center gap-3 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:pb-8">
           {step > 0 && (
             <button onClick={() => setStep(step - 1)} data-testid="welcome-back" aria-label="Back"
               className="flex h-12 w-12 items-center justify-center rounded-full border border-border text-foreground hover:bg-surface">
@@ -229,7 +290,7 @@ export default function WelcomeQuestions() {
           <button disabled={!ready || saving} data-testid="welcome-next"
             onClick={() => (step < 3 ? setStep(step + 1) : save())}
             className="flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-pink-500 text-sm font-semibold text-white shadow-md transition hover:opacity-90 disabled:opacity-40">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : step < 3 ? <>Next <ArrowRight className="h-4 w-4" /></> : "Show my counsellors"}
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : step < 3 ? <>Next <ArrowRight className="h-4 w-4" /></> : <>Finish <Check className="h-4 w-4" /></>}
           </button>
         </div>
       </div>
