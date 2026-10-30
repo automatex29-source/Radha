@@ -144,3 +144,57 @@ def test_pro_counsellor_remembers_the_last_talk(client):
     system = call["messages"][0]["content"]
     assert "Your last talk with them" in system and "Hi again" in system  # the latest earlier talk
     assert counsellor.last_talk_note({"title": "x"}, [{"role": "assistant", "content": "hello"}]) == ""
+
+
+def test_stray_script_is_cut_from_a_hinglish_reply(client):
+    # A free model once wrote an Urdu word into a Hinglish answer ("bardasht ke بابر hai").
+    cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    REPLY[0] = "Sneha, tera gussa valid hai. Ye kisi ke liye bhi bardasht ke بابر hai 💔"
+    try:
+        _, body = _send(client, cid, "maine sab kiya phir bhi mere sath galat hua, bht jada")
+    finally:
+        REPLY[0] = "I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."
+    assert "بابر" not in body
+    saved = client.get(f"/api/conversations/{cid}").json()["messages"][-1]["content"]
+    assert saved == "Sneha, tera gussa valid hai. Ye kisi ke liye bhi bardasht ke hai 💔"
+
+
+def test_script_guard_keeps_the_persons_own_script():
+    import counsellor
+    hindi = counsellor.allowed_scripts(["मैं बहुत थक गया हूँ"])
+    assert counsellor.keep_scripts("तुम अकेले नहीं हो 💛", hindi) == "तुम अकेले नहीं हो 💛"
+    assert counsellor.keep_scripts("तुम ठीक হবে हो", hindi) == "तुम ठीक  हो"  # a stray Bengali word goes
+    roman = counsellor.allowed_scripts(["yaar bahut tension hai"])
+    assert roman == frozenset()
+    assert counsellor.keep_scripts("Café, naïve — 2.47 ✨", roman) == "Café, naïve — 2.47 ✨"
+    assert counsellor.keep_scripts("dil se 心 kar", roman) == "dil se  kar"
+    # The Settings language, the language spoken and a language asked for by name are allowed too.
+    assert counsellor.allowed_scripts(["hi"], "ur") == {"arabic"}
+    assert counsellor.allowed_scripts(["hi"], None, "ta") == {"tamil"}
+    assert counsellor.allowed_scripts(["say it in Tamil please"]) == {"tamil"}
+    assert counsellor.tidy("ke  hai , yaar") == "ke hai, yaar"
+
+
+def test_gita_verses_stay_occasional():
+    import counsellor
+    said = lambda *replies: [{"role": "assistant", "content": r} for r in replies]
+    assert counsellor.verse_note(said("> **Gita 2.47:** Your right is to the work.")) == counsellor.NO_VERSE
+    assert counsellor.verse_note(said("Gita 6.5 says...", "That sounds hard.")) == counsellor.NO_VERSE
+    assert counsellor.verse_note(said("Gita 6.5 says...", "Hmm.", "That sounds hard.")) == ""
+    assert counsellor.verse_note([]) == ""
+    for rule in ("same script", "Most replies have no verse", "never stretch a verse", "no \"no cap\""):
+        assert rule in counsellor.PROMPT
+    assert "most replies have none" in counsellor.BRIEF and "script" in counsellor.BRIEF
+
+
+def test_counsellor_skips_a_verse_right_after_one(client):
+    import counsellor
+    cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    REPLY[0] = "That hurts.\n\n> **Gita 2.47:** You have a right to your work, never to its results."
+    try:
+        call, _ = _send(client, cid, "I failed my exam")
+        assert counsellor.NO_VERSE not in call["messages"][0]["content"]
+        call, _ = _send(client, cid, "I still feel bad")
+    finally:
+        REPLY[0] = "I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."
+    assert counsellor.NO_VERSE in call["messages"][0]["content"]
