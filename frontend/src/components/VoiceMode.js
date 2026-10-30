@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useAuth } from "@/context/AuthContext";
 import { transcribeDetect, createSpeaker, stopSpeaking, speechText, watchForSpeech, VOICE_LANGS, getVoiceLang, setVoiceLang } from "@/lib/voice";
-import AgentPortrait, { portraitColors } from "@/components/AgentPortrait";
+import AgentPortrait, { AgentArt, portraitColors } from "@/components/AgentPortrait";
 import { X, Mic, MicOff, Loader2, Volume2, Square, Pause, Camera, CameraOff, MonitorUp, SwitchCamera, PhoneOff } from "lucide-react";
 
 const LABELS = {
@@ -231,7 +231,11 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice, 
     return (
       <div data-testid="voice-mode" className="fixed inset-0 z-[60] flex flex-col overflow-hidden text-white"
         style={{ backgroundColor: "#0a0a14", backgroundImage: `radial-gradient(120% 70% at 50% 28%, ${c1} 0%, ${c0} 38%, #0a0a14 88%)` }}>
-        <div className="flex items-center justify-between gap-2 px-4 pt-4">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 scale-110 opacity-45 blur-2xl">
+          <AgentArt id={agent.id} />
+        </div>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-[#0a0a14]" />
+        <div className="relative flex items-center justify-between gap-2 px-4 pt-4">
           <select value={lang} data-testid="voice-mode-language" aria-label="Spoken language"
             onChange={(e) => { setVoiceLang(e.target.value); setLang(e.target.value); }}
             className="h-9 max-w-[60%] rounded-full border border-white/20 bg-white/10 px-3 text-xs text-white backdrop-blur [&>option]:text-black">
@@ -244,7 +248,7 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice, 
           </span>
         </div>
 
-        <div className="flex flex-1 flex-col items-center justify-center px-6" data-testid="voice-mode-agent">
+        <div className="relative flex flex-1 flex-col items-center justify-center px-6" data-testid="voice-mode-agent">
           <button onClick={onOrb} disabled={phase === "transcribing"} data-testid="voice-mode-orb"
             title={replying ? "Interrupt" : phase === "listening" ? "Send now" : "Talk"}
             className="relative flex items-center justify-center rounded-full">
@@ -282,7 +286,7 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice, 
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-3 pb-8">
+        <div className="relative flex flex-col items-center gap-3 pb-8">
           <div className="flex items-start gap-6">
             <div className="flex flex-col items-center gap-1.5">
               <button onClick={() => (view === "camera" ? stopView() : startView("camera"))} data-testid="voice-mode-camera"

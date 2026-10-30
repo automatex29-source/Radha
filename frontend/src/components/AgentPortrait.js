@@ -3,8 +3,8 @@ import { useId } from "react";
 // Drawn portraits of the Pro Counsellor agents (see lib/counselAgents.js). One 120x120 SVG each: a soft
 // background, shoulders, face and the details that make each one recognisable.
 const LOOKS = {
-  krishna: { bg: ["#1e3a8a", "#6d28d9"], skin: "#5b8def", skinShade: "#4a74cf", hair: "#141a33", cloth: "#f5b72a" },
-  bal_krishna: { bg: ["#f59e0b", "#f97316"], skin: "#6fa2f5", skinShade: "#5a8ae0", hair: "#1b2140", cloth: "#fde047" },
+  krishna: { image: "/agents/krishna.webp", face: [56, 22], bg: ["#1e3a8a", "#6d28d9"], skin: "#5b8def", skinShade: "#4a74cf", hair: "#141a33", cloth: "#f5b72a" },
+  bal_krishna: { image: "/agents/bal_krishna.webp", face: [55, 33], bg: ["#1e3a8a", "#0ea5e9"], skin: "#6fa2f5", skinShade: "#5a8ae0", hair: "#1b2140", cloth: "#fde047" },
   radha: { bg: ["#db2777", "#f472b6"], skin: "#f3c6a2", skinShade: "#e2ad86", hair: "#2a1a14", cloth: "#be123c" },
   dost: { bg: ["#0f766e", "#34d399"], skin: "#d9a074", skinShade: "#c58a5e", hair: "#2b1d16", cloth: "#1e293b" },
   dadi: { bg: ["#7c3aed", "#c084fc"], skin: "#e6b993", skinShade: "#d4a27a", hair: "#e5e7eb", cloth: "#9f1239" },
@@ -12,6 +12,9 @@ const LOOKS = {
 
 /** The two background colours of an agent's portrait, for screens that match it. */
 export const portraitColors = (id) => LOOKS[id]?.bg || ["#4f46e5", "#7c3aed"];
+
+/** The agent's painting, when it has one (shown full size on cards and behind a call). */
+export const portraitImage = (id) => LOOKS[id]?.image || null;
 
 function Eyes({ open, y = 64 }) {
   if (!open) {
@@ -154,19 +157,40 @@ const PARTS = {
   ),
 };
 
-export default function AgentPortrait({ id, className = "h-10 w-10", ring = false }) {
+/** The agent's art filling a box (cards, call backgrounds): the painting, or the drawn portrait. */
+export function AgentArt({ id, className = "" }) {
+  const look = LOOKS[id];
+  if (!look) return null;
+  if (look.image) {
+    return <img src={look.image} alt="" loading="lazy" className={`h-full w-full object-cover ${className}`}
+      style={{ objectPosition: `50% ${Math.max(0, look.face[1] - 12)}%` }} />;
+  }
+  return <AgentPortrait id={id} square className={`h-full w-full ${className}`} />;
+}
+
+export default function AgentPortrait({ id, className = "h-10 w-10", ring = false, square = false }) {
   const uid = useId().replace(/:/g, "");
   const look = LOOKS[id];
   if (!look) return null;
+  if (look.image && !square) {
+    // A round crop of the painting, centred on the face.
+    return (
+      <span role="img" aria-hidden="true"
+        className={`block shrink-0 rounded-full bg-no-repeat ${ring ? "ring-2 ring-white/70" : ""} ${className}`}
+        style={{ backgroundImage: `url(${look.image})`, backgroundSize: "185%",
+          backgroundPosition: `${look.face[0]}% ${look.face[1]}%`, backgroundColor: look.bg[0] }} />
+    );
+  }
   return (
-    <svg viewBox="0 0 120 120" className={`shrink-0 rounded-full ${ring ? "ring-2 ring-white/70" : ""} ${className}`}
+    <svg viewBox={square ? "10 0 100 120" : "0 0 120 120"} preserveAspectRatio="xMidYMid slice"
+      className={`shrink-0 ${square ? "" : "rounded-full"} ${ring ? "ring-2 ring-white/70" : ""} ${className}`}
       role="img" aria-hidden="true">
       <defs>
         <linearGradient id={`bg-${uid}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor={look.bg[0]} />
           <stop offset="1" stopColor={look.bg[1]} />
         </linearGradient>
-        <clipPath id={`c-${uid}`}><circle cx="60" cy="60" r="60" /></clipPath>
+        <clipPath id={`c-${uid}`}>{square ? <rect width="120" height="120" /> : <circle cx="60" cy="60" r="60" />}</clipPath>
       </defs>
       <g clipPath={`url(#c-${uid})`}>
         <rect width="120" height="120" fill={`url(#bg-${uid})`} />

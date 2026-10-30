@@ -25,7 +25,7 @@ import { menuModel, modelLabel } from "@/lib/models";
 import { showPlanLimit } from "@/lib/planLimits";
 import { useT } from "@/lib/i18n";
 import { COUNSEL_AGENTS, counselAgent } from "@/lib/counselAgents";
-import AgentPortrait from "@/components/AgentPortrait";
+import AgentPortrait, { AgentArt } from "@/components/AgentPortrait";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
 const STARTERS = [
@@ -1100,25 +1100,30 @@ function AgentPicker({ pro, agentId, onPick, onCall }) {
           const on = a.id === agentId;
           return (
             <div key={a.id} data-testid={`counsellor-agent-${a.id}`}
-              className={`group relative flex w-[8.75rem] shrink-0 snap-start flex-col items-center rounded-3xl border bg-card px-3 pb-3 pt-4 text-center transition sm:w-auto ${on ? "border-transparent ring-2 ring-violet-500 shadow-lg shadow-violet-500/15" : "border-border hover:-translate-y-1 hover:shadow-lg"}`}>
-              {!pro && <Lock className="absolute right-3 top-3 h-3.5 w-3.5 text-muted-foreground" />}
-              <button onClick={() => choose(onPick, a.id)} className="flex flex-col items-center" title={`Chat with ${a.name}`}>
-                <span className={`rounded-full bg-gradient-to-br ${a.gradient} p-[3px] transition group-hover:scale-105`}>
-                  <AgentPortrait id={a.id} className="h-[4.5rem] w-[4.5rem] ring-2 ring-card sm:h-20 sm:w-20" />
-                </span>
-                <span className="mt-2.5 text-sm font-bold text-foreground">{a.name}</span>
-                <span className="mt-0.5 line-clamp-2 min-h-[2.1rem] text-[11.5px] leading-snug text-muted-foreground">{a.tagline}</span>
+              className={`group relative aspect-[3/4] w-[10.5rem] shrink-0 snap-start overflow-hidden rounded-[1.75rem] bg-slate-900 shadow-md transition duration-300 sm:w-auto ${on ? "ring-[3px] ring-violet-500 ring-offset-2 ring-offset-background" : "hover:-translate-y-1 hover:shadow-xl"}`}>
+              <button onClick={() => choose(onPick, a.id)} title={`Chat with ${a.name}`} className="absolute inset-0">
+                <AgentArt id={a.id} className="transition duration-500 group-hover:scale-105" />
+                <span className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
               </button>
-              <div className="mt-3 flex w-full items-center justify-center gap-2">
-                <button onClick={() => choose(onPick, a.id)} data-testid={`counsellor-agent-chat-${a.id}`} title={`Chat with ${a.name}`}
-                  aria-label={`Chat with ${a.name}`}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-foreground transition hover:bg-surface">
-                  <MessageCircle className="h-4 w-4" />
-                </button>
-                <button onClick={() => choose(onCall, a.id)} data-testid={`counsellor-agent-call-${a.id}`} title={`Call ${a.name}`}
-                  className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-gradient-to-r ${a.gradient} text-xs font-semibold text-white shadow-sm transition hover:opacity-90`}>
-                  <Phone className="h-3.5 w-3.5" /> Call
-                </button>
+              {!pro && (
+                <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 backdrop-blur">
+                  <Lock className="h-3.5 w-3.5 text-white" />
+                </span>
+              )}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3 text-left text-white">
+                <p className="text-[15px] font-bold leading-tight drop-shadow">{a.name}</p>
+                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-white/80">{a.tagline}</p>
+                <div className="pointer-events-auto mt-2.5 flex items-center gap-2">
+                  <button onClick={() => choose(onPick, a.id)} data-testid={`counsellor-agent-chat-${a.id}`} title={`Chat with ${a.name}`}
+                    aria-label={`Chat with ${a.name}`}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 backdrop-blur-md transition hover:bg-white/25">
+                    <MessageCircle className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => choose(onCall, a.id)} data-testid={`counsellor-agent-call-${a.id}`} title={`Call ${a.name}`}
+                    className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-white text-xs font-bold text-slate-900 shadow transition hover:bg-white/90">
+                    <Phone className="h-3.5 w-3.5 text-emerald-600" /> Call
+                  </button>
+                </div>
               </div>
             </div>
           );
