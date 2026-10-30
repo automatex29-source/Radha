@@ -226,14 +226,6 @@ export default function WelcomeQuestions() {
       </div>
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-xl flex-col px-5 pb-6 pt-8 sm:justify-center sm:pt-6">
-          {step === 0 && (
-            <div className="mb-6 flex items-center gap-3">
-              <img src="/agents/krish_robo.webp" alt="" className="h-16 w-16 rounded-2xl object-cover shadow-md" />
-              <div className="rounded-2xl rounded-tl-sm bg-surface px-4 py-2.5 text-sm text-foreground">
-                Hi! I'm Krish. Four quick questions and I'll set everything up for you.
-              </div>
-            </div>
-          )}
           <h1 className="text-[1.75rem] font-extrabold leading-[1.15] tracking-tight text-foreground sm:text-4xl">{q.title}</h1>
           <p className="mt-2 text-[15px] text-muted-foreground">{q.hint}</p>
           <div className="mt-6">
