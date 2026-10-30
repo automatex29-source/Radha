@@ -24,7 +24,8 @@ import ModelMenu from "@/components/ModelMenu";
 import { menuModel, modelLabel } from "@/lib/models";
 import { showPlanLimit } from "@/lib/planLimits";
 import { useT } from "@/lib/i18n";
-import { COUNSEL_AGENTS, counselAgent, AgentAvatar } from "@/lib/counselAgents";
+import { COUNSEL_AGENTS, counselAgent } from "@/lib/counselAgents";
+import AgentPortrait from "@/components/AgentPortrait";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
 const STARTERS = [
@@ -1078,38 +1079,45 @@ function MoodCheckIn({ onPick, pro }) {
 function AgentPicker({ pro, agentId, onPick, onCall }) {
   const navigate = useNavigate();
   const picked = counselAgent(agentId);
+  const choose = (fn, id) => (pro ? fn(id) : navigate("/plans"));
   return (
-    <section data-testid="counsellor-agents" className="mt-5">
-      <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-sm font-bold text-foreground">Talk to someone special</h3>
-        <span className="rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Pro</span>
+    <section data-testid="counsellor-agents" className="mt-6">
+      <div className="mb-3 flex items-end gap-2">
+        <div className="min-w-0">
+          <h3 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
+            Talk to someone who gets you
+            <span className="rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Pro</span>
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">Chat, or call and just talk. They listen, and talk back.</p>
+        </div>
         {picked && (
           <button onClick={() => onPick(null)} data-testid="counsellor-agent-clear"
-            className="ml-auto text-xs font-medium text-muted-foreground hover:text-foreground">Back to Krish</button>
+            className="ml-auto shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground">Back to Krish</button>
         )}
       </div>
-      <div className="krish-no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-5">
+      <div className="krish-no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0">
         {COUNSEL_AGENTS.map((a) => {
           const on = a.id === agentId;
           return (
             <div key={a.id} data-testid={`counsellor-agent-${a.id}`}
-              className={`flex w-40 shrink-0 snap-start flex-col rounded-2xl border bg-card p-3 transition sm:w-auto ${on ? "border-violet-500 ring-2 ring-violet-500/30" : "border-border hover:-translate-y-0.5 hover:shadow-sm"}`}>
-              <button onClick={() => (pro ? onPick(a.id) : navigate("/plans"))} className="flex flex-1 flex-col items-start text-left">
-                <span className="flex w-full items-center gap-2">
-                  <AgentAvatar agent={a} className="h-9 w-9 text-lg" />
-                  <span className="min-w-0 truncate text-sm font-semibold text-foreground">{a.name}</span>
-                  {!pro && <Lock className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+              className={`group relative flex w-[8.75rem] shrink-0 snap-start flex-col items-center rounded-3xl border bg-card px-3 pb-3 pt-4 text-center transition sm:w-auto ${on ? "border-transparent ring-2 ring-violet-500 shadow-lg shadow-violet-500/15" : "border-border hover:-translate-y-1 hover:shadow-lg"}`}>
+              {!pro && <Lock className="absolute right-3 top-3 h-3.5 w-3.5 text-muted-foreground" />}
+              <button onClick={() => choose(onPick, a.id)} className="flex flex-col items-center" title={`Chat with ${a.name}`}>
+                <span className={`rounded-full bg-gradient-to-br ${a.gradient} p-[3px] transition group-hover:scale-105`}>
+                  <AgentPortrait id={a.id} className="h-[4.5rem] w-[4.5rem] ring-2 ring-card sm:h-20 sm:w-20" />
                 </span>
-                <span className="mt-1.5 text-[12px] leading-snug text-muted-foreground">{a.tagline}</span>
+                <span className="mt-2.5 text-sm font-bold text-foreground">{a.name}</span>
+                <span className="mt-0.5 line-clamp-2 min-h-[2.1rem] text-[11.5px] leading-snug text-muted-foreground">{a.tagline}</span>
               </button>
-              <div className="mt-2.5 flex gap-1.5">
-                <button onClick={() => (pro ? onPick(a.id) : navigate("/plans"))} data-testid={`counsellor-agent-chat-${a.id}`}
-                  className="flex-1 rounded-full border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-surface">
-                  <MessageCircle className="mr-1 inline h-3 w-3" />Chat
+              <div className="mt-3 flex w-full items-center justify-center gap-2">
+                <button onClick={() => choose(onPick, a.id)} data-testid={`counsellor-agent-chat-${a.id}`} title={`Chat with ${a.name}`}
+                  aria-label={`Chat with ${a.name}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-foreground transition hover:bg-surface">
+                  <MessageCircle className="h-4 w-4" />
                 </button>
-                <button onClick={() => (pro ? onCall(a.id) : navigate("/plans"))} data-testid={`counsellor-agent-call-${a.id}`}
-                  className={`flex-1 rounded-full bg-gradient-to-r ${a.gradient} px-2 py-1 text-xs font-semibold text-white hover:opacity-90`}>
-                  <Phone className="mr-1 inline h-3 w-3" />Call
+                <button onClick={() => choose(onCall, a.id)} data-testid={`counsellor-agent-call-${a.id}`} title={`Call ${a.name}`}
+                  className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-gradient-to-r ${a.gradient} text-xs font-semibold text-white shadow-sm transition hover:opacity-90`}>
+                  <Phone className="h-3.5 w-3.5" /> Call
                 </button>
               </div>
             </div>
@@ -1117,11 +1125,12 @@ function AgentPicker({ pro, agentId, onPick, onCall }) {
         })}
       </div>
       {picked && (
-        <div data-testid="counsellor-agent-hello" className="mt-3 flex items-start gap-2.5">
-          <AgentAvatar agent={picked} className="h-8 w-8 text-base" />
-          <p className="rounded-2xl rounded-tl-sm bg-surface px-3.5 py-2 text-sm text-foreground">
-            {picked.hello} <span className="text-muted-foreground">Type below or tap Call to talk.</span>
-          </p>
+        <div data-testid="counsellor-agent-hello" className="radha-fade-up mt-3 flex items-start gap-2.5">
+          <AgentPortrait id={picked.id} className="h-9 w-9" />
+          <div className="rounded-2xl rounded-tl-sm bg-surface px-3.5 py-2 text-sm text-foreground">
+            <p className="text-xs font-semibold text-muted-foreground">{picked.name}</p>
+            {picked.hello} <span className="text-muted-foreground">Type below, or tap Call to talk.</span>
+          </div>
         </div>
       )}
     </section>
