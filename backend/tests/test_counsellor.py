@@ -198,3 +198,53 @@ def test_counsellor_skips_a_verse_right_after_one(client):
     finally:
         REPLY[0] = "I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."
     assert counsellor.NO_VERSE in call["messages"][0]["content"]
+
+
+def test_counsellor_agents_are_pro_and_speak_in_their_own_voice(client):
+    import counsellor
+    off = client.post("/api/conversations", json={"mode": "counsellor", "agent": "krishna"})
+    assert off.status_code == 403  # Basic can't start a talk with an agent
+    assert client.post("/api/conversations", json={"agent": "krishna"}).status_code == 400
+    _set_plan(client, "pro")
+    try:
+        assert client.post("/api/conversations", json={"mode": "counsellor", "agent": "nobody"}).status_code == 400
+        conv = client.post("/api/conversations", json={"mode": "counsellor", "agent": "bal_krishna"}).json()
+        assert conv["agent"] == "bal_krishna"
+        call, _ = _send(client, conv["id"], "aaj mood off hai")
+    finally:
+        _set_plan(client, "basic")
+    system = call["messages"][0]["content"]
+    assert counsellor.agent_note("bal_krishna") in system
+    assert "not Bal Krishna himself or a god" in system and "Tele-MANAS 14416" in system
+    assert system.endswith(counsellor.BRIEF)  # the language and length reminder still comes last
+    assert counsellor.agent_note(None) == "" and counsellor.agent_note("x") == ""
+    assert set(counsellor.AGENTS) == {"krishna", "bal_krishna", "radha", "hanuman", "krish_robo"}
+    assert "goddess" in counsellor.agent_note("radha") and "openly an AI robot" in counsellor.agent_note("krish_robo")
+
+
+def test_app_shows_the_same_agents():
+    import re
+    import counsellor
+    js = (Path(__file__).resolve().parents[2] / "frontend/src/lib/counselAgents.js").read_text()
+    assert re.findall(r'\{ id: "(\w+)"', js) == list(counsellor.AGENTS)
+
+
+def test_welcome_questions_reach_the_prompt_and_mark_agents_for_you(client):
+    import counsellor
+    me = client.get("/api/auth/me").json()
+    assert me["needsWelcome"] is True and me["suggestedAgents"] == []
+    assert client.put("/api/auth/about", json={"does": "astronaut"}).status_code == 422
+    assert client.put("/api/auth/about", json={"uses": ["study", "coding", "talk", "work"]}).status_code == 422
+    me = client.put("/api/auth/about", json={"callMe": " Meeru ", "does": "student", "uses": ["study", "talk"],
+                                             "country": "India"}).json()
+    assert me["needsWelcome"] is False and me["about"]["callMe"] == "Meeru"
+    assert me["suggestedAgents"] == ["krishna", "radha", "krish_robo"]
+    cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    call, _ = _send(client, cid, "exams are close and I panic")
+    system = call["messages"][0]["content"]
+    assert 'call them "Meeru"' in system and "they are a student" in system and "they live in India" in system
+    assert "they mostly use Krish AI for studying and homework, life advice" in system
+    # Outside India Krish Robo comes first; skipping saves nothing but stops the questions.
+    assert counsellor.suggest({"uses": ["everyday"], "country": "Canada"})[0] == "krish_robo"
+    me = client.put("/api/auth/about", json={"skipped": True}).json()
+    assert me["needsWelcome"] is False and me["about"] is None and me["suggestedAgents"] == []

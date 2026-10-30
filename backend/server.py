@@ -188,6 +188,7 @@ class ConversationIn(BaseModel):
     title: Optional[str] = None
     projectId: Optional[str] = None
     mode: Optional[Literal["counsellor"]] = None
+    agent: Optional[str] = Field(default=None, max_length=32)  # a Pro Counsellor agent (see counsellor.AGENTS)
 
 
 class ConversationPatch(BaseModel):
@@ -258,6 +259,10 @@ def public_user(doc: dict) -> dict:
         "isOwner": is_owner_email(doc["email"]),
         "hasPassword": bool(doc.get("password_hash")),
         "google": bool(doc.get("googleId")),
+        # The welcome questions (counsellor.WORK / USES): asked once; they shape replies and the suggestions.
+        "about": doc.get("about"),
+        "needsWelcome": not doc.get("aboutAt"),
+        "suggestedAgents": counsellor.suggest(doc.get("about")),
     }
 
 
@@ -277,6 +282,7 @@ def public_conversation(doc: dict) -> dict:
         "model": doc.get("model"),
         "projectId": doc.get("projectId"),
         "mode": doc.get("mode"),
+        "agent": doc.get("agent"),
         "shareId": doc.get("shareId"),
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
@@ -753,6 +759,29 @@ async def set_language(body: LanguageIn, user_id: str = Depends(current_user_id)
     return public_user(doc)
 
 
+class AboutIn(BaseModel):
+    callMe: Optional[str] = Field(default=None, max_length=40)
+    does: Optional[Literal[tuple(counsellor.WORK)]] = None
+    uses: List[Literal[tuple(counsellor.USES)]] = Field(default_factory=list, max_length=3)
+    country: Optional[str] = Field(default=None, max_length=60)
+    skipped: bool = False
+
+
+@api.put("/auth/about")
+async def set_about(body: AboutIn, user_id: str = Depends(current_user_id)):
+    """The welcome questions after signing in (or Skip): what to call them, what they do, what they will use
+    Krish AI for and where they live. Saved once; every chat uses them."""
+    about = None
+    if not body.skipped:
+        about = {"callMe": " ".join((body.callMe or "").split()) or None, "does": body.does,
+                 "uses": list(dict.fromkeys(body.uses)), "country": " ".join((body.country or "").split()) or None}
+    await db.users.update_one({"id": user_id}, {"$set": {"about": about, "aboutAt": now_iso(), "updatedAt": now_iso()}})
+    doc = await db.users.find_one({"id": user_id})
+    if not doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    return public_user(doc)
+
+
 class ProfileIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
@@ -829,6 +858,11 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
         project_id = body.projectId
+    if body.agent:
+        if body.mode != counsellor.MODE or body.agent not in counsellor.AGENTS:
+            raise HTTPException(status_code=400, detail="That Counsellor agent isn't available.")
+        if not await limits.is_pro(db, user_id):
+            raise HTTPException(status_code=403, detail="Counsellor agents are part of Pro. Upgrade to talk with them.")
     ts = now_iso()
     doc = {
         "id": str(uuid.uuid4()),
@@ -837,6 +871,7 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
         "model": AI_MODEL,
         "projectId": project_id,
         "mode": body.mode,
+        "agent": body.agent,
         "createdAt": ts,
         "updatedAt": ts,
     }
@@ -1644,8 +1679,11 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         remembered = await memory.prompt_section(db, user_id, project_id)
         if remembered:
             system_parts.append(remembered)
-        owner = await db.users.find_one({"id": user_id}, {"language": 1})
+        owner = await db.users.find_one({"id": user_id}, {"language": 1, "about": 1})
         settings_lang = (owner or {}).get("language")
+        about = counsellor.about_line((owner or {}).get("about"))
+        if about:
+            system_parts.append(about)
         connected = frozenset(await connectors.active(user_id))
         plugin_state = await plugins.state(user_id)
         if connected and not counselling:
@@ -1662,6 +1700,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     if counselling:
         agent = False  # a listening conversation: no tools, no web search
+        persona = counsellor.agent_note((conv or {}).get("agent"))
+        if persona:
+            system_parts.append(persona)
         # Pro and Max: at the start of a new talk, the Counsellor remembers the last one.
         if user_id and not voice and sum(1 for m in history_docs if m["role"] == "user") <= 2 \
                 and await limits.is_pro(db, user_id):

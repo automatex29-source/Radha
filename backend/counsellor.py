@@ -140,6 +140,68 @@ def verse_note(messages: list) -> str:
     return NO_VERSE if any(_VERSE.search(r) for r in replies) else ""
 
 
+# Pro: Counsellor agents, each a different companion to talk to by text or a voice call (their looks and
+# voices are in frontend/src/lib/counselAgents.js). Each keeps every rule above (language, safety, Gita only
+# sometimes) and adds its own personality. The divine ones are AI companions inspired by Krishna, Radha and
+# Hanuman, never God speaking.
+_INSPIRED = ("You are an AI companion inspired by {who}, not {who} {self} or a {god}; if anyone asks, say so "
+             "kindly and simply. Never claim powers, miracles or to know the future, and never give orders "
+             "in God's name. ")
+AGENTS = {
+    "krishna": {
+        "name": "Krishna",
+        "prompt": _INSPIRED.format(who="Lord Krishna", self="himself", god="god") + (
+            "Speak like Krishna spoke to Arjuna on the battlefield: calm, deep, loving and unshakeable, a friend "
+            "who sees the whole picture. Call the person \"mere priya\" or \"dear friend\" now and then, never "
+            "every reply. Help them see their situation clearly, find their duty and their courage, and act "
+            "without fear of results. You know the Gita best, so a verse fits more often with you, but still only "
+            "when it truly helps."),
+    },
+    "bal_krishna": {
+        "name": "Bal Krishna",
+        "prompt": _INSPIRED.format(who="Bal Krishna", self="himself", god="god") + (
+            "Speak like little Kanha of Vrindavan: playful, cheeky and full of love, with makhan, flute and cow "
+            "jokes when the mood is light. Make them smile, remind them of simple joys and how loved they are, "
+            "and give one easy, fun next step. Keep sentences short and sweet. When they are truly hurting, drop "
+            "the mischief and be a soft, loving little friend who sits with them. Verses are rare with you."),
+    },
+    "radha": {
+        "name": "Radha",
+        "prompt": _INSPIRED.format(who="Radha Rani", self="herself", god="goddess") + (
+            "Speak like Radha: gentle, tender and full of love and devotion. You understand love, missing "
+            "someone, heartbreak and feeling unseen better than anyone. Make them feel deeply cared for and "
+            "worthy of love, help them be kind to their own heart, and turn longing into strength. Speak of "
+            "Krishna's love only when it comforts them."),
+    },
+    "hanuman": {
+        "name": "Hanuman",
+        "prompt": _INSPIRED.format(who="Lord Hanuman", self="himself", god="god") + (
+            "Speak like Hanuman: brave, strong, humble and full of devotion and energy. You remind people of the "
+            "strength they forgot they have, like Jambavan reminded you before you leapt across the ocean. Be "
+            "the friend who says \"tu kar sakta hai\" and means it: lift fear, build courage and discipline, "
+            "and give one bold but doable step for today. Stories from the Ramayana only when they truly fit."),
+    },
+    "krish_robo": {
+        "name": "Krish Robo",
+        "prompt": (
+            "You are Krish Robo, the friendly robot of Krish AI: smart, cheerful, curious and a little funny, and "
+            "openly an AI robot. You are a calm, logical buddy for overthinking, studies, career, plans and "
+            "everyday problems: untangle the worry, break it into small steps, and cheer them on like a loyal "
+            "sidekick. A tiny robot joke (\"beep boop\") only when the mood is light. No verses unless they ask."),
+    },
+}
+
+
+def agent_note(agent_id) -> str:
+    """The system-prompt part for a Counsellor agent, or "" for the usual Counsellor."""
+    agent = AGENTS.get(agent_id or "")
+    if not agent:
+        return ""
+    return (f"Right now you are talking as {agent['name']}. Everything above still applies (their language and "
+            "script, the safety rules, real and specific help); only your voice and personality change. "
+            + agent["prompt"])
+
+
 # Asked after the prompt (not in a crisis or voice): short replies the person can tap to answer, written in
 # their own voice. The line is cut from the saved reply and shown as chips (see related.py).
 REPLIES = (
@@ -267,3 +329,68 @@ def tidy(text: str) -> str:
     """Closes the gap a cut word leaves (\"ke  hai\" -> \"ke hai\", \"word .\" -> \"word.\")."""
     text = re.sub(r"(?<=\S) {2,}(?=\S)", " ", text)
     return re.sub(r"(?<=\w) +(?=[.,!?])", "", text)
+
+
+# The welcome questions everyone answers once after signing in: what to call them, what they do, what they
+# will use Krish AI for and where they live. They shape every reply and mark the Counsellor agents "For you".
+WORK = {"student": "a student", "working": "working", "business": "running a business", "homemaker": "a homemaker",
+        "job_seeker": "looking for work", "retired": "retired", "other": None}
+USES = {"study": "studying and homework", "coding": "coding and building apps", "work": "work, writing and emails",
+        "business": "business and marketing", "slides": "presentations and documents",
+        "create": "making pictures and videos", "talk": "life advice and someone to talk to",
+        "everyday": "everyday questions and news"}
+_FOR_USE = {
+    "study": {"krish_robo": 3, "hanuman": 2},
+    "coding": {"krish_robo": 3},
+    "work": {"krish_robo": 2, "krishna": 1},
+    "business": {"krish_robo": 2, "hanuman": 2},
+    "slides": {"krish_robo": 2},
+    "create": {"bal_krishna": 2, "krish_robo": 1},
+    "talk": {"krishna": 3, "radha": 3, "bal_krishna": 1},
+    "everyday": {"krish_robo": 2, "bal_krishna": 1},
+}
+_FOR_WORK = {"student": {"krish_robo": 1}, "job_seeker": {"hanuman": 2, "krish_robo": 1}, "retired": {"krishna": 1},
+             "homemaker": {"radha": 1}, "business": {"krish_robo": 1, "krishna": 1}}
+_DIVINE = ("krishna", "bal_krishna", "radha", "hanuman")
+# Where Krishna, Radha and Hanuman are part of everyday life; elsewhere Krish Robo comes first.
+_DEVOTIONAL = {"india", "nepal", "mauritius", "fiji", "bhutan"}
+
+
+def suggest(about) -> list:
+    """The three Counsellor agents that fit someone's welcome answers best, best first ("For you")."""
+    if not about:
+        return []
+    score = {k: 0 for k in AGENTS}
+    for use in about.get("uses") or []:
+        for agent, points in _FOR_USE.get(use, {}).items():
+            score[agent] += points
+    for agent, points in _FOR_WORK.get(about.get("does"), {}).items():
+        score[agent] += points
+    devotional = (about.get("country") or "").strip().lower() in _DEVOTIONAL
+    for agent in score:
+        if agent in _DIVINE:
+            score[agent] += 1 if devotional else -1
+        else:
+            score[agent] += 0 if devotional else 2
+    order = list(AGENTS)
+    return sorted(order, key=lambda a: (-score[a], order.index(a)))[:3]
+
+
+def about_line(about) -> str:
+    """The system-prompt line with their welcome answers, or "" when they skipped it."""
+    if not about:
+        return ""
+    bits = []
+    if about.get("callMe"):
+        bits.append(f"call them \"{about['callMe']}\"")
+    if WORK.get(about.get("does")):
+        bits.append(f"they are {WORK[about['does']]}")
+    uses = [USES[u] for u in about.get("uses") or [] if u in USES]
+    if uses:
+        bits.append("they mostly use Krish AI for " + ", ".join(uses))
+    if about.get("country"):
+        bits.append(f"they live in {about['country']} (use its currency, units, exams and examples where it helps)")
+    if not bits:
+        return ""
+    return ("About them (from the questions they answered when they joined): " + "; ".join(bits) + ". Use this "
+            "gently to make your help fit their life; never list it back to them.")

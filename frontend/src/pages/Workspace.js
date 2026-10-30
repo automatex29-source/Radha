@@ -15,7 +15,7 @@ import BreatheDialog from "@/components/BreatheDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Phone, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
@@ -24,6 +24,8 @@ import ModelMenu from "@/components/ModelMenu";
 import { menuModel, modelLabel } from "@/lib/models";
 import { showPlanLimit } from "@/lib/planLimits";
 import { useT } from "@/lib/i18n";
+import { COUNSEL_AGENTS, counselAgent } from "@/lib/counselAgents";
+import AgentPortrait, { AgentArt } from "@/components/AgentPortrait";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
 const STARTERS = [
@@ -175,6 +177,13 @@ export default function Workspace({ mode = null }) {
   const [streamSteps, setStreamSteps] = useState([]);
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  // The Pro Counsellor agent picked for a new talk (or sent here by the welcome questions as ?agent=).
+  const [agentId, setAgentId] = useState(() => (counselling && proPlan && counselAgent(searchParams.get("agent"))
+    ? searchParams.get("agent") : null));
+  const linkedAgent = searchParams.get("agent");
+  useEffect(() => {
+    if (counselling && proPlan && counselAgent(linkedAgent)) setAgentId(linkedAgent);
+  }, [counselling, proPlan, linkedAgent]);
   const [previewItem, setPreviewItem] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
   // Think (careful answers) and Study (tutor) stay on for this browser until turned off.
@@ -182,6 +191,12 @@ export default function Workspace({ mode = null }) {
   const [study, setStudy] = useState(() => readFlag("krish.study"));
   const toggleThink = () => setThink((v) => { saveFlag("krish.think", !v); return !v; });
   const toggleStudy = () => setStudy((v) => { saveFlag("krish.study", !v); return !v; });
+  // The welcome screen can turn Study mode on (WelcomeQuestions).
+  useEffect(() => {
+    const on = (e) => { if (e.detail === "krish.study") setStudy(true); };
+    window.addEventListener("krish-flag", on);
+    return () => window.removeEventListener("krish-flag", on);
+  }, []);
   // Web search is off unless turned on; when on, every question searches the web and cites its sources.
   const [webMode, setWebMode] = useState(() => readFlag("krish.web"));
   const toggleWeb = () => setWebMode((v) => { saveFlag("krish.web", !v); return !v; });
@@ -226,6 +241,7 @@ export default function Workspace({ mode = null }) {
   const speechEnabled = !!caps?.serverSpeech || browserSpeechAvailable();
 
   const activeConv = conversations.find((c) => c.id === activeId);
+  const chatAgent = counselling ? counselAgent(activeId ? activeConv?.agent : agentId) : null;
 
   // Like Claude: the chat moves only when you open a chat (to its newest message) or send one
   // (your question near the top, the answer writing out below it). While Krish writes and when
@@ -340,6 +356,7 @@ export default function Workspace({ mode = null }) {
 
   const newConversation = () => {
     leaveChat();
+    setAgentId(null);
     setPreviewItem(null);
     setLoadingConv(false);
     setActiveId(null);
@@ -526,7 +543,8 @@ export default function Workspace({ mode = null }) {
 
   const ensureConversation = async () => {
     if (activeId) return activeId;
-    const { data } = await api.post("/conversations", counselling ? { mode } : projectId ? { projectId } : {});
+    const { data } = await api.post("/conversations",
+      counselling ? { mode, ...(agentId ? { agent: agentId } : {}) } : projectId ? { projectId } : {});
     setActiveId(data.id);
     setConversations((c) => [data, ...c]);
     setSearchParams((sp) => {
@@ -768,18 +786,20 @@ export default function Workspace({ mode = null }) {
             </div>
           ) : messages.length === 0 && !streaming ? (
             counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} onBreathe={() => setBreatheOpen(true)}
-              last={conversations[0]} onResume={openConversation} /> : <EmptyState onPick={(p) => sendMessage(p)} />
+              last={conversations[0]} onResume={openConversation} agentId={agentId} onPickAgent={setAgentId}
+              onCallAgent={(id) => { setAgentId(id); unlockSpeech(); setVoiceOpen(true); }} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
                 onEdit={!streaming && m.role === "user" && !String(m.id).startsWith("tmp-") ? (text) => editMessage(m.id, text) : undefined}
                 onAsk={i === messages.length - 1 && !streaming ? (q) => sendMessage(q) : undefined}
                 onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
-                codeActive={!!codePanel && panelMessage?.id === m.id} quickReplies={counselling} />)}
+                codeActive={!!codePanel && panelMessage?.id === m.id} quickReplies={counselling}
+                agent={chatAgent} voice={chatAgent?.voice} />)}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
                   steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
-                  onOpenCode={() => setCodePanel("live")} codeActive={panelLive} />
+                  onOpenCode={() => setCodePanel("live")} codeActive={panelLive} agent={chatAgent} />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-1"
@@ -826,7 +846,7 @@ export default function Workspace({ mode = null }) {
           searchFocus={focus} onSearchFocus={setFocus} proSearch={pro} onTogglePro={togglePro}
           voiceEnabled={voiceEnabled} voiceHint="Voice needs GROQ_API_KEY (free) on the backend"
           onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
-          placeholder={counselling ? "Type anything… how's your day going? 😊" : undefined} />
+          placeholder={chatAgent ? `Talk to ${chatAgent.name}…` : counselling ? "Type anything… how's your day going? 😊" : undefined} />
       </div>
       {counselling && <BreatheDialog open={breatheOpen} onOpenChange={setBreatheOpen} onDone={(text) => sendMessage(text)}
         pro={proPlan} />}
@@ -837,6 +857,7 @@ export default function Workspace({ mode = null }) {
         onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
       {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
       {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onCancelReply={stopGeneration}
+        agent={chatAgent} voice={chatAgent?.voice}
         onUtterance={(t, opts) => sendRef.current(t, { voiceLang: getVoiceLang(), ...opts, voice: true })} />}
     </div>
   );
@@ -961,7 +982,7 @@ function TypingLine() {
 function EmptyState({ onPick }) {
   const t = useT();
   const { user } = useAuth();
-  const first = (user?.name || "").trim().split(/\s+/)[0];
+  const first = user?.about?.callMe || (user?.name || "").trim().split(/\s+/)[0];
   const [topic, setTopic] = useState("popular");
   const items = TOPICS.find((x) => x.id === topic)?.items || [];
   return (
@@ -1066,11 +1087,85 @@ function MoodCheckIn({ onPick, pro }) {
   );
 }
 
-function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
+// Pro: pick a companion to chat with, or call them and talk out loud (see lib/counselAgents.js).
+function AgentPicker({ pro, agentId, onPick, onCall, suggested = [] }) {
+  const navigate = useNavigate();
+  const picked = counselAgent(agentId);
+  // The agents suggested from their welcome answers come first, marked "For you".
+  const agents = [...COUNSEL_AGENTS].sort((a, b) => (suggested.includes(a.id) ? suggested.indexOf(a.id) : 9)
+    - (suggested.includes(b.id) ? suggested.indexOf(b.id) : 9));
+  const choose = (fn, id) => (pro ? fn(id) : navigate("/plans"));
+  return (
+    <section data-testid="counsellor-agents" className="mt-6">
+      <div className="mb-3 flex items-end gap-2">
+        <div className="min-w-0">
+          <h3 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
+            Talk to someone who gets you
+            <span className="rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Pro</span>
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">Chat, or call and just talk. They listen, and talk back.</p>
+        </div>
+        {picked && (
+          <button onClick={() => onPick(null)} data-testid="counsellor-agent-clear"
+            className="ml-auto shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground">Back to Krish</button>
+        )}
+      </div>
+      <div className="krish-no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 xl:grid-cols-5">
+        {agents.map((a) => {
+          const on = a.id === agentId;
+          return (
+            <div key={a.id} data-testid={`counsellor-agent-${a.id}`}
+              className={`group relative aspect-[3/4] w-[10.5rem] shrink-0 snap-start overflow-hidden rounded-[1.75rem] bg-slate-900 shadow-md transition duration-300 sm:w-auto ${on ? "ring-[3px] ring-violet-500 ring-offset-2 ring-offset-background" : "hover:-translate-y-1 hover:shadow-xl"}`}>
+              <button onClick={() => choose(onPick, a.id)} title={`Chat with ${a.name}`} className="absolute inset-0">
+                <AgentArt id={a.id} className="transition duration-500 group-hover:scale-105" />
+                <span className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
+              </button>
+              {suggested.includes(a.id) && (
+                <span data-testid={`counsellor-agent-for-you-${a.id}`}
+                  className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-slate-900 backdrop-blur">For you</span>
+              )}
+              {!pro && (
+                <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 backdrop-blur">
+                  <Lock className="h-3.5 w-3.5 text-white" />
+                </span>
+              )}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3 text-left text-white">
+                <p className="text-[15px] font-bold leading-tight drop-shadow">{a.name}</p>
+                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-white/80">{a.tagline}</p>
+                <div className="pointer-events-auto mt-2.5 flex items-center gap-2">
+                  <button onClick={() => choose(onPick, a.id)} data-testid={`counsellor-agent-chat-${a.id}`} title={`Chat with ${a.name}`}
+                    aria-label={`Chat with ${a.name}`}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 backdrop-blur-md transition hover:bg-white/25">
+                    <MessageCircle className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => choose(onCall, a.id)} data-testid={`counsellor-agent-call-${a.id}`} title={`Call ${a.name}`}
+                    className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-white text-xs font-bold text-slate-900 shadow transition hover:bg-white/90">
+                    <Phone className="h-3.5 w-3.5 text-emerald-600" /> Call
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {picked && (
+        <div data-testid="counsellor-agent-hello" className="radha-fade-up mt-3 flex items-start gap-2.5">
+          <AgentPortrait id={picked.id} className="h-9 w-9" />
+          <div className="rounded-2xl rounded-tl-sm bg-surface px-3.5 py-2 text-sm text-foreground">
+            <p className="text-xs font-semibold text-muted-foreground">{picked.name}</p>
+            {picked.hello} <span className="text-muted-foreground">Type below, or tap Call to talk.</span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CounselEmptyState({ onPick, onBreathe, last, onResume, agentId, onPickAgent, onCallAgent }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const pro = user?.plan === "pro" || user?.plan === "max";
-  const first = (user?.name || "").trim().split(/\s+/)[0];
+  const first = user?.about?.callMe || (user?.name || "").trim().split(/\s+/)[0];
   const g = useMemo(() => pickGreeting(first), [first]);
   return (
     <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
@@ -1105,6 +1200,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
+      <AgentPicker pro={pro} agentId={agentId} onPick={onPickAgent} onCall={onCallAgent} suggested={user?.suggestedAgents || []} />
       <MoodCheckIn onPick={onPick} pro={pro} />
       <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
         <button onClick={onBreathe} data-testid="breathe-button"

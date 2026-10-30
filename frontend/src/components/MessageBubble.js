@@ -14,6 +14,7 @@ import SourceChip from "@/components/SourceChip";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { modelLabel } from "@/lib/models";
+import { AgentAvatar } from "@/lib/counselAgents";
 
 function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
   const [failed, setFailed] = useState(false);
@@ -245,7 +246,7 @@ function RateButtons({ message }) {
   );
 }
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, quickReplies, compactSteps = false }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, quickReplies, compactSteps = false, agent = null }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -356,10 +357,12 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
 
   return (
     <div className="group flex gap-3 radha-fade-up" data-testid={`ai-message-item-${message.id}`}>
-      <BrandMark className="mt-0.5 h-8 w-8 shrink-0" thinking={streaming} />
+      {agent ? <AgentAvatar agent={agent} speaking={streaming} className="mt-0.5 h-8 w-8 text-base" />
+        : <BrandMark className="mt-0.5 h-8 w-8 shrink-0" thinking={streaming} />}
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
-          <KrishWordmark className="text-[15px]" />
+          {agent ? <span data-testid="agent-name" className="text-[15px] font-bold tracking-tight text-foreground">{agent.name}</span>
+            : <KrishWordmark className="text-[15px]" />}
           {message.model && (
             <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 text-[10px] font-medium tracking-wide text-brand">
               {modelLabel(message.model)}
