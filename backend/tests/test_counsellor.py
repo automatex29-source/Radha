@@ -218,8 +218,8 @@ def test_counsellor_agents_are_pro_and_speak_in_their_own_voice(client):
     assert "not Bal Krishna himself or a god" in system and "Tele-MANAS 14416" in system
     assert system.endswith(counsellor.BRIEF)  # the language and length reminder still comes last
     assert counsellor.agent_note(None) == "" and counsellor.agent_note("x") == ""
-    assert set(counsellor.AGENTS) == {"krishna", "bal_krishna", "radha", "hanuman", "ananya", "kabir"}
-    assert "goddess" in counsellor.agent_note("radha") and "AI guide" in counsellor.agent_note("kabir")
+    assert set(counsellor.AGENTS) == {"krishna", "bal_krishna", "radha", "hanuman", "krish_robo"}
+    assert "goddess" in counsellor.agent_note("radha") and "openly an AI robot" in counsellor.agent_note("krish_robo")
 
 
 def test_app_shows_the_same_agents():
@@ -238,12 +238,12 @@ def test_welcome_questions_pick_counsellors_and_reach_the_prompt(client):
     me = client.put("/api/auth/about", json={"callMe": " Meeru ", "does": "student", "wants": ["study", "confidence"],
                                              "country": "India"}).json()
     assert me["needsWelcome"] is False and me["about"]["callMe"] == "Meeru"
-    assert me["suggestedAgents"] == ["hanuman", "kabir", "ananya"]
+    assert me["suggestedAgents"] == ["hanuman", "krish_robo", "krishna"]
     cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
     call, _ = _send(client, cid, "exams are close and I panic")
     system = call["messages"][0]["content"]
     assert 'call them "Meeru"' in system and "they are a student" in system and "they live in India" in system
-    # Outside India the everyday guides come first; skipping saves nothing but stops the questions.
-    assert counsellor.suggest({"wants": ["peace"], "country": "Canada"})[0] == "ananya"
+    # Outside India Krish Robo comes first; skipping saves nothing but stops the questions.
+    assert counsellor.suggest({"wants": ["peace"], "country": "Canada"})[0] == "krish_robo"
     me = client.put("/api/auth/about", json={"skipped": True}).json()
     assert me["needsWelcome"] is False and me["about"] is None and me["suggestedAgents"] == []

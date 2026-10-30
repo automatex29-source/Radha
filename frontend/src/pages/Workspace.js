@@ -1104,7 +1104,7 @@ function AgentPicker({ pro, agentId, onPick, onCall, suggested = [] }) {
             className="ml-auto shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground">Back to Krish</button>
         )}
       </div>
-      <div className="krish-no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 xl:grid-cols-6">
+      <div className="krish-no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 xl:grid-cols-5">
         {agents.map((a) => {
           const on = a.id === agentId;
           return (

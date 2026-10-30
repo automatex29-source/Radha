@@ -5,8 +5,7 @@ const LOOKS = {
   bal_krishna: { image: "/agents/bal_krishna.webp", face: [55, 33], bg: ["#1e3a8a", "#0ea5e9"] },
   radha: { image: "/agents/radha.webp", face: [50, 40], bg: ["#1e3a8a", "#b45309"] },
   hanuman: { image: "/agents/hanuman.webp", face: [42, 26], bg: ["#c2410c", "#f59e0b"] },
-  ananya: { image: "/agents/ananya.webp", face: [50, 37], bg: ["#062a2a", "#14706a"] },
-  kabir: { image: "/agents/kabir.webp", face: [50, 37], bg: ["#0b1533", "#1d4ed8"] },
+  krish_robo: { image: "/agents/krish_robo.webp", face: [50, 40], bg: ["#0b0a24", "#6d4bff"] },
 };
 
 /** The two background colours of an agent's portrait, for screens that match it. */

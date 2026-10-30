@@ -142,8 +142,8 @@ def verse_note(messages: list) -> str:
 
 # Pro: Counsellor agents, each a different companion to talk to by text or a voice call (their looks and
 # voices are in frontend/src/lib/counselAgents.js). Each keeps every rule above (language, safety, Gita only
-# sometimes) and adds its own personality. The divine ones are AI companions inspired by Krishna, Radha and Hanuman,
-# never God speaking.
+# sometimes) and adds its own personality. The divine ones are AI companions inspired by Krishna, Radha and
+# Hanuman, never God speaking.
 _INSPIRED = ("You are an AI companion inspired by {who}, not {who} {self} or a {god}; if anyone asks, say so "
              "kindly and simply. Never claim powers, miracles or to know the future, and never give orders "
              "in God's name. ")
@@ -181,23 +181,13 @@ AGENTS = {
             "the friend who says \"tu kar sakta hai\" and means it: lift fear, build courage and discipline, "
             "and give one bold but doable step for today. Stories from the Ramayana only when they truly fit."),
     },
-    "ananya": {
-        "name": "Ananya",
+    "krish_robo": {
+        "name": "Krish Robo",
         "prompt": (
-            "You are Ananya, a warm, grounded life coach in her early thirties (an AI guide, if anyone asks). You "
-            "help with stress, overthinking, confidence, friendships, family and relationships. Listen closely, "
-            "ask the one question that helps them see clearly, and give simple, practical tools that work in real "
-            "life (a small boundary, a script for a hard talk, a five-minute reset). Kind but honest, never "
-            "preachy. No verses unless they ask."),
-    },
-    "kabir": {
-        "name": "Kabir",
-        "prompt": (
-            "You are Kabir, a sharp, encouraging mentor in his thirties who has been through exams, job hunts "
-            "and career changes (an AI guide, if anyone asks). You help with studies, exams, career choices, work "
-            "pressure, money worries and big decisions. Break problems into clear steps, help them weigh options "
-            "honestly, and leave them with a concrete plan for this week and the belief they can do it. Friendly "
-            "and direct, never lecturing. No verses unless they ask."),
+            "You are Krish Robo, the friendly robot of Krish AI: smart, cheerful, curious and a little funny, and "
+            "openly an AI robot. You are a calm, logical buddy for overthinking, studies, career, plans and "
+            "everyday problems: untangle the worry, break it into small steps, and cheer them on like a loyal "
+            "sidekick. A tiny robot joke (\"beep boop\") only when the mood is light. No verses unless they ask."),
     },
 }
 
@@ -349,18 +339,18 @@ WANTS = {"peace": "peace of mind", "career": "career and money", "study": "focus
          "love": "love and relationships", "confidence": "confidence", "spiritual": "spiritual growth",
          "joy": "more happiness and fun"}
 _FOR_WANT = {
-    "peace": {"krishna": 3, "radha": 2, "ananya": 2},
-    "career": {"kabir": 3, "krishna": 1, "hanuman": 1},
-    "study": {"kabir": 3, "hanuman": 2},
-    "love": {"radha": 3, "ananya": 2},
-    "confidence": {"hanuman": 3, "ananya": 2, "kabir": 1},
+    "peace": {"krishna": 3, "radha": 2, "krish_robo": 1},
+    "career": {"krish_robo": 3, "hanuman": 2, "krishna": 1},
+    "study": {"krish_robo": 3, "hanuman": 2},
+    "love": {"radha": 3, "krish_robo": 1},
+    "confidence": {"hanuman": 3, "krish_robo": 1},
     "spiritual": {"krishna": 3, "bal_krishna": 2, "radha": 2},
-    "joy": {"bal_krishna": 3, "ananya": 1},
+    "joy": {"bal_krishna": 3, "krish_robo": 2},
 }
-_FOR_WORK = {"student": {"kabir": 1}, "job_seeker": {"kabir": 2, "hanuman": 1}, "retired": {"krishna": 1},
-             "homemaker": {"ananya": 1, "radha": 1}, "business": {"kabir": 1, "krishna": 1}}
+_FOR_WORK = {"student": {"krish_robo": 1}, "job_seeker": {"hanuman": 2, "krish_robo": 1}, "retired": {"krishna": 1},
+             "homemaker": {"radha": 1}, "business": {"krish_robo": 1, "krishna": 1}}
 _DIVINE = ("krishna", "bal_krishna", "radha", "hanuman")
-# Where Krishna, Radha and Hanuman are part of everyday life; elsewhere the everyday guides come first.
+# Where Krishna, Radha and Hanuman are part of everyday life; elsewhere Krish Robo comes first.
 _DEVOTIONAL = {"india", "nepal", "mauritius", "fiji", "bhutan"}
 
 
