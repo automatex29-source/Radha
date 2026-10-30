@@ -1676,6 +1676,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         if counsellor.is_crisis(last_user or ""):
             system_parts.append("The person's latest message may describe a crisis or danger. Follow the Safety "
                                 "instructions now: respond with care and give the helplines.")
+        elif counsellor.verse_note(history_docs):
+            system_parts.append(counsellor.NO_VERSE)  # Gita verses stay occasional, not in every reply
 
     # Files attached to this chat, plus project documents (RAG).
     if user_id and last_user and not counselling:
@@ -1774,6 +1776,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if counselling and not voice:
         system_parts.append(counsellor.BRIEF)
     system_prompt = "\n\n".join(system_parts)
+    # The Counsellor never shows letters from a script the person didn't use (see counsellor.keep_scripts).
+    scripts = counsellor.allowed_scripts([m["content"] for m in history_docs if m["role"] == "user"],
+                                         settings_lang, voice_lang) if counselling else None
+    cut = False
 
     shown = [s for s in sources if s not in quiet_cards]
     if shown:
@@ -1801,8 +1807,12 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS,
                                           plan_for=plan_for):
                 if ev["type"] == "text":
-                    full.append(ev["text"])
-                    yield f"data: {_sse_json(ev['text'])}\n\n"
+                    text = ev["text"]
+                    if scripts is not None:
+                        text = counsellor.keep_scripts(text, scripts)
+                        cut = cut or text != ev["text"]
+                    full.append(text)
+                    yield f"data: {_sse_json(text)}\n\n"
                 elif ev["type"] == "drop_text":
                     # The saved reply (which the chat reloads when the stream ends) leaves the block out.
                     full[:] = ["".join(full).replace(ev["text"], "").strip()]
@@ -1831,6 +1841,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             ai_request = AIRequest(messages=messages, model=model, system=system_prompt, session_id=conv_id,
                                    think=reasoning, long_answer=coding)
             async for delta in model_router.stream(ai_request):
+                if scripts is not None:
+                    kept = counsellor.keep_scripts(delta, scripts)
+                    cut, delta = cut or kept != delta, kept
                 full.append(delta)
                 yield f"data: {_sse_json(delta)}\n\n"
     except (asyncio.CancelledError, GeneratorExit):
@@ -1864,6 +1877,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 yield event
     finally:
         content = "".join(full).strip()
+        if cut:
+            content = counsellor.tidy(content)
         follow_ups = []
         if ask_related or ask_replies:
             content, follow_ups = related.split(content, related._REPLIES if ask_replies else related._LINE)
