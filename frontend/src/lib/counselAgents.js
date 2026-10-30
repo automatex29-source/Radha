@@ -11,8 +11,10 @@ export const COUNSEL_AGENTS = [
     tagline: "Gentle love for heartbreak and loneliness", hello: "Come, sit with me. Tell me what your heart feels." },
   { id: "hanuman", name: "Hanuman", voice: "ballad", gradient: "from-orange-500 to-red-600",
     tagline: "Courage and strength when you feel weak", hello: "Jai Shri Ram! Tell me, what feels too big right now?" },
-  { id: "vivekananda", name: "Swami Vivekananda", voice: "echo", gradient: "from-amber-500 to-orange-600",
-    tagline: "Self-belief, focus and fire for your goals", hello: "Arise, awake! Tell me, what goal is in your heart?" },
+  { id: "ananya", name: "Ananya", voice: "shimmer", gradient: "from-teal-500 to-emerald-600",
+    tagline: "Life coach for stress, confidence and relationships", hello: "Hi, I'm Ananya. What's been on your mind lately?" },
+  { id: "kabir", name: "Kabir", voice: "echo", gradient: "from-blue-600 to-sky-500",
+    tagline: "Mentor for studies, career and big decisions", hello: "Hey, I'm Kabir. What are you working towards?" },
 ];
 
 export const counselAgent = (id) => COUNSEL_AGENTS.find((a) => a.id === id) || null;

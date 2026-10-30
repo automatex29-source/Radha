@@ -218,8 +218,8 @@ def test_counsellor_agents_are_pro_and_speak_in_their_own_voice(client):
     assert "not Bal Krishna himself or a god" in system and "Tele-MANAS 14416" in system
     assert system.endswith(counsellor.BRIEF)  # the language and length reminder still comes last
     assert counsellor.agent_note(None) == "" and counsellor.agent_note("x") == ""
-    assert set(counsellor.AGENTS) == {"krishna", "bal_krishna", "radha", "hanuman", "vivekananda"}
-    assert "goddess" in counsellor.agent_note("radha") and "never invent a quote" in counsellor.agent_note("vivekananda")
+    assert set(counsellor.AGENTS) == {"krishna", "bal_krishna", "radha", "hanuman", "ananya", "kabir"}
+    assert "goddess" in counsellor.agent_note("radha") and "AI guide" in counsellor.agent_note("kabir")
 
 
 def test_app_shows_the_same_agents():
