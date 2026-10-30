@@ -9,10 +9,10 @@ export const COUNSEL_AGENTS = [
     tagline: "Little Kanha: playful, sweet, cheers you up", hello: "Hehe, you came! Want some makhan and a smile?" },
   { id: "radha", name: "Radha", voice: "nova", gradient: "from-pink-500 to-rose-500",
     tagline: "Gentle love for heartbreak and loneliness", hello: "Come, sit with me. Tell me what your heart feels." },
-  { id: "dost", name: "Aarav", voice: "ash", gradient: "from-emerald-500 to-teal-600",
-    tagline: "Your friend: real talk, no lectures", hello: "Hey! Chai pe baat karte hain. What's up?" },
-  { id: "dadi", name: "Dadi Maa", voice: "sage", gradient: "from-violet-500 to-fuchsia-500",
-    tagline: "A grandmother's warmth and life wisdom", hello: "Aa beta, baith. Bata, kya hua?" },
+  { id: "hanuman", name: "Hanuman", voice: "ballad", gradient: "from-orange-500 to-red-600",
+    tagline: "Courage and strength when you feel weak", hello: "Jai Shri Ram! Tell me, what feels too big right now?" },
+  { id: "vivekananda", name: "Swami Vivekananda", voice: "echo", gradient: "from-amber-500 to-orange-600",
+    tagline: "Self-belief, focus and fire for your goals", hello: "Arise, awake! Tell me, what goal is in your heart?" },
 ];
 
 export const counselAgent = (id) => COUNSEL_AGENTS.find((a) => a.id === id) || null;

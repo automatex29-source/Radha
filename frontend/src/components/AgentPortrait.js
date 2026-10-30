@@ -6,8 +6,8 @@ const LOOKS = {
   krishna: { image: "/agents/krishna.webp", face: [56, 22], bg: ["#1e3a8a", "#6d28d9"], skin: "#5b8def", skinShade: "#4a74cf", hair: "#141a33", cloth: "#f5b72a" },
   bal_krishna: { image: "/agents/bal_krishna.webp", face: [55, 33], bg: ["#1e3a8a", "#0ea5e9"], skin: "#6fa2f5", skinShade: "#5a8ae0", hair: "#1b2140", cloth: "#fde047" },
   radha: { bg: ["#db2777", "#f472b6"], skin: "#f3c6a2", skinShade: "#e2ad86", hair: "#2a1a14", cloth: "#be123c" },
-  dost: { bg: ["#0f766e", "#34d399"], skin: "#d9a074", skinShade: "#c58a5e", hair: "#2b1d16", cloth: "#1e293b" },
-  dadi: { bg: ["#7c3aed", "#c084fc"], skin: "#e6b993", skinShade: "#d4a27a", hair: "#e5e7eb", cloth: "#9f1239" },
+  hanuman: { bg: ["#7c2d12", "#ea580c"], skin: "#e0703a", skinShade: "#c95d2b", hair: "#7c2d12", cloth: "#f59e0b" },
+  vivekananda: { bg: ["#78350f", "#d97706"], skin: "#d9a074", skinShade: "#c58a5e", hair: "#1f1a17", cloth: "#ea580c" },
 };
 
 /** The two background colours of an agent's portrait, for screens that match it. */
@@ -124,35 +124,34 @@ const PARTS = {
       <circle cx="66" cy="72" r="1.3" fill="none" stroke="#fbbf24" strokeWidth="1" />
     </>
   ),
-  dost: (l) => (
+  hanuman: (l) => (
     <>
-      <Shoulders color={l.cloth} />
-      {/* Hoodie strings and collar */}
-      <path d="M40 94 q20 12 40 0" stroke="#334155" strokeWidth="5" fill="none" strokeLinecap="round" />
-      <path d="M54 98 v10 M66 98 v10" stroke="#e2e8f0" strokeWidth="1.8" strokeLinecap="round" />
-      <Face look={l} open smile="M52 76 q8 7 16 0" />
-      <path d="M37 60 q-2 -28 24 -28 q20 0 23 18 q-4 -2 -8 -1 q-6 -9 -18 -6 q-8 2 -12 8 q-4 2 -9 9 z" fill={l.hair} />
-      <path d="M48 56 q3 -2 7 -1 M65 55 q4 -1 7 1" stroke={l.hair} strokeWidth="2" strokeLinecap="round" />
+      <Shoulders color={l.cloth} trim="#b45309" />
+      <path d="M40 96 q20 14 40 0" stroke="#fde68a" strokeWidth="2.4" fill="none" strokeDasharray="1 3" strokeLinecap="round" />
+      {/* Gada over the shoulder */}
+      <path d="M92 120 l10 -46" stroke="#a16207" strokeWidth="4" strokeLinecap="round" />
+      <circle cx="103" cy="68" r="10" fill="#facc15" stroke="#a16207" strokeWidth="2" />
+      <Face look={l} smile="M52 78 q8 6 16 0" />
+      {/* Muzzle */}
+      <ellipse cx="60" cy="76" rx="12" ry="8" fill="#f5b58c" />
+      <path d="M53 78 q7 5 14 0" stroke="#7a2e2e" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+      {/* Crown */}
+      <path d="M38 50 q22 -10 44 0 l-3 -14 l-7 6 l-12 -14 l-12 14 l-7 -6 z" fill="#facc15" stroke="#a16207" strokeWidth="1.2" />
+      <circle cx="60" cy="36" r="2.4" fill="#dc2626" />
+      <path d="M57 52 h6 v7 h-6 z" fill="#dc2626" opacity="0.9" />
     </>
   ),
-  dadi: (l) => (
+  vivekananda: (l) => (
     <>
-      {/* Saree pallu over the shoulder */}
+      {/* Saffron robe with a shawl */}
       <Shoulders color={l.cloth} />
-      <path d="M18 120 q8 -24 30 -28 l-6 28 z" fill="#facc15" opacity="0.9" />
-      <path d="M78 92 q18 4 24 28 h-20 z" fill="#be185d" />
-      <Face look={l} smile="M53 77 q7 5 14 0" />
-      {/* Grey hair with a bun */}
-      <circle cx="60" cy="34" r="9" fill={l.hair} stroke="#cbd5e1" strokeWidth="1" />
-      <path d="M38 62 q-2 -26 22 -26 q24 0 22 26 q-8 -14 -22 -14 q-14 0 -22 14 z" fill={l.hair} />
-      <path d="M60 37 v10" stroke="#cbd5e1" strokeWidth="1.2" />
-      {/* Round glasses */}
-      <g stroke="#6b4f3a" strokeWidth="1.8" fill="rgba(255,255,255,0.18)">
-        <circle cx="51" cy="64" r="7" />
-        <circle cx="69" cy="64" r="7" />
-        <path d="M58 64 h4" fill="none" />
-      </g>
-      <circle cx="60" cy="53" r="2" fill="#dc2626" />
+      <path d="M30 120 q6 -26 30 -28 q-4 14 -8 28 z" fill="#c2410c" />
+      <Face look={l} open smile="M54 78 q6 3 12 0" />
+      {/* Determined brows */}
+      <path d="M45 57 l11 1 M64 58 l11 -1" stroke={l.hair} strokeWidth="2.4" strokeLinecap="round" />
+      {/* Turban */}
+      <path d="M36 56 q-2 -24 24 -26 q26 2 24 26 q-12 -6 -24 -6 q-12 0 -24 6 z" fill="#f97316" />
+      <path d="M38 50 q22 -14 44 0 M40 42 q20 -12 40 0" stroke="#c2410c" strokeWidth="2" fill="none" />
     </>
   ),
 };
