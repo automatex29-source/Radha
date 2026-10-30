@@ -229,21 +229,22 @@ def test_app_shows_the_same_agents():
     assert re.findall(r'\{ id: "(\w+)"', js) == list(counsellor.AGENTS)
 
 
-def test_welcome_questions_pick_counsellors_and_reach_the_prompt(client):
+def test_welcome_questions_reach_the_prompt_and_mark_agents_for_you(client):
     import counsellor
     me = client.get("/api/auth/me").json()
     assert me["needsWelcome"] is True and me["suggestedAgents"] == []
     assert client.put("/api/auth/about", json={"does": "astronaut"}).status_code == 422
-    assert client.put("/api/auth/about", json={"wants": ["peace", "love", "joy", "study"]}).status_code == 422
-    me = client.put("/api/auth/about", json={"callMe": " Meeru ", "does": "student", "wants": ["study", "confidence"],
+    assert client.put("/api/auth/about", json={"uses": ["study", "coding", "talk", "work"]}).status_code == 422
+    me = client.put("/api/auth/about", json={"callMe": " Meeru ", "does": "student", "uses": ["study", "talk"],
                                              "country": "India"}).json()
     assert me["needsWelcome"] is False and me["about"]["callMe"] == "Meeru"
-    assert me["suggestedAgents"] == ["hanuman", "krish_robo", "krishna"]
+    assert me["suggestedAgents"] == ["krishna", "radha", "krish_robo"]
     cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
     call, _ = _send(client, cid, "exams are close and I panic")
     system = call["messages"][0]["content"]
     assert 'call them "Meeru"' in system and "they are a student" in system and "they live in India" in system
+    assert "they mostly use Krish AI for studying and homework, life advice" in system
     # Outside India Krish Robo comes first; skipping saves nothing but stops the questions.
-    assert counsellor.suggest({"wants": ["peace"], "country": "Canada"})[0] == "krish_robo"
+    assert counsellor.suggest({"uses": ["everyday"], "country": "Canada"})[0] == "krish_robo"
     me = client.put("/api/auth/about", json={"skipped": True}).json()
     assert me["needsWelcome"] is False and me["about"] is None and me["suggestedAgents"] == []

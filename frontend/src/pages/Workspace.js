@@ -191,6 +191,12 @@ export default function Workspace({ mode = null }) {
   const [study, setStudy] = useState(() => readFlag("krish.study"));
   const toggleThink = () => setThink((v) => { saveFlag("krish.think", !v); return !v; });
   const toggleStudy = () => setStudy((v) => { saveFlag("krish.study", !v); return !v; });
+  // The welcome screen can turn Study mode on (WelcomeQuestions).
+  useEffect(() => {
+    const on = (e) => { if (e.detail === "krish.study") setStudy(true); };
+    window.addEventListener("krish-flag", on);
+    return () => window.removeEventListener("krish-flag", on);
+  }, []);
   // Web search is off unless turned on; when on, every question searches the web and cites its sources.
   const [webMode, setWebMode] = useState(() => readFlag("krish.web"));
   const toggleWeb = () => setWebMode((v) => { saveFlag("krish.web", !v); return !v; });

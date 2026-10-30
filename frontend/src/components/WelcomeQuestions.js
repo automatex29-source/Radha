@@ -1,14 +1,13 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Loader2, Lock, MessageCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, Compass, Image, LayoutGrid, Loader2, MessageCircle,
+  Presentation, FileText, Heart, Zap } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { counselAgent } from "@/lib/counselAgents";
-import { AgentArt } from "@/components/AgentPortrait";
 import BrandMark from "@/components/BrandMark";
 
-// Asked once after signing in (backend: PUT /auth/about). The answers shape Krish's replies and pick the
-// Counsellor agents suggested at the end.
+// Asked once after signing in (backend: PUT /auth/about). The answers shape every Krish reply, and the end
+// screen points them to the parts of Krish AI that fit what they want to do.
 const WORK = [
   { id: "student", label: "Student", emoji: "📚" },
   { id: "working", label: "Working", emoji: "💼" },
@@ -18,15 +17,27 @@ const WORK = [
   { id: "retired", label: "Retired", emoji: "🌿" },
   { id: "other", label: "Something else", emoji: "✨" },
 ];
-const WANTS = [
-  { id: "peace", label: "Peace of mind", emoji: "🕊️" },
-  { id: "career", label: "Career & money", emoji: "📈" },
-  { id: "study", label: "Focus in studies", emoji: "🎯" },
-  { id: "love", label: "Love & relationships", emoji: "💞" },
-  { id: "confidence", label: "Confidence", emoji: "💪" },
-  { id: "spiritual", label: "Spiritual growth", emoji: "🪷" },
-  { id: "joy", label: "More happiness", emoji: "😊" },
+const USES = [
+  { id: "study", label: "Study & homework", emoji: "📚" },
+  { id: "coding", label: "Coding & building apps", emoji: "💻" },
+  { id: "work", label: "Work, writing & emails", emoji: "✍️" },
+  { id: "business", label: "Business & marketing", emoji: "📈" },
+  { id: "slides", label: "Presentations & documents", emoji: "📊" },
+  { id: "create", label: "Pictures & videos", emoji: "🎨" },
+  { id: "talk", label: "Life advice & someone to talk to", emoji: "💛" },
+  { id: "everyday", label: "Everyday questions & news", emoji: "🌍" },
 ];
+// The part of Krish AI each use leads to on the end screen. `study` turns Study mode on (see Workspace).
+const FEATURES = {
+  study: { icon: BookOpen, title: "Study mode", text: "Step-by-step teaching, quizzes and exam prep.", path: "/", flag: "krish.study", tone: "from-amber-400 to-orange-500" },
+  coding: { icon: LayoutGrid, title: "App builder", text: "Describe an app or website and watch it get built.", path: "/apps", tone: "from-sky-500 to-indigo-600" },
+  work: { icon: FileText, title: "Docs", text: "Write and polish emails, letters and reports.", path: "/docs", tone: "from-emerald-500 to-teal-600" },
+  business: { icon: Zap, title: "Automations", text: "Agents that do your repeat tasks on a schedule.", path: "/automations", tone: "from-violet-500 to-fuchsia-500" },
+  slides: { icon: Presentation, title: "Decks", text: "Beautiful slides from a single line.", path: "/decks", tone: "from-rose-500 to-pink-500" },
+  create: { icon: Image, title: "Pictures & videos", text: "Ask in chat: \"make a poster for my shop\".", path: "/", tone: "from-fuchsia-500 to-purple-600" },
+  talk: { icon: Heart, title: "Counsellor", text: "A caring friend to talk to, by text or call.", path: "/counsellor", tone: "from-pink-500 to-rose-500" },
+  everyday: { icon: Compass, title: "Discover", text: "Today's news and answers with live web search.", path: "/discover", tone: "from-cyan-500 to-blue-600" },
+};
 const COUNTRIES = ["India", "Nepal", "Bangladesh", "Sri Lanka", "Pakistan", "United Arab Emirates", "Saudi Arabia",
   "Qatar", "Singapore", "Malaysia", "Mauritius", "Fiji", "United States", "Canada", "United Kingdom", "Ireland",
   "Germany", "France", "Netherlands", "Australia", "New Zealand", "South Africa", "Kenya", "Nigeria", "Other"];
@@ -66,7 +77,7 @@ export default function WelcomeQuestions() {
   const [step, setStep] = useState(0);
   const [callMe, setCallMe] = useState((user?.name || "").trim().split(/\s+/)[0] || "");
   const [does, setDoes] = useState(null);
-  const [wants, setWants] = useState([]);
+  const [uses, setUses] = useState([]);
   const initialCountry = useMemo(guessCountry, []);
   const [country, setCountry] = useState(initialCountry);
   const [otherCountry, setOtherCountry] = useState("");
@@ -74,16 +85,16 @@ export default function WelcomeQuestions() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(null); // the user after saving: shows the suggestions
 
-  const toggleWant = (id) => setWants((w) => (w.includes(id) ? w.filter((x) => x !== id) : w.length >= 3 ? w : [...w, id]));
+  const toggleUse = (id) => setUses((u) => (u.includes(id) ? u.filter((x) => x !== id) : u.length >= 3 ? u : [...u, id]));
   const place = country === "Other" ? otherCountry.trim() : country;
-  const ready = [callMe.trim().length > 0, !!does, wants.length > 0, !!place][step];
+  const ready = [callMe.trim().length > 0, !!does, uses.length > 0, !!place][step];
 
   const save = async (skipped = false) => {
     setSaving(true);
     setError("");
     try {
       const { data } = await api.put("/auth/about", skipped ? { skipped: true }
-        : { callMe: callMe.trim(), does, wants, country: place });
+        : { callMe: callMe.trim(), does, uses, country: place });
       if (skipped) setUser(data);
       else setSaved(data);
     } catch (e) {
@@ -93,7 +104,12 @@ export default function WelcomeQuestions() {
     }
   };
 
-  const finish = (path) => {
+  const finish = (path, flag) => {
+    if (flag) {
+      try { localStorage.setItem(flag, "1"); } catch { /* optional */ }
+      // The chat page is already open under this screen, so tell it to switch the mode on now.
+      window.dispatchEvent(new CustomEvent("krish-flag", { detail: flag }));
+    }
     setUser(saved);
     navigate(path);
   };
@@ -101,44 +117,48 @@ export default function WelcomeQuestions() {
   const questions = [
     { title: "What should we call you?", hint: "Your name, a nickname, anything you like." },
     { title: `What do you do, ${callMe.trim() || "friend"}?`, hint: "So the advice fits your days." },
-    { title: "What do you want most right now?", hint: "Pick up to 3." },
-    { title: "Where do you live?", hint: "We'll suggest counsellors who fit you best." },
+    { title: "What will you use Krish AI for most?", hint: "Pick up to 3." },
+    { title: "Where do you live?", hint: "So prices, exams, news and examples fit your country." },
   ];
 
   if (saved) {
-    const picks = (saved.suggestedAgents || []).map(counselAgent).filter(Boolean);
+    const picks = (saved.about?.uses || []).map((u) => [u, FEATURES[u]]).filter(([, f]) => f);
     return (
       <div className="fixed inset-0 z-[70] overflow-y-auto bg-background" data-testid="welcome-results">
         <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center px-5 py-10">
           <p className="text-sm font-semibold text-violet-600 dark:text-violet-300">All set, {saved.about?.callMe || callMe} ✨</p>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">Your counsellors</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Picked for what you want most{saved.about?.country ? ` and life in ${saved.about.country}` : ""}.</p>
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {picks.map((a, i) => (
-              <button key={a.id} onClick={() => finish(pro ? `/counsellor?agent=${a.id}` : "/plans")}
-                data-testid={`welcome-agent-${a.id}`}
-                className="group relative aspect-[4/5] overflow-hidden rounded-[1.75rem] text-left shadow-md transition hover:-translate-y-1 hover:shadow-xl max-sm:aspect-[16/10]">
-                <AgentArt id={a.id} className="transition duration-500 group-hover:scale-105" />
-                <span className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                {i === 0 && <span className="absolute left-3 top-3 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-900">Best match</span>}
-                <span className="absolute inset-x-0 bottom-0 p-4 text-white">
-                  <span className="block text-lg font-bold">{a.name}</span>
-                  <span className="block text-xs text-white/80">{a.tagline}</span>
-                  <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-900">
-                    {pro ? <><MessageCircle className="h-3.5 w-3.5" /> Talk to {a.name}</> : <><Lock className="h-3.5 w-3.5" /> Unlock with Pro</>}
+          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">Krish AI, made for you</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Krish will now answer with your life{saved.about?.country ? ` in ${saved.about.country}` : ""} in mind. Start with these:
+          </p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            {picks.map(([id, f]) => {
+              const Icon = f.icon;
+              return (
+                <button key={id} onClick={() => finish(f.path, f.flag)} data-testid={`welcome-feature-${id}`}
+                  className="group flex flex-col rounded-3xl border border-border bg-card p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
+                  <span className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${f.tone} text-white shadow-md`}>
+                    <Icon className="h-6 w-6" />
                   </span>
-                </span>
-              </button>
-            ))}
+                  <span className="mt-4 text-base font-bold text-foreground">{f.title}</span>
+                  <span className="mt-1 flex-1 text-sm leading-snug text-muted-foreground">{f.text}</span>
+                  <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-violet-600 dark:text-violet-300">
+                    Try it <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                  </span>
+                </button>
+              );
+            })}
           </div>
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <button onClick={() => finish("/counsellor")} data-testid="welcome-start-counsellor"
-              className="rounded-full bg-gradient-to-r from-violet-600 to-pink-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:opacity-90">
-              {pro ? "Open the Counsellor" : "Talk to Krish for free"}
+            <button onClick={() => finish("/")} data-testid="welcome-start-chat"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-pink-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:opacity-90">
+              <MessageCircle className="h-4 w-4" /> Start chatting with Krish
             </button>
-            <button onClick={() => finish("/")} data-testid="welcome-go-chat" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-              Go to chat
-            </button>
+            {!pro && (
+              <button onClick={() => finish("/plans")} data-testid="welcome-see-pro" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+                <Briefcase className="h-4 w-4" /> See what Pro adds
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -177,8 +197,8 @@ export default function WelcomeQuestions() {
             )}
             {step === 2 && (
               <div className="grid gap-2.5 sm:grid-cols-2">
-                {WANTS.map((w) => <Chip key={w.id} {...w} on={wants.includes(w.id)} testid={`welcome-want-${w.id}`}
-                  onClick={() => toggleWant(w.id)} />)}
+                {USES.map((u) => <Chip key={u.id} {...u} on={uses.includes(u.id)} testid={`welcome-use-${u.id}`}
+                  onClick={() => toggleUse(u.id)} />)}
               </div>
             )}
             {step === 3 && (

@@ -259,7 +259,7 @@ def public_user(doc: dict) -> dict:
         "isOwner": is_owner_email(doc["email"]),
         "hasPassword": bool(doc.get("password_hash")),
         "google": bool(doc.get("googleId")),
-        # The welcome questions (counsellor.WORK / WANTS): asked once, and they pick the suggested agents.
+        # The welcome questions (counsellor.WORK / USES): asked once; they shape replies and the suggestions.
         "about": doc.get("about"),
         "needsWelcome": not doc.get("aboutAt"),
         "suggestedAgents": counsellor.suggest(doc.get("about")),
@@ -762,19 +762,19 @@ async def set_language(body: LanguageIn, user_id: str = Depends(current_user_id)
 class AboutIn(BaseModel):
     callMe: Optional[str] = Field(default=None, max_length=40)
     does: Optional[Literal[tuple(counsellor.WORK)]] = None
-    wants: List[Literal[tuple(counsellor.WANTS)]] = Field(default_factory=list, max_length=3)
+    uses: List[Literal[tuple(counsellor.USES)]] = Field(default_factory=list, max_length=3)
     country: Optional[str] = Field(default=None, max_length=60)
     skipped: bool = False
 
 
 @api.put("/auth/about")
 async def set_about(body: AboutIn, user_id: str = Depends(current_user_id)):
-    """The welcome questions after signing in (or Skip): what to call them, what they do, what they want
-    most and where they live. Saved once; the Counsellor uses them and suggests agents from them."""
+    """The welcome questions after signing in (or Skip): what to call them, what they do, what they will use
+    Krish AI for and where they live. Saved once; every chat uses them."""
     about = None
     if not body.skipped:
         about = {"callMe": " ".join((body.callMe or "").split()) or None, "does": body.does,
-                 "wants": list(dict.fromkeys(body.wants)), "country": " ".join((body.country or "").split()) or None}
+                 "uses": list(dict.fromkeys(body.uses)), "country": " ".join((body.country or "").split()) or None}
     await db.users.update_one({"id": user_id}, {"$set": {"about": about, "aboutAt": now_iso(), "updatedAt": now_iso()}})
     doc = await db.users.find_one({"id": user_id})
     if not doc:

@@ -331,21 +331,23 @@ def tidy(text: str) -> str:
     return re.sub(r"(?<=\w) +(?=[.,!?])", "", text)
 
 
-# The welcome questions everyone answers once after signing in: what to call them, what they do, what
-# they want most and where they live. They pick the Counsellor agents suggested to them.
+# The welcome questions everyone answers once after signing in: what to call them, what they do, what they
+# will use Krish AI for and where they live. They shape every reply and mark the Counsellor agents "For you".
 WORK = {"student": "a student", "working": "working", "business": "running a business", "homemaker": "a homemaker",
         "job_seeker": "looking for work", "retired": "retired", "other": None}
-WANTS = {"peace": "peace of mind", "career": "career and money", "study": "focus in studies",
-         "love": "love and relationships", "confidence": "confidence", "spiritual": "spiritual growth",
-         "joy": "more happiness and fun"}
-_FOR_WANT = {
-    "peace": {"krishna": 3, "radha": 2, "krish_robo": 1},
-    "career": {"krish_robo": 3, "hanuman": 2, "krishna": 1},
+USES = {"study": "studying and homework", "coding": "coding and building apps", "work": "work, writing and emails",
+        "business": "business and marketing", "slides": "presentations and documents",
+        "create": "making pictures and videos", "talk": "life advice and someone to talk to",
+        "everyday": "everyday questions and news"}
+_FOR_USE = {
     "study": {"krish_robo": 3, "hanuman": 2},
-    "love": {"radha": 3, "krish_robo": 1},
-    "confidence": {"hanuman": 3, "krish_robo": 1},
-    "spiritual": {"krishna": 3, "bal_krishna": 2, "radha": 2},
-    "joy": {"bal_krishna": 3, "krish_robo": 2},
+    "coding": {"krish_robo": 3},
+    "work": {"krish_robo": 2, "krishna": 1},
+    "business": {"krish_robo": 2, "hanuman": 2},
+    "slides": {"krish_robo": 2},
+    "create": {"bal_krishna": 2, "krish_robo": 1},
+    "talk": {"krishna": 3, "radha": 3, "bal_krishna": 1},
+    "everyday": {"krish_robo": 2, "bal_krishna": 1},
 }
 _FOR_WORK = {"student": {"krish_robo": 1}, "job_seeker": {"hanuman": 2, "krish_robo": 1}, "retired": {"krishna": 1},
              "homemaker": {"radha": 1}, "business": {"krish_robo": 1, "krishna": 1}}
@@ -355,12 +357,12 @@ _DEVOTIONAL = {"india", "nepal", "mauritius", "fiji", "bhutan"}
 
 
 def suggest(about) -> list:
-    """The three Counsellor agents that fit someone's welcome answers best, best first."""
+    """The three Counsellor agents that fit someone's welcome answers best, best first ("For you")."""
     if not about:
         return []
     score = {k: 0 for k in AGENTS}
-    for want in about.get("wants") or []:
-        for agent, points in _FOR_WANT.get(want, {}).items():
+    for use in about.get("uses") or []:
+        for agent, points in _FOR_USE.get(use, {}).items():
             score[agent] += points
     for agent, points in _FOR_WORK.get(about.get("does"), {}).items():
         score[agent] += points
@@ -383,11 +385,11 @@ def about_line(about) -> str:
         bits.append(f"call them \"{about['callMe']}\"")
     if WORK.get(about.get("does")):
         bits.append(f"they are {WORK[about['does']]}")
-    wants = [WANTS[w] for w in about.get("wants") or [] if w in WANTS]
-    if wants:
-        bits.append("what they want most right now: " + ", ".join(wants))
+    uses = [USES[u] for u in about.get("uses") or [] if u in USES]
+    if uses:
+        bits.append("they mostly use Krish AI for " + ", ".join(uses))
     if about.get("country"):
-        bits.append(f"they live in {about['country']}")
+        bits.append(f"they live in {about['country']} (use its currency, units, exams and examples where it helps)")
     if not bits:
         return ""
     return ("About them (from the questions they answered when they joined): " + "; ".join(bits) + ". Use this "
