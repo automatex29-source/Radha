@@ -198,3 +198,32 @@ def test_counsellor_skips_a_verse_right_after_one(client):
     finally:
         REPLY[0] = "I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."
     assert counsellor.NO_VERSE in call["messages"][0]["content"]
+
+
+def test_counsellor_agents_are_pro_and_speak_in_their_own_voice(client):
+    import counsellor
+    off = client.post("/api/conversations", json={"mode": "counsellor", "agent": "krishna"})
+    assert off.status_code == 403  # Basic can't start a talk with an agent
+    assert client.post("/api/conversations", json={"agent": "krishna"}).status_code == 400
+    _set_plan(client, "pro")
+    try:
+        assert client.post("/api/conversations", json={"mode": "counsellor", "agent": "nobody"}).status_code == 400
+        conv = client.post("/api/conversations", json={"mode": "counsellor", "agent": "bal_krishna"}).json()
+        assert conv["agent"] == "bal_krishna"
+        call, _ = _send(client, conv["id"], "aaj mood off hai")
+    finally:
+        _set_plan(client, "basic")
+    system = call["messages"][0]["content"]
+    assert counsellor.agent_note("bal_krishna") in system
+    assert "not Bal Krishna himself or a god" in system and "Tele-MANAS 14416" in system
+    assert system.endswith(counsellor.BRIEF)  # the language and length reminder still comes last
+    assert counsellor.agent_note(None) == "" and counsellor.agent_note("x") == ""
+    assert set(counsellor.AGENTS) == {"krishna", "bal_krishna", "radha", "dost", "dadi"}
+    assert "goddess" in counsellor.agent_note("radha") and "AI" in counsellor.agent_note("dadi")
+
+
+def test_app_shows_the_same_agents():
+    import re
+    import counsellor
+    js = (Path(__file__).resolve().parents[2] / "frontend/src/lib/counselAgents.js").read_text()
+    assert re.findall(r'\{ id: "(\w+)"', js) == list(counsellor.AGENTS)

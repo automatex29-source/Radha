@@ -188,6 +188,7 @@ class ConversationIn(BaseModel):
     title: Optional[str] = None
     projectId: Optional[str] = None
     mode: Optional[Literal["counsellor"]] = None
+    agent: Optional[str] = Field(default=None, max_length=32)  # a Pro Counsellor agent (see counsellor.AGENTS)
 
 
 class ConversationPatch(BaseModel):
@@ -277,6 +278,7 @@ def public_conversation(doc: dict) -> dict:
         "model": doc.get("model"),
         "projectId": doc.get("projectId"),
         "mode": doc.get("mode"),
+        "agent": doc.get("agent"),
         "shareId": doc.get("shareId"),
         "createdAt": doc["createdAt"],
         "updatedAt": doc["updatedAt"],
@@ -829,6 +831,11 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
         project_id = body.projectId
+    if body.agent:
+        if body.mode != counsellor.MODE or body.agent not in counsellor.AGENTS:
+            raise HTTPException(status_code=400, detail="That Counsellor agent isn't available.")
+        if not await limits.is_pro(db, user_id):
+            raise HTTPException(status_code=403, detail="Counsellor agents are part of Pro. Upgrade to talk with them.")
     ts = now_iso()
     doc = {
         "id": str(uuid.uuid4()),
@@ -837,6 +844,7 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
         "model": AI_MODEL,
         "projectId": project_id,
         "mode": body.mode,
+        "agent": body.agent,
         "createdAt": ts,
         "updatedAt": ts,
     }
@@ -1662,6 +1670,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     if counselling:
         agent = False  # a listening conversation: no tools, no web search
+        persona = counsellor.agent_note((conv or {}).get("agent"))
+        if persona:
+            system_parts.append(persona)
         # Pro and Max: at the start of a new talk, the Counsellor remembers the last one.
         if user_id and not voice and sum(1 for m in history_docs if m["role"] == "user") <= 2 \
                 and await limits.is_pro(db, user_id):

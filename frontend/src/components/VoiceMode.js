@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useAuth } from "@/context/AuthContext";
 import { transcribeDetect, createSpeaker, stopSpeaking, speechText, watchForSpeech, VOICE_LANGS, getVoiceLang, setVoiceLang } from "@/lib/voice";
+import { AgentAvatar } from "@/lib/counselAgents";
 import { X, Mic, Loader2, Volume2, Square, Pause, Camera, CameraOff, MonitorUp, SwitchCamera } from "lucide-react";
 
 const LABELS = {
@@ -35,8 +36,9 @@ function getBargeIn() {
  * is written -> listen again. Talking (or tapping) while it speaks interrupts it.
  * `onUtterance(text, { onText })` sends the message, calls onText with the reply so far,
  * and resolves with the full reply. `onCancelReply()` stops a reply that is being written.
+ * `agent` (a Pro Counsellor agent) turns it into a call with that companion.
  */
-export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }) {
+export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice, agent = null }) {
   const rec = useRecorder();
   const { user } = useAuth();
   const settingsLangRef = useRef("en");
@@ -232,7 +234,7 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
           <video ref={videoRef} autoPlay playsInline muted
             className={`aspect-[4/3] w-full object-cover ${view === "camera" && facing === "user" ? "-scale-x-100" : ""} ${view === "screen" ? "object-contain" : ""}`} />
           <span className="absolute left-2 top-2 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-medium text-white">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> Krish can see your {view}
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> {agent?.name || "Krish"} can see your {view}
           </span>
           {view === "camera" && (
             <button onClick={flipCamera} data-testid="voice-mode-flip" title="Switch camera"
@@ -243,11 +245,20 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
         </div>
       )}
 
+      {agent && (
+        <div data-testid="voice-mode-agent" className="mb-6 flex flex-col items-center text-center">
+          <p className="text-xl font-bold text-foreground">{agent.name}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{phase === "speaking" ? "is talking…" : "On a call with you"}</p>
+        </div>
+      )}
+
       <button onClick={onOrb} disabled={phase === "transcribing"} data-testid="voice-mode-orb"
         title={phase === "speaking" || phase === "thinking" ? "Interrupt" : phase === "listening" ? "Send now" : "Talk"}
-        className={`relative flex ${view ? "h-24 w-24" : "h-40 w-40"} items-center justify-center rounded-full bg-primary shadow-[0_0_80px_rgba(99,102,241,0.6)] transition-transform duration-100 disabled:opacity-80`}
+        className={`relative flex ${view ? "h-24 w-24" : "h-40 w-40"} items-center justify-center rounded-full ${agent ? `bg-gradient-to-br ${agent.gradient}` : "bg-primary"} shadow-[0_0_80px_rgba(99,102,241,0.6)] transition-transform duration-100 disabled:opacity-80`}
         style={{ transform: `scale(${scale})` }}>
-        {phase === "speaking" ? <Volume2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-pulse text-white`} />
+        {agent && phase !== "transcribing" && phase !== "thinking"
+          ? <span className={`${view ? "text-4xl" : "text-7xl"} ${phase === "speaking" ? "animate-pulse" : ""}`} aria-hidden="true">{agent.emoji}</span>
+          : phase === "speaking" ? <Volume2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-pulse text-white`} />
           : busy ? <Loader2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-spin text-white`} />
           : <Mic className={`${view ? "h-8 w-8" : "h-12 w-12"} ${phase === "idle" ? "text-white/80" : "text-white"}`} />}
         {phase === "listening" && <span className="absolute inset-0 animate-ping rounded-full bg-primary/30" />}
@@ -261,6 +272,11 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
       )}
       {error && <p className="mt-2 max-w-md text-center text-xs text-destructive">{error}</p>}
       <div className="mt-6 w-full max-w-lg space-y-3 text-center">
+        {agent && !heard && !reply && (
+          <p className="flex items-start justify-center gap-2 text-sm text-foreground" data-testid="voice-mode-agent-hello">
+            <AgentAvatar agent={agent} className="h-6 w-6 text-xs" /> {agent.hello}
+          </p>
+        )}
         {heard && <p className="text-sm text-muted-foreground">“{heard}”</p>}
         {reply && <p className="radha-scroll max-h-40 overflow-y-auto text-sm text-foreground">{speechText(reply)}</p>}
       </div>
@@ -268,13 +284,13 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
       <div className="absolute bottom-8 flex flex-col items-center gap-4">
         <div className="flex items-center gap-3">
           <button onClick={() => (view === "camera" ? stopView() : startView("camera"))} data-testid="voice-mode-camera"
-            title={view === "camera" ? "Turn camera off" : "Show Krish with your camera"}
+            title={view === "camera" ? "Turn camera off" : `Show ${agent?.name || "Krish"} with your camera`}
             className={`flex h-12 w-12 items-center justify-center rounded-full border transition-colors ${view === "camera" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-surface"}`}>
             {view === "camera" ? <CameraOff className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
           </button>
           {canShareScreen && (
             <button onClick={() => (view === "screen" ? stopView() : startView("screen"))} data-testid="voice-mode-screen"
-              title={view === "screen" ? "Stop sharing your screen" : "Share your screen with Krish"}
+              title={view === "screen" ? "Stop sharing your screen" : `Share your screen with ${agent?.name || "Krish"}`}
               className={`flex h-12 w-12 items-center justify-center rounded-full border transition-colors ${view === "screen" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-surface"}`}>
               <MonitorUp className="h-5 w-5" />
             </button>
