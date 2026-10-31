@@ -1093,7 +1093,7 @@ function RoboCallCard({ onCall }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[15px] font-bold text-foreground">{KRISH_ROBO.name}</p>
-        <p className="text-xs leading-snug text-muted-foreground">Online now. Type below, or call and just talk.</p>
+        <p className="text-xs leading-snug text-muted-foreground">Online now. Ask anything or share what's on your mind, by chat or call.</p>
       </div>
       <button onClick={onCall} data-testid="counsellor-robo-call" title={`Call ${KRISH_ROBO.name}`}
         className="flex h-11 shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-pink-500 px-4 text-sm font-semibold text-white shadow-md transition hover:opacity-90 sm:px-5">
@@ -1119,8 +1119,8 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, onCall }) {
             {g.lead} <span className="krish-gradient-text">{g.highlight}</span>
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
-            Talk about anything: your day, exams, crush, family, big dreams. No judgement, just good vibes,
-            honest advice from Krish Robo, your AI buddy ✨ Any language you like, all chill.
+            Ask anything or talk about anything: exams, work, family, money, big dreams. Krish Robo gives you
+            real answers and honest advice, in your own language ✨
           </p>
           {pro ? (
             <p data-testid="counsellor-pro-badge" className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500/15 to-pink-500/15 px-3 py-1 text-xs font-semibold text-violet-700 dark:text-violet-200">

@@ -178,9 +178,11 @@ def test_script_guard_keeps_the_persons_own_script():
 
 def test_counsellor_rules_stay_in_the_prompt():
     import counsellor
-    for rule in ("same script", "no religious teachings", "respect every faith", "no slang and no jokes"):
+    for rule in ("same script", "no religious teachings", "respect every faith", "no slang and no jokes",
+                 "Give real answers, not just chat", "answer out loud in the language they speak"):
         assert rule in counsellor.PROMPT
     assert "No religious quotes" in counsellor.BRIEF and "script" in counsellor.BRIEF
+    assert "answer it directly" in counsellor.BRIEF
     assert "findahelpline.com" in counsellor.HELPLINES
 
 
