@@ -188,7 +188,7 @@ class ConversationIn(BaseModel):
     title: Optional[str] = None
     projectId: Optional[str] = None
     mode: Optional[Literal["counsellor"]] = None
-    agent: Optional[str] = Field(default=None, max_length=32)  # a Pro Counsellor agent (see counsellor.AGENTS)
+    agent: Optional[str] = Field(default=None, max_length=32)  # the Counsellor's companion (see counsellor.AGENTS)
 
 
 class ConversationPatch(BaseModel):
@@ -259,10 +259,9 @@ def public_user(doc: dict) -> dict:
         "isOwner": is_owner_email(doc["email"]),
         "hasPassword": bool(doc.get("password_hash")),
         "google": bool(doc.get("googleId")),
-        # The welcome questions (counsellor.WORK / USES): asked once; they shape replies and the suggestions.
+        # The welcome questions (counsellor.WORK / USES): asked once; they shape every reply.
         "about": doc.get("about"),
         "needsWelcome": not doc.get("aboutAt"),
-        "suggestedAgents": counsellor.suggest(doc.get("about")),
     }
 
 
@@ -861,8 +860,6 @@ async def create_conversation(body: ConversationIn, user_id: str = Depends(curre
     if body.agent:
         if body.mode != counsellor.MODE or body.agent not in counsellor.AGENTS:
             raise HTTPException(status_code=400, detail="That Counsellor agent isn't available.")
-        if not counsellor.AGENTS_FOR_ALL and not await limits.is_pro(db, user_id):
-            raise HTTPException(status_code=403, detail="Counsellor agents are part of Pro. Upgrade to talk with them.")
     ts = now_iso()
     doc = {
         "id": str(uuid.uuid4()),
@@ -1700,9 +1697,6 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     if counselling:
         agent = False  # a listening conversation: no tools, no web search
-        persona = counsellor.agent_note((conv or {}).get("agent"))
-        if persona:
-            system_parts.append(persona)
         # Pro and Max: at the start of a new talk, the Counsellor remembers the last one.
         if user_id and not voice and sum(1 for m in history_docs if m["role"] == "user") <= 2 \
                 and await limits.is_pro(db, user_id):
@@ -1717,8 +1711,6 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         if counsellor.is_crisis(last_user or ""):
             system_parts.append("The person's latest message may describe a crisis or danger. Follow the Safety "
                                 "instructions now: respond with care and give the helplines.")
-        elif counsellor.verse_note(history_docs):
-            system_parts.append(counsellor.NO_VERSE)  # Gita verses stay occasional, not in every reply
 
     # Files attached to this chat, plus project documents (RAG).
     if user_id and last_user and not counselling:
@@ -3143,7 +3135,7 @@ def _invite_preview(page: str, info: dict, base: str) -> str:
     who = _html.escape(info["name"]) or "A friend"
     title = f"{who} invited you to Krish AI 🎁"
     desc = (f"Join with this link and get {info['days']} days of Krish AI Pro, free. "
-            "Chat, study, build apps and get calm advice from the Bhagavad Gita.")
+            "Chat, study, build apps and talk things through with Krish Robo.")
     picture = f"{base}/api/cards/invite/{info['code']}.png"
     values = {"og:title": title, "twitter:title": title, "og:description": desc, "twitter:description": desc,
               "description": desc, "og:image": picture, "twitter:image": picture}

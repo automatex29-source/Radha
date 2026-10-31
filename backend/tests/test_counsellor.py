@@ -14,7 +14,7 @@ mongomock_motor = pytest.importorskip("mongomock_motor")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 CALLS = []
-REPLY = ["I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."]
+REPLY = ["I hear you. Small steps still count, and you took one by reaching out."]
 
 
 class _Stream:
@@ -71,14 +71,15 @@ def test_counsellor_chats_have_their_own_list(client):
     assert [c["id"] for c in client.get("/api/conversations?mode=counsellor").json()] == [calm["id"]]
 
 
-def test_counsellor_uses_gita_prompt_without_tools_or_memory(client):
+def test_counsellor_is_krish_robo_without_religion_tools_or_memory(client):
     client.delete("/api/memory")
     client.put("/api/memory/settings", json={"auto": True})
     cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
     import counsellor
     call, body = _send(client, cid, "My name is Meera and I feel lost after failing my exam")
     system = call["messages"][0]["content"]
-    assert "Bhagavad Gita" in system and "Tele-MANAS 14416" in system
+    assert "You are Krish Robo" in system and "Tele-MANAS 14416" in system and "988" in system
+    assert "Gita" not in system and "Krishna" not in system  # global and not religious
     assert system.endswith(counsellor.BRIEF)  # short replies by default
     assert counsellor.REPLIES in system and "Make them feel known" in system
     assert "Never call anyone \"bestie\"" in system
@@ -111,7 +112,7 @@ def test_counsellor_offers_tap_to_answer_replies(client):
     try:
         _, body = _send(client, cid, "I'm feeling tired right now 😴.")
     finally:
-        REPLY[0] = "I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."
+        REPLY[0] = "I hear you. Small steps still count, and you took one by reaching out."
     assert "event: related" in body
     saved = client.get(f"/api/conversations/{cid}").json()["messages"][-1]
     assert saved["content"].endswith("What made today heavy?")
@@ -153,7 +154,7 @@ def test_stray_script_is_cut_from_a_hinglish_reply(client):
     try:
         _, body = _send(client, cid, "maine sab kiya phir bhi mere sath galat hua, bht jada")
     finally:
-        REPLY[0] = "I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."
+        REPLY[0] = "I hear you. Small steps still count, and you took one by reaching out."
     assert "بابر" not in body
     saved = client.get(f"/api/conversations/{cid}").json()["messages"][-1]["content"]
     assert saved == "Sneha, tera gussa valid hai. Ye kisi ke liye bhi bardasht ke hai 💔"
@@ -175,56 +176,28 @@ def test_script_guard_keeps_the_persons_own_script():
     assert counsellor.tidy("ke  hai , yaar") == "ke hai, yaar"
 
 
-def test_gita_verses_stay_occasional():
+def test_counsellor_rules_stay_in_the_prompt():
     import counsellor
-    said = lambda *replies: [{"role": "assistant", "content": r} for r in replies]
-    assert counsellor.verse_note(said("> **Gita 2.47:** Your right is to the work.")) == counsellor.NO_VERSE
-    assert counsellor.verse_note(said("Gita 6.5 says...", "That sounds hard.")) == counsellor.NO_VERSE
-    assert counsellor.verse_note(said("Gita 6.5 says...", "Hmm.", "That sounds hard.")) == ""
-    assert counsellor.verse_note([]) == ""
-    for rule in ("same script", "Most replies have no verse", "never stretch a verse", "no \"no cap\""):
+    for rule in ("same script", "no religious teachings", "respect every faith", "no slang and no jokes",
+                 "Give real answers, not just chat", "answer out loud in the language they speak",
+                 "Make them feel good, for real"):
         assert rule in counsellor.PROMPT
-    assert "most replies have none" in counsellor.BRIEF and "script" in counsellor.BRIEF
+    assert "No religious quotes" in counsellor.BRIEF and "script" in counsellor.BRIEF
+    assert "answer it directly" in counsellor.BRIEF
+    assert "findahelpline.com" in counsellor.HELPLINES
 
 
-def test_counsellor_skips_a_verse_right_after_one(client):
+def test_counsellor_talks_are_with_krish_robo_on_every_plan(client):
     import counsellor
-    cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
-    REPLY[0] = "That hurts.\n\n> **Gita 2.47:** You have a right to your work, never to its results."
-    try:
-        call, _ = _send(client, cid, "I failed my exam")
-        assert counsellor.NO_VERSE not in call["messages"][0]["content"]
-        call, _ = _send(client, cid, "I still feel bad")
-    finally:
-        REPLY[0] = "I hear you. Bhagavad Gita 2.47 reminds us to focus on our actions."
-    assert counsellor.NO_VERSE in call["messages"][0]["content"]
-
-
-def test_counsellor_agents_are_pro_and_speak_in_their_own_voice(client):
-    import counsellor
-    import pytest
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(counsellor, "AGENTS_FOR_ALL", False)
-        off = client.post("/api/conversations", json={"mode": "counsellor", "agent": "krishna"})
-    assert off.status_code == 403  # Basic can't start a talk with an agent
-    if counsellor.AGENTS_FOR_ALL:  # opened to every plan for testing
-        assert client.post("/api/conversations", json={"mode": "counsellor", "agent": "krishna"}).status_code == 200
-    assert client.post("/api/conversations", json={"agent": "krishna"}).status_code == 400
-    _set_plan(client, "pro")
-    try:
-        assert client.post("/api/conversations", json={"mode": "counsellor", "agent": "nobody"}).status_code == 400
-        conv = client.post("/api/conversations", json={"mode": "counsellor", "agent": "bal_krishna"}).json()
-        assert conv["agent"] == "bal_krishna"
-        call, _ = _send(client, conv["id"], "aaj mood off hai")
-    finally:
-        _set_plan(client, "basic")
+    assert set(counsellor.AGENTS) == {"krish_robo"}
+    conv = client.post("/api/conversations", json={"mode": "counsellor", "agent": "krish_robo"}).json()
+    assert conv["agent"] == "krish_robo"  # Basic too
+    assert client.post("/api/conversations", json={"agent": "krish_robo"}).status_code == 400
+    for gone in ("krishna", "radha", "nobody"):
+        assert client.post("/api/conversations", json={"mode": "counsellor", "agent": gone}).status_code == 400
+    call, _ = _send(client, conv["id"], "aaj mood off hai")
     system = call["messages"][0]["content"]
-    assert counsellor.agent_note("bal_krishna") in system
-    assert "not Bal Krishna himself or a god" in system and "Tele-MANAS 14416" in system
-    assert system.endswith(counsellor.BRIEF)  # the language and length reminder still comes last
-    assert counsellor.agent_note(None) == "" and counsellor.agent_note("x") == ""
-    assert set(counsellor.AGENTS) == {"krishna", "bal_krishna", "radha", "hanuman", "krish_robo"}
-    assert "goddess" in counsellor.agent_note("radha") and "openly an AI robot" in counsellor.agent_note("krish_robo")
+    assert "You are Krish Robo" in system and system.endswith(counsellor.BRIEF)
 
 
 def test_app_shows_the_same_agents():
@@ -234,22 +207,20 @@ def test_app_shows_the_same_agents():
     assert re.findall(r'\{ id: "(\w+)"', js) == list(counsellor.AGENTS)
 
 
-def test_welcome_questions_reach_the_prompt_and_mark_agents_for_you(client):
+def test_welcome_questions_reach_the_prompt(client):
     import counsellor
     me = client.get("/api/auth/me").json()
-    assert me["needsWelcome"] is True and me["suggestedAgents"] == []
+    assert me["needsWelcome"] is True and "suggestedAgents" not in me
     assert client.put("/api/auth/about", json={"does": "astronaut"}).status_code == 422
     assert client.put("/api/auth/about", json={"uses": ["study", "coding", "talk", "work"]}).status_code == 422
     me = client.put("/api/auth/about", json={"callMe": " Meeru ", "does": "student", "uses": ["study", "talk"],
                                              "country": "India"}).json()
     assert me["needsWelcome"] is False and me["about"]["callMe"] == "Meeru"
-    assert me["suggestedAgents"] == ["krishna", "radha", "krish_robo"]
     cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
     call, _ = _send(client, cid, "exams are close and I panic")
     system = call["messages"][0]["content"]
     assert 'call them "Meeru"' in system and "they are a student" in system and "they live in India" in system
     assert "they mostly use Krish AI for studying and homework, life advice" in system
-    # Outside India Krish Robo comes first; skipping saves nothing but stops the questions.
-    assert counsellor.suggest({"uses": ["everyday"], "country": "Canada"})[0] == "krish_robo"
+    # Skipping saves nothing but stops the questions.
     me = client.put("/api/auth/about", json={"skipped": True}).json()
-    assert me["needsWelcome"] is False and me["about"] is None and me["suggestedAgents"] == []
+    assert me["needsWelcome"] is False and me["about"] is None

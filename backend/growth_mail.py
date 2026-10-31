@@ -19,7 +19,7 @@ logger = logging.getLogger("radha.growth_mail")
 
 TRY_FREE = [
     ("Ask anything", "Type a question the way you'd ask a friend, in English, Hindi or Hinglish."),
-    ("Talk to the Counsellor", "Share what's on your mind and get calm advice drawn from the Bhagavad Gita."),
+    ("Talk to the Counsellor", "Share what's on your mind with Krish Robo and get calm, honest advice."),
     ("Make something", "Ask for a slide deck, a study plan, a poster or a small app, and watch it appear."),
 ]
 TRY_PAID = {

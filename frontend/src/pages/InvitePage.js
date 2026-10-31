@@ -17,7 +17,7 @@ const PERKS = [
   { icon: Palette, tone: "bg-pink-500/10 text-pink-600 dark:text-pink-300", title: "Make things",
     text: "Pictures, slide decks, documents and even working apps." },
   { icon: Sun, tone: "bg-amber-500/15 text-amber-600 dark:text-amber-300", title: "Find calm",
-    text: "Kind, thoughtful advice from the Bhagavad Gita, any time." },
+    text: "Kind, honest advice from Krish Robo, any time." },
 ];
 
 /** Where an invite link (/i/CODE) lands: who invited you, what Krish does, and the free Pro days. */
