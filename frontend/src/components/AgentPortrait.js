@@ -1,10 +1,6 @@
-// Portraits of the Pro Counsellor agents (see lib/counselAgents.js): one picture each in public/agents/.
+// The Counsellor's portrait (see lib/counselAgents.js), in public/agents/.
 // `face` is where the face sits in the picture (x%, y%), for round crops; `bg` matches its colours.
 const LOOKS = {
-  krishna: { image: "/agents/krishna.webp", face: [56, 22], bg: ["#1e3a8a", "#6d28d9"] },
-  bal_krishna: { image: "/agents/bal_krishna.webp", face: [55, 33], bg: ["#1e3a8a", "#0ea5e9"] },
-  radha: { image: "/agents/radha.webp", face: [50, 40], bg: ["#1e3a8a", "#b45309"] },
-  hanuman: { image: "/agents/hanuman.webp", face: [42, 26], bg: ["#c2410c", "#f59e0b"] },
   krish_robo: { image: "/agents/krish_robo.webp", face: [50, 40], bg: ["#0b0a24", "#6d4bff"] },
 };
 

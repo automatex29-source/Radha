@@ -24,8 +24,8 @@ import ModelMenu from "@/components/ModelMenu";
 import { menuModel, modelLabel } from "@/lib/models";
 import { showPlanLimit } from "@/lib/planLimits";
 import { useT } from "@/lib/i18n";
-import { AGENTS_FOR_ALL, COUNSEL_AGENTS, counselAgent } from "@/lib/counselAgents";
-import AgentPortrait, { AgentArt } from "@/components/AgentPortrait";
+import { KRISH_ROBO } from "@/lib/counselAgents";
+import AgentPortrait from "@/components/AgentPortrait";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
 const STARTERS = [
@@ -61,7 +61,7 @@ function pickStarters() {
   return pool.slice(0, 3).map((s, i) => ({ ...s, tone: TONE_ORDER[(t + i * 2) % TONE_ORDER.length] }));
 }
 
-// The Counsellor tab: a cheerful friend who shares Krishna's wisdom from the Gita when it helps (see backend/counsellor.py).
+// The Counsellor tab: Krish Robo, a cheerful friend for whatever is on your mind (see backend/counsellor.py).
 const COUNSEL_STARTERS = [
   { icon: Coffee, tone: "amber", hint: "No agenda, just vibes.", title: "Just wanna chat ☕", prompt: "Hey! Just wanna chat for a bit. How's it going?" },
   { icon: BookOpen, tone: "sky", hint: "Exams, deadlines, all of it.", title: "Study stress is real 📚", prompt: "Bro exams are coming and I'm lowkey stressed. Help me chill and make a plan?" },
@@ -152,7 +152,6 @@ export default function Workspace({ mode = null }) {
   const counselling = mode === "counsellor";
   const { user } = useAuth();
   const proPlan = user?.plan === "pro" || user?.plan === "max";
-  const agentsOpen = proPlan || AGENTS_FOR_ALL;
   const t = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -178,13 +177,6 @@ export default function Workspace({ mode = null }) {
   const [streamSteps, setStreamSteps] = useState([]);
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
-  // The Pro Counsellor agent picked for a new talk (or sent here by the welcome questions as ?agent=).
-  const [agentId, setAgentId] = useState(() => (counselling && agentsOpen && counselAgent(searchParams.get("agent"))
-    ? searchParams.get("agent") : null));
-  const linkedAgent = searchParams.get("agent");
-  useEffect(() => {
-    if (counselling && agentsOpen && counselAgent(linkedAgent)) setAgentId(linkedAgent);
-  }, [counselling, agentsOpen, linkedAgent]);
   const [previewItem, setPreviewItem] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
   // Think (careful answers) and Study (tutor) stay on for this browser until turned off.
@@ -242,7 +234,7 @@ export default function Workspace({ mode = null }) {
   const speechEnabled = !!caps?.serverSpeech || browserSpeechAvailable();
 
   const activeConv = conversations.find((c) => c.id === activeId);
-  const chatAgent = counselling ? counselAgent(activeId ? activeConv?.agent : agentId) : null;
+  const chatAgent = counselling ? KRISH_ROBO : null;  // every Counsellor talk is with Krish Robo
 
   // Like Claude: the chat moves only when you open a chat (to its newest message) or send one
   // (your question near the top, the answer writing out below it). While Krish writes and when
@@ -545,7 +537,7 @@ export default function Workspace({ mode = null }) {
   const ensureConversation = async () => {
     if (activeId) return activeId;
     const { data } = await api.post("/conversations",
-      counselling ? { mode, ...(agentId ? { agent: agentId } : {}) } : projectId ? { projectId } : {});
+      counselling ? { mode, agent: KRISH_ROBO.id } : projectId ? { projectId } : {});
     setActiveId(data.id);
     setConversations((c) => [data, ...c]);
     setSearchParams((sp) => {
@@ -787,8 +779,8 @@ export default function Workspace({ mode = null }) {
             </div>
           ) : messages.length === 0 && !streaming ? (
             counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} onBreathe={() => setBreatheOpen(true)}
-              last={conversations[0]} onResume={openConversation} agentId={agentId} onPickAgent={setAgentId}
-              onCallAgent={(id) => { setAgentId(id); unlockSpeech(); setVoiceOpen(true); }} /> : <EmptyState onPick={(p) => sendMessage(p)} />
+              last={conversations[0]} onResume={openConversation}
+              onCall={() => { unlockSpeech(); setVoiceOpen(true); }} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
@@ -832,7 +824,10 @@ export default function Workspace({ mode = null }) {
                 <Wind className="h-3 w-3" /> Breathe with me
               </button>
             )}
-            <span>Need urgent help? Tele-MANAS 14416, free 24x7 💛</span>
+            {/* The helpline for where they said they live (welcome questions); India's when unknown. */}
+            {!user?.about?.country || user.about.country === "India"
+              ? <span>Need urgent help? Tele-MANAS 14416, free 24x7 💛</span>
+              : <span>Need urgent help? Call your local emergency number, or <a href="https://findahelpline.com" target="_blank" rel="noreferrer" className="underline">findahelpline.com</a> 💛</span>}
           </p>
         )}
         <ComposerInput value={input} onChange={setInput} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
@@ -1088,81 +1083,27 @@ function MoodCheckIn({ onPick, pro }) {
   );
 }
 
-// Pro: pick a companion to chat with, or call them and talk out loud (see lib/counselAgents.js).
-function AgentPicker({ pro, agentId, onPick, onCall, suggested = [] }) {
-  const navigate = useNavigate();
-  const picked = counselAgent(agentId);
-  // The agents suggested from their welcome answers come first, marked "For you".
-  const agents = [...COUNSEL_AGENTS].sort((a, b) => (suggested.includes(a.id) ? suggested.indexOf(a.id) : 9)
-    - (suggested.includes(b.id) ? suggested.indexOf(b.id) : 9));
-  const choose = (fn, id) => (pro ? fn(id) : navigate("/plans"));
+// Krish Robo, the Counsellor: type below to chat, or call and talk out loud (see lib/counselAgents.js).
+function RoboCallCard({ onCall }) {
   return (
-    <section data-testid="counsellor-agents" className="mt-6">
-      <div className="mb-3 flex items-end gap-2">
-        <div className="min-w-0">
-          <h3 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
-            Talk to someone who gets you
-            <span className="rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Pro</span>
-          </h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Chat, or call and just talk. They listen, and talk back.</p>
-        </div>
-        {picked && (
-          <button onClick={() => onPick(null)} data-testid="counsellor-agent-clear"
-            className="ml-auto shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground">Back to Krish</button>
-        )}
+    <section data-testid="counsellor-robo" className="mt-6 flex items-center gap-3.5 rounded-3xl border border-border bg-card p-3.5 shadow-sm sm:gap-4 sm:p-4">
+      <span className="relative shrink-0">
+        <AgentPortrait id={KRISH_ROBO.id} className="h-14 w-14 sm:h-16 sm:w-16" />
+        <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-card bg-emerald-500" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-bold text-foreground">{KRISH_ROBO.name}</p>
+        <p className="text-xs leading-snug text-muted-foreground">Online now. Type below, or call and just talk.</p>
       </div>
-      <div className="krish-no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 xl:grid-cols-5">
-        {agents.map((a) => {
-          const on = a.id === agentId;
-          return (
-            <div key={a.id} data-testid={`counsellor-agent-${a.id}`}
-              className={`group relative aspect-[3/4] w-[10.5rem] shrink-0 snap-start overflow-hidden rounded-[1.75rem] bg-slate-900 shadow-md transition duration-300 sm:w-auto ${on ? "ring-[3px] ring-violet-500 ring-offset-2 ring-offset-background" : "hover:-translate-y-1 hover:shadow-xl"}`}>
-              <button onClick={() => choose(onPick, a.id)} title={`Chat with ${a.name}`} className="absolute inset-0">
-                <AgentArt id={a.id} className="transition duration-500 group-hover:scale-105" />
-                <span className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
-              </button>
-              {suggested.includes(a.id) && (
-                <span data-testid={`counsellor-agent-for-you-${a.id}`}
-                  className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-slate-900 backdrop-blur">For you</span>
-              )}
-              {!pro && (
-                <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 backdrop-blur">
-                  <Lock className="h-3.5 w-3.5 text-white" />
-                </span>
-              )}
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3 text-left text-white">
-                <p className="text-[15px] font-bold leading-tight drop-shadow">{a.name}</p>
-                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-white/80">{a.tagline}</p>
-                <div className="pointer-events-auto mt-2.5 flex items-center gap-2">
-                  <button onClick={() => choose(onPick, a.id)} data-testid={`counsellor-agent-chat-${a.id}`} title={`Chat with ${a.name}`}
-                    aria-label={`Chat with ${a.name}`}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 backdrop-blur-md transition hover:bg-white/25">
-                    <MessageCircle className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => choose(onCall, a.id)} data-testid={`counsellor-agent-call-${a.id}`} title={`Call ${a.name}`}
-                    className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-white text-xs font-bold text-slate-900 shadow transition hover:bg-white/90">
-                    <Phone className="h-3.5 w-3.5 text-emerald-600" /> Call
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {picked && (
-        <div data-testid="counsellor-agent-hello" className="radha-fade-up mt-3 flex items-start gap-2.5">
-          <AgentPortrait id={picked.id} className="h-9 w-9" />
-          <div className="rounded-2xl rounded-tl-sm bg-surface px-3.5 py-2 text-sm text-foreground">
-            <p className="text-xs font-semibold text-muted-foreground">{picked.name}</p>
-            {picked.hello} <span className="text-muted-foreground">Type below, or tap Call to talk.</span>
-          </div>
-        </div>
-      )}
+      <button onClick={onCall} data-testid="counsellor-robo-call" title={`Call ${KRISH_ROBO.name}`}
+        className="flex h-11 shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-pink-500 px-4 text-sm font-semibold text-white shadow-md transition hover:opacity-90 sm:px-5">
+        <Phone className="h-4 w-4" /> Call
+      </button>
     </section>
   );
 }
 
-function CounselEmptyState({ onPick, onBreathe, last, onResume, agentId, onPickAgent, onCallAgent }) {
+function CounselEmptyState({ onPick, onBreathe, last, onResume, onCall }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const pro = user?.plan === "pro" || user?.plan === "max";
@@ -1179,7 +1120,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, agentId, onPickA
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
             Talk about anything: your day, exams, crush, family, big dreams. No judgement, just good vibes,
-            real advice and a little Krishna wisdom when you need it ✨ Hindi, English or Hinglish, all chill.
+            honest advice from Krish Robo, your AI buddy ✨ Any language you like, all chill.
           </p>
           {pro ? (
             <p data-testid="counsellor-pro-badge" className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500/15 to-pink-500/15 px-3 py-1 text-xs font-semibold text-violet-700 dark:text-violet-200">
@@ -1201,7 +1142,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, agentId, onPickA
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <AgentPicker pro={pro || AGENTS_FOR_ALL} agentId={agentId} onPick={onPickAgent} onCall={onCallAgent} suggested={user?.suggestedAgents || []} />
+      <RoboCallCard onCall={onCall} />
       <MoodCheckIn onPick={onPick} pro={pro} />
       <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
         <button onClick={onBreathe} data-testid="breathe-button"
