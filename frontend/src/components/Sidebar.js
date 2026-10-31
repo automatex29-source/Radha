@@ -20,6 +20,7 @@ import {
   LayoutDashboard,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
+import NavList from "@/components/NavList";
 
 function groupByDate(convs) {
   const groups = { Today: [], Yesterday: [], "Previous 7 Days": [], Older: [] };
@@ -56,6 +57,8 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const [deleteId, setDeleteId] = useState(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Phones keep the search box behind an icon, so the menu opens on the sections and recent chats.
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Search also looks inside messages (server side), with a short snippet of where the words appear.
   const [hits, setHits] = useState(null); // { [conversationId]: snippet }
@@ -81,7 +84,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   };
 
   return (
-    <div className="krish-glass flex h-full w-[19rem] flex-col border-r border-white/60 dark:border-border pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
+    <div className="krish-glass flex h-full w-[19rem] max-md:w-[86vw] flex-col border-r border-white/60 dark:border-border pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
       {/* Brand */}
       <div className="flex items-center justify-between px-5 pb-4 pt-5">
         <div className="flex items-center">
@@ -90,30 +93,44 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">EmpireX</p>
           </div>
         </div>
-        <button onClick={onCollapse} data-testid="sidebar-toggle-button" aria-label="Close" className="-mr-2 flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
-          <PanelLeftClose className="h-5 w-5" />
-        </button>
+        <div className="-mr-2 flex items-center">
+          <button onClick={() => setSearchOpen((o) => !o)} data-testid="sidebar-search-toggle" aria-label="Search" aria-expanded={searchOpen}
+            className={`flex h-10 w-10 items-center justify-center rounded-lg hover:text-foreground active:bg-surface md:hidden ${searchOpen ? "text-foreground" : "text-muted-foreground"}`}>
+            <Search className="h-5 w-5" />
+          </button>
+          <button onClick={onCollapse} data-testid="sidebar-toggle-button" aria-label="Close" className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
+            <PanelLeftClose className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
-      <div className="px-4">
+      <div className="px-4 max-md:hidden">
         <button onClick={onNew} data-testid="new-chat-button"
           className="flex h-11 w-full items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-indigo-500 to-violet-500 px-5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(99,102,241,0.35)] transition-all hover:shadow-[0_14px_36px_rgba(99,102,241,0.45)] active:scale-[0.99]">
           <Plus className="h-4 w-4" /> {newLabel || t("newConversation")}
         </button>
       </div>
 
-      <div className="px-4 py-4">
+      <div className={`px-4 py-4 max-md:pt-0 ${searchOpen || query ? "" : "max-md:hidden"}`}>
         <div className="relative">
           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input data-testid="conversation-search-input" value={query} onChange={(e) => setQuery(e.target.value)}
+          <Input data-testid="conversation-search-input" autoFocus={searchOpen} value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder={t(searchContent ? "searchChats" : "searchConversations")} className="h-10 rounded-full border-white/80 bg-white/80 pl-11 text-sm shadow-sm dark:border-border dark:bg-card" />
         </div>
       </div>
 
       {/* List */}
       <div className="radha-scroll flex-1 overflow-y-auto px-3 pb-2">
+        {/* Phones have no side rail or tab bar: the sections sit at the top of the menu. */}
+        {!query.trim() && (
+          <div className="md:hidden">
+            <NavList onNavigate={onCollapse} />
+            <div className="mx-3 my-3 h-px bg-foreground/10" />
+            {filtered.length > 0 && <p className="px-3 pb-1 pt-1 text-[13px] font-medium text-muted-foreground">{t("recents")}</p>}
+          </div>
+        )}
         {filtered.length === 0 && (
-          <div className="flex flex-col items-center px-4 py-10 text-center">
+          <div className="flex flex-col items-center px-4 py-10 text-center max-md:py-6">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 text-primary dark:from-indigo-500/20 dark:to-violet-500/20">
               {query.trim() ? <Search className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
             </span>
@@ -122,17 +139,17 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         )}
         {Object.entries(groups).map(([label, items]) =>
           items.length ? (
-            <div key={label} className="mb-4">
-              <p className="flex items-center gap-2 px-3 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/70">
+            <div key={label} className="mb-4 max-md:mb-0">
+              <p className="flex items-center gap-2 px-3 pb-1.5 pt-1 text-[11px] max-md:hidden font-bold uppercase tracking-[0.14em] text-foreground/70">
                 <GroupIcon label={label} /> {t(GROUP_KEYS[label])}
               </p>
               {items.map((c) => (
                 <div key={c.id} data-testid={`conversation-item-${c.id}`}
                   onClick={() => editingId !== c.id && onSelect(c.id)}
-                  className={`group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm lg:py-1.5 lg:text-[13px] transition-colors ${
+                  className={`group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm max-md:gap-4 max-md:text-[15px] lg:py-1.5 lg:text-[13px] transition-colors ${
                     activeId === c.id ? "bg-white text-foreground shadow-sm ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0" : "text-foreground/75 hover:bg-white/70 hover:text-foreground dark:text-muted-foreground dark:hover:bg-surface"
                   } cursor-pointer`}>
-                  <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0 max-md:h-4 max-md:w-4 max-md:text-foreground/50" />
                   {editingId === c.id ? (
                     <div className="flex flex-1 items-center gap-1">
                       <input autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
@@ -148,7 +165,8 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                         <span className="block truncate">{c.title}</span>
                         {hits?.[c.id] && <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground" data-testid={`search-snippet-${c.id}`}>{hits[c.id]}</span>}
                       </span>
-                      <div className="flex shrink-0 items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 lg:gap-1">
+                      {/* Phones show rename and delete only on the open chat, so the list stays clean. */}
+                      <div className={`flex shrink-0 items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 lg:gap-1 ${activeId === c.id ? "" : "max-md:hidden"}`}>
                         <button data-testid={`rename-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); startRename(c); }} className="hover:text-primary">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
@@ -166,21 +184,23 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       </div>
 
       {/* User */}
-      <div className="p-3">
+      {/* On phones: your picture (opens the account menu) and a New chat button, like the Claude app. */}
+      <div className="flex items-center gap-3 p-3 max-md:px-4 max-md:pb-4">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button data-testid="user-profile-menu-button" className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-sm font-bold text-white">
+            <button data-testid="user-profile-menu-button" aria-label={user?.name || "Account"}
+              className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border max-md:w-auto max-md:rounded-full max-md:bg-transparent max-md:p-0 max-md:shadow-none max-md:ring-0 dark:max-md:bg-transparent">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-sm font-bold text-white max-md:h-11 max-md:w-11 max-md:text-base">
                 {user?.name?.[0]?.toUpperCase() || "U"}
               </div>
-              <div className="min-w-0 flex-1 leading-tight">
+              <div className="min-w-0 flex-1 leading-tight max-md:hidden">
                 <p className="truncate text-sm font-semibold">{user?.name}</p>
                 <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
               </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground max-md:hidden" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="start" className="w-56">
             <div className="px-2 py-1.5 text-xs text-muted-foreground">{t.parts("signedInAs", { email: <span key="e" className="font-medium text-foreground">{user?.email}</span> })}</div>
             <DropdownMenuSeparator />
             <DropdownMenuItem data-testid="menu-memory" onClick={() => setMemoryOpen(true)}>
@@ -216,6 +236,10 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <button onClick={onNew} data-testid="phone-menu-new-chat"
+          className="ml-auto flex h-11 items-center gap-2 rounded-full bg-foreground px-5 text-[15px] font-semibold text-background shadow-lg active:scale-[0.98] md:hidden">
+          <Plus className="h-4 w-4" /> {newLabel || t("newChat")}
+        </button>
       </div>
 
       <MemoryDialog open={memoryOpen} onOpenChange={setMemoryOpen} />

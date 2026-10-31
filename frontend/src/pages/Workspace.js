@@ -708,7 +708,8 @@ export default function Workspace({ mode = null }) {
 
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
-      <IconRail />
+      {/* Phones get the sections from the chats drawer (Sidebar), so no extra top bar here. */}
+      <IconRail mobileBar={false} />
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
@@ -733,7 +734,7 @@ export default function Workspace({ mode = null }) {
         {/* Top bar */}
         <header data-testid="chat-workspace-header" className="@container z-40 flex items-center justify-between gap-2 px-2 py-2 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-1 sm:gap-3">
-            <button onClick={() => setSidebarOpen(true)} data-testid="open-sidebar-button" aria-label="Show chats"
+            <button onClick={() => setSidebarOpen(true)} data-testid="open-sidebar-button" aria-label="Menu"
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground active:bg-surface lg:hidden">
               <PanelLeft className="h-5 w-5" />
             </button>
@@ -796,7 +797,7 @@ export default function Workspace({ mode = null }) {
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-1"
-                  // Keep the typing focus so the phone tab bar doesn't reappear and move these buttons mid-tap.
+                  // Keep the typing focus so the phone keyboard doesn't close and move these buttons mid-tap.
                   onMouseDown={(e) => e.preventDefault()}>
                   {messages[messages.length - 1].webHint && !webMode && (
                     <Button size="sm" onClick={searchWebNow} data-testid="web-hint-button"
