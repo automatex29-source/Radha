@@ -105,3 +105,25 @@ def test_second_request_within_a_minute_is_not_resent(client, monkeypatch):
     c.post("/api/auth/forgot-password", json={"email": "ravi@test.com"})
     c.post("/api/auth/forgot-password", json={"email": "ravi@test.com"})
     assert len(SENT) == 1
+
+
+def test_a_new_password_signs_out_every_other_device(client, monkeypatch):
+    """Whoever knew the old password (and is signed in with it) is signed out once the password is reset."""
+    c, server = client
+    monkeypatch.setenv("BREVO_API_KEY", "k")
+    monkeypatch.setenv("MAIL_FROM", "me@gmail.com")
+    old = c.post("/api/auth/login", json={"email": "ravi@test.com", "password": "newpass1"}).json()["token"]
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {old}"}).status_code == 200
+    time.sleep(1.1)  # tokens record the second they were made
+    c.portal.call(server.db.password_resets.delete_many, {})  # no "sent a minute ago" wait
+    SENT.clear()
+    c.post("/api/auth/forgot-password", json={"email": "ravi@test.com"})
+    r = c.post("/api/auth/reset-password", json={"token": _link_token(), "password": "fresh123"})
+    assert r.status_code == 200
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {old}"}).status_code == 401
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {r.json()['token']}"}).status_code == 200
+    again = c.post("/api/auth/login", json={"email": "ravi@test.com", "password": "fresh123"}).json()["token"]
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {again}"}).status_code == 200
+    # The cut-off is saved, so it still holds after a restart.
+    user = c.portal.call(server.db.users.find_one, {"email": "ravi@test.com"})
+    assert user["tokensValidAfter"]

