@@ -6,7 +6,7 @@ import IconRail from "@/components/IconRail";
 import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
-import { setServerSpeech, browserSpeechAvailable, unlockSpeech, getVoiceLang } from "@/lib/voice";
+import { setServerSpeech, browserSpeechAvailable, unlockSpeech, getVoiceLang, createSpeaker } from "@/lib/voice";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel from "@/components/CodePanel";
 import { extractFiles } from "@/lib/codeFiles";
@@ -15,7 +15,7 @@ import BreatheDialog from "@/components/BreatheDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Phone, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Volume2, VolumeX, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
@@ -177,6 +177,16 @@ export default function Workspace({ mode = null }) {
   const [streamSteps, setStreamSteps] = useState([]);
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  // Counsellor: Krish Robo reads each reply aloud, a little fast, as soon as it starts writing (on unless turned off).
+  const [roboSpeaks, setRoboSpeaks] = useState(() => { try { return localStorage.getItem("krish.robo.speaks") !== "0"; } catch { return true; } });
+  const roboSpeakerRef = useRef(null);
+  const toggleRoboSpeaks = () => setRoboSpeaks((v) => {
+    if (v) roboSpeakerRef.current?.stop();
+    else unlockSpeech();
+    saveFlag("krish.robo.speaks", !v);
+    return !v;
+  });
+  useEffect(() => () => roboSpeakerRef.current?.stop(), []);
   const [previewItem, setPreviewItem] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
   // Think (careful answers) and Study (tutor) stay on for this browser until turned off.
@@ -387,6 +397,7 @@ export default function Workspace({ mode = null }) {
   };
 
   const stopGeneration = () => {
+    roboSpeakerRef.current?.stop();
     if (abortRef.current) abortRef.current.abort();
   };
 
@@ -643,6 +654,7 @@ export default function Workspace({ mode = null }) {
     const liveNote = frame ? [`[Live ${frame.source} view: the picture below is what my ${frame.source} shows right now.]`] : [];
     const content = [...videoNotes, ...liveNote, typed, ...codeBlocks].join("\n\n").trim();
     if (!content || streaming) return "";
+    if (counselling && roboSpeaks && !voice) unlockSpeech(); // while the tap still counts, so phones let it speak
 
     let convId;
     try {
@@ -665,7 +677,14 @@ export default function Workspace({ mode = null }) {
     scrollNext.current = messages.length;
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
+    // Krish Robo speaks the reply aloud while it is still being written.
+    roboSpeakerRef.current?.stop();
+    const robo = counselling && roboSpeaks && !voice ? createSpeaker({ voice: KRISH_ROBO.voice, speed: 1.15 }) : null;
+    roboSpeakerRef.current = robo;
+    const said = await runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId,
+      robo ? (t) => { robo.push(t); onText?.(t); } : onText);
+    robo?.end(said || "");
+    return said;
   };
 
   // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
@@ -780,7 +799,7 @@ export default function Workspace({ mode = null }) {
           ) : messages.length === 0 && !streaming ? (
             counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} onBreathe={() => setBreatheOpen(true)}
               last={conversations[0]} onResume={openConversation}
-              onCall={() => { unlockSpeech(); setVoiceOpen(true); }} /> : <EmptyState onPick={(p) => sendMessage(p)} />
+              speaks={roboSpeaks} onToggleSpeaks={toggleRoboSpeaks} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
@@ -819,6 +838,12 @@ export default function Workspace({ mode = null }) {
         {counselling && (
           <p data-testid="counsellor-care-note" className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-5 text-center text-[11px] leading-snug text-muted-foreground">
             {messages.length > 0 && (
+              <button onClick={toggleRoboSpeaks} data-testid="counsellor-voice-chat" aria-pressed={roboSpeaks}
+                className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:underline dark:text-violet-300">
+                {roboSpeaks ? <Volume2 className="h-3 w-3" /> : <VolumeX className="h-3 w-3" />} Voice {roboSpeaks ? "on" : "off"}
+              </button>
+            )}
+            {messages.length > 0 && (
               <button onClick={() => setBreatheOpen(true)} data-testid="breathe-button-chat"
                 className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:underline dark:text-violet-300">
                 <Wind className="h-3 w-3" /> Breathe with me
@@ -853,7 +878,7 @@ export default function Workspace({ mode = null }) {
         onChange={(shareId) => setConversations((cs) => cs.map((c) => (c.id === activeId ? { ...c, shareId } : c)))} />
       {previewItem && <PreviewPanel item={previewItem} onClose={() => setPreviewItem(null)} />}
       {voiceOpen && <VoiceMode onClose={() => setVoiceOpen(false)} onCancelReply={stopGeneration}
-        agent={chatAgent} voice={chatAgent?.voice}
+        voice={chatAgent?.voice}
         onUtterance={(t, opts) => sendRef.current(t, { voiceLang: getVoiceLang(), ...opts, voice: true })} />}
     </div>
   );
@@ -1083,8 +1108,8 @@ function MoodCheckIn({ onPick, pro }) {
   );
 }
 
-// Krish Robo, the Counsellor: type below to chat, or call and talk out loud (see lib/counselAgents.js).
-function RoboCallCard({ onCall }) {
+// Krish Robo, the Counsellor: type (or tap the mic) below, and it answers straight away, out loud if voice is on.
+function RoboCard({ speaks, onToggleSpeaks }) {
   return (
     <section data-testid="counsellor-robo" className="mt-6 flex items-center gap-3.5 rounded-3xl border border-border bg-card p-3.5 shadow-sm sm:gap-4 sm:p-4">
       <span className="relative shrink-0">
@@ -1093,17 +1118,18 @@ function RoboCallCard({ onCall }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[15px] font-bold text-foreground">{KRISH_ROBO.name}</p>
-        <p className="text-xs leading-snug text-muted-foreground">Online now. Ask anything or share what's on your mind, by chat or call.</p>
+        <p className="text-xs leading-snug text-muted-foreground">Online now. Ask anything and get an instant answer{speaks ? ", spoken out loud" : ""}.</p>
       </div>
-      <button onClick={onCall} data-testid="counsellor-robo-call" title={`Call ${KRISH_ROBO.name}`}
-        className="flex h-11 shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-pink-500 px-4 text-sm font-semibold text-white shadow-md transition hover:opacity-90 sm:px-5">
-        <Phone className="h-4 w-4" /> Call
+      <button onClick={onToggleSpeaks} data-testid="counsellor-robo-voice" aria-pressed={speaks}
+        title={speaks ? "Krish Robo reads replies aloud. Tap to turn off." : "Tap so Krish Robo reads replies aloud."}
+        className={`flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition ${speaks ? "bg-gradient-to-r from-violet-600 to-pink-500 text-white shadow-md" : "border border-border text-muted-foreground hover:text-foreground"}`}>
+        {speaks ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />} {speaks ? "Voice on" : "Voice off"}
       </button>
     </section>
   );
 }
 
-function CounselEmptyState({ onPick, onBreathe, last, onResume, onCall }) {
+function CounselEmptyState({ onPick, onBreathe, last, onResume, speaks, onToggleSpeaks }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const pro = user?.plan === "pro" || user?.plan === "max";
@@ -1142,7 +1168,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, onCall }) {
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <RoboCallCard onCall={onCall} />
+      <RoboCard speaks={speaks} onToggleSpeaks={onToggleSpeaks} />
       <MoodCheckIn onPick={onPick} pro={pro} />
       <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
         <button onClick={onBreathe} data-testid="breathe-button"
