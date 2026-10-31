@@ -515,10 +515,11 @@ def edge_voice(text: str, lang: Optional[str] = None) -> str:
     return EDGE_VOICES.get(script_language(text) or "en", EDGE_VOICES["en"])
 
 
-async def _edge_speak(text: str, lang: Optional[str]) -> bytes:
+async def _edge_speak(text: str, lang: Optional[str], speed: Optional[float] = None) -> bytes:
     import edge_tts
     audio = bytearray()
-    async for chunk in edge_tts.Communicate(text[:MAX_TTS_CHARS], edge_voice(text, lang)).stream():
+    rate = f"{round((speed or 1) * 100) - 100:+d}%"
+    async for chunk in edge_tts.Communicate(text[:MAX_TTS_CHARS], edge_voice(text, lang), rate=rate).stream():
         if chunk["type"] == "audio":
             audio += chunk["data"]
     if not audio:
@@ -526,14 +527,17 @@ async def _edge_speak(text: str, lang: Optional[str]) -> bytes:
     return bytes(audio)
 
 
-async def speak(text: str, voice: str = "nova", lang: Optional[str] = None) -> bytes:
+async def speak(text: str, voice: str = "nova", lang: Optional[str] = None, speed: Optional[float] = None) -> bytes:
+    """`speed` 1 is normal (0.8 to 1.6)."""
     if not openai_configured():
         if not edge_available():
             raise MediaUnavailable("Set OPENAI_API_KEY on the backend for server voices.")
-        return await _edge_speak(text, lang)
+        return await _edge_speak(text, lang, speed)
     if voice not in TTS_VOICES:
         voice = "nova"
-    resp = await _client().audio.speech.create(model=TTS_MODEL, voice=voice, input=text[:MAX_TTS_CHARS], response_format="mp3")
+    extra = {"speed": speed} if speed else {}
+    resp = await _client().audio.speech.create(model=TTS_MODEL, voice=voice, input=text[:MAX_TTS_CHARS],
+                                               response_format="mp3", **extra)
     return resp.content
 
 

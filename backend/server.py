@@ -244,6 +244,7 @@ class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     voice: Optional[str] = None
     lang: Optional[str] = Field(default=None, max_length=8)
+    speed: Optional[float] = Field(default=None, ge=0.8, le=1.6)  # 1 is normal; Krish Robo talks a little faster
 
 
 def public_user(doc: dict) -> dict:
