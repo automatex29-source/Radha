@@ -31,6 +31,8 @@ from auth import (
     create_access_token,
     get_user_id_from_request,
     decode_token,
+    load_revocations,
+    revoke_sessions,
 )
 from ai_runtime import (ModelRouter, AnthropicProvider, OpenAIProvider, GeminiProvider, GroqProvider, OpenRouterProvider,
                         AIRequest, ChatMessage)
@@ -167,7 +169,7 @@ class GoogleSignInIn(BaseModel):
 
 class LoginIn(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=128)
 
 
 class ForgotPasswordIn(BaseModel):
@@ -437,31 +439,52 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
 
 LOGIN_MAX_FAILURES = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
+# One internet connection trying many different accounts (a bot with a leaked password list) is stopped too.
+LOGIN_MAX_FAILURES_PER_IP = 30
+PASSWORD_CHECK_MAX_FAILURES = 5  # re-typing the password to delete the account
 _login_failures: dict = {}  # email -> monotonic times of recent wrong passwords
+_ip_failures: dict = {}  # internet address -> monotonic times of recent wrong passwords (any account)
+_password_check_failures: dict = {}  # user id -> monotonic times of wrong passwords on delete-account
 
 
-def _recent_failures(email: str) -> list:
+def _recent_failures(email: str, table: Optional[dict] = None) -> list:
+    table = _login_failures if table is None else table
     cutoff = time.monotonic() - LOGIN_WINDOW_SECONDS
-    recent = [t for t in _login_failures.get(email, []) if t > cutoff]
+    recent = [t for t in table.get(email, []) if t > cutoff]
     if recent:
-        _login_failures[email] = recent
+        table[email] = recent
     else:
-        _login_failures.pop(email, None)
+        table.pop(email, None)
     return recent
 
 
+def _note_failure(table: dict, key: str) -> None:
+    table.setdefault(key, []).append(time.monotonic())
+    if len(table) > 50000:  # keep memory bounded under a flood of made-up emails
+        table.clear()
+
+
+TOO_MANY_WRONG = ("Too many wrong passwords. Wait 15 minutes, or use \"Forgot password\" to set a new one.")
+
+
 @api.post("/auth/login")
-async def login(body: LoginIn):
+async def login(body: LoginIn, request: Request):
     email = body.email.lower()
-    # Stop password guessing: after 10 wrong passwords in 15 minutes the account waits (reset still works).
+    ip = abuse.client_ip(request)
+    # Stop password guessing: after 10 wrong passwords in 15 minutes the account waits (reset still works),
+    # and after 30 wrong passwords from one connection (any accounts) that connection waits.
     if len(_recent_failures(email)) >= LOGIN_MAX_FAILURES:
-        raise HTTPException(status_code=429, detail="Too many wrong passwords. Wait 15 minutes, or use "
-                                                    "\"Forgot password\" to set a new one.")
+        raise HTTPException(status_code=429, detail=TOO_MANY_WRONG)
+    if abuse.enabled() and len(_recent_failures(ip, _ip_failures)) >= LOGIN_MAX_FAILURES_PER_IP:
+        raise HTTPException(status_code=429, detail="Too many wrong sign-ins from this connection. "
+                                                    "Please wait 15 minutes and try again.")
     doc = await db.users.find_one({"email": email})
     if not doc or not verify_password(body.password, doc.get("password_hash", "")):
-        _login_failures.setdefault(email, []).append(time.monotonic())
-        if len(_login_failures) > 50000:  # keep memory bounded under a flood of made-up emails
-            _login_failures.clear()
+        _note_failure(_login_failures, email)
+        _note_failure(_ip_failures, ip)
+        if len(_recent_failures(email)) == LOGIN_MAX_FAILURES:
+            logger.warning(f"Sign-in locked for 15 minutes after {LOGIN_MAX_FAILURES} wrong passwords "
+                           f"(account {email[:3]}***, from {ip})")
         raise HTTPException(status_code=401, detail="Invalid email or password")
     _login_failures.pop(email, None)
     ts = now_iso()
@@ -498,6 +521,7 @@ async def _valid_reset(token: str) -> Optional[dict]:
 async def forgot_password(body: ForgotPasswordIn, request: Request):
     """Email a one-time reset link. Answers the same whether or not the email has an
     account, so this can't be used to find out who is signed up."""
+    abuse.require("reset", abuse.client_ip(request))  # no flooding inboxes with reset emails
     configured = mailer.configured()
     email = body.email.lower()
     user = await db.users.find_one({"email": email})
@@ -525,12 +549,14 @@ async def forgot_password(body: ForgotPasswordIn, request: Request):
 
 
 @api.get("/auth/reset-password/check")
-async def check_reset_link(token: str = Query(..., max_length=200)):
+async def check_reset_link(request: Request, token: str = Query(..., max_length=200)):
+    abuse.require("reset_link", abuse.client_ip(request))
     return {"valid": bool(await _valid_reset(token))}
 
 
 @api.post("/auth/reset-password")
-async def reset_password(body: ResetPasswordIn):
+async def reset_password(body: ResetPasswordIn, request: Request):
+    abuse.require("reset_link", abuse.client_ip(request))
     doc = await _valid_reset(body.token)
     if not doc:
         raise HTTPException(status_code=400, detail="This reset link has expired or was already used. Ask for a new one.")
@@ -541,7 +567,10 @@ async def reset_password(body: ResetPasswordIn):
     user = await db.users.find_one({"id": doc["userId"]})
     if not user:
         raise HTTPException(status_code=400, detail="This account no longer exists.")
-    await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.password), "updatedAt": now_iso()}})
+    # A new password signs the account out on every phone and computer (whoever knew the old one is out).
+    cutoff = revoke_sessions(user["id"])
+    await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.password),
+                                                            "tokensValidAfter": cutoff, "updatedAt": now_iso()}})
     await monitor.login(db, user["id"], "reset")
     # Any other links sent earlier stop working too.
     await db.password_resets.update_many({"userId": user["id"], "usedAt": None}, {"$set": {"usedAt": now_iso()}})
@@ -562,7 +591,10 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     if user.get("password_hash"):
+        if len(_recent_failures(user_id, _password_check_failures)) >= PASSWORD_CHECK_MAX_FAILURES:
+            raise HTTPException(status_code=429, detail=TOO_MANY_WRONG)
         if not verify_password(body.password, user["password_hash"]):
+            _note_failure(_password_check_failures, user_id)
             raise HTTPException(status_code=403, detail="That password isn't right.")
     elif body.confirmEmail.strip().lower() != user["email"]:
         raise HTTPException(status_code=403, detail="Type your account email exactly to confirm.")
@@ -584,7 +616,9 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     await db.referrals.delete_many({"$or": [{"inviterId": user_id}, {"friendId": user_id}]})
     await db.usage.delete_many({"_id": {"$regex": f"^{re.escape(user_id)}:"}})
     await db.users.delete_one({"id": user_id})
+    revoke_sessions(user_id)
     _login_failures.pop(user["email"], None)
+    _password_check_failures.pop(user_id, None)
     return {"ok": True}
 
 
@@ -2682,11 +2716,34 @@ async def download_file(fid: str, authorization: str = Header(None), auth: str =
         data, content_type = await storage.get_object(doc["storage_path"])
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File data missing")
-    return Response(content=data, media_type=doc.get("content_type", content_type))
+    media_type = doc.get("content_type") or content_type or "application/octet-stream"
+    return Response(content=data, media_type=media_type,
+                    headers=_file_safety_headers(media_type, doc.get("original_filename") or fid))
 
 
 # ---------------------------------------------------------------------- media
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+# Files people upload (or code makes) open in the browser only when they can't carry a script: pictures,
+# sound, video, PDF and plain text. Anything else (a web page, SVG, XML…) is downloaded instead, so a booby-
+# trapped file can never run as Krish AI and read someone's sign-in.
+INLINE_SAFE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif", "image/avif", "image/bmp",
+                     "application/pdf", "text/plain", "text/csv")
+
+
+def _file_safety_headers(content_type: str, name: str) -> dict:
+    base = (content_type or "").split(";")[0].strip().lower()
+    headers = {"X-Content-Type-Options": "nosniff",
+               # Even if a browser did render it, a sandboxed page can't run scripts or reach the account.
+               "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; "
+                                          "style-src 'unsafe-inline'"}
+    if base.startswith(("audio/", "video/")) or base in INLINE_SAFE_TYPES:
+        if base == "application/pdf":
+            headers.pop("Content-Security-Policy")  # the browser's PDF viewer doesn't open in a sandbox
+        return headers
+    safe_name = re.sub(r"[^A-Za-z0-9._ -]", "_", str(name or "file"))[:120] or "file"
+    headers["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+    return headers
 
 
 def _user_from_header_or_query(authorization: Optional[str], auth: Optional[str]) -> str:
@@ -2920,10 +2977,9 @@ async def get_media(mid: str, authorization: str = Header(None), auth: str = Que
 async def _serve_media(doc: dict, range_header: Optional[str]):
     mid = doc["id"]
     size = doc.get("size") or 0
-    headers = {"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes"}
-    if doc["contentType"] in ("text/html", "image/svg+xml"):
-        # Code-produced HTML/SVG could carry script: force download, never render inline.
-        headers["Content-Disposition"] = f'attachment; filename="{doc.get("name") or mid}"'
+    headers = {"Cache-Control": "private, max-age=86400", "Accept-Ranges": "bytes",
+               # Code-produced HTML/SVG could carry script: such files download, never render inline.
+               **_file_safety_headers(doc["contentType"], doc.get("name") or mid)}
     # Byte ranges let the video player seek and start quickly on large files.
     if range_header and range_header.startswith("bytes=") and size:
         spec = range_header[6:].split(",")[0].strip()
@@ -3145,10 +3201,13 @@ def _invite_preview(page: str, info: dict, base: str) -> str:
     return page.replace("<title>Krish AI</title>", f"<title>{title}</title>")
 
 
+_cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    # Sign-in travels in the Authorization header, never in cookies, so other websites never need
+    # "credentials". Only named origins (CORS_ORIGINS=https://your-site) may send them.
+    allow_credentials="*" not in _cors_origins,
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -3166,6 +3225,9 @@ class SecurityHeaders:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         https = scope.get("scheme") == "https"
+        # The app's own pages can't be shown inside another website's frame (a fake page over a real
+        # "Delete" button). API answers (app previews, published apps) keep their own rules.
+        app_page = not scope.get("path", "").startswith("/api/")
 
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
@@ -3174,7 +3236,10 @@ class SecurityHeaders:
                 extra = [(b"x-content-type-options", b"nosniff"),
                          (b"referrer-policy", b"strict-origin-when-cross-origin")]
                 if https:
-                    extra.append((b"strict-transport-security", b"max-age=31536000"))
+                    extra.append((b"strict-transport-security", b"max-age=31536000; includeSubDomains"))
+                if app_page and b"content-security-policy" not in names:
+                    extra += [(b"x-frame-options", b"SAMEORIGIN"),
+                              (b"content-security-policy", b"frame-ancestors 'self'")]
                 headers += [(k, v) for k, v in extra if k not in names]
                 message = {**message, "headers": headers}
             await send(message)
@@ -3242,6 +3307,8 @@ async def startup():
         automations.start_scheduler()
         daily_verse.start_scheduler()
     await _ensure_auth_secret()
+    load_revocations(await db.users.find({"tokensValidAfter": {"$exists": True}},
+                                         {"_id": 0, "id": 1, "tokensValidAfter": 1}).to_list(None))
     await storage.ensure_indexes()
     if storage.USE_EMERGENT:
         try:

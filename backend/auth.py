@@ -1,5 +1,10 @@
-"""Authentication: bcrypt password hashing + JWT bearer tokens."""
+"""Authentication: bcrypt password hashing + JWT bearer tokens.
+
+Every sign-in token records when it was made. When a password is reset (or the account is deleted) the
+account's older tokens stop working, so anyone who got into the account is signed out everywhere.
+"""
 import os
+import time
 from datetime import datetime, timezone, timedelta
 
 import bcrypt
@@ -8,6 +13,23 @@ from fastapi import HTTPException, Request
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_DAYS = 7
+
+# user id -> unix second; sign-in tokens made before it are refused. Filled from the database at startup
+# (users.tokensValidAfter) and kept up to date by revoke_sessions().
+_valid_after: dict = {}
+
+
+def revoke_sessions(user_id: str) -> int:
+    """Make every sign-in token this account already has stop working. Returns the cut-off to store."""
+    cutoff = int(time.time())
+    _valid_after[user_id] = cutoff
+    return cutoff
+
+
+def load_revocations(rows) -> None:
+    for row in rows:
+        if row.get("id") and row.get("tokensValidAfter"):
+            _valid_after[row["id"]] = int(row["tokensValidAfter"])
 
 
 def _secret() -> str:
@@ -36,6 +58,7 @@ def create_access_token(user_id: str, email: str) -> str:
         "sub": user_id,
         "email": email,
         "type": "access",
+        "iat": int(time.time()),
         "exp": datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_DAYS),
     }
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
@@ -56,6 +79,9 @@ def decode_token(token: str) -> dict:
         payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
+        cutoff = _valid_after.get(payload.get("sub"))
+        if cutoff and int(payload.get("iat") or 0) < cutoff:
+            raise HTTPException(status_code=401, detail="Signed out. Please sign in again.")
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
