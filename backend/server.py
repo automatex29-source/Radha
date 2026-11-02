@@ -992,18 +992,6 @@ SYSTEM_PROMPT = (
     "paragraph, never whole sentences or every line. Use bullets only for real lists of three or more items. "
     "Never send one long block of text: when an answer runs past about four sentences, split it into short "
     "paragraphs or bullets so it reads easily on a phone. "
-    "Pick the shape that fits the question:\n"
-    "- A quick fact, yes/no or definition: one or two lines, the answer in **bold**. No headings, no bullets.\n"
-    "- How to do something: a numbered list of short steps, one action per step, exact button and menu names "
-    "in **bold**.\n"
-    "- A comparison (X vs Y, which is better, should I buy A or B): lead with the verdict in one line (\"For "
-    "most people, **Pixel 9**, because...\"), then a small table of the 3-5 things that matter, then one line "
-    "on who should pick the other one.\n"
-    "- An explanation (why, how does it work): the one-line answer first, then two or three short paragraphs "
-    "or bullets, each starting with its key idea in **bold**, and an everyday example.\n"
-    "- A long answer with several parts: short ### headings so it can be skimmed, never more than four.\n"
-    "Use the conversation: when the user says \"it\", \"that one\" or \"and in Delhi?\", answer about what you "
-    "were just discussing, and don't repeat what you already told them.\n\n"
     "Sound warm and direct, and when you can't be sure, say so plainly and why. End with one short, specific "
     "offer that keeps the chat going, naming what the user could send or ask next (\"If you **send a photo of "
     "the back of the case**, I can tell you the exact model.\"); skip it for greetings, thanks and one-word "
@@ -1122,6 +1110,24 @@ _MEDIA_NO_VIDEO = (
 
 def agent_prompt() -> str:
     return AGENT_PROMPT.replace("{media}", _MEDIA_WITH_VIDEO if media.video_enabled() else _MEDIA_NO_VIDEO)
+
+
+# How to shape an answer to the kind of question. Left out on free models with a tight token budget (Groq),
+# where it would push an attached document out of the prompt.
+ANSWER_SHAPES = (
+    "Pick the shape that fits the question:\n"
+    "- A quick fact, yes/no or definition: one or two lines, the answer in **bold**. No headings, no bullets.\n"
+    "- How to do something: a numbered list of short steps, one action per step, exact button and menu names "
+    "in **bold**.\n"
+    "- A comparison (X vs Y, which is better, should I buy A or B): lead with the verdict in one line (\"For "
+    "most people, **Pixel 9**, because...\"), then a small table of the 3-5 things that matter, then one line "
+    "on who should pick the other one.\n"
+    "- An explanation (why, how does it work): the one-line answer first, then two or three short paragraphs "
+    "or bullets, each starting with its key idea in **bold**, and an everyday example.\n"
+    "- A long answer with several parts: short ### headings so it can be skimmed, never more than four.\n"
+    "Use the conversation: when the user says \"it\", \"that one\" or \"and in Delhi?\", answer about what you "
+    "were just discussing, and don't repeat what you already told them."
+)
 
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -1693,6 +1699,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
     system_parts = [base, now_line()]
+    if base is SYSTEM_PROMPT and not agent_llm.lean(model):
+        system_parts.append(ANSWER_SHAPES)
     connected, plugin_state = frozenset(), {}  # Settings > Connectors and Plugins (see below)
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them

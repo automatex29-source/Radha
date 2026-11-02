@@ -81,10 +81,10 @@ def test_hindi_and_hinglish_hard_questions_are_spotted():
 
 def test_prompt_matches_answer_shape_to_the_question():
     server = _server()
-    assert "Pick the shape that fits the question" in server.SYSTEM_PROMPT
-    assert "lead with the verdict" in server.SYSTEM_PROMPT  # comparisons
-    assert "numbered list of short steps" in server.SYSTEM_PROMPT  # how-tos
-    assert "Use the conversation" in server.SYSTEM_PROMPT  # follow-ups
+    assert "Pick the shape that fits the question" in server.ANSWER_SHAPES
+    assert "lead with the verdict" in server.ANSWER_SHAPES  # comparisons
+    assert "numbered list of short steps" in server.ANSWER_SHAPES  # how-tos
+    assert "Use the conversation" in server.ANSWER_SHAPES  # follow-ups
 
 
 def test_prompt_date_is_india_time():
