@@ -32,14 +32,14 @@ function highlights(plan, basic, video) {
   const { automation } = plan.total;
   const { videoSeconds, uploadMb } = plan.quality;
   if (plan.id === "basic") {
-    return { label: "Includes", items: ["Unlimited chat and search", "Krish AI, our free model for every question",
+    return { label: "Includes", items: ["40 messages every 5 hours, with search", "A few Krish Pro answers a week, free",
       video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
   }
   if (plan.id === "max") {
     return { label: "Everything in Pro, plus", items: [`${x}x the usage of Basic`, ...(video ? [`Videos up to ${videoSeconds} seconds`] : []),
       plural(automation, "automation"), `Uploads up to ${uploadMb}MB`] };
   }
-  return { label: "Everything in Basic, plus", items: [`${x}x the usage of Basic`,
+  return { label: "Everything in Basic, plus", items: ["Unlimited chat on Krish Basic", `${x}x the usage of Basic`,
     ...(plan.premium ? ["Premium AI models and Think mode"] : []),
     ...(plan.quality.media === "premium" ? [video ? "HD pictures and real AI video" : "HD AI pictures"] : []),
     ...(plan.publish ? ["Publish apps to the web"] : []),
@@ -297,7 +297,7 @@ export default function PlansPage() {
             <h1 className="krish-display text-[1.9rem] leading-[1.05] sm:text-[2.5rem]">
               Choose the plan that <em className="text-[#4F46E5] dark:text-[#A5B4FC]">fits you</em>
             </h1>
-            <p className="mx-auto mt-1.5 max-w-lg text-[0.8rem] leading-snug text-muted-foreground max-sm:hidden">Chat is unlimited on every plan. Upgrade for more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.</p>
+            <p className="mx-auto mt-1.5 max-w-lg text-[0.8rem] leading-snug text-muted-foreground max-sm:hidden">Upgrade for unlimited chat, Krish Pro and more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.</p>
           </header>
 
           {!data ? (

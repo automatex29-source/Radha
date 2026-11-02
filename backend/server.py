@@ -96,7 +96,8 @@ AUTO_MODEL = agent_llm.AUTO
 AVAILABLE_MODELS = [
     {"id": AUTO_MODEL, "label": "Krish Basic", "description": "Free, and picks the best engine for each question", "pro": False},
     {"id": agent_llm.PRO, "label": "Krish Pro", "description": "Picks the best engine for each question: quick for "
-     "everyday, our smartest for code and apps", "pro": True},
+     "everyday, our smartest for code and apps", "pro": True,
+     "taste": True},  # Basic can pick it too, for a few answers a week (limits.use_pro_taste)
 ]
 # The models Krish Pro picks from (see _pro_model); older chats that saved one of these by name keep working.
 PRO_QUICK, PRO_SMART = agent_llm.PRO_MODELS
@@ -1972,12 +1973,23 @@ class _TurnResponse(StreamingResponse):
 
 
 
+async def _with_notice(notice: str, turn):
+    """The reply stream with a plan notice first (the upgrade popup), e.g. when the free taste of Krish Pro is used."""
+    try:
+        yield f"event: plan_limit\ndata: {_sse_json(notice)}\n\n"
+        async for chunk in turn:
+            yield chunk
+    finally:
+        await turn.aclose()
+
+
 def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False, study: bool = False,
                      voice: bool = False, voice_lang: Optional[str] = None, web: bool = False, focus: str = "web",
-                     pro: bool = False) -> StreamingResponse:
+                     pro: bool = False, notice: str = "") -> StreamingResponse:
+    turn = run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang, web=web,
+                    focus=focus, pro=pro)
     return _TurnResponse(
-        run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang, web=web,
-                 focus=focus, pro=pro),
+        _with_notice(notice, turn) if notice else turn,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
@@ -1987,6 +1999,7 @@ def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool 
 async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
+    await _count_basic_chat(user_id, conv)
     model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think, len(body.content), body.content)
 
     image_ids = []
@@ -1995,7 +2008,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         if not doc or not (doc.get("contentType") or "").startswith("image/"):
             raise HTTPException(status_code=400, detail="Unknown image attachment")
         image_ids.append(mid)
-    if conv.get("appId"):  # chat is unlimited; an App Builder message uses credits by how much it asks for
+    if conv.get("appId"):  # an App Builder message uses credits by how much it asks for
         await limits.require(db, user_id, "build", size=len(body.content), model=model)
 
     content, ready_reply = body.content, None
@@ -2050,7 +2063,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
             return _code_edit_response(conv_id, model, *edit)
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study,
                             voice=body.voice, voice_lang=body.voiceLang, web=body.web,
-                            focus=body.focus, pro=body.pro)
+                            focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
 
 THINK_MODELS = ("claude-sonnet-5-5", "gpt-5.4")  # Think on Pro and Max: the first one set up answers
@@ -2065,6 +2078,17 @@ async def _chat_chars(conv: dict) -> int:
 
 
 PRO_LONG_ASK_CHARS = 1500
+
+
+async def _count_basic_chat(user_id: str, conv: dict) -> None:
+    """A chat message on the free plan counts toward its session's messages (a 402 once they're used). App Builder
+    messages use the usage meter instead."""
+    if conv.get("appId"):
+        return
+    try:
+        await limits.use_basic_chat(db, user_id)
+    except limits.LimitReached as exc:
+        raise limits.http_error(exc)
 
 
 def _pro_model(conv: dict, text: str, think: bool) -> str:
@@ -2090,6 +2114,18 @@ async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = Fa
     pro = await limits.is_pro(db, user_id)
     if model == agent_llm.PRO and pro:
         model = _pro_model(conv, text or "", think)
+    elif model == agent_llm.PRO and not conv.get("appId") and agent_llm.configured(limits.PRO_TASTE_MODEL):
+        # The free plan's weekly taste of Krish Pro: Claude Haiku only. Once it's used, Krish Basic answers and
+        # the first such message says so (conv["_notice"], streamed as a plan_limit event).
+        ok, notice = await limits.use_pro_taste(db, user_id, new_chars + await _chat_chars(conv))
+        if ok:
+            return limits.PRO_TASTE_MODEL
+        if notice:
+            conv["_notice"] = notice
+        return AI_MODEL
+    elif model == AUTO_MODEL and not pro and not conv.get("appId") and agent_llm.configured(limits.PRO_TASTE_MODEL) \
+            and await limits.use_basic_boost(db, user_id):
+        return agent_llm.BASIC_PLUS  # the free plan's everyday chat: Claude Haiku for the week's first messages
     # Pro and Max: the Counsellor always answers with the strongest premium model (deeper, warmer replies).
     if (think or conv.get("mode") == counsellor.MODE) and pro and not conv.get("appId") and not agent_llm.paid(model):
         model = next((m for m in THINK_MODELS if agent_llm.configured(m)), model)
@@ -2241,10 +2277,11 @@ def _background(coro):
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
+    await _count_basic_chat(user_id, conv)
     last = await db.messages.find_one({"conversationId": conv_id, "role": "user"}, sort=[("createdAt", -1)])
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think,
                               text=(last or {}).get("content") or "")
-    if conv.get("appId"):  # chat is unlimited; an App Builder message uses credits by how much it asks for
+    if conv.get("appId"):  # an App Builder message uses credits by how much it asks for
         await limits.require(db, user_id, "build", size=len((last or {}).get("content") or ""), model=model)
 
     history_docs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
@@ -2264,7 +2301,7 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
             return _code_edit_response(conv_id, model, *edit)
 
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
-                            focus=body.focus, pro=body.pro)
+                            focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
 
 @api.post("/conversations/{conv_id}/messages/{message_id}/edit")
@@ -2273,6 +2310,7 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     the new wording."""
     abuse.require("chat", user_id)
     conv = await _owned_conversation(conv_id, user_id)
+    await _count_basic_chat(user_id, conv)
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think,
                               len(body.content), body.content)
     if conv.get("appId"):
@@ -2286,7 +2324,7 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
         await db.messages.delete_many({"id": {"$in": later}})
     await db.messages.update_one({"id": message_id}, {"$set": {"content": body.content, "editedAt": now_iso()}})
     return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
-                            focus=body.focus, pro=body.pro)
+                            focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
 
 class FeedbackIn(BaseModel):

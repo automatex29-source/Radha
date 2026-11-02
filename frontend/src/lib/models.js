@@ -12,6 +12,7 @@ export const MODEL_INFO = {
   "openai/gpt-oss-120b": KRISH,
   "openai/gpt-oss-20b": KRISH,
   "cerebras/gpt-oss-120b": KRISH,
+  "krish-basic-plus": KRISH,
   "krish-pro": PRO,
   "claude-sonnet-5-5": PRO,
   "claude-haiku-5-5": PRO,

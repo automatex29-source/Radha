@@ -1,6 +1,7 @@
 """Plan limits: Basic (free), Pro and Max.
 
-Chat on Krish Basic is never limited. Everything that costs real money to make (app builds, pictures, decks,
+Chat on Krish Basic is unlimited on Pro and Max; the free plan gets BASIC_CHAT_SESSION messages a session, and a
+taste of Krish Pro (PRO_TASTE_WEEK credits a week, on Claude Haiku). Everything else that costs real money to make (app builds, pictures, decks,
 videos and messages on the premium models) runs down one usage meter, like Claude's own limit: each request
 uses credits by how big it really is (the length of what's asked, the seconds of video, a premium or free
 engine), and the meter refills a few hours after the first use (a "session"). A weekly meter on top keeps a
@@ -78,6 +79,7 @@ PUBLISH_MESSAGE = "Publishing apps is part of the Pro and Max plans. You can sti
 # counted at the dearest price, so the meter never counts less than it costs. The old Haiku id runs on Haiku 5.5.
 MODEL_USD = {
     "claude-haiku-5-5": (0.10, 0.50),
+    "krish-basic-plus": (0.10, 0.50),
     "claude-haiku-4-5-20251001": (0.10, 0.50),
     "claude-sonnet-5-5": (2.00, 10.00),
     "gpt-5.4": (2.50, 15.00),
@@ -179,8 +181,70 @@ def message(kind: str, plan: str, resets: Optional[float] = None, week: bool = F
                 f"Delete one to make a new one.{more}")
     which = "this week's" if week else "this session's"
     when = f" It refills {_when(resets)}." if resets else ""
-    return (f"You've used {which} usage on the {info['name']} plan.{when}{more} "
-            "Chat on Krish Basic is always unlimited.")
+    chat = " Chat on Krish Basic stays unlimited." if plan != "basic" else ""
+    return f"You've used {which} usage on the {info['name']} plan.{when}{more}{chat}"
+
+
+# The free plan: Krish Basic messages a session, and a weekly taste of Krish Pro (in paid-plan credits, on Haiku).
+BASIC_CHAT_SESSION = 40
+PRO_TASTE_WEEK = 15
+PRO_TASTE_MODEL = "claude-haiku-5-5"
+BASIC_BOOST_WEEK = 50  # Krish Basic messages a week answered by Claude Haiku on the free plan, then the free engines
+
+
+async def _count(db, key: str, user_id: str, seconds: int, limit: int, amount: int) -> tuple:
+    """Add `amount` to a counter that starts afresh every `seconds`, if it stays within `limit`.
+    Returns (added, when it refills, the counter's record)."""
+    now = time.time()
+    doc = await db.usage.find_one({"_id": key}) or {}
+    if not doc.get("start") or now >= doc["start"] + seconds:
+        match = {"_id": key, **({"start": doc["start"]} if doc.get("start") else {})}
+        await db.usage.update_one(match, {"$set": {"start": now, "used": 0, "told": False, "userId": user_id}},
+                                  upsert=not doc)
+        doc = await db.usage.find_one({"_id": key}) or {"start": now, "used": 0}
+    done = await db.usage.find_one_and_update({"_id": key, "used": {"$lte": limit - amount}},
+                                              {"$inc": {"used": amount}}, return_document=True)
+    return bool(done), doc["start"] + seconds, done or doc
+
+
+def _clock(ts: float) -> str:
+    return datetime.fromtimestamp(ts, IST).strftime("%-I:%M %p")
+
+
+async def use_basic_chat(db, user_id: str) -> None:
+    """Count one Krish Basic message on the free plan (Pro and Max chat on it without a limit). Raises
+    LimitReached once the session's messages are used."""
+    if not enabled() or await plan_of(db, user_id) != "basic":
+        return
+    ok, refills, _ = await _count(db, f"{user_id}:chat", user_id, SESSION_HOURS * 3600, BASIC_CHAT_SESSION, 1)
+    if not ok:
+        raise LimitReached("chat", "basic", "You've used this session's free messages. Upgrade to Pro, or wait "
+                                            f"until {_clock(refills)}.")
+
+
+async def use_basic_boost(db, user_id: str) -> bool:
+    """True when this free-plan Krish Basic message is one of the week's first BASIC_BOOST_WEEK, which Claude
+    Haiku answers; after them the free engines answer, with nothing said."""
+    if not enabled():
+        return False
+    ok, _, _ = await _count(db, f"{user_id}:basic-boost", user_id, WEEK_DAYS * 86400, BASIC_BOOST_WEEK, 1)
+    return ok
+
+
+async def use_pro_taste(db, user_id: str, size: int = 0) -> tuple:
+    """Use the free plan's weekly taste of Krish Pro for one message of `size` characters, on Claude Haiku.
+    Returns (True, "") when it covers it, else (False, a message for the first time this week it doesn't, else "")."""
+    if not enabled():
+        return True, ""
+    credits = _credits(chat_usd(PRO_TASTE_MODEL, size))
+    key = f"{user_id}:pro-taste"
+    ok, refills, doc = await _count(db, key, user_id, WEEK_DAYS * 86400, PRO_TASTE_WEEK, credits)
+    if ok:
+        return True, ""
+    first = await db.usage.update_one({"_id": key, "told": {"$ne": True}}, {"$set": {"told": True}})
+    day = datetime.fromtimestamp(refills, IST).strftime("%A")
+    return False, ("You've used this week's free Krish Pro answers. Upgrade to Pro, or they refill on "
+                   f"{day}." if first.modified_count else "")
 
 
 def enabled() -> bool:

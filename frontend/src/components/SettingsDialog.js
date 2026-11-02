@@ -498,7 +498,7 @@ function Usage({ onClose }) {
   const range = (r) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`);
   return (
     <>
-      <PageTitle title="Usage" hint="Chat on Krish Basic is never counted. Making things uses your allowance." />
+      <PageTitle title="Usage" hint={data.plan === "basic" ? "The free plan has 40 Krish Basic messages every 5 hours. Making things uses your allowance." : "Chat on Krish Basic is never counted. Making things uses your allowance."} />
       {!data.limitsOn ? <p className="text-sm text-muted-foreground">There are no usage limits right now. Make as much as you like.</p> : (
         <>
           <div className="grid gap-6 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2">

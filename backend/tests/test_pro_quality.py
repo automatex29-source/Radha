@@ -229,4 +229,63 @@ def test_krish_pro_picks_the_engine_for_each_question(client, monkeypatch):
     assert pick({}, "fix this python error: TypeError in my function") == "claude-haiku-5-5"
 
     basic = _user(client, "krish-pro-basic@test.com")
-    assert client.portal.call(server._pick_model, basic, {}, llm.PRO, False, 5, "hello") == server.AI_MODEL
+    # Basic gets a weekly taste of Krish Pro, on Haiku only (see the next test).
+    assert client.portal.call(server._pick_model, basic, {}, llm.PRO, False, 5, "fix my code error") == "claude-haiku-5-5"
+
+
+def test_basic_gets_a_weekly_taste_of_krish_pro_on_haiku(client, monkeypatch):
+    import limits
+    import server
+    from agent import llm
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    uid = _user(client, "taste@test.com")
+    conv = {}
+    pick = lambda text: client.portal.call(server._pick_model, uid, conv, llm.PRO, False, len(text), text)
+    # Haiku only, even for code, and only until the week's credits are used.
+    answers = [pick("fix this python error: TypeError in my function") for _ in range(limits.PRO_TASTE_WEEK)]
+    assert set(answers) == {"claude-haiku-5-5"} and "_notice" not in conv
+    assert pick("one more") == server.AI_MODEL  # used up: Krish Basic answers
+    assert conv["_notice"].startswith("You've used this week's free Krish Pro answers. Upgrade to Pro, or they refill on ")
+    conv.clear()
+    assert pick("and another") == server.AI_MODEL and "_notice" not in conv  # the popup shows once a week
+    assert client.portal.call(server._pick_model, uid, {"appId": "a1"}, llm.PRO, False, 5, "make an app") \
+        != "claude-haiku-5-5"  # no taste in the App Builder
+
+
+def test_basic_chat_has_40_messages_a_session_and_paid_plans_stay_unlimited(client, monkeypatch):
+    import limits
+    import server
+    from fastapi import HTTPException
+    basic, pro = _user(client, "chatcap@test.com"), _user(client, "chatcap-pro@test.com", "pro")
+    for _ in range(limits.BASIC_CHAT_SESSION):
+        client.portal.call(server._count_basic_chat, basic, {})
+    with pytest.raises(HTTPException) as err:
+        client.portal.call(server._count_basic_chat, basic, {})
+    assert err.value.status_code == 402
+    assert err.value.detail.startswith("You've used this session's free messages. Upgrade to Pro, or wait until ")
+    client.portal.call(server._count_basic_chat, basic, {"appId": "a1"})  # App Builder messages use the meter
+    for _ in range(limits.BASIC_CHAT_SESSION + 5):
+        client.portal.call(server._count_basic_chat, pro, {})
+
+    # The session refills after 5 hours.
+    async def age():
+        await server.db.usage.update_one({"_id": f"{basic}:chat"}, {"$inc": {"start": -limits.SESSION_HOURS * 3600}})
+    client.portal.call(age)
+    client.portal.call(server._count_basic_chat, basic, {})
+
+
+def test_basic_everyday_chat_starts_on_haiku_then_quietly_moves_to_the_free_engines(client, monkeypatch):
+    import limits
+    import server
+    from agent import llm
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(limits, "BASIC_BOOST_WEEK", 3)
+    basic, pro = _user(client, "boost@test.com"), _user(client, "boost-pro@test.com", "pro")
+    conv = {}
+    pick = lambda uid, c=conv: client.portal.call(server._pick_model, uid, c, server.AUTO_MODEL, False, 5, "hi")
+    assert [pick(basic) for _ in range(3)] == [llm.BASIC_PLUS] * 3
+    assert llm.concrete(llm.BASIC_PLUS) == "claude-haiku-5-5" and llm.paid(llm.BASIC_PLUS)  # never Sonnet
+    assert pick(basic) == server.AUTO_MODEL and "_notice" not in conv  # then the free engines, with nothing said
+    assert pick(pro) == server.AUTO_MODEL  # Pro and Max chat on Krish Basic stays on the free engines
+    assert client.portal.call(server._pick_model, _user(client, "boost-app@test.com"), {"appId": "a1"},
+                              server.AUTO_MODEL, False, 5, "make an app") != llm.BASIC_PLUS
