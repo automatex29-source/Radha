@@ -67,7 +67,7 @@ def test_plans_list_their_quality(client):
     import limits
     plans = {p["id"]: p for p in limits.public_plans()}
     basic, pro = plans["basic"]["quality"], plans["pro"]["quality"]
-    assert plans["pro"]["price"] == 299
+    assert plans["pro"]["price"] == 399
     assert basic["media"] == "free" and pro["media"] == "premium"
     assert pro["videoSeconds"] > basic["videoSeconds"] and pro["uploadMb"] > basic["uploadMb"]
     assert "memory" not in pro

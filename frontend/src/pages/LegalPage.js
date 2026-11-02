@@ -4,7 +4,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import BrandMark from "@/components/BrandMark";
 import { HELP_EMAIL } from "@/lib/contact";
 
-const UPDATED = "26 October 2026";
+const UPDATED = "2 November 2026";
 
 const PRIVACY = {
   title: "Privacy Policy",
@@ -78,7 +78,7 @@ const TERMS = {
     ]],
     ["Plans and limits", [
       "Chat is free. Some features have daily limits on the free Basic plan.",
-      "Pro (₹299 a month, launch price; regular price ₹999) and Max (₹699 a month, launch price; regular price ₹1,999) are paid through Razorpay.",
+      "Pro (₹399 a month, launch price; regular price ₹999) and Max (₹899 a month, launch price; regular price ₹1,999) are paid through Razorpay.",
       "By default a paid plan renews every month by UPI Autopay or card, at the price shown when you subscribed. You can turn autopay off at any time in Settings > Billing: you keep the plan until the end of the month you paid for, then go back to Basic, and nothing in your account is deleted.",
       "A payment made with an offer code is a one-time payment for 30 days and does not renew.",
       "Refunds and cancellations are explained in the Refund Policy.",

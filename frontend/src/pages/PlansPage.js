@@ -93,6 +93,11 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
       <div className="mt-3.5 flex items-end gap-2">
         <span className="text-[2.3rem] font-semibold leading-none tracking-tight tabular-nums">₹{price}</span>
         <span className="pb-1 text-[13px] text-muted-foreground">{plan.price ? "/ month" : "forever"}</span>
+        {plan.price > 0 && (
+          <span className="pb-1 text-[12px] text-muted-foreground" data-testid={`plan-per-day-${plan.id}`}>
+            · just ₹{Math.round(price / 30)}/day
+          </span>
+        )}
       </div>
       <div className="mt-2 flex h-5 items-center gap-2 text-[12px]">
         {price !== was && <span className="tabular-nums text-muted-foreground line-through">₹{was}</span>}
