@@ -41,6 +41,10 @@ services:
       # project with billing on, so GEMINI_API_KEY above stays on the free tier for Basic chat.
       - key: GEMINI_IMAGE_KEY
         sync: false
+      # Optional: the business's GST number. Once set, checkout and autopay add 18% GST on top of each price and
+      # receipts show it split out. Leave it unset until the business is GST registered.
+      - key: GSTIN
+        sync: false
       # Optional, free: raises the image/video limits (https://enter.pollinations.ai, sign in with GitHub).
       - key: POLLINATIONS_API_KEY
         sync: false

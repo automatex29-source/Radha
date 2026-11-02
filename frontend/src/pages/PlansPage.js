@@ -68,7 +68,7 @@ function untilText(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay }) {
+function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay, gstRate }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
   // Autopay on for this plan (or a bigger one) already renews it, so there's nothing to buy here.
@@ -102,6 +102,7 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
       <div className="mt-2 flex h-5 items-center gap-2 text-[12px]">
         {price !== was && <span className="tabular-nums text-muted-foreground line-through">₹{was}</span>}
         {off > 0 && <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium" data-testid={`plan-launch-${plan.id}`}>Launch price · {off}% off</span>}
+        {gstRate > 0 && plan.price > 0 && <span className="text-muted-foreground" data-testid={`plan-gst-${plan.id}`}>+ {gstRate}% GST</span>}
       </div>
       <Button disabled={!canBuy || busy} onClick={() => onBuy(plan.id)} data-testid={`plan-button-${plan.id}`}
         className={`mt-3.5 h-10 w-full rounded-lg text-[0.88rem] font-medium shadow-none disabled:opacity-100 ${canBuy && popular
@@ -316,7 +317,7 @@ export default function PlansPage() {
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
                     paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} video={data.video}
-                    shown={p.id === shownId} autopay={data.autopay} />
+                    shown={p.id === shownId} autopay={data.autopay} gstRate={data.gstRate} />
                 ))}
               </div>
 
@@ -354,7 +355,7 @@ export default function PlansPage() {
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
       {picked && data && (
         <PlanSheet plan={picked} current={data.plans.find((p) => p.id === data.plan)} basic={data.plans.find((p) => p.id === "basic")} user={user} price={priceOf(picked)}
-          offer={offer} video={data.video} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
+          offer={offer} video={data.video} gstRate={data.gstRate} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
       )}
       <PlanWelcome plan={welcome?.plan} user={user} until={welcome?.until} onClose={() => setWelcome(null)}
         onStart={() => { setWelcome(null); navigate("/"); }} />

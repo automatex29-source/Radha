@@ -452,6 +452,11 @@ function Billing({ onClose }) {
                     <div className="min-w-0">
                       <p className="font-medium">Krish {p.planName}, {p.autopay ? "monthly autopay" : "30 days"}</p>
                       <p className="text-xs text-muted-foreground">{fmtDate(p.paidAt || p.createdAt)}{p.promoCode ? ` · ${p.promoCode}` : ""}</p>
+                      {p.gst > 0 && (
+                        <p className="text-xs text-muted-foreground" data-testid="billing-gst">
+                          ₹{p.baseAmount.toFixed(2)} + ₹{p.gst.toFixed(2)} GST (18%) · GSTIN {p.gstin}
+                        </p>
+                      )}
                     </div>
                     <span className="shrink-0 tabular-nums">₹{p.amount}</span>
                   </div>

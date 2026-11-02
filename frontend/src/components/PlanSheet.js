@@ -19,13 +19,17 @@ const IDEAS = {
 const firstName = (name) => (name || "").trim().split(" ")[0];
 
 /** Opens when someone taps a paid plan: what it unlocks for them (compared with their plan now), then pay. */
-export function PlanSheet({ plan, current, basic, user, price, offer, video, busy, onPay, onClose }) {
+// A rupee amount as Razorpay charges it: whole rupees as they are, otherwise with paise (₹470.82).
+const rupees = (n) => (Number.isInteger(n) ? `${n}` : n.toFixed(2));
+
+export function PlanSheet({ plan, current, basic, user, price, offer, video, gstRate = 0, busy, onPay, onClose }) {
   if (!plan) return null;
   const first = firstName(user?.name);
   const usage = (p) => Math.round(p.meter.session / Math.max(1, (basic || p).meter.session));
   // An offer code makes it a one-time 30-day payment; otherwise it's autopay, renewing every month.
   const oneTime = !!(offer && price !== plan.price);
   const was = plan.listPrice || plan.price;
+  const gst = Math.round(price * gstRate) / 100; // 18% GST on top once the business has a GSTIN
   const perks = [
     "Premium AI models for harder questions",
     video ? "HD pictures and real AI video" : "HD AI pictures",
@@ -90,10 +94,11 @@ export function PlanSheet({ plan, current, basic, user, price, offer, video, bus
           </div>
           <p className="mt-1 text-right text-xs text-muted-foreground md:text-background/60">
             {oneTime ? `${offer.code}: ${offer.percentOff}% off, one-time payment` : was > price ? "Launch price" : ""}
+            {gst > 0 && <span data-testid="plan-sheet-gst">{oneTime || was > price ? " · " : ""}+ ₹{rupees(gst)} GST ({gstRate}%)</span>}
           </p>
           <Button onClick={onPay} disabled={busy} data-testid="plan-sheet-pay"
             className="mt-3.5 h-11 w-full rounded-lg bg-foreground text-[0.95rem] font-medium text-background shadow-none hover:bg-foreground/90 md:bg-background md:text-foreground md:hover:bg-background/90">
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : `Pay ₹${price}`}
+            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : `Pay ₹${rupees(price + gst)}`}
           </Button>
           <div className="mt-2.5 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground md:text-background/55">
             <span className="flex items-center gap-1"><Lock className="h-3 w-3" /> Secure payment by Razorpay</span>

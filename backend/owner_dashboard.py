@@ -63,6 +63,11 @@ _LONG_NUMBER = re.compile(r"\+?\d[\d\s-]{6,}\d")
 _WORD = re.compile(r"[a-zA-Zऀ-ॿ]{4,}")
 
 
+def _net(payment: dict) -> int:
+    """What a payment brings in, in paise: GST collected on top belongs to the government, not to revenue."""
+    return payment["amount"] - (payment.get("gst") or 0)
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -199,21 +204,21 @@ async def overview(db, range_key: str = "24h") -> dict:
     # Payments: what sold, for how much, and who paid.
     paid = await db.payments.find({"status": "paid", "paidAt": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
     now_paid = [p for p in paid if p["paidAt"] >= since]
-    revenue = sum(p["amount"] for p in now_paid) / 100
-    prev_revenue = sum(p["amount"] for p in paid if p["paidAt"] < since) / 100
+    revenue = sum(_net(p) for p in now_paid) / 100
+    prev_revenue = sum(_net(p) for p in paid if p["paidAt"] < since) / 100
     for p in paid:
-        add(p["paidAt"], "revenue", p["amount"] / 100)
+        add(p["paidAt"], "revenue", _net(p) / 100)
     started = await db.payments.count_documents({"createdAt": {"$gte": since}})
     sold = []
     for plan in limits.ORDER[1:]:
         rows = [p for p in now_paid if p["plan"] == plan]
         sold.append({"plan": plan, "name": limits.PLANS[plan]["name"], "price": limits.PLANS[plan]["price"],
-                     "count": len(rows), "revenue": sum(p["amount"] for p in rows) / 100})
+                     "count": len(rows), "revenue": sum(_net(p) for p in rows) / 100})
     subscribers = Counter(limits.plan_from(u) for u in users.values())
     mrr = sum(subscribers.get(p, 0) * limits.PLANS[p]["price"] for p in limits.ORDER[1:])
     paid_by_user = defaultdict(float)
     for p in now_paid:
-        paid_by_user[p["userId"]] += p["amount"] / 100
+        paid_by_user[p["userId"]] += _net(p) / 100
     recent_payments = [{**who(p["userId"]), "plan": p["plan"], "amount": p["amount"] / 100,
                         "promoCode": p.get("promoCode"), "at": p["paidAt"]}
                        for p in sorted(now_paid, key=lambda p: p["paidAt"], reverse=True)[:20]]
@@ -400,14 +405,14 @@ async def _more(db, since: str, prev_since: str, now: datetime, users: dict, who
     lapsed = sorted(({**who(u["id"]), "plan": u.get("plan"), "expiresAt": u["planExpiresAt"]} for u in users.values()
                      if u.get("plan") in ("pro", "max") and u.get("planExpiresAt")
                      and since <= u["planExpiresAt"] < now_iso), key=lambda r: r["expiresAt"], reverse=True)
-    all_paid = await db.payments.find({"status": "paid"}, {"_id": 0, "userId": 1, "amount": 1, "paidAt": 1}).to_list(None)
+    all_paid = await db.payments.find({"status": "paid"}, {"_id": 0, "userId": 1, "amount": 1, "gst": 1, "paidAt": 1}).to_list(None)
     first_paid = {}
     for p in sorted(all_paid, key=lambda p: p["paidAt"]):
         first_paid.setdefault(p["userId"], p["paidAt"])
     period_paid = [p for p in all_paid if p["paidAt"] >= since]
     new_customers = len({p["userId"] for p in period_paid if first_paid[p["userId"]] >= since})
     returning_customers = len({p["userId"] for p in period_paid if first_paid[p["userId"]] < since})
-    lifetime = sum(p["amount"] for p in all_paid) / 100
+    lifetime = sum(_net(p) for p in all_paid) / 100
 
     # Growth: invites, offer codes, how people sign up, languages.
     refs = await db.referrals.find({"createdAt": {"$gte": since}}, {"_id": 0}).to_list(None)
