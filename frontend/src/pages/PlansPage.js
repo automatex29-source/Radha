@@ -354,7 +354,7 @@ export default function PlansPage() {
       </main>
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
       {picked && data && (
-        <PlanSheet plan={picked} current={data.plans.find((p) => p.id === data.plan)} basic={data.plans.find((p) => p.id === "basic")} user={user} price={priceOf(picked)}
+        <PlanSheet plan={picked} user={user} price={priceOf(picked)}
           offer={offer} video={data.video} gstRate={data.gstRate} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
       )}
       <PlanWelcome plan={welcome?.plan} user={user} until={welcome?.until} onClose={() => setWelcome(null)}

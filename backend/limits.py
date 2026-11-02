@@ -419,8 +419,18 @@ async def require_publish(db, user_id: str) -> None:
         raise HTTPException(status_code=402, detail=PUBLISH_MESSAGE)
 
 
+def monthly(plan: str) -> Optional[dict]:
+    """Roughly what a paid plan's meter buys in a month on Claude Sonnet, for the plan popup: premium answers
+    (rounded down to tens) or app builds."""
+    if not PLANS[plan]["premium"]:
+        return None
+    month = PLANS[plan]["meter"]["week"] * WEEKS_PER_MONTH
+    answers = int(month // cost("chat", 0, plan, "claude-sonnet-5-5")) // 10 * 10
+    return {"answers": answers, "builds": int(month // cost("build", 0, plan, "claude-sonnet-5-5"))}
+
+
 def public_plans() -> list:
-    return [{"id": p, **PLANS[p]} for p in ORDER]
+    return [{"id": p, **PLANS[p], "monthly": monthly(p)} for p in ORDER]
 
 
 def meter_view(plan: str, doc: dict) -> dict:

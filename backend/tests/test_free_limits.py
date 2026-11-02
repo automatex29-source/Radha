@@ -224,3 +224,14 @@ def test_paid_credits_follow_what_each_engine_really_costs(monkeypatch):
     monkeypatch.delenv("GEMINI_IMAGE_KEY")
     assert limits.cost("picture", 1, "pro") > gemini * 3  # Nano Banana Pro costs about 4x more
     assert limits.cost("picture", 1, "basic") == 2
+
+
+def test_plan_popup_shows_what_a_month_really_buys_on_sonnet():
+    plans = {p["id"]: p for p in limits.public_plans()}
+    assert plans["basic"]["monthly"] is None
+    for plan in ("pro", "max"):
+        month = limits.PLANS[plan]["meter"]["week"] * limits.WEEKS_PER_MONTH
+        got = plans[plan]["monthly"]
+        assert 0 < got["answers"] * limits.cost("chat", 0, plan, "claude-sonnet-5-5") <= month
+        assert 0 < got["builds"] * limits.cost("build", 0, plan, "claude-sonnet-5-5") <= month
+    assert plans["max"]["monthly"]["answers"] > plans["pro"]["monthly"]["answers"]
