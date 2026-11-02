@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, ChevronRight, Code2,
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import BrandMark from "@/components/BrandMark";
+import AgentPortrait from "@/components/AgentPortrait";
 
 // Asked once after signing in (backend: PUT /auth/about). The answers shape every Krish reply, and the end
 // screen points them to the parts of Krish AI that fit what they want to do.
@@ -25,7 +26,7 @@ const USES = [
   { id: "business", label: "Business & marketing", icon: TrendingUp, tone: "from-violet-500 to-fuchsia-500" },
   { id: "slides", label: "Slides & documents", icon: Presentation, tone: "from-rose-500 to-pink-500" },
   { id: "create", label: "Pictures & videos", icon: Palette, tone: "from-fuchsia-500 to-purple-600" },
-  { id: "talk", label: "Life advice & a friend", icon: Heart, tone: "from-pink-500 to-rose-500" },
+  { id: "talk", label: "Life advice & a friend", icon: Heart, robo: true, tone: "from-pink-500 to-rose-500" },
   { id: "everyday", label: "Everyday answers & news", icon: Globe, tone: "from-cyan-500 to-blue-600" },
 ];
 // The part of Krish AI each use leads to on the end screen. `study` turns Study mode on (see Workspace).
@@ -36,7 +37,7 @@ const FEATURES = {
   business: { icon: Zap, title: "Automations", text: "Agents that do your repeat tasks on a schedule.", path: "/automations", tone: "from-violet-500 to-fuchsia-500" },
   slides: { icon: Presentation, title: "Decks", text: "Beautiful slides from a single line.", path: "/decks", tone: "from-rose-500 to-pink-500" },
   create: { icon: Image, title: "Pictures & videos", text: "Ask in chat: \"make a poster for my shop\".", path: "/", tone: "from-fuchsia-500 to-purple-600" },
-  talk: { icon: Heart, title: "Counsellor", text: "Krish Robo listens and answers right away.", path: "/counsellor", tone: "from-pink-500 to-rose-500" },
+  talk: { icon: Heart, robo: true, title: "Counsellor", text: "Krish Robo listens and answers right away.", path: "/counsellor", tone: "from-pink-500 to-rose-500" },
   everyday: { icon: Compass, title: "Discover", text: "Today's news and answers with live web search.", path: "/discover", tone: "from-cyan-500 to-blue-600" },
 };
 const COUNTRIES = ["India", "Nepal", "Bangladesh", "Sri Lanka", "Pakistan", "United Arab Emirates", "Saudi Arabia",
@@ -76,10 +77,21 @@ const TINT = {
   "from-pink-500 to-rose-500": "bg-pink-500/15 text-pink-600 dark:text-pink-300",
 };
 
-function Tile({ icon: Icon, tone, on }) {
+function Tile({ icon: Icon, tone, on, robo }) {
+  if (robo) return <RoboFace on={on} className="h-9 w-9" />;
   return (
     <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition duration-300 group-hover:-rotate-6 group-hover:scale-110 ${on ? `krish-pop bg-gradient-to-br ${tone} text-white shadow-md` : TINT[tone]}`}>
       <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
+    </span>
+  );
+}
+
+/** Krish Robo's face, the Counsellor's picture, in a gradient ring that lights up when picked. */
+function RoboFace({ on = true, className }) {
+  return (
+    <span className={`relative shrink-0 rounded-full bg-gradient-to-br from-violet-500 to-pink-500 p-[2px] transition duration-300 group-hover:-rotate-6 group-hover:scale-110 ${on ? "krish-pop shadow-md shadow-pink-500/30" : "opacity-90"} ${className}`}>
+      <AgentPortrait id="krish_robo" className="h-full w-full ring-2 ring-card" />
+      <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-emerald-500" />
     </span>
   );
 }
@@ -98,11 +110,11 @@ function Chip({ on, onClick, icon, tone, label, testid, i = 0 }) {
 }
 
 /** One answer in a two-column grid (what they'll use Krish AI for); several can be picked. */
-function Card({ on, onClick, icon, tone, label, testid, i = 0 }) {
+function Card({ on, onClick, icon, tone, robo, label, testid, i = 0 }) {
   return (
     <button type="button" onClick={onClick} data-testid={testid} aria-pressed={on} style={{ animationDelay: `${i * 40}ms` }}
       className={`krish-rise group relative flex min-h-[88px] flex-col justify-between gap-2.5 rounded-xl border p-3 text-left text-[13px] font-semibold leading-snug text-foreground transition duration-200 ${on ? PICKED : UNPICKED}`}>
-      <Tile icon={icon} tone={tone} on={on} />
+      <Tile icon={icon} tone={tone} on={on} robo={robo} />
       <span>{label}</span>
       <span className={`absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border transition ${on ? "krish-pop border-transparent bg-gradient-to-br from-violet-600 to-pink-500 text-white" : "border-border"}`}>
         {on && <Check className="h-3 w-3" strokeWidth={3} />}
@@ -186,9 +198,11 @@ export default function WelcomeQuestions() {
                 <button key={id} onClick={() => finish(f.path, f.flag)} data-testid={`welcome-feature-${id}`}
                   style={{ animationDelay: `${120 + i * 80}ms` }}
                   className="krish-rise group flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3.5 text-left shadow-sm transition hover:border-violet-300 active:scale-[0.98] sm:flex-col sm:items-start sm:rounded-3xl sm:p-5 sm:hover:-translate-y-1 sm:hover:shadow-lg">
-                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${f.tone} text-white shadow-md transition duration-300 group-hover:-rotate-6 group-hover:scale-110`}>
-                    <Icon className="h-5 w-5" />
-                  </span>
+                  {f.robo ? <RoboFace className="h-11 w-11" /> : (
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${f.tone} text-white shadow-md transition duration-300 group-hover:-rotate-6 group-hover:scale-110`}>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1 sm:mt-1">
                     <span className="block text-sm font-bold text-foreground">{f.title}</span>
                     <span className="mt-0.5 block text-xs leading-snug text-muted-foreground sm:text-[13px]">{f.text}</span>
