@@ -28,7 +28,7 @@ from fastapi import HTTPException
 # Paid plans' credits: what a credit is worth, and how much of a plan's price the AI may use.
 CREDIT_RUPEES = 0.10
 RUPEES_PER_USD = float(os.environ.get("USD_INR", "88"))
-AI_SHARE = 0.60
+AI_SHARE = 0.50
 RAZORPAY_FEE = 0.0236  # 2% plus 18% GST on it
 WEEKS_PER_MONTH = 4.33
 

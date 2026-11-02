@@ -219,6 +219,7 @@ def test_krish_pro_picks_the_engine_for_each_question(client, monkeypatch):
     assert pick({}, "what should I cook tonight?") == "claude-haiku-5-5"  # everyday: the quick one
     assert pick({}, "fix this python error: TypeError in my function") == "claude-sonnet-5-5"  # code: the smart one
     assert pick({}, "plan my week", think=True) == "claude-sonnet-5-5"
+    uid = _user(client, "krish-pro-app@test.com", "pro")  # a fresh meter: a Sonnet build fits one session
     assert pick({"appId": "a1"}, "make a todo app") == "claude-sonnet-5-5"  # app builds
 
     # When what's left can't cover Sonnet, Krish Pro answers with Haiku before falling back to Krish Basic.

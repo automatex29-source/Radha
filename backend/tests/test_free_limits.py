@@ -150,7 +150,7 @@ def test_paid_plans_get_more_and_switch_off_has_no_limits(db, monkeypatch):
             await limits.use(db, "max", "build", 10**6)
         assert await limits.is_pro(db, "max") and not await limits.is_pro(db, "u")
         assert await limits.use_premium(db, "max", 5000)
-        assert not await limits.use_premium(db, "pro", 0, "claude-sonnet-5-5")  # an empty meter: the chat falls back to Krish Basic
+        assert not await limits.use_premium(db, "pro", 30000, "claude-sonnet-5-5")  # an empty meter: the chat falls back to Krish Basic
 
         monkeypatch.setenv("FREE_LIMITS", "off")
         await db.automations.insert_many([{"id": "a1", "userId": "u"}, {"id": "a2", "userId": "u"}])
@@ -198,7 +198,7 @@ def test_picture_tool_refunds_on_failure_and_explains_the_limit(db, monkeypatch)
 
 
 def test_paid_credits_follow_what_each_engine_really_costs(monkeypatch):
-    # A paid plan's week is its AI budget: 60% of the price after Razorpay's fee, over a month of weeks.
+    # A paid plan's week is its AI budget: half of the price after Razorpay's fee, over a month of weeks.
     for plan in ("pro", "max"):
         price, week = limits.PLANS[plan]["price"], limits.PLANS[plan]["meter"]["week"]
         month_rupees = week * limits.WEEKS_PER_MONTH * limits.CREDIT_RUPEES
