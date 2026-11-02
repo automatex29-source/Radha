@@ -63,27 +63,33 @@ function guessCountry() {
 
 const PICKED = "border-violet-500 bg-violet-500/10 ring-2 ring-violet-500/30";
 const UNPICKED = "border-border bg-card hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md active:scale-[0.97]";
-// The soft colour of each icon before it is picked (it fills with its gradient once picked).
-const TINT = {
-  "from-amber-400 to-orange-500": "bg-amber-500/15 text-amber-600 dark:text-amber-300",
-  "from-sky-500 to-indigo-600": "bg-sky-500/15 text-sky-600 dark:text-sky-300",
-  "from-violet-500 to-fuchsia-500": "bg-violet-500/15 text-violet-600 dark:text-violet-300",
-  "from-rose-400 to-pink-500": "bg-rose-500/15 text-rose-600 dark:text-rose-300",
-  "from-cyan-500 to-blue-600": "bg-cyan-500/15 text-cyan-600 dark:text-cyan-300",
-  "from-emerald-500 to-teal-600": "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
-  "from-slate-500 to-slate-700": "bg-slate-500/15 text-slate-600 dark:text-slate-300",
-  "from-rose-500 to-pink-500": "bg-rose-500/15 text-rose-600 dark:text-rose-300",
-  "from-fuchsia-500 to-purple-600": "bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-300",
-  "from-pink-500 to-rose-500": "bg-pink-500/15 text-pink-600 dark:text-pink-300",
+// The glow under each icon, in its own colour.
+const GLOW = {
+  "from-amber-400 to-orange-500": "shadow-orange-500/35",
+  "from-sky-500 to-indigo-600": "shadow-indigo-500/35",
+  "from-violet-500 to-fuchsia-500": "shadow-fuchsia-500/35",
+  "from-rose-400 to-pink-500": "shadow-pink-500/35",
+  "from-cyan-500 to-blue-600": "shadow-blue-500/35",
+  "from-emerald-500 to-teal-600": "shadow-teal-500/35",
+  "from-slate-500 to-slate-700": "shadow-slate-500/35",
+  "from-rose-500 to-pink-500": "shadow-pink-500/35",
+  "from-fuchsia-500 to-purple-600": "shadow-purple-500/35",
+  "from-pink-500 to-rose-500": "shadow-rose-500/35",
 };
 
-function Tile({ icon: Icon, tone, on, robo }) {
-  if (robo) return <RoboFace on={on} className="h-9 w-9" />;
+/** A round, glossy app-style icon in its gradient, to sit beside Krish Robo's face. */
+function AppIcon({ icon: Icon, tone, className = "h-9 w-9", iconClass = "h-[18px] w-[18px]", pop = false }) {
   return (
-    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition duration-300 group-hover:-rotate-6 group-hover:scale-110 ${on ? `krish-pop bg-gradient-to-br ${tone} text-white shadow-md` : TINT[tone]}`}>
-      <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
+    <span className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${tone} text-white shadow-md ${GLOW[tone] || ""} ring-1 ring-inset ring-white/25 transition duration-300 group-hover:-rotate-6 group-hover:scale-110 ${pop ? "krish-pop" : ""} ${className}`}>
+      <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1/2 rounded-t-full bg-gradient-to-b from-white/35 to-transparent" />
+      <Icon className={`relative drop-shadow-sm ${iconClass}`} strokeWidth={2.2} />
     </span>
   );
+}
+
+function Tile({ icon, tone, on, robo }) {
+  if (robo) return <RoboFace on={on} className="h-9 w-9" />;
+  return <AppIcon icon={icon} tone={tone} pop={on} />;
 }
 
 /** Krish Robo's face, the Counsellor's picture, in a gradient ring that lights up when picked. */
@@ -180,9 +186,7 @@ export default function WelcomeQuestions() {
       <div className="fixed inset-0 z-[70] flex flex-col bg-background" data-testid="welcome-results">
         <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-3xl flex-col px-5 pb-6 pt-10 sm:justify-center">
-          <span className="krish-pop flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-pink-500 text-white shadow-lg shadow-violet-500/30">
-            <Check className="h-5 w-5" strokeWidth={3} />
-          </span>
+          <AppIcon icon={Check} tone="from-violet-500 to-fuchsia-500" className="h-12 w-12" iconClass="h-6 w-6" pop />
           <p className="mt-4 text-xs font-semibold text-violet-600 dark:text-violet-300">All set, {saved.about?.callMe || callMe}</p>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">Krish AI, made for you</h1>
           {saved.about?.country && (
@@ -199,9 +203,7 @@ export default function WelcomeQuestions() {
                   style={{ animationDelay: `${120 + i * 80}ms` }}
                   className="krish-rise group flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3.5 text-left shadow-sm transition hover:border-violet-300 active:scale-[0.98] sm:flex-col sm:items-start sm:rounded-3xl sm:p-5 sm:hover:-translate-y-1 sm:hover:shadow-lg">
                   {f.robo ? <RoboFace className="h-11 w-11" /> : (
-                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${f.tone} text-white shadow-md transition duration-300 group-hover:-rotate-6 group-hover:scale-110`}>
-                      <Icon className="h-5 w-5" />
-                    </span>
+                    <AppIcon icon={Icon} tone={f.tone} className="h-11 w-11" iconClass="h-5 w-5" />
                   )}
                   <span className="min-w-0 flex-1 sm:mt-1">
                     <span className="block text-sm font-bold text-foreground">{f.title}</span>
