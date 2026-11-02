@@ -1,101 +1,123 @@
+import { useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import BrandMark from "@/components/BrandMark";
-import { ArrowRight, Check, Loader2, Lock, RefreshCcw } from "lucide-react";
-
-// One idea of what to make, shown under the list on laptops.
-const IDEA = {
-  pro: "Try it: a 15-slide class deck, ready in a minute.",
-  max: "Try it: posters for your whole catalogue, every day.",
-};
+import { ArrowRight, Brain, Check, Gauge, ImageIcon, Layers, Loader2, Lock, Rocket, Sparkles, Upload, Zap } from "lucide-react";
 
 const firstName = (name) => (name || "").trim().split(" ")[0];
 
 // A rupee amount as Razorpay charges it: whole rupees as they are, otherwise with paise (₹470.82).
 const rupees = (n) => n.toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 
-// What a plan adds to the one below it, as one plain list.
-function perks(plan, video) {
+// What a plan adds, as a few rows: an icon, a short title and one line. No AI company or model names here.
+function benefits(plan, video) {
   const m = plan.monthly;
-  const usage = m ? `About ${m.answers} premium answers or ${m.builds} app builds a month` : null;
   const { uploadMb, videoSeconds } = plan.quality || {};
   if (plan.id === "max") {
-    return [usage, "More pictures, decks and builds than Pro", `${plan.total.automation} automations`,
-      ...(video ? [`Videos up to ${videoSeconds} seconds`] : []), `Uploads up to ${uploadMb}MB`].filter(Boolean);
+    return [
+      { icon: Gauge, title: "More than double Pro", text: m ? `About ${m.answers} premium answers or ${m.builds} app builds a month.` : "More than twice the usage of Pro." },
+      { icon: ImageIcon, title: "Create every day", text: video ? `More pictures, decks and videos up to ${videoSeconds} seconds.` : "More pictures, decks and builds than Pro." },
+      { icon: Zap, title: `${plan.total.automation} automations`, text: "Krish runs your repeat jobs on a schedule." },
+      { icon: Upload, title: "Bigger uploads", text: `Files up to ${uploadMb}MB.` },
+      { icon: Layers, title: "Everything in Pro", text: "Our smartest AI, publishing, HD pictures and memory." },
+    ];
   }
-  return ["Claude Sonnet for code and hard questions", usage, "Unlimited chat on Krish Basic",
-    video ? "HD pictures and real AI video" : "HD pictures", "Publish your apps", "Memory across chats",
-    "Counsellor Pro"].filter(Boolean);
+  return [
+    { icon: Sparkles, title: "Smarter answers", text: "Our smartest AI steps in for code and hard questions." },
+    { icon: Gauge, title: "Much more usage", text: m ? `About ${m.answers} premium answers or ${m.builds} app builds a month, plus unlimited chat.` : "Unlimited everyday chat, plus far more premium answers." },
+    { icon: Rocket, title: "Build and publish apps", text: "Make a website or app and put it live with one tap." },
+    { icon: ImageIcon, title: video ? "HD pictures and video" : "HD pictures", text: "Sharper posters, invites and slides." },
+    { icon: Brain, title: "Memory", text: "Krish remembers you across chats, and so does Counsellor Pro." },
+  ];
 }
 
-/** Opens when someone taps a paid plan: what it adds, the price, then pay. Laptops: the list on the left and the
- *  price on a dark side panel. Phones: one column, with the price and Pay stuck to the bottom. */
-export function PlanSheet({ plan, user, price, offer, video, gstRate = 0, busy, onPay, onClose }) {
+/** Opens when someone taps a paid plan: a Pro/Max switch, the price, what it adds, then one Pay button.
+ *  Phones scroll the middle and keep Pay stuck to the bottom. */
+export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 0, busy, onPay, onClose }) {
+  const choices = plans?.length ? plans : plan ? [plan] : [];
+  const [id, setId] = useState(plan?.id);
   if (!plan) return null;
+  const shown = choices.find((p) => p.id === id) || plan;
+  const price = priceOf ? priceOf(shown) : shown.price;
   const first = firstName(user?.name);
   // An offer code makes it a one-time 30-day payment; otherwise it's autopay, renewing every month.
-  const oneTime = !!(offer && price !== plan.price);
-  const was = plan.listPrice || plan.price;
+  const oneTime = !!(offer && price !== shown.price);
+  const was = shown.listPrice || shown.price;
   const off = was > price ? Math.round((1 - price / was) * 100) : 0;
   const gst = Math.round(price * gstRate) / 100; // 18% GST on top once the business has a GSTIN
-  const below = plan.id === "max" ? "Pro" : "Basic";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent overlayClassName="bg-black/85 backdrop-blur-sm"
-        className="max-h-[92dvh] max-w-[calc(100%-1.5rem)] gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[720px] md:grid md:grid-cols-[1fr_270px] md:[&>button:last-child]:!bg-transparent md:[&>button:last-child]:!text-background"
+        className="flex max-h-[94dvh] max-w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden rounded-3xl border-border/60 p-0 sm:max-w-[500px]"
         data-testid="plan-sheet">
-        <div className="max-h-[calc(92dvh-11.5rem)] overflow-y-auto px-6 pb-5 pt-6 md:max-h-none md:px-8 md:py-8">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground md:hidden">Krish AI {plan.name}</span>
-          <DialogTitle className="mt-2 md:mt-0 text-[1.45rem] font-semibold leading-tight tracking-tight md:text-[1.6rem]">
-            {first ? `Unlock Krish ${plan.name}, ${first}` : `Unlock Krish ${plan.name}`}
-          </DialogTitle>
-          <p className="mt-1.5 text-[0.86rem] text-muted-foreground">{plan.id === "max"
-            ? "For people and businesses who create every day."
-            : "Smarter answers, more of everything, and your apps on the web."}</p>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* Hero: the mark on a soft orange glow */}
+          <div className="relative overflow-hidden px-6 pb-4 pt-7 text-center sm:px-8">
+            <div className="pointer-events-none absolute left-1/2 top-[-5.5rem] h-56 w-[26rem] -translate-x-1/2 rounded-full bg-orange-500/25 blur-3xl dark:bg-orange-500/20" />
+            <div className="pointer-events-none absolute left-1/2 top-[-2rem] h-28 w-48 -translate-x-1/2 rounded-full bg-amber-300/30 blur-2xl dark:bg-amber-400/10" />
+            <div className="relative mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-500/20 bg-background shadow-[0_8px_30px_-6px_rgba(249,115,22,0.45)]">
+              <BrandMark className="h-10 w-10" />
+            </div>
+            <DialogTitle className="relative mt-3.5 text-[1.55rem] font-semibold leading-tight tracking-tight sm:text-[1.75rem]">
+              {first ? `Unlock Krish ${shown.name}, ${first}` : `Unlock Krish ${shown.name}`}
+            </DialogTitle>
+            <p className="relative mt-1.5 text-[0.88rem] text-muted-foreground">{shown.id === "max"
+              ? "For people and businesses who create every day."
+              : "Smarter answers, more of everything, and your apps on the web."}</p>
 
-          <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Everything in {below}, plus</p>
-          <ul className="mt-2.5 space-y-2.5 text-[0.9rem]" data-testid="plan-sheet-perks">
-            {perks(plan, video).map((perk) => (
-              <li key={perk} className="flex items-start gap-2.5 leading-snug">
-                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
-                  <Check className="h-2.5 w-2.5" strokeWidth={3} />
+            {choices.length > 1 && (
+              <div className="relative mx-auto mt-4 inline-flex rounded-full border border-border bg-muted/60 p-1" role="tablist">
+                {choices.map((p) => (
+                  <button key={p.id} type="button" role="tab" aria-selected={p.id === shown.id} onClick={() => setId(p.id)}
+                    data-testid={`plan-sheet-toggle-${p.id}`}
+                    className={`rounded-full px-6 py-1.5 text-sm font-semibold transition-colors ${p.id === shown.id
+                      ? "bg-background text-foreground shadow-sm dark:bg-white/10" : "text-muted-foreground hover:text-foreground"}`}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="relative mt-4">
+              <div className="flex items-baseline justify-center gap-2.5">
+                <span className="text-[3rem] font-semibold leading-none tracking-tight tabular-nums" data-testid="plan-sheet-price">₹{price.toLocaleString("en-IN")}</span>
+                {price !== was && <span className="text-lg tabular-nums text-muted-foreground line-through">₹{was.toLocaleString("en-IN")}</span>}
+                {(oneTime || off > 0) && (
+                  <span className="self-center rounded-full bg-orange-500/12 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-orange-600 dark:bg-orange-500/15 dark:text-orange-300">
+                    {oneTime ? `${offer.percentOff}% off` : `${off}% off`}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1.5 text-[0.84rem] text-muted-foreground">
+                {oneTime ? `30 days of ${shown.name}, with ${offer.code}` : "per month"} · <span data-testid="plan-sheet-per-day">just ₹{Math.round(price / 30)}/day</span>
+                {gst > 0 && <span data-testid="plan-sheet-gst"> · + ₹{rupees(gst)} GST</span>}
+              </p>
+            </div>
+          </div>
+
+          <ul className="space-y-1 px-4 pb-3 sm:px-6" data-testid="plan-sheet-perks">
+            {benefits(shown, video).map(({ icon: Icon, title, text }) => (
+              <li key={title} className="flex items-start gap-3.5 rounded-2xl px-2.5 py-2">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300">
+                  <Icon className="h-5 w-5" strokeWidth={1.9} />
                 </span>
-                {perk}
+                <span className="min-w-0">
+                  <span className="block text-[0.93rem] font-semibold leading-snug">{title}</span>
+                  <span className="block text-[0.83rem] leading-snug text-muted-foreground">{text}</span>
+                </span>
               </li>
             ))}
           </ul>
-          <p className="mt-5 truncate text-[0.8rem] text-muted-foreground max-md:hidden">{IDEA[plan.id] || IDEA.pro}</p>
         </div>
 
-        <div className="border-t border-border bg-background px-6 pb-5 pt-4 md:flex md:flex-col md:border-0 md:bg-foreground md:px-6 md:py-7 md:text-background">
-          <div className="flex items-center gap-2.5 max-md:hidden">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-background"><BrandMark className="h-6 w-6" /></span>
-            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-background/70">Krish AI {plan.name}</span>
-          </div>
-          <div className="flex items-end justify-between gap-3 md:mt-7 md:block">
-            <div>
-              <span className="text-[12px] text-muted-foreground md:text-background/60">{oneTime ? `30 days of ${plan.name}` : `${plan.name}, per month`}</span>
-              <div className="mt-0.5 flex items-baseline gap-2">
-                <span className="text-[2rem] font-semibold leading-none tracking-tight tabular-nums md:text-[2.4rem]" data-testid="plan-sheet-price">₹{price.toLocaleString("en-IN")}</span>
-                {price !== was && <span className="text-sm tabular-nums text-muted-foreground line-through md:text-background/50">₹{was.toLocaleString("en-IN")}</span>}
-              </div>
-            </div>
-            <div className="text-right text-[12px] text-muted-foreground md:mt-1.5 md:text-left md:text-background/65">
-              <p data-testid="plan-sheet-per-day">just ₹{Math.round(price / 30)}/day</p>
-              {oneTime ? <p>{offer.code}: {offer.percentOff}% off, one time</p> : off > 0 && <p>Launch price · {off}% off</p>}
-              {gst > 0 && <p data-testid="plan-sheet-gst">+ ₹{rupees(gst)} GST ({gstRate}%)</p>}
-            </div>
-          </div>
-          <div className="md:mt-auto md:pt-6">
-          <Button onClick={onPay} disabled={busy} data-testid="plan-sheet-pay"
-            className="mt-3.5 h-11 w-full rounded-xl bg-foreground text-[0.95rem] font-semibold text-background shadow-none hover:bg-foreground/90 md:mt-0 md:bg-background md:text-foreground md:hover:bg-background/90">
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : `Pay ₹${rupees(price + gst)}`}
+        <div className="shrink-0 border-t border-border/70 bg-background px-6 pb-5 pt-4 sm:px-8">
+          <Button onClick={() => onPay(shown.id)} disabled={busy} data-testid="plan-sheet-pay"
+            className="h-12 w-full rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-base font-semibold text-white shadow-[0_10px_30px_-10px_rgba(249,115,22,0.8)] hover:from-orange-500/90 hover:to-amber-500/90">
+            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ₹{rupees(price + gst)}<ArrowRight className="ml-1.5 h-4 w-4" /></>}
           </Button>
-          <div className="mt-2.5 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground md:flex-col md:items-center md:text-background/55">
-            <span className="flex items-center gap-1"><Lock className="h-3 w-3" /> Secure payment by Razorpay</span>
-            <span className="flex items-center gap-1"><RefreshCcw className="h-3 w-3" /> {oneTime ? "No auto-renewal" : "Renews monthly, cancel anytime"}</span>
-          </div>
-          </div>
+          <p className="mt-2.5 flex items-center justify-center gap-1.5 text-[11.5px] text-muted-foreground">
+            <Lock className="h-3 w-3" /> Secure payment by Razorpay · {oneTime ? "No auto-renewal" : "Cancel anytime"}
+          </p>
         </div>
       </DialogContent>
     </Dialog>
