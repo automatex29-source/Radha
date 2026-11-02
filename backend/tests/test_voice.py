@@ -144,3 +144,22 @@ def test_turbo_whisper_takes_over_when_large_fails(fake_openai):
     FakeClient.text = "hello"
     assert asyncio.run(media.transcribe(b"a", "a.webm")) == "hello"
     assert FakeClient.calls[-1]["model"] == media.GROQ_STT_FALLBACK
+
+
+def test_speech_can_be_a_little_faster(monkeypatch):
+    # Krish Robo reads Counsellor replies at speed 1.15: edge-tts gets it as a rate.
+    import types
+    seen = {}
+
+    class Communicate:
+        def __init__(self, text, voice, rate="+0%"):
+            seen["rate"] = rate
+
+        async def stream(self):
+            yield {"type": "audio", "data": b"mp3"}
+
+    monkeypatch.setitem(sys.modules, "edge_tts", types.SimpleNamespace(Communicate=Communicate))
+    assert asyncio.run(media._edge_speak("hello", "en", 1.15)) == b"mp3"
+    assert seen["rate"] == "+15%"
+    asyncio.run(media._edge_speak("hello", "en"))
+    assert seen["rate"] == "+0%"

@@ -146,7 +146,7 @@ function chunks(text, max = 200) {
   return out;
 }
 
-async function speakInBrowser(text, { onStart, lang: forced } = {}) {
+async function speakInBrowser(text, { onStart, lang: forced, rate } = {}) {
   if (!browserSpeechAvailable()) throw new Error("This browser can't read aloud");
   const synth = window.speechSynthesis;
   const lang = browserLang(text, forced);
@@ -162,6 +162,7 @@ async function speakInBrowser(text, { onStart, lang: forced } = {}) {
         const u = new SpeechSynthesisUtterance(part);
         u.lang = voice?.lang || lang;
         if (voice) u.voice = voice;
+        if (rate) u.rate = rate;
         u.onstart = () => { if (!started) { started = true; onStart?.(); } };
         u.onend = resolve;
         u.onerror = (e) => (e.error === "interrupted" || e.error === "canceled" ? resolve() : reject(new Error("Could not read aloud")));
@@ -185,11 +186,11 @@ export async function speak(text, voice, { onStart } = {}) {
   }
 }
 
-async function fetchSpeech(text, voice, lang) {
+async function fetchSpeech(text, voice, lang, speed) {
   const res = await fetch(`${API}/audio/speech`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-    body: JSON.stringify({ text, voice, lang: lang || getVoiceLang() }),
+    body: JSON.stringify({ text, voice, lang: lang || getVoiceLang(), ...(speed ? { speed } : {}) }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -257,7 +258,7 @@ async function speakOnServer(text, voice, { onStart } = {}) {
  * complete, and the next sentence's audio is fetched while the current one plays.
  * `done` resolves when everything has been spoken or `stop()` is called.
  */
-export function createSpeaker({ voice, onStart, lang } = {}) {
+export function createSpeaker({ voice, onStart, lang, speed } = {}) {
   const queue = [];
   let consumed = 0;
   let ended = false;
@@ -270,7 +271,7 @@ export function createSpeaker({ voice, onStart, lang } = {}) {
     const text = speechText(raw).replace(/\s+/g, " ").trim();
     if (!text || !/[\p{L}\p{N}]/u.test(text)) return;
     const item = { text };
-    if (useServer) item.url = fetchSpeech(text, voice, lang).catch((e) => { item.failed = e; return null; });
+    if (useServer) item.url = fetchSpeech(text, voice, lang, speed).catch((e) => { item.failed = e; return null; });
     queue.push(item);
     wake?.();
   };
@@ -319,7 +320,7 @@ export function createSpeaker({ voice, onStart, lang } = {}) {
           try { await playUrl(url, { onStart: first }); continue; } catch { /* fall back below */ }
         }
         if (item.url) useServer = false; // the free voice service failed; use the browser from now on
-        if (browserSpeechAvailable()) await speakInBrowser(item.text, { onStart: first, lang });
+        if (browserSpeechAvailable()) await speakInBrowser(item.text, { onStart: first, lang, rate: speed });
         else if (item.failed) throw item.failed;
       }
     } finally {
