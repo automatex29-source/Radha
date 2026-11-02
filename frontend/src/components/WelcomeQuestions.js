@@ -6,7 +6,6 @@ import { ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, ChevronRight, Code2,
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import BrandMark from "@/components/BrandMark";
-import CounselIcon from "@/components/CounselIcon";
 
 // Asked once after signing in (backend: PUT /auth/about). The answers shape every Krish reply, and the end
 // screen points them to the parts of Krish AI that fit what they want to do.
@@ -37,7 +36,7 @@ const FEATURES = {
   business: { icon: Zap, title: "Automations", text: "Agents that do your repeat tasks on a schedule.", path: "/automations", tone: "from-violet-500 to-fuchsia-500" },
   slides: { icon: Presentation, title: "Decks", text: "Beautiful slides from a single line.", path: "/decks", tone: "from-rose-500 to-pink-500" },
   create: { icon: Image, title: "Pictures & videos", text: "Ask in chat: \"make a poster for my shop\".", path: "/", tone: "from-fuchsia-500 to-purple-600" },
-  talk: { icon: CounselIcon, title: "Counsellor", text: "Krish Robo listens and answers right away.", path: "/counsellor", tone: "from-pink-500 to-rose-500" },
+  talk: { icon: Heart, title: "Counsellor", text: "Krish Robo listens and answers right away.", path: "/counsellor", tone: "from-pink-500 to-rose-500" },
   everyday: { icon: Compass, title: "Discover", text: "Today's news and answers with live web search.", path: "/discover", tone: "from-cyan-500 to-blue-600" },
 };
 const COUNTRIES = ["India", "Nepal", "Bangladesh", "Sri Lanka", "Pakistan", "United Arab Emirates", "Saudi Arabia",

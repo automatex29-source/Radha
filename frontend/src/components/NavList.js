@@ -1,13 +1,12 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, FileText, Compass } from "lucide-react";
+import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, FileText, Compass } from "lucide-react";
 import { useT } from "@/lib/i18n";
-import CounselIcon from "@/components/CounselIcon";
 import { accentStyle } from "@/components/PageHero";
 
 /** The app's sections. The desktop rail shows them as icons; the phone menu lists them with their names. */
 export const NAV_ITEMS = [
   { icon: MessageSquare, label: "Chat", key: "chat", to: "/", match: (p) => p === "/" },
-  { icon: CounselIcon, label: "Counsellor", key: "counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
+  { icon: HeartHandshake, label: "Counsellor", key: "counsellor", to: "/counsellor", match: (p) => p.startsWith("/counsellor") },
   { icon: FolderKanban, label: "Projects", key: "projects", to: "/projects", match: (p) => p.startsWith("/projects") },
   { icon: AppWindow, label: "Apps", key: "apps", to: "/apps", match: (p) => p.startsWith("/apps") },
   { icon: FileText, label: "Docs", key: "docs", to: "/docs", match: (p) => p.startsWith("/docs") },
