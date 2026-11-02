@@ -270,11 +270,6 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
   .group-hover\:opacity-100 { opacity: 1; }
 }
 
-/* Hide the phone tab bar while typing, so the keyboard doesn't squeeze the page. */
-@media (max-width: 767px) {
-  body:has(input:focus, textarea:focus, [contenteditable="true"]:focus) .krish-tabbar { display: none; }
-}
-
 @keyframes krish-drawer-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 .krish-drawer-in { animation: krish-drawer-in 0.22s cubic-bezier(0.32, 0.72, 0, 1) both; }
 @keyframes krish-fade-in { from { opacity: 0; } to { opacity: 1; } }

@@ -25,7 +25,7 @@ const en = {
   newConversation: "New conversation", newSession: "New session", newChat: "New chat",
   searchChats: "Search chats and messages", searchConversations: "Search conversations",
   noMatch: "No chats match your search.", noConversations: "No conversations yet.",
-  today: "Today", yesterday: "Yesterday", previous7: "Previous 7 Days", older: "Older",
+  recents: "Recents", today: "Today", yesterday: "Yesterday", previous7: "Previous 7 Days", older: "Older",
   signedInAs: "Signed in as {email}", memory: "Memory", helpFeedback: "Help & feedback", settings: "Settings", plans: "Plans",
   lightTheme: "Light theme", darkTheme: "Dark theme", logout: "Log out",
   deleteTitle: "Delete conversation?",
@@ -43,7 +43,7 @@ const STRINGS = {
   hi: {
     chat: "चैट", counsellor: "काउंसलर", projects: "प्रोजेक्ट", apps: "ऐप्स", docs: "डॉक्स", decks: "डेक",
     automations: "ऑटोमेशन", automate: "ऑटोमेट", helpCenter: "सहायता केंद्र",
-    newConversation: "नई बातचीत", newSession: "नया सेशन", newChat: "नई चैट",
+    newConversation: "नई बातचीत", newSession: "नया सेशन", newChat: "नई चैट", recents: "हाल की चैट",
     searchChats: "चैट और संदेश खोजें", searchConversations: "बातचीत खोजें",
     noMatch: "आपकी खोज से कोई चैट नहीं मिली।", noConversations: "अभी कोई बातचीत नहीं।",
     today: "आज", yesterday: "कल", previous7: "पिछले 7 दिन", older: "पुराने",
