@@ -61,36 +61,50 @@ function guessCountry() {
 }
 
 const PICKED = "border-violet-500 bg-violet-500/10 ring-2 ring-violet-500/30";
-const UNPICKED = "border-border bg-card hover:border-violet-300 active:scale-[0.98]";
+const UNPICKED = "border-border bg-card hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md active:scale-[0.97]";
+// The soft colour of each icon before it is picked (it fills with its gradient once picked).
+const TINT = {
+  "from-amber-400 to-orange-500": "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+  "from-sky-500 to-indigo-600": "bg-sky-500/15 text-sky-600 dark:text-sky-300",
+  "from-violet-500 to-fuchsia-500": "bg-violet-500/15 text-violet-600 dark:text-violet-300",
+  "from-rose-400 to-pink-500": "bg-rose-500/15 text-rose-600 dark:text-rose-300",
+  "from-cyan-500 to-blue-600": "bg-cyan-500/15 text-cyan-600 dark:text-cyan-300",
+  "from-emerald-500 to-teal-600": "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
+  "from-slate-500 to-slate-700": "bg-slate-500/15 text-slate-600 dark:text-slate-300",
+  "from-rose-500 to-pink-500": "bg-rose-500/15 text-rose-600 dark:text-rose-300",
+  "from-fuchsia-500 to-purple-600": "bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-300",
+  "from-pink-500 to-rose-500": "bg-pink-500/15 text-pink-600 dark:text-pink-300",
+};
 
-function Tile({ icon: Icon, tone }) {
+function Tile({ icon: Icon, tone, on }) {
   return (
-    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${tone} text-white shadow-sm`}>
-      <Icon className="h-4 w-4" />
+    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition duration-300 group-hover:-rotate-6 group-hover:scale-110 ${on ? `krish-pop bg-gradient-to-br ${tone} text-white shadow-md` : TINT[tone]}`}>
+      <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
     </span>
   );
 }
 
 /** One answer in a list (what they do). */
-function Chip({ on, onClick, icon, tone, label, testid }) {
+function Chip({ on, onClick, icon, tone, label, testid, i = 0 }) {
   return (
-    <button type="button" onClick={onClick} data-testid={testid}
-      className={`flex items-center gap-3 rounded-xl border p-2 pr-3.5 text-left text-sm font-semibold text-foreground transition ${on ? PICKED : UNPICKED}`}>
-      <Tile icon={icon} tone={tone} />
+    <button type="button" onClick={onClick} data-testid={testid} style={{ animationDelay: `${i * 40}ms` }}
+      className={`krish-rise group flex items-center gap-3 rounded-xl border p-2 pr-3.5 text-left text-sm font-semibold text-foreground transition duration-200 ${on ? PICKED : UNPICKED}`}>
+      <Tile icon={icon} tone={tone} on={on} />
       <span className="flex-1">{label}</span>
-      {on ? <Check className="h-4 w-4 text-violet-600 dark:text-violet-300" /> : <ChevronRight className="h-4 w-4 text-muted-foreground/60" />}
+      {on ? <Check className="krish-pop h-4 w-4 text-violet-600 dark:text-violet-300" strokeWidth={3} />
+        : <ChevronRight className="h-4 w-4 text-muted-foreground/60 transition group-hover:translate-x-0.5 group-hover:text-violet-500" />}
     </button>
   );
 }
 
 /** One answer in a two-column grid (what they'll use Krish AI for); several can be picked. */
-function Card({ on, onClick, icon, tone, label, testid }) {
+function Card({ on, onClick, icon, tone, label, testid, i = 0 }) {
   return (
-    <button type="button" onClick={onClick} data-testid={testid} aria-pressed={on}
-      className={`relative flex min-h-[88px] flex-col justify-between gap-2.5 rounded-xl border p-3 text-left text-[13px] font-semibold leading-snug text-foreground transition ${on ? PICKED : UNPICKED}`}>
-      <Tile icon={icon} tone={tone} />
+    <button type="button" onClick={onClick} data-testid={testid} aria-pressed={on} style={{ animationDelay: `${i * 40}ms` }}
+      className={`krish-rise group relative flex min-h-[88px] flex-col justify-between gap-2.5 rounded-xl border p-3 text-left text-[13px] font-semibold leading-snug text-foreground transition duration-200 ${on ? PICKED : UNPICKED}`}>
+      <Tile icon={icon} tone={tone} on={on} />
       <span>{label}</span>
-      <span className={`absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border ${on ? "border-violet-600 bg-violet-600 text-white" : "border-border"}`}>
+      <span className={`absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border transition ${on ? "krish-pop border-transparent bg-gradient-to-br from-violet-600 to-pink-500 text-white" : "border-border"}`}>
         {on && <Check className="h-3 w-3" strokeWidth={3} />}
       </span>
     </button>
@@ -154,7 +168,7 @@ export default function WelcomeQuestions() {
       <div className="fixed inset-0 z-[70] flex flex-col bg-background" data-testid="welcome-results">
         <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-3xl flex-col px-5 pb-6 pt-10 sm:justify-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-pink-500 text-white shadow-lg shadow-violet-500/30">
+          <span className="krish-pop flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-pink-500 text-white shadow-lg shadow-violet-500/30">
             <Check className="h-5 w-5" strokeWidth={3} />
           </span>
           <p className="mt-4 text-xs font-semibold text-violet-600 dark:text-violet-300">All set, {saved.about?.callMe || callMe}</p>
@@ -166,12 +180,13 @@ export default function WelcomeQuestions() {
           )}
           <p className="mt-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Picked for you</p>
           <div className="mt-3 grid gap-2.5 sm:grid-cols-3 sm:gap-3">
-            {picks.map(([id, f]) => {
+            {picks.map(([id, f], i) => {
               const Icon = f.icon;
               return (
                 <button key={id} onClick={() => finish(f.path, f.flag)} data-testid={`welcome-feature-${id}`}
-                  className="group flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3.5 text-left shadow-sm transition active:scale-[0.98] sm:flex-col sm:items-start sm:rounded-3xl sm:p-5 sm:hover:-translate-y-1 sm:hover:shadow-lg">
-                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${f.tone} text-white shadow-md`}>
+                  style={{ animationDelay: `${120 + i * 80}ms` }}
+                  className="krish-rise group flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3.5 text-left shadow-sm transition hover:border-violet-300 active:scale-[0.98] sm:flex-col sm:items-start sm:rounded-3xl sm:p-5 sm:hover:-translate-y-1 sm:hover:shadow-lg">
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${f.tone} text-white shadow-md transition duration-300 group-hover:-rotate-6 group-hover:scale-110`}>
                     <Icon className="h-5 w-5" />
                   </span>
                   <span className="min-w-0 flex-1 sm:mt-1">
@@ -220,12 +235,15 @@ export default function WelcomeQuestions() {
         </div>
         <div className="mt-2 flex gap-1.5" aria-hidden="true">
           {questions.map((_, i) => (
-            <span key={i} className={`h-1 flex-1 rounded-full transition-colors ${i <= step ? "bg-gradient-to-r from-violet-500 to-pink-500" : "bg-border"}`} />
+            <span key={i} className="h-1 flex-1 overflow-hidden rounded-full bg-border">
+              <span className={`block h-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 transition-all duration-500 ease-out ${i <= step ? "w-full" : "w-0"}`} />
+            </span>
           ))}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-xl flex-col px-5 pb-6 pt-8 sm:justify-center sm:pt-6">
+          <div key={step} className="radha-fade-up">
           <h1 className="text-[1.35rem] font-extrabold leading-tight tracking-tight text-foreground sm:text-[1.75rem]">{q.title}</h1>
           <p className="mt-1.5 text-[13px] text-muted-foreground sm:text-sm">{q.hint}</p>
           <div className="mt-5">
@@ -236,13 +254,13 @@ export default function WelcomeQuestions() {
             )}
             {step === 1 && (
               <div className="grid gap-2 sm:grid-cols-2">
-                {WORK.map((w) => <Chip key={w.id} {...w} on={does === w.id} testid={`welcome-does-${w.id}`}
+                {WORK.map((w, i) => <Chip key={w.id} {...w} i={i} on={does === w.id} testid={`welcome-does-${w.id}`}
                   onClick={() => { setDoes(w.id); setStep(2); }} />)}
               </div>
             )}
             {step === 2 && (
               <div className="grid grid-cols-2 gap-2">
-                {USES.map((u) => <Card key={u.id} {...u} on={uses.includes(u.id)} testid={`welcome-use-${u.id}`}
+                {USES.map((u, i) => <Card key={u.id} {...u} i={i} on={uses.includes(u.id)} testid={`welcome-use-${u.id}`}
                   onClick={() => toggleUse(u.id)} />)}
               </div>
             )}
@@ -267,6 +285,7 @@ export default function WelcomeQuestions() {
                 {initialCountry && country === initialCountry && <p className="text-xs text-muted-foreground">Guessed from your device. Change it if it's wrong.</p>}
               </div>
             )}
+          </div>
           </div>
           {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
         </div>
