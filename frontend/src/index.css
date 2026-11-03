@@ -521,3 +521,9 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 @media (prefers-reduced-motion: reduce) {
   .krish-intro *, .krish-intro-grid { animation-duration: 0s !important; animation-iteration-count: 1 !important; }
 }
+
+/* The limit card's clock: each new number drops in. */
+.krish-limit-digit { animation: krish-digit .35s ease-out; }
+@keyframes krish-digit { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.krish-limit .krish-chakra { color: #fff; }
+@media (prefers-reduced-motion: reduce) { .krish-limit-digit { animation: none; } }
