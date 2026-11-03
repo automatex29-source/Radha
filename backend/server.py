@@ -59,6 +59,7 @@ import code_edit
 import code_check
 import build_plan
 import fast_build
+import friendly_errors
 import limits
 import billing
 import languages
@@ -2009,11 +2010,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         raise
     except Exception as exc:  # surface provider errors to the client
         logger.exception("AI stream failed")
+        # A usage limit says when it works again; any other provider error gets a plain note, not its raw text.
+        limit_note = friendly_errors.friendly(exc)
         if not related.split("".join(full))[0].strip():
             # Keep a visible reason (with Regenerate) instead of leaving the question unanswered.
-            full.append(STREAM_FAILED_NOTE)
-            yield f"data: {_sse_json(STREAM_FAILED_NOTE)}\n\n"
-        yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"
+            note = limit_note or STREAM_FAILED_NOTE
+            full.append(note)
+            yield f"data: {_sse_json(note)}\n\n"
+        yield f"event: error\ndata: {_sse_json(limit_note or friendly_errors.SHORT_ERROR)}\n\n"
     else:
         if app_id and steps and not "".join(full).strip():
             # Free models sometimes stop after their tools without a word: always say what happened.
