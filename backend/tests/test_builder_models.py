@@ -30,6 +30,8 @@ def test_cerebras_routing_and_budget(monkeypatch):
 
 def test_cerebras_keeps_more_history_than_groq(monkeypatch):
     monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    for key in ("GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY"):
+        monkeypatch.delenv(key, raising=False)  # no stand-ins: each model answers alone
     msgs = big_history(5)  # about 15K tokens: too much for Groq's free tier, fine for Cerebras's
     seen = fake_completion(monkeypatch)
     run(collect(llm.stream_completion(CEREBRAS, msgs, [])))
@@ -44,8 +46,10 @@ def test_rate_limited_cerebras_falls_back_to_groq_refitted(monkeypatch):
     monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
     monkeypatch.setenv("GROQ_API_KEY", "k")
     seen = fake_completion(monkeypatch, failures=1)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     run(collect(llm.stream_completion(CEREBRAS, big_history(), [])))
-    assert [kw["model"] for kw in seen] == [CEREBRAS, "groq/openai/gpt-oss-120b"]
+    # (the fake answers with nothing, so later calls are the hand-over to other free models)
+    assert [kw["model"] for kw in seen][:2] == [CEREBRAS, "groq/openai/gpt-oss-120b"]
     assert llm.estimate_tokens(seen[1]["messages"]) + seen[1]["max_tokens"] <= llm.token_budget("openai/gpt-oss-120b")
 
 
