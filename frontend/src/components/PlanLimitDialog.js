@@ -19,6 +19,8 @@ function timeText(sec, now) {
 
 function Meter({ label, used, limit, note }) {
   const pct = Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
+  const [shown, setShown] = useState(0); // the bar fills up when the popup opens
+  useEffect(() => { const t = setTimeout(() => setShown(pct), 80); return () => clearTimeout(t); }, [pct]);
   return (
     <div>
       <div className="mb-1.5 flex items-baseline justify-between text-[13px]">
@@ -26,7 +28,7 @@ function Meter({ label, used, limit, note }) {
         <span className="tabular-nums text-muted-foreground">{pct}% used</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-strong">
-        <div className="h-full rounded-full bg-foreground/80" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-foreground/80 transition-[width] duration-700 ease-out" style={{ width: `${shown}%` }} />
       </div>
       {note && <p className="mt-1.5 text-[12px] text-muted-foreground">{note}</p>}
     </div>
@@ -69,7 +71,7 @@ export default function PlanLimitDialog() {
     <Dialog open={!!message} onOpenChange={(o) => !o && setMessage(null)}>
       <DialogContent className="max-w-[26rem] gap-0 rounded-2xl p-6 max-sm:w-[calc(100%-2rem)]" data-testid="plan-limit-dialog">
         <DialogHeader className="space-y-1.5 text-left sm:text-left">
-          <DialogTitle className="text-[1.15rem] font-semibold tracking-tight">
+          <DialogTitle className="font-heading text-[1.15rem] font-semibold tracking-tight">
             {automation ? "Automation limit reached" : weekFull ? "Weekly usage limit reached" : "Usage limit reached"}
           </DialogTitle>
           <DialogDescription className="text-[14px] leading-relaxed" data-testid="plan-limit-back-in">
@@ -103,7 +105,7 @@ export default function PlanLimitDialog() {
             {resetsAt ? "Wait" : "Close"}
           </Button>
           <Button onClick={() => { setMessage(null); navigate("/plans"); }} data-testid="plan-limit-see-plans"
-            className="h-9 rounded-lg px-4 font-medium">
+            className="h-9 rounded-lg px-4 font-medium transition-transform active:scale-[0.97]">
             {next ? `Upgrade to ${next.name}` : "See plans"}
           </Button>
         </div>
