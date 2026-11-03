@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
-  Paperclip, X, Wand2, ImagePlus, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles,
+  Paperclip, X, Wand2, ImagePlus, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare,
 } from "lucide-react";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit", "start_template"]);
@@ -31,6 +31,9 @@ export default function AppBuilder() {
   // Phones show one pane at a time, starting with the chat.
   const [tab, setTab] = useState(() => (window.matchMedia?.("(max-width: 767px)").matches ? "chat" : "preview"));
   const [previewKey, setPreviewKey] = useState(0);
+  // Auto-fix: after a build the user asked for, errors in the preview are sent back to Krish once, without a tap.
+  const [autoArmed, setAutoArmed] = useState(false);
+  const [historyFocus, setHistoryFocus] = useState(null);
   // A new app arrives with the user's request from the Apps page: the builder starts on it at once.
   const [fixAsk, setFixAsk] = useState(() => (location.state?.prompt ? { content: location.state.prompt, at: Date.now() } : null));
   useEffect(() => {
@@ -115,7 +118,9 @@ export default function AppBuilder() {
       </nav>
       <div className="flex min-h-0 flex-1">
         <BuilderChat app={app} appId={id} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
-          previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")} />
+          previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")}
+          onTurnDone={(auto) => setAutoArmed(!auto)} onBuildStart={() => setAutoArmed(false)}
+          onShowChanges={(commitId) => { setHistoryFocus({ id: commitId, at: Date.now() }); setTab("history"); }} />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
             {PANES.map(([t, Icon, label]) => (
@@ -127,11 +132,13 @@ export default function AppBuilder() {
           </nav>
           <div className="min-h-0 flex-1">
             {(tab === "preview" || tab === "chat") && <PreviewTab url={previewUrl} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)}
+              appId={id} onChanged={onFilesChanged} autoFix={autoArmed}
+              onAutoFix={(content) => { setAutoArmed(false); setFixAsk({ content, at: Date.now(), auto: true }); }}
               onFix={(content) => { setFixAsk({ content, at: Date.now() }); if (window.matchMedia?.("(max-width: 767px)").matches) setTab("chat"); }} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
             {tab === "terminal" && <TerminalTab appId={id} />}
             {tab === "data" && <DataTab appId={id} />}
-            {tab === "history" && <HistoryTab appId={id} commits={commits} pending={pending} onRestored={onFilesChanged} />}
+            {tab === "history" && <HistoryTab appId={id} commits={commits} pending={pending} onRestored={onFilesChanged} focus={historyFocus} />}
           </div>
         </section>
       </div>
@@ -140,7 +147,7 @@ export default function AppBuilder() {
 }
 
 /* ------------------------------------------------------------------ chat */
-function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUrl, previewKey, onShowPreview }) {
+function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUrl, previewKey, onShowPreview, onTurnDone, onBuildStart, onShowChanges }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -233,7 +240,19 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   }, [messages, text, steps]);
 
   // `typed` is a message from outside the text box (the preview's "Fix errors" button).
-  const send = async (typed) => {
+  // Undo one AI step: the app goes back to the version saved just before it (itself kept as a version).
+  const undo = async (m) => {
+    if (!window.confirm("Undo this change? The app goes back to how it was before it (you can redo it from History).")) return;
+    try {
+      await api.post(`/apps/${appId}/commits/${m.versions.before}/restore`);
+      toast.success("Change undone");
+      onFilesChanged();
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  };
+
+  const send = async (typed, auto = false) => {
     const sending = typeof typed === "string" ? [] : images;
     const content = (typeof typed === "string" ? typed : input).trim() || (sending.length ? SCREENSHOT_ASK : "");
     if (!content || streaming) return;
@@ -242,6 +261,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
     setIdeas([]);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: sending.map((i) => i.id) }]);
     setStreaming(true);
+    onBuildStart?.();
     setText("");
     setSteps([]);
     setDraft(null);
@@ -278,6 +298,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
       setSteps([]);
       setDraft(null);
       onFilesChanged();
+      onTurnDone?.(auto);
     }
   };
 
@@ -295,7 +316,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   useEffect(() => {
     if (!ask || !model || askedRef.current === ask.at) return;
     askedRef.current = ask.at;
-    send(ask.content);
+    send(ask.content, !!ask.auto);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ask, model]);
 
@@ -320,6 +341,18 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
         {messages.map((m) => (
           <div key={m.id}>
             <MessageBubble message={m} codeProject={false} compactSteps />
+            {!streaming && m.role === "assistant" && m.versions?.after && (
+              <div className="mt-1.5 flex gap-1 md:ml-11" data-testid="builder-step-actions">
+                <button onClick={() => onShowChanges?.(m.versions.after)} data-testid="builder-see-changes"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-surface hover:text-foreground">
+                  <GitCompare className="h-3 w-3" /> See changes
+                </button>
+                <button onClick={() => undo(m)} data-testid="builder-undo"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-surface hover:text-foreground">
+                  <Undo2 className="h-3 w-3" /> Undo
+                </button>
+              </div>
+            )}
             {!streaming && m.id === lastBuild && previewUrl && (
               <DevicePreview url={previewUrl} reloadKey={previewKey} onOpen={onShowPreview} className="mt-2 md:ml-11" />
             )}
@@ -419,12 +452,22 @@ function LiveCode({ draft }) {
 /* --------------------------------------------------------------- preview */
 const DEVICES = [["full", Monitor, "Laptop", null], ["tablet", Tablet, "Tablet", 820], ["phone", Smartphone, "Phone", 390]];
 
-function PreviewTab({ url, reloadKey, onReload, onFix }) {
+// rgb(12, 34, 56) -> #0c2238, for the colour pickers ("" for transparent).
+function toHex(rgb) {
+  const m = String(rgb || "").match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/);
+  if (!m || (m[4] !== undefined && Number(m[4]) === 0)) return "";
+  return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
+}
+
+function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix, onAutoFix }) {
   const [logs, setLogs] = useState([]);
   const [device, setDevice] = useState("full");
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState(null);
   const [change, setChange] = useState("");
+  const [mode, setMode] = useState("ai"); // "ai": describe the change; "now": edit text and colours directly
+  const [edit, setEdit] = useState({ text: "", color: "", bg: "" });
+  const [saving, setSaving] = useState(false);
   const frameRef = useRef(null);
 
   useEffect(() => { setLogs([]); setPicking(false); }, [reloadKey]);
@@ -434,7 +477,10 @@ function PreviewTab({ url, reloadKey, onReload, onFix }) {
       if (e.source !== frameRef.current?.contentWindow || e.data?.source !== "radha-preview") return;
       if (e.data.kind === "pick") {
         setPicking(false);
-        setPicked({ selector: String(e.data.selector || "").slice(0, 300), html: String(e.data.html || "").slice(0, 800), text: String(e.data.text || "").slice(0, 160), tag: String(e.data.tag || "") });
+        const p = { selector: String(e.data.selector || "").slice(0, 300), html: String(e.data.html || "").slice(0, 800), text: String(e.data.text || "").slice(0, 160),
+          raw: String(e.data.raw || "").slice(0, 500), tag: String(e.data.tag || ""), leaf: !!e.data.leaf, color: toHex(e.data.color), bg: toHex(e.data.bg) };
+        setPicked(p);
+        setEdit({ text: p.leaf ? p.raw : "", color: p.color, bg: p.bg });
         setChange("");
         return;
       }
@@ -458,9 +504,51 @@ function PreviewTab({ url, reloadKey, onReload, onFix }) {
     onFix(`Change only this part of the app: ${change.trim()}\n\nThe part (CSS path: ${picked.selector}):\n${picked.html}\n\nFind it in the files and change just that with edit_file. Leave everything else exactly as it is.`);
     setPicked(null);
   };
+  // Edit now: words are changed where they are written in the code, colours go into the page's own style block.
+  // No AI, so it is instant; text written in more than one place goes to Krish instead.
+  const saveNow = async (e) => {
+    e.preventDefault();
+    if (!picked || saving) return;
+    const textChanged = picked.leaf && edit.text.trim() && edit.text.trim() !== picked.raw;
+    const styles = {};
+    if (edit.color && edit.color !== picked.color) styles.color = edit.color;
+    if (edit.bg && edit.bg !== picked.bg) styles.background = edit.bg;
+    if (!textChanged && !Object.keys(styles).length) { setPicked(null); return; }
+    setSaving(true);
+    try {
+      if (textChanged) {
+        try {
+          await api.post(`/apps/${appId}/quick-edit`, { kind: "text", old: picked.raw, new: edit.text });
+        } catch (err) {
+          if (err?.response?.status !== 409) throw err;
+          onFix(`Change the text "${picked.raw}" to "${edit.text.trim()}" (CSS path: ${picked.selector}). Change only that.`);
+        }
+      }
+      if (Object.keys(styles).length) await api.post(`/apps/${appId}/quick-edit`, { kind: "style", selector: picked.selector, styles });
+      setPicked(null);
+      onChanged?.();
+      toast.success("Saved");
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setSaving(false);
+    }
+  };
   const width = DEVICES.find((d) => d[0] === device)[3];
 
   const errors = logs.filter((l) => l.level === "error").length;
+
+  // Auto-fix: once the page has settled after a build, any errors go straight back to Krish (once per build).
+  const autoFixRef = useRef(onAutoFix);
+  autoFixRef.current = onAutoFix;
+  useEffect(() => {
+    if (!autoFix || !errors || !autoFixRef.current) return;
+    const t = setTimeout(() => {
+      const found = [...new Set(logs.filter((l) => l.level === "error").map((l) => l.message.slice(0, 500)))].slice(0, 5);
+      autoFixRef.current(`Auto-fix: the preview shows ${found.length === 1 ? "this error" : "these errors"} after your last change. Find the cause in the code and fix it:\n${found.join("\n")}`);
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [autoFix, errors, logs]);
   const fixErrors = (e) => {
     e.preventDefault();
     const found = [...new Set(logs.filter((l) => l.level === "error").map((l) => l.message.slice(0, 500)))].slice(0, 5);
@@ -486,16 +574,46 @@ function PreviewTab({ url, reloadKey, onReload, onFix }) {
         {url && <a href={url} target="_blank" rel="noreferrer" className="ml-auto flex items-center gap-1 hover:text-foreground"><ExternalLink className="h-3.5 w-3.5" /> Open</a>}
       </div>
       {picked && (
-        <form onSubmit={sendChange} className="flex items-center gap-2 border-b border-border bg-primary/5 px-3 py-2" data-testid="preview-picked">
-          <span className="max-w-[40%] shrink-0 truncate rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[11px] text-primary" title={picked.selector}>
-            {picked.tag}{picked.text ? ` “${picked.text.slice(0, 30)}”` : ""}
-          </span>
-          <input autoFocus value={change} onChange={(e) => setChange(e.target.value)} data-testid="preview-picked-input"
-            placeholder="What should change? e.g. make it red and bigger"
-            className="min-w-0 flex-1 bg-transparent text-xs focus:outline-none" />
-          <Button size="sm" type="submit" disabled={!change.trim()} className="h-7 px-2.5 text-xs">Change</Button>
-          <button type="button" onClick={() => setPicked(null)} aria-label="Cancel" className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
-        </form>
+        <div className="border-b border-border bg-primary/5 px-3 py-2" data-testid="preview-picked">
+          <div className="flex items-center gap-2">
+            <span className="max-w-[45%] shrink-0 truncate rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[11px] text-primary" title={picked.selector}>
+              {picked.tag}{picked.text ? ` “${picked.text.slice(0, 30)}”` : ""}
+            </span>
+            <div className="flex rounded-md border border-border p-0.5 text-[11px]" role="group">
+              {[["ai", "Ask Krish"], ["now", "Edit now"]].map(([m, label]) => (
+                <button key={m} type="button" onClick={() => setMode(m)} data-testid={`preview-mode-${m}`}
+                  className={`rounded px-2 py-0.5 ${mode === m ? "bg-surface-strong text-foreground" : "hover:text-foreground"}`}>{label}</button>
+              ))}
+            </div>
+            <button type="button" onClick={() => setPicked(null)} aria-label="Cancel" className="ml-auto text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+          </div>
+          {mode === "ai" ? (
+            <form onSubmit={sendChange} className="mt-2 flex items-center gap-2">
+              <input autoFocus value={change} onChange={(e) => setChange(e.target.value)} data-testid="preview-picked-input"
+                placeholder="What should change? e.g. make it red and bigger"
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none" />
+              <Button size="sm" type="submit" disabled={!change.trim()} className="h-7 px-2.5 text-xs">Change</Button>
+            </form>
+          ) : (
+            <form onSubmit={saveNow} className="mt-2 flex flex-wrap items-center gap-2" data-testid="preview-edit-now">
+              {picked.leaf && picked.raw && (
+                <input autoFocus value={edit.text} onChange={(e) => setEdit((x) => ({ ...x, text: e.target.value }))} data-testid="preview-edit-text"
+                  className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none" />
+              )}
+              <label className="flex items-center gap-1 text-[11px] text-muted-foreground">Text
+                <input type="color" value={edit.color || "#000000"} onChange={(e) => setEdit((x) => ({ ...x, color: e.target.value }))} data-testid="preview-edit-color"
+                  className="h-6 w-7 cursor-pointer rounded border border-border bg-transparent" />
+              </label>
+              <label className="flex items-center gap-1 text-[11px] text-muted-foreground">Fill
+                <input type="color" value={edit.bg || "#ffffff"} onChange={(e) => setEdit((x) => ({ ...x, bg: e.target.value }))} data-testid="preview-edit-bg"
+                  className="h-6 w-7 cursor-pointer rounded border border-border bg-transparent" />
+              </label>
+              <Button size="sm" type="submit" disabled={saving} className="h-7 px-2.5 text-xs" data-testid="preview-edit-save">
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+              </Button>
+            </form>
+          )}
+        </div>
       )}
       <div className={`min-h-0 flex-1 ${width ? "flex justify-center overflow-auto bg-sunken p-3" : "bg-white"}`}>
         {url && (
@@ -715,8 +833,9 @@ function DiffView({ diffs }) {
   );
 }
 
-function HistoryTab({ appId, commits, pending, onRestored }) {
-  const [selected, setSelected] = useState(pending ? "working" : commits[0]?.id);
+function HistoryTab({ appId, commits, pending, onRestored, focus }) {
+  const [selected, setSelected] = useState(focus?.id || (pending ? "working" : commits[0]?.id));
+  useEffect(() => { if (focus?.id) setSelected(focus.id); }, [focus]);
   const [diffs, setDiffs] = useState(null);
 
   useEffect(() => {
@@ -772,7 +891,25 @@ function PublishButton({ app, onChange }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [canPublish, setCanPublish] = useState(true);
+  const [domain, setDomain] = useState(app.domain || "");
+  const [savingDomain, setSavingDomain] = useState(false);
   const url = app.published ? absoluteUrl(app.published.url) : null;
+
+  // A custom domain: the owner points a CNAME at this server, and the site answers there too.
+  const saveDomain = async (e) => {
+    e.preventDefault();
+    setSavingDomain(true);
+    try {
+      const { data } = await api.put(`/apps/${app.id}/domain`, { domain });
+      onChange(data.app);
+      setDomain(data.app.domain || "");
+      toast.success(data.app.domain ? "Domain saved. Now add the DNS record below." : "Domain removed");
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setSavingDomain(false);
+    }
+  };
 
   useEffect(() => {
     if (open) api.get("/usage").then(({ data }) => setCanPublish(data.canPublish !== false)).catch(() => {});
@@ -820,6 +957,22 @@ function PublishButton({ app, onChange }) {
                 <Button size="sm" onClick={publish} disabled={busy} data-testid="publish-button" className="flex-1">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Update site"}</Button>
                 <Button size="sm" variant="outline" onClick={unpublish} className="border-border">Unpublish</Button>
               </div>
+              <form onSubmit={saveDomain} className="mt-4 border-t border-border pt-3" data-testid="custom-domain">
+                <p className="text-xs font-semibold">Your own domain</p>
+                <div className="mt-1.5 flex gap-1.5">
+                  <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="shop.yourname.com" data-testid="custom-domain-input"
+                    className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] focus:outline-none focus:border-primary/60" />
+                  <Button size="sm" type="submit" variant="outline" disabled={savingDomain || domain.trim() === (app.domain || "")} className="h-7 border-border px-2.5 text-xs">
+                    {savingDomain ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                  </Button>
+                </div>
+                {app.domain && (
+                  <p className="mt-2 text-[11px] text-muted-foreground" data-testid="custom-domain-steps">
+                    At your domain provider, add a <b>CNAME</b> record for <span className="font-mono">{app.domain}</span> pointing to{" "}
+                    <span className="font-mono">{window.location.host}</span>. Then add the same domain in your hosting dashboard so it gets HTTPS.
+                  </p>
+                )}
+              </form>
             </>
           ) : (
             <>

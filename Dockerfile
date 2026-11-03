@@ -7,6 +7,8 @@ WORKDIR /frontend
 COPY frontend/package.json frontend/.npmrc ./
 RUN npm install --no-audit --no-fund
 COPY frontend/ ./
+# esbuild: compiles JSX and TypeScript in the App Builder's React apps when they are served (jsx_compile.py).
+RUN npm install --prefix /esbuild --no-audit --no-fund esbuild@0.25.10
 RUN npm run build \
     && find build -type f \( -name '*.js' -o -name '*.css' -o -name '*.svg' -o -name '*.html' \) -exec gzip -k -9 {} +
 
@@ -33,6 +35,7 @@ RUN pip install -r requirements.txt \
 
 COPY backend/ ./
 COPY --from=frontend /frontend/build /app/frontend/build
+COPY --from=frontend /esbuild /opt/esbuild
 # Download the document-search model now, not on the first file someone uploads after each restart.
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5')" \
     || mkdir -p /app/cache/fastembed

@@ -342,6 +342,7 @@ def public_message(doc: dict) -> dict:
         "media": doc.get("media") or [],
         "stopped": bool(doc.get("stopped")),
         "rating": doc.get("rating"),
+        "versions": doc.get("versions"),
         "createdAt": doc["createdAt"],
     }
 
@@ -1511,6 +1512,8 @@ SMOKE_TIMEOUT = 60  # seconds for the browser test of an app
 REPAIR_ROUNDS = 3  # rounds of automatic fixes after a builder turn leaves the app broken or missing a planned feature
 # The first build of a fresh app is written in one streamed reply (fast_build.py). FAST_BUILD=0 turns it off.
 FAST_BUILD = os.environ.get("FAST_BUILD", "1") != "0"
+# A new app or a big change gets a code review after it passes the tests (build_plan.review_code). SELF_REVIEW=0 turns it off.
+SELF_REVIEW = os.environ.get("SELF_REVIEW", "1") != "0"
 
 
 async def _app_problems(app_id: str):
@@ -1562,6 +1565,18 @@ async def _feature_events(ctx: ToolContext, model: str, items: list):
     yield {"type": "tool_end", "id": step_id, "name": "check_features", "ok": not missing, "output": "\n".join(missing),
            "media": [], "summary": f"{n} thing{'s' if n != 1 else ''} to finish" if missing else "Everything in the plan is there"}
     yield {"type": "problems", "problems": missing}
+
+
+async def _review_events(ctx: ToolContext, model: str):
+    """A code review of the finished app (build_plan.review_code). Yields the "Reviewing the code" step; the last
+    event is {"type": "problems", "problems": [...]} with the real bugs found."""
+    step_id = f"review-{uuid.uuid4().hex[:8]}"
+    yield {"type": "tool_start", "id": step_id, "name": "review_code", "label": "Reviewing the code", "args": {}}
+    bugs = await build_plan.review_code(model, await apps.snapshot(ctx.app_id))
+    n = len(bugs)
+    yield {"type": "tool_end", "id": step_id, "name": "review_code", "ok": not bugs, "output": "\n".join(bugs),
+           "media": [], "summary": f"{n} bug{'s' if n != 1 else ''} to fix" if bugs else "No bugs found"}
+    yield {"type": "problems", "problems": bugs}
 
 
 # Free models sometimes write a picture or video tool call as a ```json block in the reply instead of calling the
@@ -1666,7 +1681,11 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
             yield ev
     if not (ctx.app_id and use_tools and changed):
         return
-    problems, features_checked = [], False
+    problems, features_checked, reviewed = [], False, False
+    # A new app or a big change gets one senior-engineer code review once it passes the tests (not on Groq's
+    # small free budget, where the files rarely fit and every request counts).
+    wants_review = SELF_REVIEW and bool(plan or first_version) and \
+        not (agent_llm.lean(model) and agent_llm.token_budget(model) <= 16000)
     for repair_round in range(REPAIR_ROUNDS + 1):
         async for ev in _app_problems(ctx.app_id):
             if ev["type"] == "problems":
@@ -1676,6 +1695,13 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
         if not problems and plan and not features_checked and repair_round < REPAIR_ROUNDS:
             features_checked = True  # once per turn: each check is one more request on the free tier
             async for ev in _feature_events(ctx, model, plan):
+                if ev["type"] == "problems":
+                    problems = ev["problems"]
+                else:
+                    yield ev
+        if not problems and wants_review and not reviewed and repair_round < REPAIR_ROUNDS:
+            reviewed = True
+            async for ev in _review_events(ctx, model):
                 if ev["type"] == "problems":
                     problems = ev["problems"]
                 else:
@@ -1816,6 +1842,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             logger.exception("RAG retrieval failed")
 
     app_id = conv.get("appId") if conv else None
+    versions = None  # App Builder: the app before and after this turn, for See changes and Undo
     if agent and not app_id and not extra_system and not think and not study and agent_llm.lean(model) \
             and _quick_chat(history_docs) and not await db.files.count_documents(
                 {"conversationId": conv_id, "is_deleted": False}):
@@ -1927,6 +1954,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                               connected=connected,
                               plugins_off=frozenset(k for k, on in plugin_state.items() if not on))
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
+            if app_id:
+                # The user's own unsaved edits are kept as a version first, so Undo returns to exactly this point.
+                versions = {"before": await apps.checkpoint(app_id, "Your edits", author="You")}
             plan_for = last_user if app_id and build_plan.wants_plan(history_docs, model) else None
             fast_for = last_user if app_id and agent and FAST_BUILD and \
                 fast_build.wanted(history_docs, await apps.snapshot(app_id), model) else None
@@ -2041,6 +2071,11 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             }
             # Shielded, so the part written before Stop is kept even though the turn is being cancelled.
             with anyio.CancelScope(shield=True):
+                if versions and versions.get("before"):
+                    after = await apps.checkpoint(app_id, (last_user or "Update").strip().split("\n")[0][:80],
+                                                  author="Krish AI")
+                    if after and after != versions["before"]:
+                        assistant_msg["versions"] = {**versions, "after": after}
                 await db.messages.insert_one(assistant_msg)
                 await db.conversations.update_one(
                     {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": chosen}}
@@ -2193,6 +2228,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
 
 
 THINK_MODELS = ("claude-sonnet-5-5", "gpt-5.4")  # Think on Pro and Max: the first one set up answers
+# The App Builder on Pro and Max: the first one set up builds (PRO_BUILDER=claude-opus-5-5 picks the strongest).
+PRO_BUILDERS = (os.environ.get("PRO_BUILDER", "").strip(), "claude-sonnet-5-5", "gpt-5.4")
 
 
 async def _chat_chars(conv: dict) -> int:
@@ -2224,6 +2261,11 @@ async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = Fa
         override = os.environ.get("BUILDER_MODEL", "").strip()
         if override and agent_llm.configured(override):
             return override
+        # Pro and Max build with the strongest premium coder set up, while their premium meter lasts.
+        if pro and not agent_llm.paid(model):
+            best = next((m for m in PRO_BUILDERS if m and agent_llm.configured(m)), None)
+            if best and await limits.use_premium(db, user_id, new_chars + await _chat_chars(conv)):
+                return best
         # Gemini's free daily allowance is kept for chat; a build takes many steps.
         if agent_llm.lean(model) or agent_llm.provider_for(model) == "gemini":
             builders = (FREE_BUILDER,) if agent_llm.gateway() else (CODER_MODEL, FREE_BUILDER)
@@ -3278,6 +3320,30 @@ class SecurityHeaders:
 
 
 app.add_middleware(SecurityHeaders)
+
+
+class CustomDomains:
+    """A published app on its owner's own domain (apps.set_domain): any page on that host is the site, and its
+    /api calls (the RADHA backend) reach the API as usual. Plain ASGI, so streamed replies are untouched."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["path"].startswith("/api/") or scope["method"] not in ("GET", "HEAD"):
+            return await self.app(scope, receive, send)
+        host = next((v.decode("latin-1") for k, v in scope.get("headers", []) if k == b"host"), "")
+        try:
+            site = await apps.site_for_host(host)
+        except Exception:
+            site = None
+        if not site:
+            return await self.app(scope, receive, send)
+        response = await apps.serve_domain(site, scope["path"].lstrip("/"))
+        await response(scope, receive, send)
+
+
+app.add_middleware(CustomDomains)
 
 
 async def _ensure_auth_secret():
