@@ -59,6 +59,7 @@ import code_edit
 import code_check
 import build_plan
 import fast_build
+import friendly_errors
 import limits
 import billing
 import languages
@@ -343,6 +344,7 @@ def public_message(doc: dict) -> dict:
         "stopped": bool(doc.get("stopped")),
         "rating": doc.get("rating"),
         "versions": doc.get("versions"),
+        "aiLimit": doc.get("aiLimit"),
         "createdAt": doc["createdAt"],
     }
 
@@ -1843,6 +1845,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     app_id = conv.get("appId") if conv else None
     versions = None  # App Builder: the app before and after this turn, for See changes and Undo
+    ai_limit = None  # set when a free model's usage limit ends the reply (the chat shows a card)
+    token_count = agent_llm.start_token_count()  # the tokens this reply really uses, for the usage meter
     if agent and not app_id and not extra_system and not think and not study and agent_llm.lean(model) \
             and _quick_chat(history_docs) and not await db.files.count_documents(
                 {"conversationId": conv_id, "is_deleted": False}):
@@ -2009,11 +2013,19 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         raise
     except Exception as exc:  # surface provider errors to the client
         logger.exception("AI stream failed")
-        if not related.split("".join(full))[0].strip():
-            # Keep a visible reason (with Regenerate) instead of leaving the question unanswered.
-            full.append(STREAM_FAILED_NOTE)
-            yield f"data: {_sse_json(STREAM_FAILED_NOTE)}\n\n"
-        yield f"event: error\ndata: {_sse_json(str(exc))}\n\n"
+        # A usage limit says when it works again; any other provider error gets a plain note, not its raw text.
+        ai_limit = friendly_errors.friendly(exc)
+        if ai_limit:
+            # The chat shows a card with the reset time and Upgrade to Pro (the text stays for old app versions).
+            if not related.split("".join(full))[0].strip():
+                full.append(ai_limit["message"])
+            yield f"event: ai_limit\ndata: {_sse_json(ai_limit)}\n\n"
+        else:
+            if not related.split("".join(full))[0].strip():
+                # Keep a visible reason (with Regenerate) instead of leaving the question unanswered.
+                full.append(STREAM_FAILED_NOTE)
+                yield f"data: {_sse_json(STREAM_FAILED_NOTE)}\n\n"
+            yield f"event: error\ndata: {_sse_json(friendly_errors.SHORT_ERROR)}\n\n"
     else:
         if app_id and steps and not "".join(full).strip():
             # Free models sometimes stop after their tools without a word: always say what happened.
@@ -2067,6 +2079,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 "steps": steps or None,
                 "media": produced or None,
                 "stopped": stopped or None,
+                "aiLimit": ai_limit,
                 "createdAt": now_iso(),
             }
             # Shielded, so the part written before Stop is kept even though the turn is being cancelled.
@@ -2080,6 +2093,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 await db.conversations.update_one(
                     {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": chosen}}
                 )
+                # App builds and premium-model chats use the meter by the tokens they really took.
+                if user_id and (app_id or agent_llm.paid(model)) and token_count["tokens"]:
+                    try:
+                        plan = await limits.plan_of(db, user_id)
+                        prepaid = limits.cost("build" if app_id else "chat", len(last_user or ""), plan)
+                        await limits.charge_tokens(db, user_id, token_count["tokens"], prepaid)
+                    except Exception:
+                        logger.exception("token metering failed")
             if not stopped:
                 yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"
 

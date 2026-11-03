@@ -32,7 +32,10 @@ function argPreview(step) {
     return [a.action, a.url || (a.ref != null ? `#${a.ref}` : ""), a.text ? `“${a.text}”` : "", a.key || "", a.direction || ""]
       .filter(Boolean).join(" ");
   }
-  return JSON.stringify(a);
+  if (step.name === "start_template") return "";
+  // Other tools: their first short text argument, never raw JSON.
+  const first = Object.values(a).find((v) => typeof v === "string" && v.trim());
+  return first ? first.slice(0, 80) : "";
 }
 
 function Step({ step }) {

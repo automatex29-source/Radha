@@ -16,6 +16,7 @@ import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { modelLabel } from "@/lib/models";
 import { AgentAvatar } from "@/lib/counselAgents";
 import ScrollTable from "@/components/ScrollTable";
+import AiLimitCard from "@/components/AiLimitCard";
 
 function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
   const [failed, setFailed] = useState(false);
@@ -373,12 +374,14 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
+        {message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
         <div dir="auto" className="radha-prose krish-answer min-w-0">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable }}>
             {shown}
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
         </div>
+        )}
         {message.stopped && !streaming && (
           <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="reply-stopped-note">
             <Square className="h-2.5 w-2.5 fill-current" /> You stopped this reply
@@ -396,7 +399,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             ))}
           </div>
         )}
-        {!streaming && message.content && (
+        {!streaming && message.content && !message.aiLimit && (
           <div className="mt-2 flex items-center gap-3 max-md:mt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
             <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`}
               className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">

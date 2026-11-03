@@ -8,11 +8,15 @@ import GitHubPushButton from "@/components/GitHubPushButton";
 import DataTab from "@/components/DataTab";
 import DevicePreview from "@/components/DevicePreview";
 import { Button } from "@/components/ui/button";
+import KrishIntro from "@/components/KrishIntro";
+import LimitBanner from "@/components/LimitBanner";
+import AiLimitCard from "@/components/AiLimitCard";
+import { setLimit } from "@/lib/limitState";
 import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
-  Paperclip, X, Wand2, ImagePlus, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare,
+  Paperclip, X, Wand2, ImagePlus, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare, Wrench,
 } from "lucide-react";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit", "start_template"]);
@@ -26,13 +30,18 @@ export default function AppBuilder() {
   const location = useLocation();
   const [app, setApp] = useState(null);
   const [files, setFiles] = useState([]);
+  const [fresh, setFresh] = useState(false); // still the empty starter: the preview shows the start screen
+  const [building, setBuilding] = useState(false);
   const [changes, setChanges] = useState({});
   const [commits, setCommits] = useState([]);
   // Phones show one pane at a time, starting with the chat.
   const [tab, setTab] = useState(() => (window.matchMedia?.("(max-width: 767px)").matches ? "chat" : "preview"));
   const [previewKey, setPreviewKey] = useState(0);
   // Auto-fix: after a build the user asked for, errors in the preview are sent back to Krish once, without a tap.
-  const [autoArmed, setAutoArmed] = useState(false);
+  // Auto-fix: errors in the preview go straight back to Krish, quietly. Up to 2 rounds after each build you ask
+  // for, and once when the app is opened with errors already in it.
+  const [autoArmed, setAutoArmed] = useState(true);
+  const autoLeft = useRef(1);
   const [historyFocus, setHistoryFocus] = useState(null);
   // A new app arrives with the user's request from the Apps page: the builder starts on it at once.
   const [fixAsk, setFixAsk] = useState(() => (location.state?.prompt ? { content: location.state.prompt, at: Date.now() } : null));
@@ -51,6 +60,7 @@ export default function AppBuilder() {
       setApp(data.app);
       setFiles(data.files);
       setChanges(data.changes);
+      setFresh(!!data.fresh);
       setCommits(history);
     } catch (e) {
       toast.error(formatApiError(e));
@@ -119,7 +129,7 @@ export default function AppBuilder() {
       <div className="flex min-h-0 flex-1">
         <BuilderChat app={app} appId={id} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
           previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")}
-          onTurnDone={(auto) => setAutoArmed(!auto)} onBuildStart={() => setAutoArmed(false)}
+          onTurnDone={(auto) => { if (!auto) autoLeft.current = 2; setAutoArmed(autoLeft.current > 0); setBuilding(false); }} onBuildStart={() => { setAutoArmed(false); setBuilding(true); }}
           onShowChanges={(commitId) => { setHistoryFocus({ id: commitId, at: Date.now() }); setTab("history"); }} />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
@@ -132,8 +142,8 @@ export default function AppBuilder() {
           </nav>
           <div className="min-h-0 flex-1">
             {(tab === "preview" || tab === "chat") && <PreviewTab url={previewUrl} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)}
-              appId={id} onChanged={onFilesChanged} autoFix={autoArmed}
-              onAutoFix={(content) => { setAutoArmed(false); setFixAsk({ content, at: Date.now(), auto: true }); }}
+              appId={id} onChanged={onFilesChanged} autoFix={autoArmed} intro={fresh ? (building ? "building" : "idle") : null}
+              onAutoFix={(content) => { autoLeft.current -= 1; setAutoArmed(false); setFixAsk({ content, at: Date.now(), auto: true }); }}
               onFix={(content) => { setFixAsk({ content, at: Date.now() }); if (window.matchMedia?.("(max-width: 767px)").matches) setTab("chat"); }} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
             {tab === "terminal" && <TerminalTab appId={id} />}
@@ -154,13 +164,13 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   const [text, setText] = useState("");
   const [steps, setSteps] = useState([]);
   const [model, setModel] = useState(null);
-  const [needsKey, setNeedsKey] = useState(false);
   const [attached, setAttached] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState(null); // the file being typed right now: {key, path, text}
   const [images, setImages] = useState([]); // screenshots to build from
   const [boosting, setBoosting] = useState(false);
   const [ideas, setIdeas] = useState([]);
+  const [planCard, setPlanCard] = useState(null); // the plan's meter ran out on the last send
   const abortRef = useRef(null);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
@@ -231,7 +241,8 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
     Promise.all([api.get("/models"), api.get("/capabilities")]).then(([m, c]) => {
       const usable = m.data.models.map((x) => x.id).filter((mid) => c.data.agent?.[mid]);
       setModel(usable.includes(m.data.default) ? m.data.default : usable[0] || m.data.default);
-      setNeedsKey(usable.length === 0);
+      // A setup note for the owner, never shown to users.
+      if (!usable.length) console.warn("App Builder: no AI provider key is set on the backend (see .env.example).");
     }).catch(() => {});
   }, [load]);
 
@@ -256,6 +267,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
     const sending = typeof typed === "string" ? [] : images;
     const content = (typeof typed === "string" ? typed : input).trim() || (sending.length ? SCREENSHOT_ASK : "");
     if (!content || streaming) return;
+    setPlanCard(null);
     if (typeof typed !== "string") { setInput(""); setImages([]); }
     setAttached([]);
     setIdeas([]);
@@ -280,6 +292,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
               : { key: step.key, path: step.path, text: step.text }));
             return;
           }
+          if (name === "ai_limit") { if (step) setLimit({ kind: "ai", ...step }); return; } // the saved reply shows the card
           if (name !== "tool" && name !== "tool_result") return;
           current = name === "tool" ? [...current.filter((s) => s.id !== step.id), step] : current.map((s) => (s.id === step.id ? step : s));
           setSteps(current);
@@ -287,7 +300,8 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
         },
       });
     } catch (e) {
-      if (e.name !== "AbortError") toast.error(e.message);
+      if (e.status === 402) setPlanCard(Date.now());
+      else if (e.name !== "AbortError") toast.error(e.message);
     } finally {
       setStreaming(false);
       abortRef.current = null;
@@ -340,7 +354,11 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
         )}
         {messages.map((m) => (
           <div key={m.id}>
-            <MessageBubble message={m} codeProject={false} compactSteps />
+            {m.role === "user" && m.content?.startsWith("Auto-fix:") ? (
+              <p className="flex items-center justify-end gap-1.5 text-[11.5px] text-muted-foreground" data-testid="builder-auto-fix-note">
+                <Wrench className="h-3 w-3" /> Found an error in the preview, fixing it
+              </p>
+            ) : <MessageBubble message={m} codeProject={false} compactSteps />}
             {!streaming && m.role === "assistant" && m.versions?.after && (
               <div className="mt-1.5 flex gap-1 md:ml-11" data-testid="builder-step-actions">
                 <button onClick={() => onShowChanges?.(m.versions.after)} data-testid="builder-see-changes"
@@ -368,11 +386,12 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
             )}
           </div>
         ))}
+        {planCard && !streaming && <div className="md:ml-11"><AiLimitCard limit={{ kind: "plan" }} id="plan" /></div>}
         {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} compactSteps />}
         {streaming && draft && <LiveCode draft={draft} />}
       </div>
       <div className="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {needsKey && <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">The builder needs an AI provider key on the backend (see .env.example).</p>}
+        <LimitBanner />
         <div className="rounded-xl border border-border bg-card p-2 focus-within:border-primary/60">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={3} data-testid="builder-input"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); send(); } }}
@@ -459,7 +478,7 @@ function toHex(rgb) {
   return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
 }
 
-function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix, onAutoFix }) {
+function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix, onAutoFix, intro }) {
   const [logs, setLogs] = useState([]);
   const [device, setDevice] = useState("full");
   const [picking, setPicking] = useState(false);
@@ -485,6 +504,7 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
         return;
       }
       if (e.data.kind === "pick-cancel") { setPicking(false); return; }
+      if (/cdn\.tailwindcss\.com should not be used in production/.test(String(e.data.message))) return; // not a problem
       setLogs((l) => [...l.slice(-199), { level: e.data.level, message: String(e.data.message).slice(0, 2000) }]);
     };
     window.addEventListener("message", onMessage);
@@ -615,7 +635,8 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
           )}
         </div>
       )}
-      <div className={`min-h-0 flex-1 ${width ? "flex justify-center overflow-auto bg-sunken p-3" : "bg-white"}`}>
+      <div className={`relative min-h-0 flex-1 ${width ? "flex justify-center overflow-auto bg-sunken p-3" : "bg-white"}`}>
+        {intro && <div className="absolute inset-0 z-10"><KrishIntro building={intro === "building"} /></div>}
         {url && (
           <iframe key={reloadKey} ref={frameRef} src={url} title="App preview" data-testid="app-preview-frame"
             onLoad={() => { if (picking) frameRef.current?.contentWindow?.postMessage({ source: "radha-builder", pick: true }, "*"); }}
