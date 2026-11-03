@@ -386,8 +386,8 @@ function Privacy({ go }) {
 // ----------------------------------------------------------------- Billing
 const PLAN_COPY = {
   basic: { tag: "Free forever", line: "Chat, pictures, decks and apps, with a usage limit that refills." },
-  pro: { tag: "₹399 a month", line: "Much more usage, Krish Pro, HD pictures and publishing." },
-  max: { tag: "₹899 a month", line: "The most usage, Krish Pro and the most automations." },
+  pro: { tag: "₹499 a month", line: "Much more usage, Krish Pro, HD pictures and publishing." },
+  max: { tag: "₹1,299 a month", line: "The most usage, Krish Pro and the most automations." },
 };
 
 function Billing({ onClose }) {

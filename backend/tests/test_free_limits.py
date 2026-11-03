@@ -132,7 +132,7 @@ def test_decks_peek_and_automations_are_a_total(db):
 
 
 def test_three_plans_and_prices():
-    assert [(p["id"], p["price"]) for p in limits.public_plans()] == [("basic", 0), ("pro", 399), ("max", 899)]
+    assert [(p["id"], p["price"]) for p in limits.public_plans()] == [("basic", 0), ("pro", 499), ("max", 1299)]
     for part in ("session", "week"):
         basic, pro, top = (limits.PLANS[p]["meter"][part] for p in limits.ORDER)
         assert basic < pro < top

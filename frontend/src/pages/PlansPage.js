@@ -74,7 +74,8 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
   // Autopay on for this plan (or a bigger one) already renews it, so there's nothing to buy here.
   const renews = autopay && ORDER.indexOf(autopay.plan) >= ORDER.indexOf(plan.id);
-  const canBuy = paymentsOn && plan.price > 0 && !lower && !renews;
+  // Before payments are switched on the buttons still look and work normally; paying says it opens shortly.
+  const canBuy = plan.price > 0 && !lower && !renews;
   const was = plan.listPrice || plan.price; // the launch price is struck through from the regular price
   const price = offer && plan.price ? offer.prices[plan.id] ?? plan.price : plan.price;
   const { label, items } = highlights(plan, basic, video);
@@ -112,7 +113,6 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
           : "border border-border bg-muted/50 text-muted-foreground"}`}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" />
           : !plan.price ? (current ? "Current plan" : "Free")
-          : !paymentsOn ? (current ? "Current plan" : "Coming soon")
           : renews ? (current ? "Renews automatically" : "Included in your plan")
           : current ? `Add a month · ₹${price}` : lower ? "Included in your plan" : `Get ${plan.name}`}
       </Button>
@@ -237,6 +237,11 @@ export default function PlansPage() {
   useEffect(() => { load(); }, [load]);
 
   const buy = async (planId) => {
+    if (!data?.paymentsOn) {
+      setPicked(null);
+      toast("Payments open in a day or two. We'll email you the moment Pro and Max are ready.");
+      return;
+    }
     setBuying(planId);
     // Autopay (a monthly Razorpay subscription) unless an offer code is on: that's a one-time 30-day payment.
     let oneTime = !!(offer && offer.prices[planId]);
@@ -325,7 +330,7 @@ export default function PlansPage() {
               <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-muted-foreground" data-testid="plans-trust">
                 <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> Secure payments by Razorpay</span>
                 <span>UPI · Cards · Net banking</span>
-                <span className="flex items-center gap-1.5"><RefreshCcw className="h-3.5 w-3.5" /> {data.paymentsOn ? "Renews monthly, cancel anytime" : "Payments open soon"}</span>
+                <span className="flex items-center gap-1.5"><RefreshCcw className="h-3.5 w-3.5" /> Renews monthly, cancel anytime</span>
                 {data.paymentsOn && !codeOpen && !offer && (
                   <button type="button" onClick={() => setCodeOpen(true)} className="underline underline-offset-2 hover:text-foreground" data-testid="offer-code-open">Have an offer code?</button>
                 )}
