@@ -10,14 +10,19 @@ owner sets those costs on the dashboard (kept in `settings`, id "owner_costs").
 What people ask: the questions are grouped into topics, and the latest ones are shown cut short, with emails and
 phone numbers hidden. Counsellor chats are private and never shown or counted here.
 """
+import asyncio
+import os
 import re
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
+import billing
 import limits
 
 RANGES = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}
 ONLINE_MINUTES = 10
+ASKS_READ = 1500  # the latest questions read for topics and words (enough for a fair picture, quick to read)
 
 FEATURE_LABELS = {
     "chat": "Chat", "counsellor": "Counsellor", "web": "Web search", "voice": "Voice", "think": "Think",
@@ -119,26 +124,60 @@ async def get_costs(db) -> dict:
 async def set_costs(db, values: dict) -> dict:
     clean = {k: max(0.0, min(float(v), 10_000_000.0)) for k, v in values.items() if k in DEFAULT_COSTS}
     await db.settings.update_one({"id": "owner_costs"}, {"$set": clean}, upsert=True)
+    forget()
     return await get_costs(db)
 
 
-async def _feature_counts(db, days: list, since: str, until: str, hourly: bool) -> Counter:
-    counts = Counter()
-    if hourly:
-        async for e in db.usage_events.find({"at": {"$gte": since, "$lt": until}}, {"kinds": 1}):
-            counts.update(k for k in e.get("kinds", []) if k in FEATURE_LABELS)
-    else:
-        async for d in db.feature_daily.find({"_id": {"$in": days}}):
-            counts.update({k: d.get(k, 0) for k in FEATURE_LABELS})
-    return counts
+USER_FIELDS = {"_id": 0, "id": 1, "name": 1, "email": 1, "plan": 1, "planExpiresAt": 1, "createdAt": 1, "lastSeenAt": 1,
+               "lastLoginAt": 1, "loginCount": 1, "googleId": 1, "language": 1}
+
+# The dashboard is worked out again at most this often for each range (the page asks every minute, and more than
+# one tab or device may be open). Saving costs clears it. OWNER_DASHBOARD_CACHE_SECONDS overrides it; 0 turns it off.
+CACHE_SECONDS = 20
+_CACHE: dict = {}
 
 
-async def _active_ids(db, days: list, since: str, until: str, hourly: bool) -> set:
-    if hourly:
-        ids = {e["userId"] async for e in db.usage_events.find({"at": {"$gte": since, "$lt": until}}, {"userId": 1})}
-        ids |= {u["id"] async for u in db.users.find({"lastSeenAt": {"$gte": since, "$lt": until}}, {"id": 1})}
-        return ids
-    return {a["userId"] async for a in db.activity.find({"day": {"$in": days}}, {"userId": 1})}
+def _cache_seconds() -> float:
+    env = os.environ.get("OWNER_DASHBOARD_CACHE_SECONDS", "").strip()
+    try:
+        return max(0.0, float(env)) if env else CACHE_SECONDS
+    except ValueError:
+        return CACHE_SECONDS
+
+
+def forget() -> None:
+    _CACHE.clear()
+
+
+def _who(users: dict, uid: str) -> dict:
+    u = users.get(uid) or {}
+    return {"userId": uid, "name": u.get("name") or "Deleted account", "email": u.get("email", ""),
+            "plan": limits.plan_from(u) if u else "basic"}
+
+
+async def _users(db) -> dict:
+    return {u["id"]: u async for u in db.users.find({}, USER_FIELDS)}
+
+
+async def _agg(col, pipeline: list) -> list:
+    return await col.aggregate(pipeline).to_list(None)
+
+
+def _slot_group(field: str, extra: dict = None) -> dict:
+    """A $group stage keyed by the 10-minute slot a time falls in. India time is UTC+5:30, so each slot lies inside
+    one India-time hour and day: the database counts the rows and only the counts come back. Times are stored as
+    ASCII ISO strings, so $substr (bytes) is safe; it is also what the test database (mongomock) understands."""
+    return {"$group": {"_id": {"h": {"$substr": [f"${field}", 0, 13]}, "m": {"$substr": [f"${field}", 14, 1]},
+                               **(extra or {})}, "n": {"$sum": 1}}}
+
+
+def _slot_iso(key: dict) -> str:
+    """The start of a slot from _slot_group, as an ISO time, or "" if the stored time was not one."""
+    try:
+        t = datetime.strptime(key["h"], "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
+        return (t + timedelta(minutes=10 * int(key["m"]))).isoformat()
+    except (KeyError, TypeError, ValueError):
+        return ""
 
 
 def _money(features: Counter, revenue: float, costs: dict, span_days: float) -> dict:
@@ -151,7 +190,38 @@ def _money(features: Counter, revenue: float, costs: dict, span_days: float) -> 
             "paymentFees": round(fees, 2), "profit": round(revenue - ai_cost - hosting - fees, 2), "aiBreakdown": ai}
 
 
-async def overview(db, range_key: str = "24h") -> dict:
+async def overview(db, range_key: str = "24h", fresh: bool = False) -> dict:
+    """The whole dashboard for one range, kept for a few seconds (see CACHE_SECONDS)."""
+    ttl = _cache_seconds()
+    key = (id(db), range_key)
+    hit = _CACHE.get(key)
+    if ttl and hit and not fresh and time.monotonic() - hit[0] < ttl:
+        return hit[1]
+    result = await _overview(db, range_key)
+    if ttl:
+        _CACHE[key] = (time.monotonic(), result)
+    return result
+
+
+def _usage_today(fair: list, users: dict) -> tuple:
+    """How much of today's fair-use AI allowance each person has used, in percent, and a summary."""
+    pct = {}
+    for f in fair:
+        uid = f.get("userId")
+        if uid in users:
+            pct[uid] = round(min(f.get("tokens", 0) / max(limits.fair_use_limit(limits.plan_from(users[uid])), 1) * 100,
+                                 999), 1)
+    values = list(pct.values())
+    top = sorted(pct.items(), key=lambda x: x[1], reverse=True)[:5]
+    return pct, {
+        "people": len(values), "tokens": sum(int(f.get("tokens", 0)) for f in fair if f.get("userId") in users),
+        "avgPercent": round(sum(values) / len(values), 1) if values else 0,
+        "nearLimit": sum(1 for v in values if 80 <= v < 100), "atLimit": sum(1 for v in values if v >= 100),
+        "top": [{**_who(users, uid), "percent": p} for uid, p in top],
+    }
+
+
+async def _overview(db, range_key: str) -> dict:
     days_n = RANGES.get(range_key, 1)
     hourly = days_n == 1
     now = _now()
@@ -159,17 +229,49 @@ async def overview(db, range_key: str = "24h") -> dict:
     since, until, prev_since = since_t.isoformat(), now.isoformat(), (since_t - timedelta(days=days_n)).isoformat()
     days = _ist_days(days_n)
     prev_days = _ist_days(days_n * 2)[:days_n]
-    costs = await get_costs(db)
+    online_cut = (now - timedelta(minutes=ONLINE_MINUTES)).isoformat()
 
-    users = {u["id"]: u async for u in db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1, "plan": 1,
-                                                          "planExpiresAt": 1, "createdAt": 1, "lastSeenAt": 1,
-                                                          "lastLoginAt": 1, "loginCount": 1,
-                                                          "googleId": 1, "language": 1})}
+    # Every query is sent to the database at once, and the database does the counting: only counts come back,
+    # not every event of the period. The accounts load once and are shared with the parts that need names.
+    users_task = asyncio.ensure_future(_users(db))
+    queries = {
+        "costs": get_costs(db),
+        "paid": db.payments.find({"status": "paid", "paidAt": {"$gte": prev_since}},
+                                 {"_id": 0, "userId": 1, "plan": 1, "amount": 1, "gst": 1, "promoCode": 1,
+                                  "paidAt": 1}).to_list(None),
+        "started": db.payments.count_documents({"createdAt": {"$gte": since}}),
+        "loginsNow": db.logins.count_documents({"at": {"$gte": since}}),
+        "loginsPrev": db.logins.count_documents({"at": {"$gte": prev_since, "$lt": since}}),
+        "loginRows": db.logins.find({"at": {"$gte": since}}, {"_id": 0}).sort("at", -1).to_list(100),
+        "loginSlots": _agg(db.logins, [{"$match": {"at": {"$gte": prev_since}}}, _slot_group("at")]),
+        "byUserKind": _agg(db.usage_events, [{"$match": {"at": {"$gte": since}}}, {"$unwind": "$kinds"},
+                                             {"$group": {"_id": {"u": "$userId", "k": "$kinds"}, "n": {"$sum": 1}}}]),
+        "heat": _agg(db.usage_events, [{"$match": {"at": {"$gte": since}, "kinds": {"$in": list(FEATURE_LABELS)}}},
+                                       _slot_group("at")]),
+        "onlineIds": db.usage_events.distinct("userId", {"at": {"$gte": online_cut}}),
+        "fair": db.usage.find({"day": limits.today(), "tokens": {"$gt": 0}},
+                              {"_id": 0, "userId": 1, "tokens": 1}).to_list(None),
+        "asks": _asks(db, since),
+        "more": _more(db, since, prev_since, now, users_task),
+    }
+    if hourly:
+        queries["slots"] = _agg(db.usage_events, [{"$match": {"at": {"$gte": prev_since}}}, {"$unwind": "$kinds"},
+                                                  _slot_group("at", {"u": "$userId", "k": "$kinds"})])
+    else:
+        queries["featureDays"] = db.feature_daily.find({"_id": {"$in": days + prev_days}}).to_list(None)
+        queries["activeDays"] = _agg(db.activity, [{"$match": {"day": {"$in": days + prev_days}}},
+                                                   {"$group": {"_id": "$day", "n": {"$sum": 1}}}])
+        queries["activeNow"] = db.activity.distinct("userId", {"day": {"$in": days}})
+        queries["activePrev"] = db.activity.distinct("userId", {"day": {"$in": prev_days}})
+    try:
+        got = dict(zip(queries, await asyncio.gather(*queries.values())))
+        users = await users_task
+    finally:
+        users_task.cancel()
+    costs = got["costs"]
 
     def who(uid: str) -> dict:
-        u = users.get(uid) or {}
-        return {"userId": uid, "name": u.get("name") or "Deleted account", "email": u.get("email", ""),
-                "plan": limits.plan_from(u) if u else "basic"}
+        return _who(users, uid)
 
     # Time buckets for the charts: hours for the last 24 hours, India-time days otherwise.
     if hourly:
@@ -202,18 +304,20 @@ async def overview(db, range_key: str = "24h") -> dict:
             series[i][k] += n
 
     # Payments: what sold, for how much, and who paid.
-    paid = await db.payments.find({"status": "paid", "paidAt": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
+    paid = got["paid"]
     now_paid = [p for p in paid if p["paidAt"] >= since]
+    prev_paid = [p for p in paid if p["paidAt"] < since]
     revenue = sum(_net(p) for p in now_paid) / 100
-    prev_revenue = sum(_net(p) for p in paid if p["paidAt"] < since) / 100
+    prev_revenue = sum(_net(p) for p in prev_paid) / 100
     for p in paid:
         add(p["paidAt"], "revenue", _net(p) / 100)
-    started = await db.payments.count_documents({"createdAt": {"$gte": since}})
+    started = got["started"]
     sold = []
     for plan in limits.ORDER[1:]:
         rows = [p for p in now_paid if p["plan"] == plan]
         sold.append({"plan": plan, "name": limits.PLANS[plan]["name"], "price": limits.PLANS[plan]["price"],
-                     "count": len(rows), "revenue": sum(_net(p) for p in rows) / 100})
+                     "count": len(rows), "revenue": sum(_net(p) for p in rows) / 100,
+                     "prevCount": sum(1 for p in prev_paid if p["plan"] == plan)})
     subscribers = Counter(limits.plan_from(u) for u in users.values())
     mrr = sum(subscribers.get(p, 0) * limits.PLANS[p]["price"] for p in limits.ORDER[1:])
     paid_by_user = defaultdict(float)
@@ -224,13 +328,12 @@ async def overview(db, range_key: str = "24h") -> dict:
                        for p in sorted(now_paid, key=lambda p: p["paidAt"], reverse=True)[:20]]
 
     # Sign-ins and sign-ups.
-    logins = await db.logins.find({"at": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
-    now_logins = [x for x in logins if x["at"] >= since]
-    for x in logins:
-        add(x["at"], "logins")
-    login_rows = [{**who(x["userId"]), "method": x["method"], "at": x["at"]}
-                  for x in sorted(now_logins, key=lambda x: x["at"], reverse=True)]
-    logged = {x["userId"] for x in now_logins}
+    for s in got["loginSlots"]:
+        iso = _slot_iso(s["_id"])
+        if iso:
+            add(iso, "logins", s["n"])
+    login_rows = [{**who(x["userId"]), "method": x.get("method", ""), "at": x["at"]} for x in got["loginRows"]]
+    logged = {x["userId"] for x in got["loginRows"]}
     # People who signed in before sign-ins were logged one by one still show, from their account's last sign-in.
     login_rows += [{**who(u["id"]), "method": "", "at": u["lastLoginAt"]} for u in users.values()
                    if u.get("lastLoginAt", "") >= since and u["id"] not in logged]
@@ -241,60 +344,68 @@ async def overview(db, range_key: str = "24h") -> dict:
         if u.get("createdAt", "") >= prev_since:
             add(u["createdAt"], "signups")
 
-    # Active people and use.
-    all_events = await db.usage_events.find({"at": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
-    events = [e for e in all_events if e["at"] >= since]
+    # Use per person, and when in the week people use Krish (India-time weekday, Monday first, x hour).
     per_user = defaultdict(Counter)
-    bucket_people = defaultdict(set)
-    heat = [[0] * 24 for _ in range(7)]  # India-time weekday (Monday first) x hour
-    for e in all_events:
-        kinds = [k for k in e.get("kinds", []) if k in FEATURE_LABELS]
-        back = e["at"] < since
-        if not back:
-            per_user[e["userId"]].update(kinds)
-            t = _parse(e["at"])
-            if t and kinds:
-                local = t.astimezone(limits.IST)
-                heat[local.weekday()][local.hour] += 1
-        if hourly:
-            i = bucket(e["at"], back)
-            if i is not None:
-                bucket_people[(back, i)].add(e["userId"])
-                series[i]["prevMessages" if back else "messages"] += sum(1 for k in kinds if k in MESSAGE_KINDS)
-                if not back:
-                    series[i]["cost"] += sum(costs[k] for k in kinds)
+    for g in got["byUserKind"]:
+        if g["_id"].get("k") in FEATURE_LABELS:
+            per_user[g["_id"].get("u")][g["_id"]["k"]] += g["n"]
+    heat = [[0] * 24 for _ in range(7)]
+    for s in got["heat"]:
+        t = _parse(_slot_iso(s["_id"]))
+        if t:
+            local = t.astimezone(limits.IST)
+            heat[local.weekday()][local.hour] += s["n"]
+
+    # Active people, messages and cost over time.
+    features, prev_features = Counter(), Counter()
     if hourly:
-        for (back, i), people in bucket_people.items():
-            series[i]["prevActive" if back else "active"] = len(people)
+        bucket_people = defaultdict(set)
+        active, prev_active = set(), set()
+        for s in got["slots"]:
+            iso, uid, kind = _slot_iso(s["_id"]), s["_id"].get("u"), s["_id"].get("k")
+            if not iso:
+                continue
+            back = iso < since
+            (prev_active if back else active).add(uid)
+            if kind in FEATURE_LABELS:
+                (prev_features if back else features)[kind] += s["n"]
+            i = bucket(iso, back)
+            if i is None:
+                continue
+            bucket_people[(back, i)].add(uid)
+            if kind in MESSAGE_KINDS:
+                series[i]["prevMessages" if back else "messages"] += s["n"]
+            if kind in FEATURE_LABELS and not back:
+                series[i]["cost"] += costs[kind] * s["n"]
+        for (back, i), people_set in bucket_people.items():
+            series[i]["prevActive" if back else "active"] = len(people_set)
+        active |= {uid for uid, u in users.items() if since <= u.get("lastSeenAt", "") < until}
+        prev_active |= {uid for uid, u in users.items() if prev_since <= u.get("lastSeenAt", "") < since}
     else:
-        by_day = Counter()
-        async for a in db.activity.find({"day": {"$in": days + prev_days}}, {"day": 1}):
-            by_day[a["day"]] += 1
-        async for d in db.feature_daily.find({"_id": {"$in": days + prev_days}}):
+        by_day = {g["_id"]: g["n"] for g in got["activeDays"]}
+        for d in got["featureDays"]:
             msgs = sum(d.get(k, 0) for k in MESSAGE_KINDS)
             if d["_id"] in index:
+                features.update({k: d.get(k, 0) for k in FEATURE_LABELS})
                 series[index[d["_id"]]]["messages"] = msgs
                 series[index[d["_id"]]]["cost"] += sum(d.get(k, 0) * costs[k] for k in FEATURE_LABELS)
             elif d["_id"] in prev_index:
+                prev_features.update({k: d.get(k, 0) for k in FEATURE_LABELS})
                 series[prev_index[d["_id"]]]["prevMessages"] = msgs
         for i, d in enumerate(days):
             series[i]["active"] = by_day.get(d, 0)
             series[i]["prevActive"] = by_day.get(prev_days[i], 0)
+        active, prev_active = set(got["activeNow"]), set(got["activePrev"])
     # Hosting spread evenly, and the payment fee where the money came in.
     hosting_per_bucket = costs["hostingMonthly"] * days_n / 30 / len(series)
     for row in series:
         row["cost"] = round(row["cost"] + hosting_per_bucket + row["revenue"] * costs["paymentFeePercent"] / 100, 2)
         row["revenue"], row["prevRevenue"] = round(row["revenue"], 2), round(row["prevRevenue"], 2)
-    active = await _active_ids(db, days, since, until, hourly)
-    prev_active = await _active_ids(db, prev_days, prev_since, since, hourly)
-    online_cut = (now - timedelta(minutes=ONLINE_MINUTES)).isoformat()
-    online = {u["id"] for u in users.values() if u.get("lastSeenAt", "") >= online_cut}
-    online |= {e["userId"] for e in events if e["at"] >= online_cut}
+    online = {u["id"] for u in users.values() if u.get("lastSeenAt", "") >= online_cut} | set(got["onlineIds"])
 
-    features = await _feature_counts(db, days, since, until, hourly)
-    prev_features = await _feature_counts(db, prev_days, prev_since, since, hourly)
     money = _money(features, revenue, costs, days_n)
     prev_money = _money(prev_features, prev_revenue, costs, days_n)
+    usage_pct, usage = _usage_today(got["fair"], users)
 
     people = []
     for uid in set(per_user) | active | set(paid_by_user):
@@ -307,7 +418,7 @@ async def overview(db, range_key: str = "24h") -> dict:
             "made": c.get("picture", 0) + c.get("deck", 0) + c.get("video", 0),
             "builds": c.get("build", 0), "web": c.get("web", 0) + c.get("think", 0) + c.get("voice", 0),
             "cost": round(sum(c.get(k, 0) * costs[k] for k in FEATURE_LABELS), 2),
-            "paid": round(paid_by_user.get(uid, 0.0), 2),
+            "paid": round(paid_by_user.get(uid, 0.0), 2), "usageToday": usage_pct.get(uid, 0),
         })
     people.sort(key=lambda p: (p["messages"] + p["made"] + p["builds"], p["paid"], p["lastSeenAt"] or ""),
                 reverse=True)
@@ -325,6 +436,7 @@ async def overview(db, range_key: str = "24h") -> dict:
         "margin": round(money["profit"] / revenue * 100, 1) if revenue else None,
         "checkoutConversion": round(len(now_paid) / started * 100, 1) if started else None,
         "payingShare": round(paying_active / n_active * 100, 1) if n_active else 0,
+        "activeShare": round(n_active / len(users) * 100, 1) if users else 0,
         "newActive": new_active, "returningActive": n_active - new_active,
         "retained": len(active & prev_active), "retention": round(len(active & prev_active) / len(prev_active) * 100, 1)
         if prev_active else None,
@@ -333,27 +445,31 @@ async def overview(db, range_key: str = "24h") -> dict:
         "avgOrder": round(revenue / len(now_paid), 2) if now_paid else 0,
     }
 
+    asks = got["asks"]
+    asks["recent"] = [{**who(r.pop("userId")), **r} for r in asks["recent"]]
     return {
         "range": range_key, "since": since, "generatedAt": until, "bucket": "hour" if hourly else "day",
+        "paymentsLive": billing.enabled(),
         "kpis": {
             "revenue": _change(revenue, prev_revenue),
             "profit": _change(money["profit"], prev_money["profit"]),
             "activeUsers": _change(len(active), len(prev_active)),
             "signups": _change(len(signups), prev_signups),
-            "logins": _change(len(now_logins), sum(1 for x in logins if x["at"] < since)),
-            "messages": _change(sum(features.get(k, 0) for k in MESSAGE_KINDS),
-                                sum(prev_features.get(k, 0) for k in MESSAGE_KINDS)),
+            "logins": _change(got["loginsNow"], got["loginsPrev"]),
+            "messages": _change(messages, sum(prev_features.get(k, 0) for k in MESSAGE_KINDS)),
+            "planSignups": _change(len(now_paid), len(prev_paid)),
             "onlineNow": len(online), "totalUsers": len(users),
             "paidUsers": subscribers.get("pro", 0) + subscribers.get("max", 0), "mrr": mrr,
         },
+        "usage": usage,
         "money": money, "series": series, "ratios": ratios, "heat": heat,
         "plans": {"sold": sold, "subscribers": {p: subscribers.get(p, 0) for p in limits.ORDER},
                   "checkoutsStarted": started, "checkoutsPaid": len(now_paid), "recentPayments": recent_payments},
         "features": [{"kind": k, "label": v, "count": features.get(k, 0)} for k, v in FEATURE_LABELS.items()],
         "people": people[:100], "logins": login_rows[:100],
-        "asks": await _asks(db, since, who),
+        "asks": asks,
         "costs": costs,
-        **await _more(db, since, prev_since, now, users, who, signups),
+        **got["more"],
     }
 
 
@@ -370,17 +486,35 @@ CONTENT = [  # what people made: (key, label, collection, extra filter)
 ]
 
 
-async def _more(db, since: str, prev_since: str, now: datetime, users: dict, who, signups: list) -> dict:
-    """Everything else the owner may want: content made, answer ratings, errors, renewals, growth, engagement."""
-    content = []
-    for key, label, name, extra in CONTENT:
+async def _count_content(db, since: str, prev_since: str) -> list:
+    async def one(key, label, name, extra):
         col = db[name]
-        content.append({"key": key, "label": label, "total": await col.count_documents(extra),
-                        "period": await col.count_documents({**extra, "createdAt": {"$gte": since}}),
-                        "prev": await col.count_documents({**extra, "createdAt": {"$gte": prev_since, "$lt": since}})})
+        total, period, prev = await asyncio.gather(
+            col.count_documents(extra), col.count_documents({**extra, "createdAt": {"$gte": since}}),
+            col.count_documents({**extra, "createdAt": {"$gte": prev_since, "$lt": since}}))
+        return {"key": key, "label": label, "total": total, "period": period, "prev": prev}
+    return list(await asyncio.gather(*(one(*c) for c in CONTENT)))
+
+
+async def _more(db, since: str, prev_since: str, now: datetime, users_task) -> dict:
+    """Everything else the owner may want: content made, answer ratings, errors, renewals, growth, engagement."""
+    days30 = _ist_days(30)
+    content, fb, errors, all_paid, refs, codes, day_rows = await asyncio.gather(
+        _count_content(db, since, prev_since),
+        db.message_feedback.find({"createdAt": {"$gte": prev_since}}, {"_id": 0}).to_list(None),
+        db.errors.find({"createdAt": {"$gte": prev_since}}, {"_id": 0, "detail": 0}).to_list(None),
+        db.payments.find({"status": "paid"}, {"_id": 0, "userId": 1, "amount": 1, "gst": 1, "paidAt": 1}).to_list(None),
+        db.referrals.find({"createdAt": {"$gte": since}}, {"_id": 0}).to_list(None),
+        db.promo_codes.find({}, {"_id": 0}).sort("uses", -1).to_list(20),
+        db.activity.find({"day": {"$in": days30}}, {"_id": 0, "day": 1, "userId": 1}).to_list(None),
+    )
+    users = await users_task
+
+    def who(uid: str) -> dict:
+        return _who(users, uid)
+    signups = [u for u in users.values() if u.get("createdAt", "") >= since]
 
     # Answer quality: 👍 / 👎.
-    fb = await db.message_feedback.find({"createdAt": {"$gte": prev_since}}, {"_id": 0}).to_list(None)
     up = sum(1 for f in fb if f["createdAt"] >= since and f["rating"] == "up")
     down = sum(1 for f in fb if f["createdAt"] >= since and f["rating"] == "down")
     prev_up = sum(1 for f in fb if f["createdAt"] < since and f["rating"] == "up")
@@ -391,7 +525,6 @@ async def _more(db, since: str, prev_since: str, now: datetime, users: dict, who
                                 key=lambda f: f["createdAt"], reverse=True)[:6]]
 
     # App health: crashes in the app and errors on the server.
-    errors = await db.errors.find({"createdAt": {"$gte": prev_since}}, {"_id": 0, "detail": 0}).to_list(None)
     now_errors = [e for e in errors if e["createdAt"] >= since]
     by_source = Counter(e.get("source", "server") for e in now_errors)
     common = Counter(e.get("message", "")[:120] for e in now_errors).most_common(6)
@@ -405,7 +538,6 @@ async def _more(db, since: str, prev_since: str, now: datetime, users: dict, who
     lapsed = sorted(({**who(u["id"]), "plan": u.get("plan"), "expiresAt": u["planExpiresAt"]} for u in users.values()
                      if u.get("plan") in ("pro", "max") and u.get("planExpiresAt")
                      and since <= u["planExpiresAt"] < now_iso), key=lambda r: r["expiresAt"], reverse=True)
-    all_paid = await db.payments.find({"status": "paid"}, {"_id": 0, "userId": 1, "amount": 1, "gst": 1, "paidAt": 1}).to_list(None)
     first_paid = {}
     for p in sorted(all_paid, key=lambda p: p["paidAt"]):
         first_paid.setdefault(p["userId"], p["paidAt"])
@@ -415,17 +547,14 @@ async def _more(db, since: str, prev_since: str, now: datetime, users: dict, who
     lifetime = sum(_net(p) for p in all_paid) / 100
 
     # Growth: invites, offer codes, how people sign up, languages.
-    refs = await db.referrals.find({"createdAt": {"$gte": since}}, {"_id": 0}).to_list(None)
     inviters = Counter(r["inviterId"] for r in refs)
-    codes = await db.promo_codes.find({}, {"_id": 0}).sort("uses", -1).to_list(20)
     google_all = sum(1 for u in users.values() if u.get("googleId"))
     google_new = sum(1 for u in signups if u.get("googleId"))
     languages = Counter((u.get("language") or "en") for u in users.values())
 
     # Engagement: daily, weekly and monthly active people (India-time days).
-    days30 = _ist_days(30)
     per_day = defaultdict(set)
-    async for a in db.activity.find({"day": {"$in": days30}}, {"day": 1, "userId": 1}):
+    for a in day_rows:
         per_day[a["day"]].add(a["userId"])
     dau = len(per_day.get(days30[-1], set()))
     wau = len(set().union(*(per_day.get(d, set()) for d in days30[-7:])))
@@ -460,11 +589,12 @@ async def _more(db, since: str, prev_since: str, now: datetime, users: dict, who
     }
 
 
-async def _asks(db, since: str, who) -> dict:
-    """What people asked: topics, common words and the latest questions (never counsellor chats)."""
+async def _asks(db, since: str) -> dict:
+    """What people asked: topics, common words and the latest questions (never counsellor chats).
+    The latest questions carry the asker's userId; overview() swaps it for their name."""
     msgs = await db.messages.find({"role": "user", "createdAt": {"$gte": since}},
                                   {"_id": 0, "conversationId": 1, "content": 1, "createdAt": 1}
-                                  ).sort("createdAt", -1).to_list(3000)
+                                  ).sort("createdAt", -1).to_list(ASKS_READ)
     conv_ids = list({m["conversationId"] for m in msgs})
     convs = {c["id"]: c async for c in db.conversations.find({"id": {"$in": conv_ids}},
                                                              {"_id": 0, "id": 1, "userId": 1, "mode": 1, "appId": 1})}
@@ -479,8 +609,8 @@ async def _asks(db, since: str, who) -> dict:
         topics[topic] += 1
         words.update(w for w in (x.lower() for x in _WORD.findall(_hide_private(text)[:2000])) if w not in STOPWORDS)
         if len(recent) < 40:
-            recent.append({**who(conv["userId"]), "text": _snippet(text), "topic": topic, "at": m["createdAt"],
+            recent.append({"userId": conv["userId"], "text": _snippet(text), "topic": topic, "at": m["createdAt"],
                            "where": "App Builder" if conv.get("appId") else "Chat"})
     return {"total": total, "topics": [{"name": n, "count": c} for n, c in topics.most_common()],
             "words": [{"word": w, "count": c} for w, c in words.most_common(18) if c > 1],
-            "recent": recent}
+            "recent": recent, "sampled": len(msgs) >= ASKS_READ}

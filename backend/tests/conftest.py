@@ -10,6 +10,8 @@ os.environ.setdefault("EMAIL_DNS_CHECK", "off")
 # Making videos is off by default (see media.video_enabled); the video tests run the kept code with it on, and
 # test_video_off.py checks the default.
 os.environ.setdefault("VIDEO_GENERATION", "on")
+# The owner dashboard keeps its numbers for a few seconds; tests that change data and look again need it off.
+os.environ.setdefault("OWNER_DASHBOARD_CACHE_SECONDS", "0")
 
 
 @pytest.fixture(autouse=True, scope="module")

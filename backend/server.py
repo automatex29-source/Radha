@@ -639,11 +639,12 @@ async def admin_stats(days: int = Query(14, ge=1, le=60), user_id: str = Depends
 
 
 @api.get("/admin/dashboard")
-async def admin_dashboard(range: str = Query("24h", pattern="^(24h|7d|30d|90d|1y)$"),
+async def admin_dashboard(range: str = Query("24h", pattern="^(24h|7d|30d|90d|1y)$"), fresh: bool = False,
                           user_id: str = Depends(current_user_id)):
-    """Owner only: sign-ins, active people, plans sold, revenue and profit, use per person, what people ask."""
+    """Owner only: sign-ins, active people, plans sold, revenue and profit, use per person, what people ask.
+    Kept for a few seconds per range; fresh=true works it out again now."""
     await _require_owner(user_id)
-    return await owner_dashboard.overview(db, range)
+    return await owner_dashboard.overview(db, range, fresh)
 
 
 class OwnerCostsIn(BaseModel):
@@ -3505,6 +3506,12 @@ async def startup():
     await db.logins.create_index("at")
     await db.messages.create_index("createdAt")
     await db.payments.create_index("paidAt", sparse=True)
+    # For the owner dashboard: counts of what was made in a period, checkouts started, today's AI allowance.
+    await db.payments.create_index("createdAt")
+    await db.usage.create_index("day", sparse=True)
+    for name in ("conversations", "projects", "files", "apps", "decks", "docs", "automations", "pages",
+                 "referrals"):
+        await db[name].create_index("createdAt")
     monitor.start(db)
     await monitor.clean_old(db)
     if os.environ.get("AUTOMATIONS_SCHEDULER", "1") != "0":

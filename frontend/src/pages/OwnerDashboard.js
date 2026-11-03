@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import {
   AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronUp, Clock, Download, Eye, EyeOff, Lightbulb, Loader2, Minus,
-  Pencil, Search, ShieldCheck, ThumbsDown, TrendingDown, TrendingUp, Users,
+  Pencil, RefreshCw, Search, ShieldCheck, ThumbsDown, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -103,16 +103,17 @@ function Spark({ data, k }) {
   );
 }
 
-function Kpi({ label, value, kpi, foot, series, k, invert }) {
+function Kpi({ label, value, kpi, foot, series, k, invert, children, testId }) {
   return (
-    <div className="flex flex-col rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+    <div className="flex min-w-0 flex-col rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]" data-testid={testId}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
         {kpi && <Delta {...kpi} invert={invert} />}
       </div>
       <p className="mt-1.5 text-[26px] font-bold leading-none tabular-nums tracking-tight">{value}</p>
       <p className="mt-1.5 text-[11.5px] text-muted-foreground">{foot}</p>
-      {series && <div className="mt-2"><Spark data={series} k={k} /></div>}
+      {series && <div className="mt-auto pt-2"><Spark data={series} k={k} /></div>}
+      {children && <div className="mt-auto pt-3">{children}</div>}
     </div>
   );
 }
@@ -224,6 +225,7 @@ function insightsFrom(d, range) {
     out.push({ tone: act === null || act >= 0 ? "up" : "down",
       text: `${num(k.activeUsers.value)} people used Krish: ${num(r.newActive)} new, ${num(r.returningActive)} returning${r.retention !== null ? `. ${r.retention}% of the ${PREV[range]}'s people came back` : ""}.` });
   }
+  if (d.usage?.atLimit) out.push({ tone: "warn", text: `${d.usage.atLimit} ${d.usage.atLimit === 1 ? "person has" : "people have"} used all of today's AI allowance${d.usage.top[0] ? ` (top: ${d.usage.top[0].name}, ${Math.round(d.usage.top[0].percent)}%)` : ""}. They may be ready for a bigger plan.` });
   if (r.peak) out.push({ tone: "info", text: `Busiest ${d.bucket === "hour" ? "hour" : "day"}: ${longTick(r.peak, d.bucket)}, with ${num(r.peakActive)} active people.` });
   if (r.checkoutConversion !== null && r.checkoutConversion < 60) {
     const left = d.plans.checkoutsStarted - d.plans.checkoutsPaid;
@@ -308,6 +310,20 @@ function PeopleList({ rows, empty, right }) {
   );
 }
 
+function Skeleton() {
+  const block = "animate-pulse rounded-xl border border-border/60 bg-card";
+  return (
+    <div className="mt-5" aria-busy="true" aria-label="Loading the dashboard" data-testid="owner-dash-loading">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, i) => <div key={i} className={`h-36 ${block}`} />)}</div>
+      <div className={`mt-3 h-16 ${block}`} />
+      <div className={`mt-3 h-28 ${block}`} />
+      <div className="mt-3 grid gap-3 lg:grid-cols-3"><div className={`h-72 lg:col-span-2 ${block}`} /><div className={`h-72 ${block}`} /></div>
+    </div>
+  );
+}
+
+const usageTone = (p) => (p >= 100 ? "text-rose-600 dark:text-rose-400" : p >= 80 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground");
+
 const SECTIONS = [["overview", "Overview"], ["money", "Money"], ["customers", "Customers"], ["usage", "Usage"], ["content", "Content"], ["quality", "Quality"], ["growth", "Growth"], ["people", "People"]];
 
 function downloadCsv(name, rows) {
@@ -330,19 +346,31 @@ export default function OwnerDashboard() {
   const [showAsks, setShowAsks] = useState(false);
   const [editCosts, setEditCosts] = useState(false);
   const [, setNow] = useState(0);
+  const [loading, setLoading] = useState(false);
+  // Each range's last answer is kept, so switching back to a range shows it at once while it updates.
+  const cache = useRef({});
+  const wanted = useRef(range);
 
-  const load = useCallback(() => {
-    api.get("/admin/dashboard", { params: { range } }).then(({ data }) => { setData(data); setError(""); })
-      .catch((e) => setError(formatApiError(e)));
+  const load = useCallback((fresh = false) => {
+    wanted.current = range;
+    setLoading(true);
+    api.get("/admin/dashboard", { params: fresh ? { range, fresh: true } : { range } })
+      .then(({ data: d }) => {
+        cache.current[range] = d;
+        if (wanted.current === range) { setData(d); setError(""); } // a slower answer for another range is not shown
+      })
+      .catch((e) => { if (wanted.current === range) setError(formatApiError(e)); })
+      .finally(() => { if (wanted.current === range) setLoading(false); });
   }, [range]);
 
   useEffect(() => {
     if (!user?.isOwner) return undefined;
+    if (cache.current[range]) setData(cache.current[range]);
     load();
-    const every = setInterval(() => { if (document.visibilityState === "visible") load(); }, 30000);
+    const every = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
     const clock = setInterval(() => setNow((n) => n + 1), 10000);
     return () => { clearInterval(every); clearInterval(clock); };
-  }, [user, load]);
+  }, [user, load, range]);
 
   const people = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -368,6 +396,9 @@ export default function OwnerDashboard() {
   const aiMax = data ? Math.max(...m.aiBreakdown.map((a) => a.cost)) : 0;
   const soldMax = data ? Math.max(...data.plans.sold.map((p) => p.revenue)) : 0;
   const topicMax = data?.asks.topics[0]?.count || 0;
+  const usage = data?.usage;
+  const stale = data && data.range !== range;
+  const sold = Object.fromEntries((data?.plans.sold || []).map((p) => [p.plan, p]));
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
@@ -382,7 +413,7 @@ export default function OwnerDashboard() {
               <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">Business overview</h1>
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" data-testid="owner-dash-updated">
                 <span className="inline-flex items-center gap-1.5"><span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span>Live</span>
-                <span>Updated {data ? ago(data.generatedAt).toLowerCase() : "…"}</span>
+                <span>{loading ? "Updating…" : `Updated ${data ? ago(data.generatedAt).toLowerCase() : "…"}`}</span>
                 <span>·</span><span>Last {rangeLabel} vs {PREV[range]}</span>
               </p>
             </div>
@@ -395,6 +426,9 @@ export default function OwnerDashboard() {
                   </button>
                 ))}
               </div>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => load(true)} disabled={loading} title="Refresh now" aria-label="Refresh now" data-testid="owner-dash-refresh">
+                <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              </Button>
               <Button variant="outline" size="sm" className="h-8" onClick={() => navigate("/admin/users")} data-testid="owner-dash-all-users">
                 <Users className="mr-1.5 h-3.5 w-3.5" /> Users & problems
               </Button>
@@ -408,21 +442,41 @@ export default function OwnerDashboard() {
             ))}
           </nav>
 
-          {error && !data ? <p className="mt-10 text-center text-sm text-destructive">{error}</p> : !data ? (
-            <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-          ) : (
-            <>
-              <div id="overview" className="mt-5 grid scroll-mt-16 grid-cols-2 gap-3 lg:grid-cols-4" data-testid="owner-dash-kpis">
-                <Kpi label="Revenue" value={inr(k.revenue.value)} kpi={k.revenue} series={data.series} k="revenue" foot={`${inr(k.revenue.prev)} in the ${PREV[range]}`} />
-                <Kpi label="Profit (est.)" value={inr(k.profit.value)} kpi={k.profit} series={data.series.map((s) => ({ ...s, profit: s.revenue - s.cost }))} k="profit"
-                  foot={r.margin !== null ? `${r.margin}% margin · costs ${inr(m.revenue - m.profit)}` : `Costs ${inr(m.revenue - m.profit)}`} />
-                <Kpi label="Active people" value={num(k.activeUsers.value)} kpi={k.activeUsers} series={data.series} k="active" foot={`${num(k.onlineNow)} online now · ${num(k.totalUsers)} accounts`} />
-                <Kpi label="Messages" value={num(k.messages.value)} kpi={k.messages} series={data.series} k="messages" foot={`${r.messagesPerActive} per active person`} />
+          {error && !data ? (
+            <div className="mt-10 text-center"><p className="text-sm text-destructive">{error}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => load(true)}>Try again</Button></div>
+          ) : !data ? <Skeleton /> : (
+            <div className={`transition-opacity ${stale ? "pointer-events-none opacity-50" : ""}`} aria-busy={stale}>
+              {!data.paymentsLive && (
+                <p className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12.5px] text-amber-800 dark:text-amber-300" data-testid="owner-dash-payments-off">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />Payments are not live yet. Revenue and plan sign-ups fill in on their own once the Razorpay keys are added on Render.
+                </p>
+              )}
+              <div id="overview" className="mt-4 grid scroll-mt-16 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6" data-testid="owner-dash-kpis">
+                <Kpi label="People" value={num(k.totalUsers)} series={data.series} k="signups" testId="owner-kpi-people"
+                  foot={`+${num(k.signups.value)} new · ${num(k.onlineNow)} online now`} />
+                <Kpi label="Active people" value={num(k.activeUsers.value)} kpi={k.activeUsers} series={data.series} k="active" testId="owner-kpi-active"
+                  foot={`${r.activeShare}% of all accounts`} />
+                <Kpi label="Messages" value={num(k.messages.value)} kpi={k.messages} series={data.series} k="messages" testId="owner-kpi-messages"
+                  foot={`${r.messagesPerActive} per active person`} />
+                <Kpi label="AI usage today" value={`${usage.avgPercent}%`} testId="owner-kpi-usage"
+                  foot={usage.people ? `Average of the daily allowance · ${num(usage.people)} people` : "No AI use yet today"}>
+                  <ShareBar value={Math.min(usage.avgPercent, 100)} max={100} color={usage.avgPercent >= 80 ? "bg-amber-500" : "bg-[var(--viz-1)]"} />
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    <span className={usage.atLimit ? "font-semibold text-rose-600 dark:text-rose-400" : ""}>{num(usage.atLimit)} hit the limit</span> · {num(usage.nearLimit)} above 80%
+                  </p>
+                </Kpi>
+                <Kpi label="Plan sign-ups" value={num(k.planSignups.value)} kpi={k.planSignups} testId="owner-kpi-plans"
+                  foot={`Pro ${num(sold.pro?.count)} · Max ${num(sold.max?.count)} · ${num(k.paidUsers)} paying now`}>
+                  <p className="text-[11px] text-muted-foreground">{r.checkoutConversion === null ? "No checkouts started" : `${r.checkoutConversion}% of checkouts paid`}</p>
+                </Kpi>
+                <Kpi label="Revenue" value={inr(k.revenue.value)} kpi={k.revenue} series={data.series} k="revenue" testId="owner-kpi-revenue"
+                  foot={!data.paymentsLive && !k.revenue.value ? "Razorpay not live yet" : `${inr(k.mrr)} a month from plans now`} />
               </div>
 
               <div className="mt-3 grid grid-cols-2 divide-x divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:grid-cols-4 lg:grid-cols-8 lg:divide-y-0 [&>*:nth-child(2n+1)]:max-sm:border-l-0" data-testid="owner-dash-stats">
                 <Stat label="Sign-ins" value={num(k.logins.value)} kpi={k.logins} />
-                <Stat label="New sign-ups" value={num(k.signups.value)} kpi={k.signups} />
+                <Stat label="Profit (est.)" value={inr(k.profit.value)} kpi={k.profit} hint={r.margin !== null ? `${r.margin}% margin after Razorpay fees, hosting and AI` : "Revenue minus Razorpay fees, hosting and AI costs"} />
                 <Stat label="Paying people" value={num(k.paidUsers)} hint="People on Pro or Max right now" />
                 <Stat label="Monthly recurring" value={inr(k.mrr)} hint="Pro and Max plans running now × their monthly price" />
                 <Stat label="Revenue / active" value={inr(r.arpu, 2)} hint="Revenue divided by active people (ARPU)" />
@@ -772,17 +826,17 @@ export default function OwnerDashboard() {
                     <div className="relative flex-1 sm:w-56 sm:flex-none"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" className="h-8 pl-8 text-xs" /></div>
                     <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" data-testid="owner-dash-export"
-                      onClick={() => downloadCsv(`krish-people-${range}.csv`, [["Name", "Email", "Plan", "Messages", "App builds", "Pictures/decks/videos", "AI cost (INR)", "Paid (INR)", "Last active"],
-                        ...people.map((p) => [p.name, p.email, p.plan, p.messages, p.builds, p.made, p.cost, p.paid, p.lastSeenAt])])}>
+                      onClick={() => downloadCsv(`krish-people-${range}.csv`, [["Name", "Email", "Plan", "Messages", "App builds", "Pictures/decks/videos", "AI cost (INR)", "Paid (INR)", "AI allowance used today (%)", "Last active"],
+                        ...people.map((p) => [p.name, p.email, p.plan, p.messages, p.builds, p.made, p.cost, p.paid, p.usageToday, p.lastSeenAt])])}>
                       <Download className="mr-1 h-3.5 w-3.5" /> CSV
                     </Button>
                   </div>
                 }>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-[13px] tabular-nums">
+                  <table className="w-full min-w-[840px] text-[13px] tabular-nums">
                     <thead className="border-b border-border/60">
                       <tr>
-                        {[["name", "Person"], ["messages", "Messages", 1], ["builds", "App builds", 1], ["made", "Media made", 1], ["cost", "AI cost", 1], ["paid", "Paid", 1], ["lastSeenAt", "Last active"]].map(([key, label, right]) => (
+                        {[["name", "Person"], ["messages", "Messages", 1], ["builds", "App builds", 1], ["made", "Media made", 1], ["cost", "AI cost", 1], ["paid", "Paid", 1], ["usageToday", "AI today", 1], ["lastSeenAt", "Last active"]].map(([key, label, right]) => (
                           <Th key={key} right={right} sort={key} onSort={onSort} active={sort[0] === key} dir={sort[1]}>{label}</Th>
                         ))}
                       </tr>
@@ -799,10 +853,11 @@ export default function OwnerDashboard() {
                           <td className="px-4 py-2 text-right">{num(p.made)}</td>
                           <td className="px-4 py-2 text-right text-muted-foreground">{inr(p.cost, 2)}</td>
                           <td className="px-4 py-2 text-right font-semibold">{p.paid ? inr(p.paid) : "–"}</td>
+                          <td className={`px-4 py-2 text-right ${usageTone(p.usageToday)}`} title="Share of today's AI allowance used">{p.usageToday ? `${Math.round(p.usageToday)}%` : "–"}</td>
                           <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{ago(p.lastSeenAt)}</td>
                         </tr>
                       ))}
-                      {!people.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">{q ? "No one matches that search." : "No one used Krish in this period yet."}</td></tr>}
+                      {!people.length && <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">{q ? "No one matches that search." : "No one used Krish in this period yet."}</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -830,7 +885,7 @@ export default function OwnerDashboard() {
                 )}
               </Panel>
               <p className="mt-4 flex items-start gap-1.5 text-[11.5px] text-muted-foreground"><Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />Hour-by-hour use, the sign-in log, the usage heatmap and use per person count from this update on. Revenue, sign-ups and daily numbers include everything before it.</p>
-            </>
+            </div>
           )}
         </div>
       </main>
