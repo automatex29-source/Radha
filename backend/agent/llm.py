@@ -257,9 +257,11 @@ def _retry_after(exc: Exception) -> float:
 
 
 def _bad_tool_call(exc: Exception) -> bool:
-    """Groq rejects a tool call whose arguments don't match the schema; asking again usually works."""
+    """Groq rejects a tool call whose arguments don't match the schema or aren't valid JSON (a long file
+    written in one call often breaks); asking again usually works."""
     text = str(exc).lower()
-    return "tool call validation failed" in text or "tool_use_failed" in text or "failed to call a function" in text
+    return ("tool call validation failed" in text or "tool_use_failed" in text or "failed to call a function" in text
+            or "failed to parse tool call" in text)
 
 
 async def stream_completion(model: str, messages: List[dict], tools: List[dict],

@@ -10,6 +10,7 @@ import asyncio
 import json
 from typing import AsyncIterator, Callable, List
 
+from .llm import _bad_tool_call
 from .tools import ToolContext, ToolRegistry
 
 MAX_STEPS = 8
@@ -17,6 +18,13 @@ HEARTBEAT_SECONDS = 10
 UI_OUTPUT_CHARS = 4000
 SEQUENTIAL_TOOLS = {"browser"}
 # Some models (Gemini Flash Lite) sometimes end a turn after their tool calls without a word.
+# Groq stops the stream when the model writes a tool call that isn't valid JSON ("Failed to parse tool call
+# arguments as JSON"), usually a long file in one write_file call. When text was already shown it can't simply be
+# asked again, so the step is kept and the model is told to call the tool again, in smaller parts.
+BAD_CALL_NUDGE = ("Your last tool call was cut off: its arguments were not valid JSON, so it did not run. Call the "
+                  "tool again with valid JSON. Write a long file in parts (the first part with write_file, then "
+                  "the rest with append_file or edit_file), and don't repeat what you already said.")
+MAX_BAD_CALLS = 2
 ANSWER_NUDGE = ("Now answer my question in plain words, using the tool results above. Don't call any more "
                 "tools.")
 
@@ -27,19 +35,30 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
     tools = registry.schemas(ctx) if use_tools else []
     labels = {t.name: (t.label or t.name) for t in registry.active(ctx)}
     said = False
+    bad_calls = 0
     for step in range(max_steps):
         # Last step: withhold tools so the model must answer with what it has.
         step_tools = tools if step < max_steps - 1 else []
         text, calls = [], []
-        async for ev in stream_fn(model, messages, step_tools):
-            if ev["type"] == "text":
-                text.append(ev["text"])
-                said = said or bool(ev["text"].strip())
-                yield ev
-            elif ev["type"] == "tool_calls":
-                calls = ev["calls"]
-            elif ev["type"] == "heartbeat":
-                yield ev
+        try:
+            async for ev in stream_fn(model, messages, step_tools):
+                if ev["type"] == "text":
+                    text.append(ev["text"])
+                    said = said or bool(ev["text"].strip())
+                    yield ev
+                elif ev["type"] == "tool_calls":
+                    calls = ev["calls"]
+                elif ev["type"] == "heartbeat":
+                    yield ev
+        except Exception as exc:
+            if not step_tools or bad_calls >= MAX_BAD_CALLS or not _bad_tool_call(exc):
+                raise
+            bad_calls += 1
+            if text:
+                messages.append({"role": "assistant", "content": "".join(text)})
+                yield {"type": "text", "text": "\n\n"}
+            messages.append({"role": "user", "content": BAD_CALL_NUDGE})
+            continue
         if not calls:
             if not said and step > 0 and not ctx.app_id:
                 # Tools ran but nothing was said: ask once more, without tools, for the answer itself.

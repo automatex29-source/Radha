@@ -322,3 +322,32 @@ def test_groq_alone_still_waits_out_a_rate_limit(monkeypatch):
     for key in ("GEMINI_API_KEY", "CEREBRAS_API_KEY"):
         monkeypatch.delenv(key, raising=False)
     assert llm.fallbacks_for("openai/gpt-oss-120b", []) == []
+
+
+def test_broken_tool_call_json_after_text_asks_for_the_call_again():
+    # Groq: "Failed to parse tool call arguments as JSON" mid-stream, after the model had said its plan.
+    from agent.runtime import BAD_CALL_NUDGE, run_agent
+
+    calls = []
+
+    async def stream_fn(model, messages, tools):
+        calls.append([m["content"] for m in messages])
+        yield {"type": "text", "text": "Plan: build it."}
+        if len(calls) == 1:
+            raise litellm.APIError(500, "GroqException - Failed to parse tool call arguments as JSON", "groq", GROQ)
+
+    class Registry:
+        def schemas(self, ctx):
+            return [{"type": "function", "function": {"name": "write_file", "parameters": {}}}]
+
+        def active(self, ctx):
+            return []
+
+    ctx = ToolContext(db=None, user_id="u")
+    events = run(collect(run_agent(stream_fn, Registry(), ctx, GROQ, [{"role": "user", "content": "make an app"}])))
+    assert len(calls) == 2 and calls[1][-1] == BAD_CALL_NUDGE and calls[1][-2] == "Plan: build it."
+    assert texts(events) == "Plan: build it.\n\nPlan: build it."
+
+
+def test_json_parse_failure_counts_as_a_bad_tool_call():
+    assert llm._bad_tool_call(Exception("GroqException - Failed to parse tool call arguments as JSON"))
