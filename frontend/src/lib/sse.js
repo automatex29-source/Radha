@@ -15,7 +15,9 @@ export async function streamSSE(url, body, { signal, onText, onEvent } = {}) {
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({}));
     if (res.status === 402) showPlanLimit(err.detail);
-    throw new Error(err.detail || "Failed to reach Krish AI");
+    const error = new Error(err.detail || "Failed to reach Krish AI");
+    error.status = res.status;
+    throw error;
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

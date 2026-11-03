@@ -48,7 +48,8 @@ def limit_info(exc: Exception, now: Optional[float] = None) -> dict:
     else:
         message = ("Krish AI's free AI is at its limit right now. Try again in about a minute, or pick another model "
                    "from the menu at the top.")
-    return {"message": message, "resetsAt": int(resets) if resets else None, "daily": daily}
+    return {"message": message, "resetsAt": int(resets) if resets else None, "daily": daily,
+            "since": int(now or time.time())}
 
 
 def limit_message(exc: Exception, now: Optional[float] = None) -> str:

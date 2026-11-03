@@ -9,6 +9,9 @@ import DataTab from "@/components/DataTab";
 import DevicePreview from "@/components/DevicePreview";
 import { Button } from "@/components/ui/button";
 import KrishIntro from "@/components/KrishIntro";
+import LimitBanner from "@/components/LimitBanner";
+import AiLimitCard from "@/components/AiLimitCard";
+import { setLimit } from "@/lib/limitState";
 import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
@@ -167,6 +170,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   const [images, setImages] = useState([]); // screenshots to build from
   const [boosting, setBoosting] = useState(false);
   const [ideas, setIdeas] = useState([]);
+  const [planCard, setPlanCard] = useState(null); // the plan's meter ran out on the last send
   const abortRef = useRef(null);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
@@ -263,6 +267,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
     const sending = typeof typed === "string" ? [] : images;
     const content = (typeof typed === "string" ? typed : input).trim() || (sending.length ? SCREENSHOT_ASK : "");
     if (!content || streaming) return;
+    setPlanCard(null);
     if (typeof typed !== "string") { setInput(""); setImages([]); }
     setAttached([]);
     setIdeas([]);
@@ -287,7 +292,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
               : { key: step.key, path: step.path, text: step.text }));
             return;
           }
-          if (name === "ai_limit") return; // the saved reply shows the limit card when the chat reloads
+          if (name === "ai_limit") { if (step) setLimit({ kind: "ai", ...step }); return; } // the saved reply shows the card
           if (name !== "tool" && name !== "tool_result") return;
           current = name === "tool" ? [...current.filter((s) => s.id !== step.id), step] : current.map((s) => (s.id === step.id ? step : s));
           setSteps(current);
@@ -295,7 +300,8 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
         },
       });
     } catch (e) {
-      if (e.name !== "AbortError") toast.error(e.message);
+      if (e.status === 402) setPlanCard(Date.now());
+      else if (e.name !== "AbortError") toast.error(e.message);
     } finally {
       setStreaming(false);
       abortRef.current = null;
@@ -380,10 +386,12 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
             )}
           </div>
         ))}
+        {planCard && !streaming && <div className="md:ml-11"><AiLimitCard limit={{ kind: "plan" }} id="plan" /></div>}
         {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} compactSteps />}
         {streaming && draft && <LiveCode draft={draft} />}
       </div>
       <div className="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <LimitBanner />
         <div className="rounded-xl border border-border bg-card p-2 focus-within:border-primary/60">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={3} data-testid="builder-input"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); send(); } }}

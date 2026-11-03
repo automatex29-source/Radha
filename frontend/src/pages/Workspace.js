@@ -23,6 +23,9 @@ import UpgradeButton from "@/components/UpgradeButton";
 import ModelMenu from "@/components/ModelMenu";
 import { menuModel, modelLabel } from "@/lib/models";
 import { showPlanLimit } from "@/lib/planLimits";
+import { setLimit } from "@/lib/limitState";
+import LimitBanner from "@/components/LimitBanner";
+import AiLimitCard from "@/components/AiLimitCard";
 import { useT } from "@/lib/i18n";
 import { KRISH_ROBO } from "@/lib/counselAgents";
 import AgentPortrait from "@/components/AgentPortrait";
@@ -178,6 +181,7 @@ export default function Workspace({ mode = null }) {
   const [uploading, setUploading] = useState(false);
   const [pendingImages, setPendingImages] = useState([]);
   const [streamSteps, setStreamSteps] = useState([]);
+  const [planCard, setPlanCard] = useState(null); // the plan's meter ran out on the last send: a limit card in the chat
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
   // Counsellor: Krish Robo reads each reply aloud, a little fast, as soon as it starts writing (on unless turned off).
@@ -453,7 +457,7 @@ export default function Workspace({ mode = null }) {
 
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({}));
-        if (res.status === 402) showPlanLimit(err.detail);
+        if (res.status === 402) { showPlanLimit(err.detail); setPlanCard(Date.now()); }
         throw new Error(err.detail || "Failed to reach Krish AI");
       }
 
@@ -487,6 +491,7 @@ export default function Workspace({ mode = null }) {
           }
           if (eventName === "ai_limit") {
             st.aiLimit = JSON.parse(dataStr || "null");
+            if (st.aiLimit) setLimit({ kind: "ai", ...st.aiLimit });
             continue;
           }
           if (eventName === "web_hint") {
@@ -653,6 +658,7 @@ export default function Workspace({ mode = null }) {
 
   // `composer`: sent from the message box (typed, or dictated text), so attached pictures go too.
   const sendMessage = async (text, { voice = false, voiceLang, onText, frame, composer = text === undefined } = {}) => {
+    setPlanCard(null);
     const images = composer ? pendingImages : [];
     const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
     const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
@@ -825,6 +831,7 @@ export default function Workspace({ mode = null }) {
                 onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
                 codeActive={!!codePanel && panelMessage?.id === m.id} quickReplies={counselling}
                 agent={chatAgent} voice={chatAgent?.voice} />)}
+              {planCard && !streaming && <div className="md:ml-11"><AiLimitCard limit={{ kind: "plan" }} id="plan" /></div>}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
                   steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
@@ -872,6 +879,7 @@ export default function Workspace({ mode = null }) {
               : <span>Need urgent help? Call your local emergency number, or <a href="https://findahelpline.com" target="_blank" rel="noreferrer" className="underline">findahelpline.com</a> 💛</span>}
           </p>
         )}
+        <div className="px-4"><LimitBanner /></div>
         <ComposerInput value={input} onChange={setInput} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
           streaming={streaming} disabled={loadingConv}
           onAttach={counselling ? undefined : attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
