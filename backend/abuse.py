@@ -21,7 +21,7 @@ logger = logging.getLogger("radha.abuse")
 SIGNUPS_PER_HOUR = 5
 LIMITS = {
     # kind: [(how many, seconds), ...]
-    "chat": [(20, 60), (200, 3600)],
+    "chat": [(12, 60), (150, 3600), (800, 86400)],
     "media": [(15, 60), (120, 3600)],
     "signup": [(SIGNUPS_PER_HOUR, 3600)],
     "report": [(20, 3600)],

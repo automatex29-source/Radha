@@ -53,10 +53,11 @@ export default function AiLimitCard({ limit, id }) {
   const plan = limit?.kind === "plan" ? (shared?.plan || user?.plan || "basic") : (user?.plan || "basic");
   const next = plan === "basic" ? "Pro" : plan === "pro" ? "Max" : null;
   const week = !!shared?.week;
+  const dailyPlan = !!shared?.daily;
   const progress = ready ? 100 : resets ? Math.min(100, Math.max(2, ((now - since) / Math.max(1, resets - since)) * 100)) : 8;
 
   const title = ready ? "Krish AI is ready again"
-    : limit?.kind === "plan" ? `You've reached your ${week ? "weekly" : NAMES[plan] || ""} limit`
+    : limit?.kind === "plan" ? `You've reached your ${dailyPlan ? "daily" : week ? "weekly" : NAMES[plan] || ""} limit`
     : limit?.daily ? "You've used today's free limit" : "You've used your free limit";
   const sub = ready ? "Send your message again to continue."
     : resets ? <>Back at <span className="font-medium text-foreground">{timeOf(resetsAt)}</span></>

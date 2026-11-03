@@ -57,7 +57,7 @@ def _layout(picture: str, heading: str, intro: str, tries: list, button: str, li
 <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#2a3042">{intro}</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows}</table>
 <p style="margin:14px 0 26px"><a href="{link}" style="display:inline-block;background:#ff8a1e;color:#ffffff;text-decoration:none;font-weight:800;font-size:16px;padding:14px 30px;border-radius:12px">{_html.escape(button)}</a></p>
-<p style="margin:0 0 26px;font-size:13px;line-height:1.6;color:#8a90a2">{footer}</p>
+{f'<p style="margin:0 0 26px;font-size:13px;line-height:1.6;color:#8a90a2">{footer}</p>' if footer else ""}
 </td></tr></table>
 <p style="font-size:12px;color:#8a90a2;margin-top:16px">Krish AI by EmpireX</p>
 </td></tr></table></body></html>"""
@@ -83,7 +83,8 @@ def welcome(app_url: str, name: str, inviter_name: str = "", days: int = 0) -> t
         heading = f"Hi {first}, welcome to Krish AI" if first else "Welcome to Krish AI"
         intro = ("Krish is your saarthi for every task: questions, study, writing, planning and building. "
                  "Chat is free and unlimited. Here's a good way to start:")
-    footer = ("Tip: invite a friend from the menu in the app. When they join, they get 7 days of Pro, free, and so do you (once).")
+    # Invite friends is hidden in the app for launch week, so the welcome email doesn't point to it.
+    footer = ""
     body = _layout(picture, heading, intro, TRY_FREE, "Open Krish AI", app_url, footer)
     return subject, body, _text(heading, intro, TRY_FREE, app_url)
 

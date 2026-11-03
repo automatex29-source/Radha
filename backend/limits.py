@@ -102,7 +102,7 @@ def message(kind: str, plan: str, resets: Optional[float] = None, week: bool = F
     which = "this week's" if week else "this session's"
     when = f" It refills {_when(resets)}." if resets else ""
     return (f"You've used {which} usage on the {info['name']} plan.{when}{more} "
-            "Chat on Krish Basic is always unlimited.")
+            "Everyday chat stays free.")
 
 
 def enabled() -> bool:
@@ -236,6 +236,60 @@ async def charge_tokens(db, user_id: str, tokens: int, prepaid: int = 0) -> int:
     return extra
 
 
+# Fair use: every reply (chat included) adds the tokens it really used to a daily count per user, so no one
+# account can use up the shared allowance our AI providers give us. Normal use never comes near it; a script or a
+# copy-paste loop does. It resets at midnight India time. FAIR_USE_<PLAN> (tokens a day) overrides the default.
+FAIR_USE_TOKENS = {"basic": 150_000, "pro": 1_500_000, "max": 4_000_000}
+
+
+def fair_use_limit(plan: str) -> int:
+    env = os.environ.get(f"FAIR_USE_{plan.upper()}", "").strip()
+    return int(env) if env.isdigit() else FAIR_USE_TOKENS.get(plan, FAIR_USE_TOKENS["basic"])
+
+
+def _fair_id(user_id: str) -> str:
+    return f"{user_id}:fair"
+
+
+def next_midnight() -> float:
+    now = datetime.now(IST)
+    return (now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).timestamp()
+
+
+async def _fair_used(db, user_id: str) -> int:
+    doc = await db.usage.find_one({"_id": _fair_id(user_id)}) or {}
+    return int(doc.get("tokens", 0)) if doc.get("day") == today() else 0
+
+
+async def add_fair_use(db, user_id: str, tokens: int) -> None:
+    if not user_id or tokens <= 0:
+        return
+    day = today()
+    done = await db.usage.update_one({"_id": _fair_id(user_id), "day": day}, {"$inc": {"tokens": int(tokens)}})
+    if not done.matched_count:  # a new day (or the first use): start the count again
+        await db.usage.update_one({"_id": _fair_id(user_id)},
+                                  {"$set": {"day": day, "tokens": int(tokens), "userId": user_id}}, upsert=True)
+
+
+async def check_fair_use(db, user_id: str) -> None:
+    """Raise LimitReached when today's fair-use allowance is used up."""
+    if not enabled() or not user_id:
+        return
+    plan = await plan_of(db, user_id)
+    if await _fair_used(db, user_id) >= fair_use_limit(plan):
+        nxt = ORDER[ORDER.index(plan) + 1] if plan != ORDER[-1] else None
+        more = f" {PLANS[nxt]['name']} gives you much more." if nxt else ""
+        raise LimitReached("chat", plan, f"You've used today's AI allowance on the {PLANS[plan]['name']} plan. "
+                                         f"It refills {_when(next_midnight())}.{more}")
+
+
+async def require_fair_use(db, user_id: str) -> None:
+    try:
+        await check_fair_use(db, user_id)
+    except LimitReached as exc:
+        raise http_error(exc)
+
+
 async def check_left(db, user_id: str, kind: str, size: Optional[int] = None) -> None:
     """Raise LimitReached if the meter can't cover this request, without using anything."""
     if not enabled():
@@ -323,8 +377,12 @@ async def summary(db, user_id: str) -> dict:
     doc = await db.usage.find_one({"_id": _meter_id(user_id)}) or {}
     used = {"automation": {"used": await db.automations.count_documents({"userId": user_id}),
                            "limit": PLANS[plan]["total"]["automation"]}}
+    meter = meter_view(plan, doc)
+    used_today = await _fair_used(db, user_id)
+    meter["today"] = {"used": used_today, "limit": fair_use_limit(plan),
+                      "resetsAt": next_midnight() if used_today else None}
     return {"plan": plan, "limitsOn": enabled(), "canPublish": await can_publish(db, user_id),
-            "meter": meter_view(plan, doc), "usage": used, "plans": public_plans(),
+            "meter": meter, "usage": used, "plans": public_plans(),
             "costs": {"build": [cost("build", 0, plan), cost("build", 10**6, plan)],
                       "picture": cost("picture", 1, plan), "deck": cost("deck", None, plan),
                       "videoSecond": cost("video", 1, plan), "chat": [cost("chat", 0, plan), cost("chat", 10**6, plan)]}}

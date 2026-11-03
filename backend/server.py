@@ -2093,6 +2093,11 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 await db.conversations.update_one(
                     {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": chosen}}
                 )
+                if user_id and token_count["tokens"]:
+                    try:
+                        await limits.add_fair_use(db, user_id, token_count["tokens"])
+                    except Exception:
+                        logger.exception("fair-use count failed")
                 # App builds and premium-model chats use the meter by the tokens they really took.
                 if user_id and (app_id or agent_llm.paid(model)) and token_count["tokens"]:
                     try:
@@ -2181,6 +2186,7 @@ def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool 
 @api.post("/conversations/{conv_id}/stream")
 async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
+    await limits.require_fair_use(db, user_id)  # no one account can use up the shared AI allowance
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or AI_MODEL, body.think, len(body.content))
 
@@ -2407,6 +2413,7 @@ def _background(coro):
 @api.post("/conversations/{conv_id}/regenerate")
 async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = Depends(current_user_id)):
     abuse.require("chat", user_id)
+    await limits.require_fair_use(db, user_id)  # no one account can use up the shared AI allowance
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think)
     if conv.get("appId"):  # chat is unlimited; an App Builder message uses credits by how much it asks for
@@ -2438,6 +2445,7 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     """Edit one of the user's earlier questions (like ChatGPT): everything after it is dropped and Krish answers
     the new wording."""
     abuse.require("chat", user_id)
+    await limits.require_fair_use(db, user_id)  # no one account can use up the shared AI allowance
     conv = await _owned_conversation(conv_id, user_id)
     model = await _pick_model(user_id, conv, body.model or conv.get("model") or AI_MODEL, body.think,
                               len(body.content))

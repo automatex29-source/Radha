@@ -225,3 +225,22 @@ def test_model_calls_add_up_their_tokens():
         return counter["tokens"]
 
     assert run(scenario()) == 1500
+
+
+def test_one_account_cannot_use_up_the_shared_ai_allowance(db, monkeypatch):
+    async def scenario():
+        await limits.require_fair_use(db, "u")  # nothing used yet
+        await limits.add_fair_use(db, "u", 100_000)
+        await limits.add_fair_use(db, "u", 60_000)  # 160k: over Basic's 150k a day
+        with pytest.raises(HTTPException) as err:
+            await limits.require_fair_use(db, "u")
+        assert err.value.status_code == 402 and "today's AI allowance" in err.value.detail
+        await limits.require_fair_use(db, "someone-else")  # each account has its own
+        meter = (await limits.summary(db, "u"))["meter"]["today"]
+        assert meter["used"] == 160_000 and meter["limit"] == 150_000 and meter["resetsAt"] > time.time()
+        monkeypatch.setattr(limits, "today", lambda: "2999-01-01")  # a new day starts afresh
+        await limits.require_fair_use(db, "u")
+        monkeypatch.setenv("FAIR_USE_BASIC", "10")
+        assert limits.fair_use_limit("basic") == 10
+
+    run(scenario())
