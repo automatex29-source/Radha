@@ -62,7 +62,7 @@ def test_an_empty_meter_says_when_it_refills_and_refills_after_the_session(db, m
         with pytest.raises(HTTPException) as err:
             await limits.require(db, "u", "picture")
         assert err.value.status_code == 402 and "this session's usage" in err.value.detail
-        assert "(in 5h 0m)" in err.value.detail and "Upgrade to Pro" in err.value.detail
+        assert "(in 5 hours)" in err.value.detail and "Upgrade to Pro" in err.value.detail
         now[0] += limits.SESSION_HOURS * 3600
         await limits.use(db, "u", "picture")  # a new session
         meter = await _used(db, "u")
@@ -194,3 +194,34 @@ def test_picture_tool_refunds_on_failure_and_explains_the_limit(db, monkeypatch)
         assert "refills" in ctx.limit_hit  # streamed to the app, which pops up the upgrade message
 
     run(scenario())
+
+
+def test_builds_use_the_meter_by_the_tokens_they_really_take(db):
+    async def scenario():
+        assert limits.token_credits(0) == 0 and limits.token_credits(1) == 1
+        assert limits.token_credits(64_000) == 13 and limits.token_credits(10**9) == limits.MAX_TOKEN_CREDITS
+        await limits.use(db, "u", "build", 100)  # 2 credits up front
+        assert await limits.charge_tokens(db, "u", 64_000, prepaid=2) == 11  # 13 in all
+        assert (await _used(db, "u"))["session"]["used"] == 13
+        assert await limits.charge_tokens(db, "u", 3_000, prepaid=2) == 0  # a small reply: the up-front credits cover it
+        await limits.charge_tokens(db, "u", 10**7)  # the work is done: the meter may go past its limit
+        with pytest.raises(HTTPException) as err:
+            await limits.require(db, "u", "build", size=10)
+        assert err.value.status_code == 402
+
+    run(scenario())
+
+
+def test_model_calls_add_up_their_tokens():
+    from agent import llm
+
+    async def scenario():
+        counter = llm.start_token_count()
+        llm._count_tokens(1200)
+
+        async def in_a_task():
+            llm._count_tokens(300)
+        await asyncio.create_task(in_a_task())
+        return counter["tokens"]
+
+    assert run(scenario()) == 1500

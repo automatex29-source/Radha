@@ -8,6 +8,7 @@ Keys: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / CEREB
 through an OpenAI-compatible gateway with LLM_GATEWAY_URL + LLM_GATEWAY_KEY.
 """
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -167,6 +168,23 @@ def litellm_model(model: str) -> str:
 def output_room(model: str) -> int:
     """Room for the reply. Strong builders get more, so a whole file fits in one write_file call."""
     return _MAX_OUTPUT if provider_for(model) == "groq" else _BIG_OUTPUT
+
+
+# Tokens the models used for the current reply (input + output of every call), for the usage meter. The server
+# starts a counter per reply; calls made in tasks it starts share the same counter.
+_TOKENS: contextvars.ContextVar = contextvars.ContextVar("krish_tokens", default=None)
+
+
+def start_token_count() -> dict:
+    counter = {"tokens": 0}
+    _TOKENS.set(counter)
+    return counter
+
+
+def _count_tokens(n: int) -> None:
+    counter = _TOKENS.get()
+    if counter is not None and n > 0:
+        counter["tokens"] += int(n)
 
 
 def estimate_tokens(obj) -> int:
@@ -467,28 +485,39 @@ async def _stream_model(model: str, messages: List[dict], tools: List[dict], thi
                 yield {"type": "heartbeat"}
 
     calls, wrote, finish = {}, False, None
-    async for chunk in resp:
-        if not chunk.choices:
-            continue
-        finish = getattr(chunk.choices[0], "finish_reason", None) or finish
-        delta = chunk.choices[0].delta
-        if getattr(delta, "content", None):
-            wrote = wrote or bool(delta.content.strip())
-            yield {"type": "text", "text": delta.content}
-        for tc in getattr(delta, "tool_calls", None) or []:
-            slot = calls.setdefault(tc.index if tc.index is not None else len(calls),
-                                    {"id": None, "name": "", "arguments": ""})
-            if tc.id:
-                slot["id"] = tc.id
-            fn = tc.function
-            if fn is not None:
-                if fn.name:
-                    slot["name"] = fn.name if fn.name.startswith(slot["name"]) else slot["name"] + fn.name
-                if fn.arguments:
-                    slot["arguments"] += fn.arguments
-                    # The App Builder shows a file being typed while the model is still writing the call.
-                    yield {"type": "tool_draft", "index": tc.index if tc.index is not None else 0,
-                           "name": slot["name"], "arguments": slot["arguments"]}
+    out_chars, reported = 0, None
+    try:
+        async for chunk in resp:
+            usage = getattr(chunk, "usage", None)
+            if usage is not None and getattr(usage, "total_tokens", None):
+                reported = usage.total_tokens
+            if not chunk.choices:
+                continue
+            finish = getattr(chunk.choices[0], "finish_reason", None) or finish
+            delta = chunk.choices[0].delta
+            if getattr(delta, "content", None):
+                wrote = wrote or bool(delta.content.strip())
+                out_chars += len(delta.content)
+                yield {"type": "text", "text": delta.content}
+            for tc in getattr(delta, "tool_calls", None) or []:
+                slot = calls.setdefault(tc.index if tc.index is not None else len(calls),
+                                        {"id": None, "name": "", "arguments": ""})
+                if tc.id:
+                    slot["id"] = tc.id
+                fn = tc.function
+                if fn is not None:
+                    if fn.name:
+                        slot["name"] = fn.name if fn.name.startswith(slot["name"]) else slot["name"] + fn.name
+                    if fn.arguments:
+                        slot["arguments"] += fn.arguments
+                        out_chars += len(fn.arguments)
+                        # The App Builder shows a file being typed while the model is still writing the call.
+                        yield {"type": "tool_draft", "index": tc.index if tc.index is not None else 0,
+                               "name": slot["name"], "arguments": slot["arguments"]}
+    finally:
+        # The provider's own count when it sends one, else an estimate from what was sent and written.
+        _count_tokens(reported or estimate_tokens(kwargs["messages"]) + estimate_tokens(kwargs.get("tools") or [])
+                      + out_chars // _CHARS_PER_TOKEN)
     if not wrote and not calls:
         logger.warning("%s ended without an answer (finish_reason=%s)", kwargs["model"], finish)
     if calls:

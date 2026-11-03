@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import BrandMark from "@/components/BrandMark";
+import KrishWordmark from "@/components/KrishWordmark";
 
 const BUILD_LINES = [
   "Reading your idea…",
@@ -33,7 +35,7 @@ function useTyping(lines) {
   return lines[state.i % lines.length].slice(0, state.n);
 }
 
-/** The preview's start screen while a new app is still the empty starter: a 3D Krish AI mark that turns,
+/** The preview's start screen while a new app is still the empty starter: the Krish AI chakra in 3D that turns,
  *  tilts toward the pointer and pulses while Krish builds, with what it is doing typed underneath. */
 export default function KrishIntro({ building }) {
   const ref = useRef(null);
@@ -62,15 +64,14 @@ export default function KrishIntro({ building }) {
         <div className={`krish-intro-ring r1 ${building ? "fast" : ""}`} />
         <div className={`krish-intro-ring r2 ${building ? "fast" : ""}`} />
         <div className={`krish-intro-ring r3 ${building ? "fast" : ""}`} />
-        <div key={burst} className={`krish-intro-cube ${building ? "building" : ""} ${burst ? "burst" : ""}`}>
-          {["front", "back", "right", "left", "top", "bottom"].map((f) => (
-            <div key={f} className={`face ${f}`}>{f === "front" || f === "back" ? "K" : ""}</div>
-          ))}
+        <div key={burst} className={`krish-intro-logo ${building ? "building" : ""} ${burst ? "burst" : ""}`}>
+          <div className="krish-intro-disc" />
+          <BrandMark className="relative h-full w-full text-white" thinking={building} />
         </div>
       </button>
 
       <h2 className="relative mt-10 text-center text-[26px] font-extrabold tracking-tight text-white sm:text-[32px]">
-        <span className="krish-intro-title">Krish AI</span> {building ? "is building" : "App Builder"}
+        <KrishWordmark className="krish-intro-word text-[30px] sm:text-[36px]" /> <span>{building ? "is building" : "App Builder"}</span>
       </h2>
       <p className="relative mt-3 h-6 text-center font-mono text-[14px] text-indigo-200/90 sm:text-[15px]" data-testid="krish-intro-typing">
         {typed}<span className="krish-intro-caret" />
@@ -80,7 +81,7 @@ export default function KrishIntro({ building }) {
           <div className="krish-intro-bar" />
         </div>
       )}
-      <p className="relative mt-6 text-[11.5px] text-white/40">Move your mouse, or tap the cube</p>
+      <p className="relative mt-6 text-[11.5px] text-white/40">Move your mouse, or tap the logo</p>
     </div>
   );
 }

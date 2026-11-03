@@ -1846,6 +1846,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     app_id = conv.get("appId") if conv else None
     versions = None  # App Builder: the app before and after this turn, for See changes and Undo
     ai_limit = None  # set when a free model's usage limit ends the reply (the chat shows a card)
+    token_count = agent_llm.start_token_count()  # the tokens this reply really uses, for the usage meter
     if agent and not app_id and not extra_system and not think and not study and agent_llm.lean(model) \
             and _quick_chat(history_docs) and not await db.files.count_documents(
                 {"conversationId": conv_id, "is_deleted": False}):
@@ -2092,6 +2093,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 await db.conversations.update_one(
                     {"id": conv_id}, {"$set": {"updatedAt": now_iso(), "model": chosen}}
                 )
+                # App builds and premium-model chats use the meter by the tokens they really took.
+                if user_id and (app_id or agent_llm.paid(model)) and token_count["tokens"]:
+                    try:
+                        plan = await limits.plan_of(db, user_id)
+                        prepaid = limits.cost("build" if app_id else "chat", len(last_user or ""), plan)
+                        await limits.charge_tokens(db, user_id, token_count["tokens"], prepaid)
+                    except Exception:
+                        logger.exception("token metering failed")
             if not stopped:
                 yield f"event: done\ndata: {_sse_json({'messageId': assistant_msg['id']})}\n\n"
 

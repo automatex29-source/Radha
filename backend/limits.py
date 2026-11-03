@@ -85,7 +85,8 @@ def _when(ts: float) -> str:
     left = max(0, ts - time.time())
     if left < 20 * 3600:
         hours, minutes = int(left // 3600), int(left % 3600 // 60)
-        wait = f"{hours}h {minutes}m" if hours else f"{max(1, minutes)}m"
+        wait = (f"{hours} hour{'s' if hours != 1 else ''}" + (f" {minutes} min" if minutes else "")) if hours \
+            else f"{max(1, minutes)} min"
         return f"at {at.strftime('%-I:%M %p')} (in {wait})"
     return f"on {at.strftime('%a %-d %b')}"
 
@@ -212,6 +213,29 @@ async def use(db, user_id: str, kind: str, size: Optional[int] = None) -> None:
         await monitor.count(db, user_id, kind)
 
 
+# The meter also follows the tokens a reply really used: every TOKENS_PER_CREDIT tokens (what the AI read and
+# wrote, across all of a build's steps) is one credit. The credits taken before the reply count toward it.
+TOKENS_PER_CREDIT = 5000
+MAX_TOKEN_CREDITS = 80  # one reply never takes more than this
+
+
+def token_credits(tokens: int) -> int:
+    return min(MAX_TOKEN_CREDITS, -(-max(0, int(tokens)) // TOKENS_PER_CREDIT))
+
+
+async def charge_tokens(db, user_id: str, tokens: int, prepaid: int = 0) -> int:
+    """After a reply: take the credits its tokens used beyond what was taken up front. It can take the meter
+    past its limit (the work is done); the next request then waits for the refill. Returns the credits taken."""
+    if not enabled() or not user_id:
+        return 0
+    extra = token_credits(tokens) - prepaid
+    if extra <= 0:
+        return 0
+    await _meter(db, user_id)
+    await db.usage.update_one({"_id": _meter_id(user_id)}, {"$inc": {"sessionUsed": extra, "weekUsed": extra}})
+    return extra
+
+
 async def check_left(db, user_id: str, kind: str, size: Optional[int] = None) -> None:
     """Raise LimitReached if the meter can't cover this request, without using anything."""
     if not enabled():
@@ -289,6 +313,7 @@ def meter_view(plan: str, doc: dict) -> dict:
                     "hours": SESSION_HOURS},
         "week": {"used": doc.get("weekUsed", 0) if week_on else 0, "limit": limit["week"],
                  "resetsAt": doc["weekStart"] + WEEK_DAYS * 86400 if week_on else None},
+        "tokensPerCredit": TOKENS_PER_CREDIT,
     }
 
 
