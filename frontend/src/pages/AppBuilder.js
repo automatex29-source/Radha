@@ -161,7 +161,6 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   const [text, setText] = useState("");
   const [steps, setSteps] = useState([]);
   const [model, setModel] = useState(null);
-  const [needsKey, setNeedsKey] = useState(false);
   const [attached, setAttached] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState(null); // the file being typed right now: {key, path, text}
@@ -238,7 +237,8 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
     Promise.all([api.get("/models"), api.get("/capabilities")]).then(([m, c]) => {
       const usable = m.data.models.map((x) => x.id).filter((mid) => c.data.agent?.[mid]);
       setModel(usable.includes(m.data.default) ? m.data.default : usable[0] || m.data.default);
-      setNeedsKey(usable.length === 0);
+      // A setup note for the owner, never shown to users.
+      if (!usable.length) console.warn("App Builder: no AI provider key is set on the backend (see .env.example).");
     }).catch(() => {});
   }, [load]);
 
@@ -384,7 +384,6 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
         {streaming && draft && <LiveCode draft={draft} />}
       </div>
       <div className="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {needsKey && <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">The builder needs an AI provider key on the backend (see .env.example).</p>}
         <div className="rounded-xl border border-border bg-card p-2 focus-within:border-primary/60">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={3} data-testid="builder-input"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); send(); } }}
