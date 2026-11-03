@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Check, Copy, Loader2, Lock, RefreshCcw, Share2, Tag } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import InviteDialog, { WhatsAppIcon } from "@/components/InviteDialog";
+import { INVITES_ON } from "@/lib/referral";
 import { inviteLink, inviteMessage } from "@/lib/referral";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
 import { useNavigate } from "react-router-dom";
@@ -337,7 +338,7 @@ export default function PlansPage() {
               )}
               {offer && <p className="mt-1.5 text-center text-[11px] text-muted-foreground">{offer.code} applied: a one-time payment for 30 days, no autopay.</p>}
 
-              <div className="mt-5"><InviteFriends onMore={() => setInviteOpen(true)} /></div>
+              {INVITES_ON && <div className="mt-5"><InviteFriends onMore={() => setInviteOpen(true)} /></div>}
               <p className="mt-4 text-center text-[12px] text-muted-foreground">
                 See how much you've used in <button type="button" onClick={() => openSettings("usage")} className="underline underline-offset-2 hover:text-foreground" data-testid="plans-usage-link">Settings &gt; Usage</button>
                 {" "}· Questions? <a href="/refunds" className="underline underline-offset-2 hover:text-foreground">Refunds and cancelling</a>

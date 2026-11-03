@@ -13,6 +13,7 @@ import { useAuth } from "@/context/AuthContext";
 import MemoryDialog from "@/components/MemoryDialog";
 import { openSettings } from "@/lib/settingsNav";
 import InviteDialog from "@/components/InviteDialog";
+import { INVITES_ON } from "@/lib/referral";
 import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
@@ -213,9 +214,11 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <DropdownMenuItem data-testid="menu-help" onClick={() => navigate("/help")}>
               <LifeBuoy className="mr-2 h-4 w-4" /> {t("helpFeedback")}
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menu-invite" onClick={() => setInviteOpen(true)}>
-              <Gift className="mr-2 h-4 w-4" /> Invite friends
-            </DropdownMenuItem>
+            {INVITES_ON && (
+              <DropdownMenuItem data-testid="menu-invite" onClick={() => setInviteOpen(true)}>
+                <Gift className="mr-2 h-4 w-4" /> Invite friends
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem data-testid="menu-plans" onClick={() => navigate("/plans")}>
               <Crown className="mr-2 h-4 w-4" /> {t("plans")}
             </DropdownMenuItem>

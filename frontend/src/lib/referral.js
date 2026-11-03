@@ -2,6 +2,10 @@
 // person signs up (by email or Google), then sent with the sign-up so both people get free Pro days.
 const KEY = "krish.ref";
 
+// Invite friends is switched off for launch week: the menu item and the Plans page card are hidden.
+// Links already shared still work. Set to true to bring it back.
+export const INVITES_ON = false;
+
 export function captureRef() {
   try {
     const path = window.location.pathname.match(/^\/i\/([A-Za-z0-9]{4,20})\/?$/);
