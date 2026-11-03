@@ -5,11 +5,14 @@ Yields UI events as it goes:
   {"type": "tool_start", "id", "name", "label", "args"}      a tool call began
   {"type": "tool_end", "id", "name", "ok", "summary", "output", "media"}
   {"type": "heartbeat"}                                      a slow tool is still running
+  {"type": "code_draft", "key", "path", "mode", "text", "reset"}  a file being typed (see drafts.py)
 """
 import asyncio
 import json
+import uuid
 from typing import AsyncIterator, Callable, List
 
+from .drafts import DraftTracker
 from .llm import _bad_tool_call
 from .tools import ToolContext, ToolRegistry
 
@@ -36,10 +39,12 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
     labels = {t.name: (t.label or t.name) for t in registry.active(ctx)}
     said = False
     bad_calls = 0
+    run_id = uuid.uuid4().hex[:6]
     for step in range(max_steps):
         # Last step: withhold tools so the model must answer with what it has.
         step_tools = tools if step < max_steps - 1 else []
         text, calls = [], []
+        drafts = DraftTracker(f"{run_id}-{step}")
         try:
             async for ev in stream_fn(model, messages, step_tools):
                 if ev["type"] == "text":
@@ -48,6 +53,14 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
                     yield ev
                 elif ev["type"] == "tool_calls":
                     calls = ev["calls"]
+                    for i, c in enumerate(calls):  # the last bit of each file being shown
+                        last = drafts.update({"index": i, "name": c["name"], "arguments": c["arguments"]}, force=True)
+                        if last:
+                            yield last
+                elif ev["type"] == "tool_draft":
+                    draft = drafts.update(ev)
+                    if draft:
+                        yield draft
                 elif ev["type"] == "heartbeat":
                     yield ev
         except Exception as exc:

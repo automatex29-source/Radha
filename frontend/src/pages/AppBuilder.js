@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, API, absoluteUrl, formatApiError, getToken } from "@/lib/api";
 import ThemeToggle from "@/components/ThemeToggle";
 import { streamSSE } from "@/lib/sse";
@@ -12,16 +12,18 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
-  Paperclip, X,
+  Paperclip, X, Wand2, ImagePlus, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles,
 } from "lucide-react";
 
-const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit"]);
+const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit", "start_template"]);
+const SCREENSHOT_ASK = "Build this design as a working app. Match its layout, colours, fonts, spacing and content as closely as you can, and make every button work.";
 
 const PANES = [["preview", Eye, "Preview"], ["code", Code2, "Code"], ["terminal", SquareTerminal, "Terminal"], ["history", History, "History"], ["data", Database, "Data"]];
 
 export default function AppBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [app, setApp] = useState(null);
   const [files, setFiles] = useState([]);
   const [changes, setChanges] = useState({});
@@ -29,7 +31,11 @@ export default function AppBuilder() {
   // Phones show one pane at a time, starting with the chat.
   const [tab, setTab] = useState(() => (window.matchMedia?.("(max-width: 767px)").matches ? "chat" : "preview"));
   const [previewKey, setPreviewKey] = useState(0);
-  const [fixAsk, setFixAsk] = useState(null);
+  // A new app arrives with the user's request from the Apps page: the builder starts on it at once.
+  const [fixAsk, setFixAsk] = useState(() => (location.state?.prompt ? { content: location.state.prompt, at: Date.now() } : null));
+  useEffect(() => {
+    if (location.state?.prompt) navigate(location.pathname, { replace: true, state: null });
+  }, [location, navigate]);
   const [previewUrl, setPreviewUrl] = useState(null);
 
   useEffect(() => {
@@ -108,7 +114,7 @@ export default function AppBuilder() {
         ))}
       </nav>
       <div className="flex min-h-0 flex-1">
-        <BuilderChat app={app} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
+        <BuilderChat app={app} appId={id} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
           previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")} />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
@@ -134,7 +140,7 @@ export default function AppBuilder() {
 }
 
 /* ------------------------------------------------------------------ chat */
-function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, previewKey, onShowPreview }) {
+function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUrl, previewKey, onShowPreview }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -144,9 +150,49 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
   const [needsKey, setNeedsKey] = useState(false);
   const [attached, setAttached] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [draft, setDraft] = useState(null); // the file being typed right now: {key, path, text}
+  const [images, setImages] = useState([]); // screenshots to build from
+  const [boosting, setBoosting] = useState(false);
+  const [ideas, setIdeas] = useState([]);
   const abortRef = useRef(null);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
+  const imageRef = useRef(null);
+  const askedRef = useRef(null);
+
+  // A screenshot or design to copy: sent with the next message, and Krish builds that design.
+  const attachImage = async (e) => {
+    const picked = Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/"));
+    e.target.value = "";
+    if (!picked.length) return;
+    setUploading(true);
+    for (const file of picked) {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("conversationId", app.conversationId);
+      try {
+        const { data } = await api.post("/media", fd, { headers: { "Content-Type": "multipart/form-data" } });
+        setImages((list) => [...list, { id: data.id, url: URL.createObjectURL(file), name: file.name }]);
+      } catch (err) {
+        toast.error(formatApiError(err));
+      }
+    }
+    setUploading(false);
+  };
+
+  // "Improve prompt": a short idea becomes a detailed brief the user can still edit before sending.
+  const boost = async () => {
+    if (!input.trim() || boosting) return;
+    setBoosting(true);
+    try {
+      const { data } = await api.post("/apps/boost", { text: input });
+      setInput(data.text);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setBoosting(false);
+    }
+  };
 
   // A sample file (a log, an export) or a logo goes into the app too (samples/, assets/), so Krish reads all of it.
   const attach = async (e) => {
@@ -188,23 +234,32 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
 
   // `typed` is a message from outside the text box (the preview's "Fix errors" button).
   const send = async (typed) => {
-    const content = (typeof typed === "string" ? typed : input).trim();
+    const sending = typeof typed === "string" ? [] : images;
+    const content = (typeof typed === "string" ? typed : input).trim() || (sending.length ? SCREENSHOT_ASK : "");
     if (!content || streaming) return;
-    if (typeof typed !== "string") setInput("");
+    if (typeof typed !== "string") { setInput(""); setImages([]); }
     setAttached([]);
-    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content }]);
+    setIdeas([]);
+    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: sending.map((i) => i.id) }]);
     setStreaming(true);
     setText("");
     setSteps([]);
+    setDraft(null);
     let acc = "";
     let current = [];
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      await streamSSE(`${API}/conversations/${app.conversationId}/stream`, { content, model, agent: true }, {
+      await streamSSE(`${API}/conversations/${app.conversationId}/stream`, { content, model, agent: true, images: sending.map((i) => i.id) }, {
         signal: controller.signal,
         onText: (d) => { acc += d; setText(acc); },
         onEvent: (name, step) => {
+          if (name === "code_draft") {
+            setDraft((d) => (d && d.key === step.key && !step.reset
+              ? { ...d, text: d.text + step.text }
+              : { key: step.key, path: step.path, text: step.text }));
+            return;
+          }
           if (name !== "tool" && name !== "tool_result") return;
           current = name === "tool" ? [...current.filter((s) => s.id !== step.id), step] : current.map((s) => (s.id === step.id ? step : s));
           setSteps(current);
@@ -221,6 +276,7 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
       await load().catch(() => {});
       setText("");
       setSteps([]);
+      setDraft(null);
       onFilesChanged();
     }
   };
@@ -229,10 +285,19 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
   const lastBuild = lastAssistant?.steps?.some((s) => FILE_TOOLS.has(s.name) && s.status === "done") ? lastAssistant.id : null;
 
+  // Next steps to offer under the latest build (what the app doesn't have yet).
   useEffect(() => {
-    if (ask) send(ask.content);
+    if (streaming || !lastBuild) { setIdeas([]); return; }
+    api.get(`/apps/${appId}/ideas`).then(({ data }) => setIdeas(data.ideas || [])).catch(() => setIdeas([]));
+  }, [appId, lastBuild, streaming]);
+
+  // An ask from outside the box (Fix errors, click-to-edit, a new app's request), once the model is known.
+  useEffect(() => {
+    if (!ask || !model || askedRef.current === ask.at) return;
+    askedRef.current = ask.at;
+    send(ask.content);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ask]);
+  }, [ask, model]);
 
   return (
     <aside className={`flex w-[400px] shrink-0 flex-col max-md:w-full ${hiddenOnPhone ? "max-md:hidden" : ""}`} data-testid="builder-chat">
@@ -241,11 +306,15 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
           <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
             <p className="font-semibold text-foreground">What should we build?</p>
             <p className="mt-1">Describe the app. Krish AI writes the code, checks the preview for errors, runs tests and saves versions as it goes.</p>
-            {app.description && (
-              <button onClick={() => setInput(`Build this app: ${app.description}`)} className="mt-3 text-left text-xs text-brand hover:underline">
+            {app.description && !ask && (
+              <button onClick={() => setInput(`Build this app: ${app.description}`)} className="mt-3 block text-left text-xs text-brand hover:underline">
                 Start with: “{app.description}”
               </button>
             )}
+            <button onClick={() => imageRef.current?.click()} data-testid="builder-from-screenshot"
+              className="mt-3 flex items-center gap-1.5 text-left text-xs text-brand hover:underline">
+              <ImagePlus className="h-3.5 w-3.5" /> Or start from a screenshot of a design you like
+            </button>
           </div>
         )}
         {messages.map((m) => (
@@ -254,9 +323,20 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
             {!streaming && m.id === lastBuild && previewUrl && (
               <DevicePreview url={previewUrl} reloadKey={previewKey} onOpen={onShowPreview} className="mt-2 md:ml-11" />
             )}
+            {!streaming && m.id === lastBuild && ideas.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5 md:ml-11" data-testid="builder-ideas">
+                {ideas.map((i) => (
+                  <button key={i.label} onClick={() => send(i.prompt)} title={i.prompt} data-testid={`builder-idea-${i.label}`}
+                    className="flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+                    <Sparkles className="h-3 w-3 text-primary" /> {i.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} compactSteps />}
+        {streaming && draft && <LiveCode draft={draft} />}
       </div>
       <div className="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {needsKey && <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">The builder needs an AI provider key on the backend (see .env.example).</p>}
@@ -265,6 +345,18 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); send(); } }}
             placeholder="Add a dark mode toggle and save todos in the browser…"
             className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-sm focus:outline-none" />
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-1 pb-1.5" data-testid="builder-images">
+              {images.map((img) => (
+                <span key={img.id} className="relative">
+                  <img src={img.url} alt={img.name} className="h-14 w-20 rounded-md border border-border object-cover" />
+                  <button onClick={() => setImages((l) => l.filter((x) => x.id !== img.id))} aria-label="Remove picture"
+                    className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background"><X className="h-3 w-3" /></button>
+                </span>
+              ))}
+              <span className="self-center text-[11px] text-muted-foreground">Krish builds this design</span>
+            </div>
+          )}
           {attached.length > 0 && (
             <div className="flex flex-wrap gap-1.5 px-1 pb-1.5" data-testid="builder-attachments">
               {attached.map((f) => (
@@ -275,17 +367,27 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
               ))}
             </div>
           )}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-0.5">
             <input ref={fileRef} type="file" multiple hidden onChange={attach} data-testid="builder-file-input" />
+            <input ref={imageRef} type="file" accept="image/*" hidden onChange={attachImage} data-testid="builder-image-input" />
             <Button size="icon" variant="ghost" onClick={() => fileRef.current?.click()} disabled={uploading}
               title="Attach a sample file or your logo" aria-label="Attach a sample file or your logo" data-testid="builder-attach" className="h-10 w-10 sm:h-8 sm:w-8">
               {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
             </Button>
+            <Button size="icon" variant="ghost" onClick={() => imageRef.current?.click()} disabled={uploading}
+              title="Build from a screenshot" aria-label="Build from a screenshot" data-testid="builder-screenshot" className="h-10 w-10 sm:h-8 sm:w-8">
+              <ImagePlus className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="icon" variant="ghost" onClick={boost} disabled={!input.trim() || boosting || streaming}
+              title="Improve my prompt" aria-label="Improve my prompt" data-testid="builder-boost" className="h-10 w-10 sm:h-8 sm:w-8">
+              {boosting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+            </Button>
+            <span className="flex-1" />
             {streaming ? (
               <Button size="icon" onClick={() => abortRef.current?.abort()} title="Stop" aria-label="Stop the reply" data-testid="builder-stop"
                 className="h-10 w-10 rounded-full bg-foreground text-background hover:bg-foreground/90 sm:h-8 sm:w-8"><Square className="h-3 w-3 fill-current" /></Button>
             ) : (
-              <Button size="icon" onClick={send} onMouseDown={(e) => e.preventDefault()} disabled={!input.trim()} data-testid="builder-send" className="h-10 w-10 sm:h-8 sm:w-8"><Send className="h-3.5 w-3.5" /></Button>
+              <Button size="icon" onClick={send} onMouseDown={(e) => e.preventDefault()} disabled={!input.trim() && !images.length} data-testid="builder-send" className="h-10 w-10 sm:h-8 sm:w-8"><Send className="h-3.5 w-3.5" /></Button>
             )}
           </div>
         </div>
@@ -294,21 +396,69 @@ function BuilderChat({ app, onFilesChanged, hiddenOnPhone, ask, previewUrl, prev
   );
 }
 
+/* ------------------------------------------------------------ live code */
+// The file Krish is typing right now, shown as it streams in, so a build never looks stuck.
+function LiveCode({ draft }) {
+  const ref = useRef(null);
+  const lines = draft.text.split("\n");
+  useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [draft.text]);
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-sunken md:ml-11" data-testid="live-code">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+        <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-primary" /></span>
+        Writing <span className="font-mono text-foreground">{draft.path}</span>
+        <span className="ml-auto font-mono">{lines.length} lines</span>
+      </div>
+      <pre ref={ref} className="radha-scroll max-h-56 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground/90">
+        {lines.slice(-200).join("\n")}<span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-primary align-middle" />
+      </pre>
+    </div>
+  );
+}
+
 /* --------------------------------------------------------------- preview */
+const DEVICES = [["full", Monitor, "Laptop", null], ["tablet", Tablet, "Tablet", 820], ["phone", Smartphone, "Phone", 390]];
+
 function PreviewTab({ url, reloadKey, onReload, onFix }) {
   const [logs, setLogs] = useState([]);
+  const [device, setDevice] = useState("full");
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState(null);
+  const [change, setChange] = useState("");
   const frameRef = useRef(null);
 
-  useEffect(() => { setLogs([]); }, [reloadKey]);
+  useEffect(() => { setLogs([]); setPicking(false); }, [reloadKey]);
 
   useEffect(() => {
     const onMessage = (e) => {
       if (e.source !== frameRef.current?.contentWindow || e.data?.source !== "radha-preview") return;
+      if (e.data.kind === "pick") {
+        setPicking(false);
+        setPicked({ selector: String(e.data.selector || "").slice(0, 300), html: String(e.data.html || "").slice(0, 800), text: String(e.data.text || "").slice(0, 160), tag: String(e.data.tag || "") });
+        setChange("");
+        return;
+      }
+      if (e.data.kind === "pick-cancel") { setPicking(false); return; }
       setLogs((l) => [...l.slice(-199), { level: e.data.level, message: String(e.data.message).slice(0, 2000) }]);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, []);
+
+  // Click to edit: the page outlines what's under the pointer, and a click picks it instead of pressing it.
+  const togglePick = () => {
+    const next = !picking;
+    setPicking(next);
+    setPicked(null);
+    frameRef.current?.contentWindow?.postMessage({ source: "radha-builder", pick: next }, "*");
+  };
+  const sendChange = (e) => {
+    e.preventDefault();
+    if (!picked || !change.trim()) return;
+    onFix(`Change only this part of the app: ${change.trim()}\n\nThe part (CSS path: ${picked.selector}):\n${picked.html}\n\nFind it in the files and change just that with edit_file. Leave everything else exactly as it is.`);
+    setPicked(null);
+  };
+  const width = DEVICES.find((d) => d[0] === device)[3];
 
   const errors = logs.filter((l) => l.level === "error").length;
   const fixErrors = (e) => {
@@ -320,13 +470,40 @@ function PreviewTab({ url, reloadKey, onReload, onFix }) {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
         <button onClick={onReload} title="Reload" data-testid="preview-reload" className="rounded p-1 hover:bg-surface hover:text-foreground"><RefreshCw className="h-3.5 w-3.5" /></button>
-        <span className="truncate font-mono">Live preview (latest files, including unsaved changes)</span>
+        <div className="flex items-center rounded-md border border-border p-0.5" role="group" aria-label="Screen size" data-testid="preview-devices">
+          {DEVICES.map(([d, Icon, label]) => (
+            <button key={d} onClick={() => setDevice(d)} title={label} aria-label={label} aria-pressed={device === d} data-testid={`preview-device-${d}`}
+              className={`rounded p-1 ${device === d ? "bg-surface-strong text-foreground" : "hover:text-foreground"}`}><Icon className="h-3.5 w-3.5" /></button>
+          ))}
+        </div>
+        {onFix && (
+          <button onClick={togglePick} data-testid="preview-pick" title="Click something in the preview to change it"
+            className={`flex items-center gap-1 rounded-md px-2 py-1 font-medium ${picking ? "bg-primary text-primary-foreground" : "hover:bg-surface hover:text-foreground"}`}>
+            <MousePointerClick className="h-3.5 w-3.5" /> <span className="max-sm:hidden">{picking ? "Click a part…" : "Edit a part"}</span>
+          </button>
+        )}
+        <span className="truncate font-mono max-lg:hidden">Live preview</span>
         {url && <a href={url} target="_blank" rel="noreferrer" className="ml-auto flex items-center gap-1 hover:text-foreground"><ExternalLink className="h-3.5 w-3.5" /> Open</a>}
       </div>
-      <div className="min-h-0 flex-1 bg-white">
+      {picked && (
+        <form onSubmit={sendChange} className="flex items-center gap-2 border-b border-border bg-primary/5 px-3 py-2" data-testid="preview-picked">
+          <span className="max-w-[40%] shrink-0 truncate rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[11px] text-primary" title={picked.selector}>
+            {picked.tag}{picked.text ? ` “${picked.text.slice(0, 30)}”` : ""}
+          </span>
+          <input autoFocus value={change} onChange={(e) => setChange(e.target.value)} data-testid="preview-picked-input"
+            placeholder="What should change? e.g. make it red and bigger"
+            className="min-w-0 flex-1 bg-transparent text-xs focus:outline-none" />
+          <Button size="sm" type="submit" disabled={!change.trim()} className="h-7 px-2.5 text-xs">Change</Button>
+          <button type="button" onClick={() => setPicked(null)} aria-label="Cancel" className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+        </form>
+      )}
+      <div className={`min-h-0 flex-1 ${width ? "flex justify-center overflow-auto bg-sunken p-3" : "bg-white"}`}>
         {url && (
           <iframe key={reloadKey} ref={frameRef} src={url} title="App preview" data-testid="app-preview-frame"
-            sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads" className="h-full w-full" />
+            onLoad={() => { if (picking) frameRef.current?.contentWindow?.postMessage({ source: "radha-builder", pick: true }, "*"); }}
+            sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"
+            style={width ? { width, maxWidth: "100%" } : undefined}
+            className={width ? "h-full shrink-0 rounded-xl border border-border bg-white shadow-lg" : "h-full w-full"} />
         )}
       </div>
       <details className="max-h-48 overflow-auto border-t border-border bg-sunken" open={errors > 0} data-testid="preview-console">

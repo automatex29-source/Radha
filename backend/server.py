@@ -58,6 +58,7 @@ import writer
 import code_edit
 import code_check
 import build_plan
+import fast_build
 import limits
 import billing
 import languages
@@ -1508,6 +1509,8 @@ _FILE_TOOLS = ("write_file", "append_file", "edit_file", "delete_file")
 REPAIR_STEPS = 8
 SMOKE_TIMEOUT = 60  # seconds for the browser test of an app
 REPAIR_ROUNDS = 3  # rounds of automatic fixes after a builder turn leaves the app broken or missing a planned feature
+# The first build of a fresh app is written in one streamed reply (fast_build.py). FAST_BUILD=0 turns it off.
+FAST_BUILD = os.environ.get("FAST_BUILD", "1") != "0"
 
 
 async def _app_problems(app_id: str):
@@ -1614,28 +1617,48 @@ async def _run_written_call(ctx: ToolContext, text: str, ask: str):
 
 
 async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: list, use_tools: bool, max_steps: int,
-                        plan_for: Optional[str] = None):
+                        plan_for: Optional[str] = None, fast_for: Optional[str] = None):
     """The agent's events. In the App Builder, `plan_for` (a new app or a big change, on a free model) first gets a
     plan the build follows. When the turn changed files, the app is checked (missing files and elements, scripts
     that don't parse), opened in a real browser that presses its buttons, and compared with its plan. Anything that
     breaks or is missing gets up to three rounds of fixes, and anything still wrong is told to the user instead of
     ending silently."""
     said, changed, plan, tools_used = [], False, [], set()
-    if plan_for and ctx.app_id and use_tools:
-        async for ev in _plan_events(ctx, model, plan_for, llm_messages):
-            if ev["type"] == "plan":
-                plan = ev["items"]
+    first_version = False
+    if fast_for and ctx.app_id and use_tools:
+        # The first build of a fresh app: a starter on screen at once, then every file in one streamed reply.
+        files = await apps.snapshot(ctx.app_id)
+        async for ev in fast_build.instant_start(ctx.app_id, fast_for, files):
+            yield ev
+        template = fast_build.fresh_template(await apps.snapshot(ctx.app_id))
+        result = None
+        async for ev in fast_build.draft(stream_fn, ctx.app_id, model, llm_messages):
+            if ev["type"] == "draft_done":
+                result = ev
             else:
                 yield ev
-    async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=use_tools,
-                              max_steps=max_steps):
-        if ev["type"] == "text":
-            said.append(ev["text"])
-        elif ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
-            changed = True
-        if ev["type"] == "tool_start":
-            tools_used.add(ev["name"])
-        yield ev
+        if result and result["files"]:
+            await fast_build.tidy_starter(ctx.app_id, template, result["files"])
+            changed = first_version = True
+            plan, said = result["plan"], [result["said"]]
+        elif result and result["said"].strip():
+            yield {"type": "text", "text": "\n\n"}
+    if not first_version:
+        if plan_for and ctx.app_id and use_tools:
+            async for ev in _plan_events(ctx, model, plan_for, llm_messages):
+                if ev["type"] == "plan":
+                    plan = ev["items"]
+                else:
+                    yield ev
+        async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=use_tools,
+                                  max_steps=max_steps):
+            if ev["type"] == "text":
+                said.append(ev["text"])
+            elif ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
+                changed = True
+            if ev["type"] == "tool_start":
+                tools_used.add(ev["name"])
+            yield ev
     if not ctx.app_id and use_tools and not tools_used & set(_MEDIA_TOOLS):
         ask = next((m["content"] for m in reversed(llm_messages) if m.get("role") == "user"
                     and isinstance(m.get("content"), str)), "")
@@ -1672,6 +1695,8 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
             if ev["type"] == "text":
                 said.append(ev["text"])
             yield ev
+    if first_version:
+        await apps.commit(ctx.app_id, "First version", author="Krish AI")
     if problems:
         yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + problems[0].split(" The file looks cut off")[0]
                + " Tap “Fix errors with AI” under the preview, or reply “fix it”."}
@@ -1903,8 +1928,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                               plugins_off=frozenset(k for k, on in plugin_state.items() if not on))
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
             plan_for = last_user if app_id and build_plan.wants_plan(history_docs, model) else None
+            fast_for = last_user if app_id and agent and FAST_BUILD and \
+                fast_build.wanted(history_docs, await apps.snapshot(app_id), model) else None
             async for ev in _agent_events(stream_fn, ctx, model, llm_messages, agent, max_steps or MAX_AGENT_STEPS,
-                                          plan_for=plan_for):
+                                          plan_for=plan_for, fast_for=fast_for):
                 if ev["type"] == "text":
                     text = ev["text"]
                     if scripts is not None:
@@ -1920,6 +1947,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                     yield f"event: tool\ndata: {_sse_json(steps[-1])}\n\n"
                 elif ev["type"] == "heartbeat":
                     yield ": keepalive\n\n"
+                elif ev["type"] == "code_draft":
+                    yield f"event: code_draft\ndata: {_sse_json({k: v for k, v in ev.items() if k != 'type'})}\n\n"
                 elif ev["type"] == "tool_end":
                     step = next((s for s in steps if s["id"] == ev["id"]), None)
                     if step is not None:

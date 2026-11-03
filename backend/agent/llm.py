@@ -279,7 +279,7 @@ async def stream_completion(model: str, messages: List[dict], tools: List[dict],
         try:
             extra = {"max_output": max_output} if max_output else {}
             async for event in _stream_once(model, messages, tools, think, **extra):
-                sent = sent or event["type"] != "heartbeat"
+                sent = sent or event["type"] not in ("heartbeat", "tool_draft")
                 yield event
             return
         except Exception as exc:
@@ -453,6 +453,9 @@ async def _stream_model(model: str, messages: List[dict], tools: List[dict], thi
                     slot["name"] = fn.name if fn.name.startswith(slot["name"]) else slot["name"] + fn.name
                 if fn.arguments:
                     slot["arguments"] += fn.arguments
+                    # The App Builder shows a file being typed while the model is still writing the call.
+                    yield {"type": "tool_draft", "index": tc.index if tc.index is not None else 0,
+                           "name": slot["name"], "arguments": slot["arguments"]}
     if not wrote and not calls:
         logger.warning("%s ended without an answer (finish_reason=%s)", kwargs["model"], finish)
     if calls:
