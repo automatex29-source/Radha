@@ -82,7 +82,7 @@ def welcome(app_url: str, name: str, inviter_name: str = "", days: int = 0) -> t
         subject = f"Welcome to Krish AI, {first} 👋" if first else "Welcome to Krish AI 👋"
         heading = f"Hi {first}, welcome to Krish AI" if first else "Welcome to Krish AI"
         intro = ("Krish is your saarthi for every task: questions, study, writing, planning and building. "
-                 "Chat is free and unlimited. Here's a good way to start:")
+                 "Chat is free. Here's a good way to start:")
     # Invite friends is hidden in the app for launch week, so the welcome email doesn't point to it.
     footer = ""
     body = _layout(picture, heading, intro, TRY_FREE, "Open Krish AI", app_url, footer)

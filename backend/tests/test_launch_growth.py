@@ -155,9 +155,9 @@ def test_owner_makes_a_code_and_a_buyer_uses_it_once(client):
     buyer = _h(_register(client, "buyer@test.com")["token"])
     assert client.post("/api/admin/promos", headers=buyer, json={"code": "MINE", "percentOff": 90}).status_code == 404
     check = client.post("/api/billing/check-code", headers=buyer, json={"plan": "pro", "code": "Launch50"}).json()
-    assert check == {"code": "LAUNCH50", "percentOff": 50, "price": 150}
+    assert check == {"code": "LAUNCH50", "percentOff": 50, "price": 200}
     order = client.post("/api/billing/order", headers=buyer, json={"plan": "pro", "code": "launch50"}).json()
-    assert order["amount"] == 15000 and order["promoCode"] == "LAUNCH50"
+    assert order["amount"] == 20000 and order["promoCode"] == "LAUNCH50"
     assert _pay(client, buyer, order, "pay_promo_1").json()["plan"] == "pro"
     codes = client.get("/api/admin/promos", headers=bh).json()["codes"]
     assert codes[0]["uses"] == 1

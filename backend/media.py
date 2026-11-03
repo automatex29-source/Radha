@@ -101,7 +101,7 @@ def image_available() -> bool:
 
 
 def image_key_configured() -> bool:
-    return any(os.environ.get(k) for k in ("FAL_KEY", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN"))
+    return any(os.environ.get(k) for k in ("FAL_KEY", "OPENAI_API_KEY", "GEMINI_IMAGE_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN"))
 
 
 GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
@@ -119,9 +119,29 @@ def gemini_images() -> bool:
             and bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")))
 
 
+def gemini_paid_images() -> bool:
+    """Pro and Max pictures on a billed Google key of their own (GEMINI_IMAGE_KEY, about $0.04 a picture), kept
+    apart from the free key the chat uses: billing a Google project ends its free tier."""
+    return bool(os.environ.get("GEMINI_IMAGE_KEY"))
+
+
+# What a picture costs on each premium engine, in US dollars (for the usage meter, see limits.cost).
+PICTURE_USD = {"gemini_paid": 0.039, "fal": 0.15, "openai": 0.07}
+
+
+def premium_picture_usd() -> float:
+    """What a Pro or Max picture costs on the first engine that makes it, or 0 when only free engines are set up."""
+    token = PREMIUM_MEDIA.set(True)
+    try:
+        order = _image_providers()
+    finally:
+        PREMIUM_MEDIA.reset(token)
+    return next((PICTURE_USD[w] for w in order if w in PICTURE_USD), 0.0)
+
+
 def spells_well() -> bool:
     """True when a premium image model (fal Nano Banana Pro or OpenAI) is set up; those can write real words."""
-    return fal_api.configured() or openai_configured()
+    return fal_api.configured() or openai_configured() or gemini_paid_images()
 
 
 _ASKS_TEXT = re.compile(r'["\u201c]|\b(text|texts|word|words|wording|title|titled|headline|caption|captions|saying|'
@@ -177,6 +197,8 @@ def _image_providers() -> list:
         order = [explicit]
     else:
         order = []
+        if paid and gemini_paid_images():  # premium: Google's image model on its own billed key, the cheapest good one
+            order.append("gemini_paid")
         if paid and fal_api.configured():  # premium: Nano Banana Pro via fal.ai
             order.append("fal")
         if paid and openai_configured():
@@ -290,8 +312,8 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
                 return await _fal_image(prompt, size, seed)
             if which == "openai":
                 return await _openai_image(prompt, size, quality)
-            if which == "gemini":
-                return await _gemini_image(prompt, size)
+            if which in ("gemini", "gemini_paid"):
+                return await _gemini_image(prompt, size, paid=which == "gemini_paid")
             if which == "huggingface":
                 return await _huggingface(prompt, size)
             return await _pollinations(prompt, size, legacy=which == "pollinations_legacy", seed=seed)
@@ -303,20 +325,21 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
     raise ImageError("Image generation failed. " + "; ".join(errors) + hint)
 
 
-async def _gemini_image(prompt: str, size: str) -> bytes:
+async def _gemini_image(prompt: str, size: str, paid: bool = False) -> bytes:
     import asyncio
 
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+    key = os.environ.get("GEMINI_IMAGE_KEY") if paid else os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    client = genai.Client(api_key=key)
     config = types.GenerateContentConfig(response_modalities=["IMAGE"],
                                          image_config=types.ImageConfig(aspect_ratio=_ratio(size)))
     try:
         resp = await asyncio.wait_for(client.aio.models.generate_content(model=GEMINI_IMAGE_MODEL, contents=prompt,
                                                                          config=config), GEMINI_IMAGE_TIMEOUT)
     except Exception as exc:
-        if re.search(r"\b429\b|RESOURCE_EXHAUSTED|quota", str(exc), re.I):
+        if not paid and re.search(r"\b429\b|RESOURCE_EXHAUSTED|quota", str(exc), re.I):
             import time
 
             global _gemini_rest_until

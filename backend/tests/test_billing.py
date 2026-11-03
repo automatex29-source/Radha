@@ -68,7 +68,7 @@ def test_paying_for_pro_switches_it_on_for_30_days(client):
     usage = client.get("/api/usage", headers=h).json()
     assert usage["paymentsOn"] is True and usage["plan"] == "basic" and usage["planExpiresAt"] is None
     order = client.post("/api/billing/order", headers=h, json={"plan": "pro"}).json()
-    assert order["amount"] == 29900 and order["currency"] == "INR" and order["keyId"] == "rzp_test_abc"
+    assert order["amount"] == 39900 and order["currency"] == "INR" and order["keyId"] == "rzp_test_abc"
 
     bad = client.post("/api/billing/verify", headers=h,
                       json={"orderId": order["orderId"], "paymentId": "pay_1", "signature": "nope"})
@@ -79,7 +79,7 @@ def test_paying_for_pro_switches_it_on_for_30_days(client):
     assert r.status_code == 200 and r.json()["plan"] == "pro"
     expires = datetime.fromisoformat(r.json()["planExpiresAt"])
     assert timedelta(days=29) < expires - datetime.now(timezone.utc) <= timedelta(days=30)
-    assert client.get("/api/usage", headers=h).json()["meter"]["session"]["limit"] == 400
+    assert client.get("/api/usage", headers=h).json()["meter"]["session"]["limit"] == sys.modules["limits"].PLANS["pro"]["meter"]["session"]
 
     # The same payment coming back again (or by webhook) doesn't add more days.
     assert _pay(client, h, order).json()["planExpiresAt"] == r.json()["planExpiresAt"]
@@ -105,7 +105,7 @@ def test_webhook_upgrades_even_if_the_app_never_came_back(client):
     h = _user(client, "pay4@test.com")
     order = client.post("/api/billing/order", headers=h, json={"plan": "pro"}).json()
     event = {"event": "payment.captured", "payload": {"payment": {"entity": {
-        "id": "pay_w", "order_id": order["orderId"], "amount": 29900}}}}
+        "id": "pay_w", "order_id": order["orderId"], "amount": 39900}}}}
     body = json.dumps(event).encode()
     assert client.post("/api/billing/webhook", content=body, headers={"X-Razorpay-Signature": "bad"}).status_code == 400
     assert client.get("/api/auth/me", headers=h).json()["plan"] == "basic"
@@ -189,7 +189,7 @@ def _charged(sub_id, payment_id, amount):
 def test_autopay_renews_every_month_until_cancelled(client, fake_rzp_api):
     h = _user(client, "auto1@test.com")
     sub = client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"}).json()
-    assert sub["amount"] == 29900 and sub["subscriptionId"].startswith("sub_")
+    assert sub["amount"] == 39900 and sub["subscriptionId"].startswith("sub_")
     assert [c[1] for c in fake_rzp_api] == ["/plans", "/subscriptions"]
     # A second subscribe reuses the Razorpay plan made the first time.
     client.post("/api/billing/subscribe", headers=_user(client, "auto1b@test.com"), json={"plan": "pro"})
@@ -203,9 +203,9 @@ def test_autopay_renews_every_month_until_cancelled(client, fake_rzp_api):
     assert usage["autopay"]["plan"] == "pro" and usage["autopay"]["status"] == "active"
 
     # The webhook for the same first payment adds nothing; next month's charge adds 30 days.
-    _hook(client, _charged(sub["subscriptionId"], "pay_a1", 29900))
+    _hook(client, _charged(sub["subscriptionId"], "pay_a1", 39900))
     assert client.get("/api/auth/me", headers=h).json()["planExpiresAt"] == first["planExpiresAt"]
-    _hook(client, _charged(sub["subscriptionId"], "pay_a2", 29900))
+    _hook(client, _charged(sub["subscriptionId"], "pay_a2", 39900))
     later = client.get("/api/auth/me", headers=h).json()["planExpiresAt"]
     gap = datetime.fromisoformat(later) - datetime.fromisoformat(first["planExpiresAt"])
     assert timedelta(days=29) < gap <= timedelta(days=30)
@@ -231,7 +231,7 @@ def test_moving_to_max_stops_the_pro_autopay(client, fake_rzp_api):
     pro = client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"}).json()
     _sub_pay(client, h, pro, "pay_b1")
     mx = client.post("/api/billing/subscribe", headers=h, json={"plan": "max"}).json()
-    assert mx["amount"] == 69900
+    assert mx["amount"] == 89900
     assert _sub_pay(client, h, mx, "pay_b2").json()["plan"] == "max"
     assert ("POST", f"/subscriptions/{pro['subscriptionId']}/cancel", {"cancel_at_cycle_end": 0}) in fake_rzp_api
     assert client.get("/api/usage", headers=h).json()["autopay"]["plan"] == "max"
@@ -256,3 +256,36 @@ def test_autopay_unavailable_says_503_so_the_app_pays_once(client, monkeypatch):
     h = _user(client, "auto4@test.com")
     assert client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"}).status_code == 503
     assert client.post("/api/billing/order", headers=h, json={"plan": "pro"}).status_code == 200
+
+
+def test_gst_is_added_on_top_only_once_there_is_a_gstin(client, fake_rzp_api, monkeypatch):
+    h = _user(client, "gst1@test.com")
+    assert client.get("/api/usage", headers=h).json()["gstRate"] == 0  # no GSTIN: prices as they are
+    plain = client.post("/api/billing/order", headers=h, json={"plan": "pro"}).json()
+    assert plain["amount"] == 39900 and "gst" not in plain
+
+    monkeypatch.setenv("GSTIN", "27abcde1234f1z5")
+    assert client.get("/api/usage", headers=h).json()["gstRate"] == 18
+    order = client.post("/api/billing/order", headers=h, json={"plan": "pro"}).json()
+    assert order["amount"] == 47082 and order["baseAmount"] == 39900 and order["gst"] == 7182
+    assert order["gstin"] == "27ABCDE1234F1Z5"
+    assert _pay(client, h, order).status_code == 200
+    paid = client.get("/api/billing/payments", headers=h).json()["payments"][0]
+    assert (paid["amount"], paid["baseAmount"], paid["gst"], paid["gstin"]) == (470.82, 399, 71.82, "27ABCDE1234F1Z5")
+    # The usage meter still follows the plan's price, not the GST on top.
+    import limits
+    assert client.get("/api/usage", headers=h).json()["meter"]["week"]["limit"] == limits.paid_meter(399)["week"]
+
+    # Autopay charges the price with GST every month, and each charge keeps the split.
+    h2 = _user(client, "gst2@test.com")
+    sub = client.post("/api/billing/subscribe", headers=h2, json={"plan": "max"}).json()
+    assert sub["amount"] == 106082 and sub["gst"] == 16182
+    assert _hook(client, _charged(sub["subscriptionId"], "pay_g1", 106082)).status_code == 200
+    charge = client.get("/api/billing/payments", headers=h2).json()["payments"][0]
+    assert (charge["amount"], charge["baseAmount"], charge["gst"]) == (1060.82, 899, 161.82)
+
+
+def test_gst_collected_is_not_revenue():
+    import owner_dashboard
+    assert owner_dashboard._net({"amount": 47082, "gst": 7182}) == 39900
+    assert owner_dashboard._net({"amount": 39900}) == 39900

@@ -386,8 +386,8 @@ function Privacy({ go }) {
 // ----------------------------------------------------------------- Billing
 const PLAN_COPY = {
   basic: { tag: "Free forever", line: "Chat, pictures, decks and apps, with a usage limit that refills." },
-  pro: { tag: "₹299 a month", line: "10x the usage, premium models, HD pictures and publishing." },
-  max: { tag: "₹699 a month", line: "30x the usage, the strongest models and the most automations." },
+  pro: { tag: "₹399 a month", line: "Much more usage, Krish Pro, HD pictures and publishing." },
+  max: { tag: "₹899 a month", line: "The most usage, Krish Pro and the most automations." },
 };
 
 function Billing({ onClose }) {
@@ -452,6 +452,11 @@ function Billing({ onClose }) {
                     <div className="min-w-0">
                       <p className="font-medium">Krish {p.planName}, {p.autopay ? "monthly autopay" : "30 days"}</p>
                       <p className="text-xs text-muted-foreground">{fmtDate(p.paidAt || p.createdAt)}{p.promoCode ? ` · ${p.promoCode}` : ""}</p>
+                      {p.gst > 0 && (
+                        <p className="text-xs text-muted-foreground" data-testid="billing-gst">
+                          ₹{p.baseAmount.toFixed(2)} + ₹{p.gst.toFixed(2)} GST (18%) · GSTIN {p.gstin}
+                        </p>
+                      )}
                     </div>
                     <span className="shrink-0 tabular-nums">₹{p.amount}</span>
                   </div>
@@ -496,7 +501,7 @@ function Usage({ onClose }) {
   const pctRange = (r) => (pct(r[0]) === pct(r[1]) ? `${pct(r[0])}%` : `${pct(r[0])}–${pct(r[1])}%`);
   return (
     <>
-      <PageTitle title="Usage" hint="How much of your plan you've used. Bigger requests use more, and it refills on its own." />
+      <PageTitle title="Usage" hint={data.plan === "basic" ? "The free plan has 40 Krish Basic messages every 5 hours. Making things uses your allowance." : "Chat on Krish Basic is never counted. Making things uses your allowance."} />
       {!data.limitsOn ? <p className="text-sm text-muted-foreground">There are no usage limits right now. Make as much as you like.</p> : (
         <>
           <div className="grid gap-6 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2">
