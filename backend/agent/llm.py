@@ -249,6 +249,36 @@ def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[d
     return head + rest
 
 
+def harmony_safe(messages: List[dict]) -> List[dict]:
+    """gpt-oss on Groq and Cerebras renders the chat with OpenAI's harmony format, which rejects the whole request
+    ("HarmonyError: render failed: Tools should have a name!") when a tool call or a tool result has no function
+    name. A model sometimes writes a call with an empty name, and a tool result whose call was trimmed away has
+    none to look up. So calls without a name are dropped (with their results), results that don't belong to a
+    call are dropped, and every result carries its call's name."""
+    names, out = {}, []
+    for m in messages:
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            kept = [c for c in m["tool_calls"] if ((c.get("function") or {}).get("name") or "").strip()]
+            for c in kept:
+                names[c.get("id")] = c["function"]["name"].strip()
+            if kept and len(kept) != len(m["tool_calls"]):
+                m = {**m, "tool_calls": kept}
+            elif not kept:
+                m = {k: v for k, v in m.items() if k != "tool_calls"}
+                if not (m.get("content") or "").strip():
+                    continue
+                m = {**m, "content": m["content"]}
+        elif m.get("role") == "tool":
+            name = names.get(m.get("tool_call_id"))
+            if not name:
+                continue
+            if m.get("name") != name:
+                m = {**m, "name": name}
+        out.append(m)
+    unchanged = len(out) == len(messages) and all(a is b for a, b in zip(out, messages))
+    return messages if unchanged else out
+
+
 def _retry_after(exc: Exception) -> float:
     m = re.search(r"try again in (?:(\d+)m)?([\d.]+)s", str(exc))
     if not m:
@@ -348,11 +378,14 @@ def request_kwargs(model: str, messages: List[dict], tools: List[dict], think: U
         kwargs["messages"] = _signed_calls(messages)
     if tools:
         kwargs["tools"] = tools
+    harmony = "gpt-oss" in model or provider_for(model) in ("groq", "cerebras")
+    if harmony:
+        kwargs["messages"] = harmony_safe(kwargs["messages"])
     if lean(model):
         budget = token_budget(model)
-        fitted = fit_messages(messages, tools, budget)
+        fitted = fit_messages(kwargs["messages"], tools, budget)
         room = budget - estimate_tokens(fitted) - estimate_tokens(tools)
-        kwargs.update(messages=fitted, max_tokens=max(_MIN_OUTPUT // 2, min(max_output or output_room(model), room)))
+        kwargs.update(messages=harmony_safe(fitted) if harmony else fitted, max_tokens=max(_MIN_OUTPUT // 2, min(max_output or output_room(model), room)))
     effort = reasoning_effort(model, think)
     if effort:
         kwargs.update(reasoning_effort=effort, drop_params=True)

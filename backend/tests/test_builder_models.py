@@ -38,7 +38,9 @@ def test_cerebras_keeps_more_history_than_groq(monkeypatch):
     run(collect(llm.stream_completion("openai/gpt-oss-120b", msgs, [])))
     cerebras, groq = seen
     assert cerebras["model"] == CEREBRAS and cerebras["reasoning_effort"] == "medium"
-    assert cerebras["messages"] is msgs and groq["messages"] is not msgs
+    # Cerebras keeps the whole history (its tool results only gain their call's name, for gpt-oss's harmony format).
+    assert [{k: v for k, v in m.items() if k != "name"} for m in cerebras["messages"]] == msgs
+    assert len(groq["messages"]) < len(msgs) or groq["messages"] != cerebras["messages"]
     assert llm.estimate_tokens(cerebras["messages"]) + cerebras["max_tokens"] <= llm.token_budget(CEREBRAS)
 
 

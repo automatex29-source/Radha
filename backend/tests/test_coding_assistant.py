@@ -182,3 +182,28 @@ def test_server_reviews_a_new_build_and_fixes_what_it_finds(monkeypatch):
     assert len(reviews) == 1 and len(calls) == 2  # reviewed once, then one repair round
     assert "app.js shows x" in calls[1]["messages"][-1]["content"]
     assert any(e["type"] == "tool_start" and e["name"] == "review_code" for e in events)
+
+
+# ------------------------------------------------------------------ gpt-oss "Tools should have a name!"
+def test_harmony_safe_drops_nameless_calls_and_names_results():
+    from agent import llm
+
+    msgs = [
+        {"role": "system", "content": "s"},
+        {"role": "tool", "tool_call_id": "orphan", "content": "left over"},
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": "a", "type": "function", "function": {"name": "write_file", "arguments": "{}"}},
+            {"id": "b", "type": "function", "function": {"name": "", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "a", "content": "ok"},
+        {"role": "tool", "tool_call_id": "b", "content": "unknown tool"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c", "type": "function", "function": {"name": " "}}]},
+        {"role": "tool", "tool_call_id": "c", "content": "x"},
+        {"role": "user", "content": "go on"},
+    ]
+    out = llm.harmony_safe(msgs)
+    assert [m["role"] for m in out] == ["system", "assistant", "tool", "user"]
+    assert [c["id"] for c in out[1]["tool_calls"]] == ["a"] and out[2]["name"] == "write_file"
+    kwargs = llm.request_kwargs("openai/gpt-oss-120b", msgs, [])
+    assert all(m.get("name") for m in kwargs["messages"] if m["role"] == "tool")
+    claude = llm.request_kwargs("claude-sonnet-5-5", msgs, [])
+    assert len(claude["messages"]) == len(msgs)  # other models are sent the chat as it is
