@@ -301,3 +301,24 @@ def test_gemini_tool_calls_are_sent_back_signed():
     assert block["signature"] == "skip_thought_signature_validator"
     assert "thinking_blocks" not in msgs[1]  # the conversation itself is untouched
     assert "thinking_blocks" not in llm.request_kwargs(GROQ, msgs, [])["messages"][1]
+
+
+def test_groq_failing_on_a_big_prompt_hands_over_to_cerebras(monkeypatch):
+    # A big prompt on Krish Basic: Groq refuses it (over its per-minute budget) and Cerebras answers,
+    # instead of the chat showing "the AI model stopped before writing the answer".
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setenv("CEREBRAS_API_KEY", "x")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    too_big = litellm.BadRequestError("Request too large for model", "groq", "openai/gpt-oss-120b")
+    seen = scripted(monkeypatch, [too_big, "From Cerebras"])
+    events = run(collect(llm.stream_completion(GROQ, [{"role": "user", "content": "long " * 3000}], [])))
+    assert seen == ["groq/openai/gpt-oss-120b", "cerebras/gpt-oss-120b"]
+    assert "".join(e["text"] for e in events if e["type"] == "text") == "From Cerebras"
+
+
+def test_groq_alone_still_waits_out_a_rate_limit(monkeypatch):
+    monkeypatch.delenv("LLM_GATEWAY_URL", raising=False)
+    for key in ("GEMINI_API_KEY", "CEREBRAS_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    assert llm.fallbacks_for("openai/gpt-oss-120b", []) == []

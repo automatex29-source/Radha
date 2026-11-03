@@ -16,7 +16,7 @@ import InviteDialog from "@/components/InviteDialog";
 import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users, Gift,
+  Plus, Search, Loader2, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users, Gift,
   LayoutDashboard,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
@@ -45,7 +45,7 @@ const GroupIcon = ({ label }) => {
   return <Icon className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />;
 };
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel, searchContent = false }) {
+export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel, searchContent = false, busyIds = null }) {
   const { user, logout } = useAuth();
   const t = useT();
   const navigate = useNavigate();
@@ -149,7 +149,9 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                   className={`group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm max-md:gap-4 max-md:text-[15px] lg:py-1.5 lg:text-[13px] transition-colors ${
                     activeId === c.id ? "bg-white text-foreground shadow-sm ring-1 ring-indigo-100 dark:bg-surface-strong dark:ring-0" : "text-foreground/75 hover:bg-white/70 hover:text-foreground dark:text-muted-foreground dark:hover:bg-surface"
                   } cursor-pointer`}>
-                  <MessageSquare className="h-3.5 w-3.5 shrink-0 max-md:h-4 max-md:w-4 max-md:text-foreground/50" />
+                  {busyIds?.has(c.id)
+                    ? <Loader2 data-testid={`conversation-busy-${c.id}`} aria-label="Writing a reply" className="h-3.5 w-3.5 shrink-0 animate-spin text-primary max-md:h-4 max-md:w-4" />
+                    : <MessageSquare className="h-3.5 w-3.5 shrink-0 max-md:h-4 max-md:w-4 max-md:text-foreground/50" />}
                   {editingId === c.id ? (
                     <div className="flex flex-1 items-center gap-1">
                       <input autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
@@ -166,11 +168,13 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
                         {hits?.[c.id] && <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground" data-testid={`search-snippet-${c.id}`}>{hits[c.id]}</span>}
                       </span>
                       {/* Phones show rename and delete only on the open chat, so the list stays clean. */}
-                      <div className={`flex shrink-0 items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 lg:gap-1 ${activeId === c.id ? "" : "max-md:hidden"}`}>
-                        <button data-testid={`rename-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); startRename(c); }} className="hover:text-primary">
+                      <div className={`-my-2 -mr-2 flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 lg:my-0 lg:mr-0 lg:gap-1 ${activeId === c.id ? "" : "max-md:hidden"}`}>
+                        <button data-testid={`rename-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); startRename(c); }} aria-label="Rename"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg hover:text-primary lg:h-auto lg:w-auto">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button data-testid={`delete-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); }} className="hover:text-destructive">
+                        <button data-testid={`delete-conversation-button-${c.id}`} onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); }} aria-label="Delete"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg hover:text-destructive lg:h-auto lg:w-auto">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>

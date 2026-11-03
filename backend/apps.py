@@ -192,6 +192,8 @@ DESIGN_GUIDE = (
     "the browser (nothing uploaded), handle a wrong or empty file with a clear message, and add a \"Try with "
     "sample\" button when a sample exists.\n"
     "- Responsive from phone to desktop, with labelled inputs and good contrast.\n"
+    "- All app text (labels, placeholders, buttons, sample data) in one language, the one the request is in: "
+    "never two languages side by side (no \"नाम / Name\") unless asked.\n"
     "- Every feature works for real: all buttons do something, input is validated, data persists in localStorage "
     "when that helps, and sample content is realistic (no lorem ipsum, no TODOs, no placeholders). Add the extra "
     "features a user would expect (e.g. for a to-do app: edit, complete, delete, filter, counts, clear completed).\n"

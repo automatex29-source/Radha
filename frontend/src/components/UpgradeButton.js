@@ -11,7 +11,7 @@ export default function UpgradeButton() {
   return (
     <button onClick={() => navigate("/plans")} data-testid="header-upgrade" aria-label={`Unlock ${next}`}
       className="krish-unlock flex h-[34px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold text-white transition-shadow sm:h-9 sm:px-3.5 sm:text-[13px]">
-      <Sparkles className="h-3.5 w-3.5" /> Unlock {next}
+      <Sparkles className="h-3.5 w-3.5" /> <span className="@max-sm:hidden">Unlock</span> {next}
     </button>
   );
 }

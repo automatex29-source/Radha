@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Plus, Play, Newspaper, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Play, Newspaper, ThumbsUp, ThumbsDown } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
@@ -15,6 +15,7 @@ import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { modelLabel } from "@/lib/models";
 import { AgentAvatar } from "@/lib/counselAgents";
+import ScrollTable from "@/components/ScrollTable";
 
 function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
   const [failed, setFailed] = useState(false);
@@ -131,27 +132,23 @@ function MakePageButton({ id }) {
   };
   return (
     <button onClick={make} disabled={busy} data-testid={`make-page-button-${id}`} title="Publish this answer as a page anyone can read"
-      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50">
+      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 max-md:min-h-9 max-md:px-1">
       {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Newspaper className="h-3 w-3" />} Make a page
     </button>
   );
 }
 
+// Follow-up questions as one quiet row of small chips, so they don't crowd the answer.
 function RelatedQuestions({ items, onAsk, id }) {
   return (
-    <div className="mt-5" data-testid={`related-questions-${id}`}>
-      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        <CornerDownRight className="h-3.5 w-3.5" /> Related
-      </p>
-      <div className="divide-y divide-border border-y border-border">
-        {items.map((q, i) => (
-          <button key={q} onClick={() => onAsk(q)} data-testid={`related-question-${i + 1}`} dir="auto"
-            className="group/rel flex w-full items-center gap-3 py-2.5 text-left text-[14px] text-foreground transition-colors hover:text-brand">
-            <span className="min-w-0 flex-1">{q}</span>
-            <Plus className="h-4 w-4 shrink-0 text-muted-foreground group-hover/rel:text-brand" />
-          </button>
-        ))}
-      </div>
+    <div className="mt-4 flex flex-wrap gap-1.5" data-testid={`related-questions-${id}`}>
+      {items.slice(0, 3).map((q, i) => (
+        <button key={q} onClick={() => onAsk(q)} data-testid={`related-question-${i + 1}`} dir="auto"
+          className="flex max-w-full items-center gap-1 rounded-full border border-border px-2.5 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground">
+          <CornerDownRight className="h-3 w-3 shrink-0" />
+          <span className="truncate">{q}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -207,7 +204,7 @@ function SpeakButton({ text, voice, id }) {
   };
   return (
     <button onClick={toggle} data-testid={`speak-message-button-${id}`}
-      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
       {state === "loading" ? <Loader2 className="h-3 w-3 animate-spin" /> : state === "playing" ? <Square className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
       {state === "playing" ? "Stop" : "Listen"}
     </button>
@@ -337,15 +334,15 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         </div>
       </div>
         {message.content && (
-          <div className="mr-11 mt-1.5 flex items-center gap-3 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
+          <div className="mr-11 mt-1.5 flex items-center gap-3 max-md:mt-0 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
             <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`} aria-label="Copy"
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
               {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
             </button>
             {onEdit && (
               <button onClick={() => { setDraft(message.content); setEditing(true); }} data-testid={`edit-message-button-${message.id}`}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
                 <Pencil className="h-3 w-3" /> Edit
               </button>
             )}
@@ -357,10 +354,12 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
 
   return (
     <div className="group flex gap-3 radha-fade-up" data-testid={`ai-message-item-${message.id}`}>
-      {agent ? <AgentAvatar agent={agent} speaking={streaming} className="mt-0.5 h-8 w-8 text-base" />
-        : <BrandMark className="mt-0.5 h-8 w-8 shrink-0" thinking={streaming} />}
+      {agent ? <AgentAvatar agent={agent} speaking={streaming} className="mt-0.5 h-8 w-8 text-base max-sm:hidden" />
+        : <BrandMark className="mt-0.5 h-8 w-8 shrink-0 max-sm:hidden" thinking={streaming} />}
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
+          {agent ? <AgentAvatar agent={agent} speaking={streaming} className="h-7 w-7 shrink-0 text-sm sm:hidden" />
+            : <BrandMark className="h-7 w-7 shrink-0 sm:hidden" thinking={streaming} />}
           {agent ? <span data-testid="agent-name" className="text-[15px] font-bold tracking-tight text-foreground">{agent.name}</span>
             : <KrishWordmark className="text-[15px]" />}
           {message.model && (
@@ -375,7 +374,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
         <div dir="auto" className="radha-prose krish-answer min-w-0">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: SourceChip }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable }}>
             {shown}
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
@@ -398,9 +397,9 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           </div>
         )}
         {!streaming && message.content && (
-          <div className="mt-2 flex items-center gap-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <div className="mt-2 flex items-center gap-3 max-md:mt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
             <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
               {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
             </button>

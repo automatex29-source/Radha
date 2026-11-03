@@ -120,18 +120,27 @@ def fallback_for(model: str, messages: List[dict]) -> Optional[str]:
     return chain[0] if chain else None
 
 
+# Groq and Cerebras hand over too: a big prompt that is over Groq's per-minute budget, or a busy Cerebras,
+# showed "the AI model stopped" on Krish Basic while another free model could have answered. The roomiest
+# stand-in goes first (Cerebras fits about 4x more than Groq, Gemini more still).
+_LEAN_FALLBACKS = {"groq": ("cerebras/gpt-oss-120b", "gemini-3.5-flash-lite"),
+                   "cerebras": ("gemini-3.5-flash-lite", "openai/gpt-oss-120b")}
+
+
 def _handed_over(model: str) -> bool:
-    """Free models with a small daily allowance (Gemini, OpenRouter's free models) that hand over when it runs out."""
-    return provider_for(model) in ("gemini", "openrouter") and not gateway()
+    """Free models that hand over to another free model when they fail or say nothing before the answer."""
+    return provider_for(model) in ("gemini", "openrouter", "groq", "cerebras") and not gateway()
 
 
 def fallbacks_for(model: str, messages: List[dict]) -> List[str]:
-    """The models that answer, in order, when Gemini or a free OpenRouter model can't (fails or says nothing).
-    Pictures need Gemini."""
-    if not _handed_over(model) or (provider_for(model) == "gemini" and _has_images(messages)):
+    """The models that answer, in order, when a free model can't (fails or says nothing). Pictures need Gemini."""
+    if not _handed_over(model):
         return []
-    chain = _CODER_FALLBACKS if provider_for(model) == "openrouter" else _GEMINI_FALLBACKS
-    return [m for m in chain if configured(m)]
+    provider = provider_for(model)
+    if _has_images(messages):
+        return []  # pictures need Gemini; the free text models can't see them
+    chain = _CODER_FALLBACKS if provider == "openrouter" else _LEAN_FALLBACKS.get(provider, _GEMINI_FALLBACKS)
+    return [m for m in chain if configured(m) and provider_for(m) != provider]
 
 
 def lean(model: str) -> bool:
@@ -232,7 +241,10 @@ def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[d
         while len(rest) > 1 and rest[0]["role"] == "tool":
             rest = rest[1:]  # a tool result can't start the conversation
     if estimate_tokens(head + rest) > limit and head:
-        keep = max(1000, int(limit * _CHARS_PER_TOKEN * 0.5))
+        # Cut only what is over (plus a margin), not down to half the room: a prompt a little over the budget
+        # lost its file excerpts and search results that way.
+        over = int((estimate_tokens(head + rest) - limit) * _CHARS_PER_TOKEN) + 600
+        keep = max(1000, min(len(head[0]["content"]) - over, int(limit * _CHARS_PER_TOKEN)))
         head = [{**head[0], "content": _shorten_prompt(head[0]["content"], keep)}]
     return head + rest
 
@@ -358,7 +370,7 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
     """One model call. Gemini is asked again once when it is busy or says nothing, then hands over to Groq
     (then Cerebras) if it still fails or stays silent, so the user gets an answer instead of an error."""
     fallbacks = fallbacks_for(model, messages)
-    if not _handed_over(model):
+    if not _handed_over(model) or (lean(model) and not fallbacks):  # Groq or Cerebras alone: as before
         async for event in _stream_model(model, messages, tools, think, max_output):
             yield event
         return
@@ -368,13 +380,16 @@ async def _stream_once(model: str, messages: List[dict], tools: List[dict], thin
     error: Optional[Exception] = None
     for i, current in enumerate(plan):
         if i == 1 and error is not None and not _busy(error):
+            if len(plan) == 2:
+                raise error  # nobody to hand over to: show the real error instead of an empty answer
             continue  # out of requests or a blocked key: asking Gemini again won't help
         if i == 1:
             await asyncio.sleep(_GEMINI_RETRY_PAUSE)
         last = i == len(plan) - 1
         said = False
         try:
-            async for event in _stream_model(current, messages, tools, think, max_output, wait=last):
+            # Only the last one waits out a rate limit, or the model itself when nobody can stand in.
+            async for event in _stream_model(current, messages, tools, think, max_output, wait=last or not fallbacks):
                 if event["type"] == "tool_calls" or (event["type"] == "text" and event["text"].strip()):
                     said = True
                 yield event

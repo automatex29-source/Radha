@@ -162,7 +162,10 @@ export default function Workspace({ mode = null }) {
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
+  // Replies being written, by chat id: up to MAX_STREAMS chats can be answering at once, and a reply keeps
+  // writing in the background when you open another chat (it shows again when you come back).
+  const [streamingIds, setStreamingIds] = useState(() => new Set());
+  const streaming = !!activeId && streamingIds.has(activeId);
   // The code side panel: null (closed), "live" (the newest reply with code, following the stream) or a message id.
   const [codePanel, setCodePanel] = useState(null);
   const [streamText, setStreamText] = useState("");
@@ -224,19 +227,24 @@ export default function Workspace({ mode = null }) {
   const searchOpts = () => (webMode && !counselling ? { web: true, focus, pro } : { web: false });
 
   const scrollRef = useRef(null);
-  const abortRef = useRef(null);
-  // Bumped whenever the screen switches chats, so a reply or load still running for the
-  // chat that was left can't write its messages into the one now open.
+  const streamsRef = useRef(new Map()); // chat id -> { controller, text, sources, steps, related, webHint, timer }
+  const markStreaming = () => setStreamingIds(new Set(streamsRef.current.keys()));
+  // The chat on screen, readable at once (state updates land on the next render).
+  const activeIdRef = useRef(null);
+  const setActive = (id) => { activeIdRef.current = id; setActiveId(id); };
+  // Shows a chat's reply that is still being written (or nothing).
+  const showStream = (st) => {
+    setStreamText(st ? st.text : "");
+    setStreamSources(st ? st.sources : []);
+    setStreamSteps(st ? st.steps : []);
+  };
+  // Bumped whenever the screen switches chats, so a load still running for the chat that was left
+  // can't write its messages into the one now open. Replies keep writing in the background.
   const chatSeq = useRef(0);
   const leaveChat = () => {
     chatSeq.current += 1;
-    if (abortRef.current) abortRef.current.abort();
+    showStream(null);
   };
-  const streamTextRef = useRef("");
-  const streamSourcesRef = useRef([]);
-  const streamRelatedRef = useRef([]);
-  const streamWebHintRef = useRef(false);
-  const streamStepsRef = useRef([]);
 
   // Chat always uses Krish AI's tools (web search, code, files) whenever the model supports them; no mode switch.
   const agentAvailable = !counselling && !!(caps && model && caps.agent?.[model]);
@@ -316,7 +324,7 @@ export default function Workspace({ mode = null }) {
     const projParam = searchParams.get("project");
     if (projParam) setProjectId(projParam);
     if (convParam && convParam !== activeId) openConversation(convParam);
-    else if (projParam) { leaveChat(); setActiveId(null); setMessages([]); }
+    else if (projParam) { leaveChat(); setActive(null); setMessages([]); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -332,7 +340,7 @@ export default function Workspace({ mode = null }) {
     leaveChat();
     const seq = chatSeq.current;
     scrollNext.current = "bottom";
-    setActiveId(id);
+    setActive(id);
     setSidebarOpen(false);
     setLoadingConv(true);
     setSearchParams((sp) => {
@@ -345,6 +353,7 @@ export default function Workspace({ mode = null }) {
       const { data } = await api.get(`/conversations/${id}`);
       if (seq !== chatSeq.current) return;
       setMessages(data.messages);
+      showStream(streamsRef.current.get(id)); // a reply still being written here shows live again
       if (data.conversation?.model) setModel(menuModel(data.conversation.model));
       setProjectId(data.conversation?.projectId || null);
       let files = [];
@@ -359,10 +368,9 @@ export default function Workspace({ mode = null }) {
 
   const newConversation = () => {
     leaveChat();
-    setAgentId(null);
     setPreviewItem(null);
     setLoadingConv(false);
-    setActiveId(null);
+    setActive(null);
     setMessages([]);
     setAttachments([]);
     setPendingImages([]);
@@ -398,7 +406,7 @@ export default function Workspace({ mode = null }) {
 
   const stopGeneration = () => {
     roboSpeakerRef.current?.stop();
-    if (abortRef.current) abortRef.current.abort();
+    streamsRef.current.get(activeIdRef.current)?.controller.abort();
   };
 
   const exportConversation = () => {
@@ -423,25 +431,24 @@ export default function Workspace({ mode = null }) {
   };
 
   const runStream = async (url, body, convId, onText) => {
-    setStreaming(true);
-    setStreamText("");
-    setStreamSources([]);
-    setStreamSteps([]);
-    streamTextRef.current = "";
-    streamSourcesRef.current = [];
-    streamRelatedRef.current = [];
-    streamWebHintRef.current = false;
-    streamStepsRef.current = [];
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const seq = chatSeq.current;
+    const st = { controller: new AbortController(), text: "", sources: [], steps: [], related: [], webHint: false, timer: 0 };
+    streamsRef.current.set(convId, st);
+    markStreaming();
+    const onScreen = () => activeIdRef.current === convId;
+    if (onScreen()) showStream(st);
+    // Text arrives in many small pieces; the screen is redrawn at most every 50 ms, not for each one.
+    const paint = (now = false) => {
+      if (!onScreen()) return;
+      if (now) { clearTimeout(st.timer); st.timer = 0; showStream(st); return; }
+      if (!st.timer) st.timer = setTimeout(() => { st.timer = 0; if (onScreen()) showStream(st); }, 50);
+    };
 
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: st.controller.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -470,8 +477,8 @@ export default function Workspace({ mode = null }) {
           }
           if (eventName === "error") throw new Error(JSON.parse(dataStr || '"Stream error"'));
           if (eventName === "sources") {
-            streamSourcesRef.current = JSON.parse(dataStr || "[]");
-            setStreamSources(streamSourcesRef.current);
+            st.sources = JSON.parse(dataStr || "[]");
+            paint(true);
             continue;
           }
           if (eventName === "plan_limit") {
@@ -479,77 +486,82 @@ export default function Workspace({ mode = null }) {
             continue;
           }
           if (eventName === "web_hint") {
-            streamWebHintRef.current = true;
+            st.webHint = true;
             continue;
           }
           if (eventName === "related") {
-            streamRelatedRef.current = JSON.parse(dataStr || "[]");
+            st.related = JSON.parse(dataStr || "[]");
             continue;
           }
           if (eventName === "tool" || eventName === "tool_result") {
             const step = JSON.parse(dataStr);
-            const others = streamStepsRef.current.filter((s) => s.id !== step.id);
-            streamStepsRef.current = eventName === "tool" ? [...others, step]
-              : streamStepsRef.current.map((s) => (s.id === step.id ? step : s));
-            setStreamSteps(streamStepsRef.current);
+            const others = st.steps.filter((x) => x.id !== step.id);
+            st.steps = eventName === "tool" ? [...others, step] : st.steps.map((x) => (x.id === step.id ? step : x));
+            paint(true);
             // Like Claude's artifacts: open newly created documents in the side panel.
             const doc = eventName === "tool_result" && (step.media || []).find((m) => m.kind === "document");
-            if (doc) setPreviewItem(doc);
+            if (doc && onScreen()) setPreviewItem(doc);
             continue;
           }
           if (eventName === "done") continue;
           if (dataStr) {
-            streamTextRef.current += JSON.parse(dataStr);
-            setStreamText(streamTextRef.current);
-            onText?.(streamTextRef.current);
+            st.text += JSON.parse(dataStr);
+            paint();
+            if (onScreen()) onText?.(st.text);
           }
         }
       }
     } catch (e) {
       // When the reply already explains the failure (the server writes a note with Regenerate), no technical toast.
-      if (e.name !== "AbortError" && !streamTextRef.current.trim()) toast.error(e.message || "Something went wrong");
+      if (e.name !== "AbortError" && !st.text.trim()) toast.error(e.message || "Something went wrong");
     } finally {
-      const stopped = controller.signal.aborted;
-      if (abortRef.current === controller) abortRef.current = null;
-      setStreaming(false);
-      const finalText = streamTextRef.current;
-      // The user moved to another chat: the server keeps what was written in the old one,
-      // and none of it belongs on the screen now.
-      const left = seq !== chatSeq.current;
+      clearTimeout(st.timer);
+      const stopped = st.controller.signal.aborted;
+      streamsRef.current.delete(convId);
+      markStreaming();
       // A stopped reply keeps what was written so far (the server saves the same part).
-      const steps = stopped ? streamStepsRef.current.map((s) => (s.status === "running" ? { ...s, status: "stopped", summary: "Stopped" } : s))
-        : streamStepsRef.current;
-      if (!left && (finalText || steps.length)) {
-        setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: finalText, model, stopped,
-          sources: streamSourcesRef.current.length ? streamSourcesRef.current : null, related: streamRelatedRef.current,
-          webHint: streamWebHintRef.current,
-          steps, media: steps.flatMap((s) => s.media || []) }]);
-      }
-      setStreamText("");
-      setStreamSources([]);
-      setStreamSteps([]);
-      // Sync ordering/titles/ids from server. After Stop the server needs a moment to save the
-      // part already written, so wait for it rather than replacing the reply with nothing.
-      if (!left) try {
-        for (let tries = 0; ; tries++) {
-          const { data } = await api.get(`/conversations/${convId}`);
-          if (seq !== chatSeq.current) break;
-          const saved = data.messages[data.messages.length - 1]?.role === "assistant";
-          if (saved || !(stopped && (finalText || steps.length))) { setMessages(data.messages); break; }
-          if (tries >= 5) break; // keep the local copy
-          await new Promise((r) => setTimeout(r, 400));
+      const steps = stopped ? st.steps.map((x) => (x.status === "running" ? { ...x, status: "stopped", summary: "Stopped" } : x))
+        : st.steps;
+      // A reply for a chat that isn't on screen is saved by the server; it shows when that chat is opened.
+      if (onScreen()) {
+        showStream(null);
+        if (st.text || steps.length) {
+          setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: st.text, model, stopped,
+            sources: st.sources.length ? st.sources : null, related: st.related, webHint: st.webHint,
+            steps, media: steps.flatMap((x) => x.media || []) }]);
         }
-      } catch { /* keep local */ }
+        // Sync ordering/titles/ids from server. After Stop the server needs a moment to save the
+        // part already written, so wait for it rather than replacing the reply with nothing.
+        const seq = chatSeq.current;
+        try {
+          for (let tries = 0; ; tries++) {
+            const { data } = await api.get(`/conversations/${convId}`);
+            if (seq !== chatSeq.current || !onScreen()) break;
+            const saved = data.messages[data.messages.length - 1]?.role === "assistant";
+            if (saved || !(stopped && (st.text || steps.length))) { setMessages(data.messages); break; }
+            if (tries >= 5) break; // keep the local copy
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        } catch { /* keep local */ }
+      }
       loadConversations();
     }
-    return streamTextRef.current;
+    return st.text;
+  };
+
+  // How many chats may be answering at the same time.
+  const MAX_STREAMS = 3;
+  const tooManyStreams = () => {
+    if (streamsRef.current.size < MAX_STREAMS) return false;
+    toast("Krish is already writing 3 answers. Send this once one of them finishes.");
+    return true;
   };
 
   const ensureConversation = async () => {
     if (activeId) return activeId;
     const { data } = await api.post("/conversations",
       counselling ? { mode, agent: KRISH_ROBO.id } : projectId ? { projectId } : {});
-    setActiveId(data.id);
+    setActive(data.id);
     setConversations((c) => [data, ...c]);
     setSearchParams((sp) => {
       const n = new URLSearchParams(sp);
@@ -653,7 +665,7 @@ export default function Workspace({ mode = null }) {
     // Voice chat with the camera or screen on sends one picture of what it shows right now.
     const liveNote = frame ? [`[Live ${frame.source} view: the picture below is what my ${frame.source} shows right now.]`] : [];
     const content = [...videoNotes, ...liveNote, typed, ...codeBlocks].join("\n\n").trim();
-    if (!content || streaming) return "";
+    if (!content || streaming || tooManyStreams()) return "";
     if (counselling && roboSpeaks && !voice) unlockSpeech(); // while the tap still counts, so phones let it speak
 
     let convId;
@@ -704,7 +716,7 @@ export default function Workspace({ mode = null }) {
   sendRef.current = sendMessage;
 
   const regenerate = async ({ withWeb = false } = {}) => {
-    if (!activeId || streaming) return;
+    if (!activeId || streaming || tooManyStreams()) return;
     setMessages((m) => {
       const copy = [...m];
       if (copy.length && copy[copy.length - 1].role === "assistant") copy.pop();
@@ -717,7 +729,7 @@ export default function Workspace({ mode = null }) {
   // Edit an earlier question (like ChatGPT): the answers after it go, and Krish answers the new wording.
   const editMessage = async (id, content) => {
     const text = (content || "").trim();
-    if (!activeId || streaming || !text) return;
+    if (!activeId || streaming || !text || tooManyStreams()) return;
     setMessages((m) => {
       const i = m.findIndex((x) => x.id === id);
       return i < 0 ? m : [...m.slice(0, i), { ...m[i], content: text }];
@@ -733,7 +745,7 @@ export default function Workspace({ mode = null }) {
       <div className="hidden lg:block">
         <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
           onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
-          newLabel={counselling ? t("newSession") : undefined} onCollapse={() => {}} searchContent={!counselling} />
+          newLabel={counselling ? t("newSession") : undefined} onCollapse={() => {}} searchContent={!counselling} busyIds={streamingIds} />
       </div>
 
       {/* Mobile drawer */}
@@ -743,7 +755,7 @@ export default function Workspace({ mode = null }) {
           <div className="krish-drawer-in krish-canvas absolute left-0 top-0 h-full max-w-[85vw] shadow-2xl">
             <Sidebar conversations={conversations} activeId={activeId} onSelect={openConversation}
               onNew={newConversation} onDelete={deleteConversation} onRename={renameConversation}
-          newLabel={counselling ? t("newSession") : undefined} onCollapse={() => setSidebarOpen(false)} searchContent={!counselling} />
+          newLabel={counselling ? t("newSession") : undefined} onCollapse={() => setSidebarOpen(false)} searchContent={!counselling} busyIds={streamingIds} />
           </div>
         </div>
       )}
@@ -792,7 +804,7 @@ export default function Workspace({ mode = null }) {
         </header>
 
         {/* Messages */}
-        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
+        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-x-hidden overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
           {loadingConv ? (
             <div className="flex h-full items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -825,8 +837,8 @@ export default function Workspace({ mode = null }) {
                       <Globe className="h-3.5 w-3.5" /> Get the latest from the web
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" onClick={() => regenerate()} data-testid="regenerate-button"
-                    className="gap-1.5 border-border bg-card text-muted-foreground hover:text-foreground">
+                  <Button variant="ghost" size="sm" onClick={() => regenerate()} data-testid="regenerate-button"
+                    className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground hover:text-foreground">
                     <RefreshCw className="h-3.5 w-3.5" /> Regenerate
                   </Button>
                 </div>
@@ -837,7 +849,7 @@ export default function Workspace({ mode = null }) {
 
         {/* Composer */}
         {counselling && (
-          <p data-testid="counsellor-care-note" className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-5 text-center text-[11px] leading-snug text-muted-foreground">
+          <p data-testid="counsellor-care-note" className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-5 pt-2 text-center text-[11px] leading-snug text-muted-foreground">
             {messages.length > 0 && (
               <button onClick={toggleRoboSpeaks} data-testid="counsellor-voice-chat" aria-pressed={roboSpeaks}
                 className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:underline dark:text-violet-300">
