@@ -210,8 +210,8 @@
   pointer-events: none;
 }
 
-/* markdown prose: replies use the reading font (--font-reading) */
-.radha-prose { font-family: var(--font-reading); font-optical-sizing: auto; font-size: 1rem; line-height: 1.7; letter-spacing: -0.003em; color: hsl(var(--foreground) / 0.9); overflow-wrap: break-word; text-wrap: pretty; font-kerning: normal; }
+/* markdown prose: replies use the clean UI font (Inter), easy to read at any size */
+.radha-prose { font-family: var(--font-sans); font-feature-settings: "cv11", "ss01"; font-optical-sizing: auto; font-size: 1rem; line-height: 1.7; letter-spacing: -0.006em; color: hsl(var(--foreground) / 0.92); overflow-wrap: break-word; text-wrap: pretty; font-kerning: normal; }
 .radha-prose > :first-child { margin-top: 0; }
 .radha-prose > :last-child { margin-bottom: 0; }
 .radha-prose p { margin: 0.85em 0; }
@@ -229,7 +229,17 @@
 .radha-prose ol > li::marker { font-weight: 600; }
 .radha-prose ul { list-style: disc; }
 .radha-prose ol { list-style: decimal; }
-.radha-prose a { color: hsl(var(--brand)); text-decoration: underline; text-underline-offset: 2px; }
+.radha-prose a { color: hsl(var(--brand)); text-decoration: underline; text-decoration-color: hsl(var(--brand) / 0.35); text-underline-offset: 3px; text-decoration-thickness: 1.5px; transition: text-decoration-color .15s, color .15s; }
+.radha-prose a:hover { text-decoration-color: currentColor; }
+/* Each new paragraph, list or table eases in as Krish writes it. */
+.radha-prose > * { animation: krish-reveal .35s ease-out both; }
+@keyframes krish-reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.radha-prose li { transition: color .15s; }
+.radha-prose tbody tr { transition: background-color .15s; }
+.radha-prose tbody tr:hover td { background: hsl(var(--primary) / 0.07); }
+.radha-prose :not(pre) > code { transition: border-color .15s; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.radha-prose :not(pre) > code:hover { border-color: hsl(var(--primary) / 0.45); }
+@media (prefers-reduced-motion: reduce) { .radha-prose > * { animation: none; } }
 .radha-prose a.krish-cite { color: hsl(var(--muted-foreground)); text-decoration: none; }
 .radha-prose a.krish-cite:hover { color: hsl(var(--primary-foreground)); }
 .radha-prose hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.4em 0; }
@@ -248,8 +258,8 @@
 .radha-prose th { background: hsl(var(--primary) / 0.08); font-weight: 600; color: hsl(var(--foreground)); }
 
 /* Chat answers: a little larger than the UI (which shrinks to 15px on computers), with roomier lines. */
-.krish-answer { font-size: 16.5px; line-height: 1.72; }
-@media (min-width: 768px) { .krish-answer { font-size: 17px; } }
+.krish-answer { font-size: 16px; line-height: 1.72; }
+@media (min-width: 768px) { .krish-answer { font-size: 16px; } }
 
 /* Krish AI wordmark: geometric Sora in the text colour; the i's dot and "AI" share the chakra's orange */
 .krish-wordmark { font-family: 'Sora', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.045em; white-space: nowrap; color: hsl(var(--foreground)); }
