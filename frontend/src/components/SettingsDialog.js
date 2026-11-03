@@ -490,23 +490,27 @@ function Usage({ onClose }) {
   useEffect(() => { api.get("/usage").then(({ data: d }) => setData(d)).catch((e) => { toast.error(formatApiError(e)); setData(false); }); }, []);
   if (data === null) return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
   if (!data) return null;
-  const range = (r) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`);
+  // What each thing uses, as a share of one session.
+  const pct = (n) => Math.max(1, Math.round((n / Math.max(1, data.meter?.session?.limit || 1)) * 100));
+  const pctOf = (n) => `${pct(n)}%`;
+  const pctRange = (r) => (pct(r[0]) === pct(r[1]) ? `${pct(r[0])}%` : `${pct(r[0])}–${pct(r[1])}%`);
   return (
     <>
-      <PageTitle title="Usage" hint="Chat on Krish Basic is never counted. Making things uses your allowance." />
+      <PageTitle title="Usage" hint="How much of your plan you've used. Bigger requests use more, and it refills on its own." />
       {!data.limitsOn ? <p className="text-sm text-muted-foreground">There are no usage limits right now. Make as much as you like.</p> : (
         <>
           <div className="grid gap-6 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2">
             <Meter label="This session" part={data.meter.session} testid="usage-session"
               idle={`Starts when you make something, then refills ${data.meter.session.hours} hours later`} />
             <Meter label="This week" part={data.meter.week} testid="usage-week" idle="Starts when you make something" />
+            {data.meter.today && <Meter label="Today (all AI use)" part={data.meter.today} testid="usage-today" idle="Refills every night at 12" />}
           </div>
           <Block title="Automations" hint={`${data.usage.automation.used} of ${data.usage.automation.limit} on your plan`} />
           <Block title="What things use">
             <ul className="grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
-              {[["App build", `${range(data.costs.build)} credits`], ["AI picture", `${data.costs.picture} credits`],
-                ["Slide deck", `${data.costs.deck} + pictures`], ...(data.video ? [["Video", `${data.costs.videoSecond} a second`]] : []),
-                ["Premium message", `${range(data.costs.chat)} credits`]].map(([k, v]) => (
+              {[["App build", pctRange(data.costs.build)], ["AI picture", pctOf(data.costs.picture)],
+                ["Slide deck", `${pctOf(data.costs.deck)} + pictures`], ...(data.video ? [["Video", `${pctOf(data.costs.videoSecond)} a second`]] : []),
+                ["Premium message", pctRange(data.costs.chat)]].map(([k, v]) => (
                 <li key={k} className="flex justify-between gap-3"><span>{k}</span><span className="tabular-nums text-muted-foreground">{v}</span></li>
               ))}
             </ul>

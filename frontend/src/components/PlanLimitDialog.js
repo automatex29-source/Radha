@@ -60,8 +60,9 @@ export default function PlanLimitDialog() {
 
   const meter = usage?.meter;
   const automation = /automation/i.test(message || "");
-  const weekFull = meter && meter.week.used >= meter.week.limit;
-  const resetsAt = meter && !automation ? (weekFull ? meter.week.resetsAt : meter.session.resetsAt) : null;
+  const dayFull = !!meter?.today && meter.today.used >= meter.today.limit;
+  const weekFull = !dayFull && meter && meter.week.used >= meter.week.limit;
+  const resetsAt = meter && !automation ? (dayFull ? meter.today.resetsAt : weekFull ? meter.week.resetsAt : meter.session.resetsAt) : null;
   const plans = usage?.plans || [];
   const at = plans.findIndex((p) => p.id === usage?.plan);
   const next = at >= 0 ? plans[at + 1] : null;
@@ -72,7 +73,7 @@ export default function PlanLimitDialog() {
       <DialogContent className="max-w-[26rem] gap-0 rounded-2xl p-6 max-sm:w-[calc(100%-2rem)]" data-testid="plan-limit-dialog">
         <DialogHeader className="space-y-1.5 text-left sm:text-left">
           <DialogTitle className="font-heading text-[1.15rem] font-semibold tracking-tight">
-            {automation ? "Automation limit reached" : weekFull ? "Weekly usage limit reached" : "Usage limit reached"}
+            {automation ? "Automation limit reached" : dayFull ? "Daily usage limit reached" : weekFull ? "Weekly usage limit reached" : "Usage limit reached"}
           </DialogTitle>
           <DialogDescription className="text-[14px] leading-relaxed" data-testid="plan-limit-back-in">
             {resetsAt
@@ -85,10 +86,11 @@ export default function PlanLimitDialog() {
         {meter && !automation && (
           <div className="mt-5 space-y-4 border-t border-border pt-5" data-testid="plan-limit-meter">
             <Meter label={`Current session (${meter.session.hours} hours)`} used={meter.session.used} limit={meter.session.limit} />
+            {meter.today && <Meter label="Today" used={meter.today.used} limit={meter.today.limit} />}
             <Meter label="This week" used={meter.week.used} limit={meter.week.limit}
               note={weekFull && meter.week.resetsAt ? `Resets ${timeText(meter.week.resetsAt, now)}` : null} />
             <p className="text-[12px] leading-relaxed text-muted-foreground">
-              Usage is based on the tokens Krish reads and writes, so larger app builds use more. Chat on Krish Basic is always unlimited.
+              Bigger requests and app builds use more. Everything refills on its own.
             </p>
           </div>
         )}

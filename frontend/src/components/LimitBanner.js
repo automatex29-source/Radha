@@ -17,7 +17,7 @@ export default function LimitBanner() {
 
   const plan = info.plan || user?.plan || "basic";
   const next = plan === "basic" ? "Pro" : plan === "pro" ? "Max" : null;
-  const what = info.kind === "plan" ? `${info.week ? "Weekly" : NAMES[plan] || "Plan"} limit` : info.daily ? "Daily free limit" : "Free limit";
+  const what = info.kind === "plan" ? `${info.daily ? "Daily" : info.week ? "Weekly" : NAMES[plan] || "Plan"} limit` : info.daily ? "Daily free limit" : "Free limit";
 
   return (
     <div data-testid="limit-banner"

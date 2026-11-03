@@ -32,7 +32,7 @@ function highlights(plan, basic, video) {
   const { automation } = plan.total;
   const { videoSeconds, uploadMb } = plan.quality;
   if (plan.id === "basic") {
-    return { label: "Includes", items: ["Unlimited chat and search", "Krish AI, our free model for every question",
+    return { label: "Includes", items: ["Chat and search (fair daily use)", "Krish AI, our free model for every question",
       video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
   }
   if (plan.id === "max") {
@@ -291,7 +291,7 @@ export default function PlansPage() {
             <h1 className="krish-display text-[1.9rem] leading-[1.05] sm:text-[2.5rem]">
               Choose the plan that <em className="text-[#4F46E5] dark:text-[#A5B4FC]">fits you</em>
             </h1>
-            <p className="mx-auto mt-1.5 max-w-lg text-[0.8rem] leading-snug text-muted-foreground max-sm:hidden">Chat is unlimited on every plan. Upgrade for more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.</p>
+            <p className="mx-auto mt-1.5 max-w-lg text-[0.8rem] leading-snug text-muted-foreground max-sm:hidden">Everyday chat is free on every plan, with a fair daily limit. Upgrade for more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.</p>
           </header>
 
           {!data ? (

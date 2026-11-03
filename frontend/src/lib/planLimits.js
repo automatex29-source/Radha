@@ -17,11 +17,12 @@ export function showPlanLimit(message) {
   const popup = () => window.dispatchEvent(new CustomEvent(PLAN_LIMIT_EVENT, { detail: message }));
   import("@/lib/api").then(({ api }) => api.get("/usage")).then(({ data }) => {
     const meter = data?.meter;
-    const week = !!meter && meter.week.used >= meter.week.limit;
-    const resetsAt = meter && (week ? meter.week.resetsAt : meter.session.resetsAt);
+    const daily = !!meter?.today && meter.today.used >= meter.today.limit;
+    const week = !daily && !!meter && meter.week.used >= meter.week.limit;
+    const resetsAt = meter && (daily ? meter.today.resetsAt : week ? meter.week.resetsAt : meter.session.resetsAt);
     if (resetsAt) {
-      const span = week ? 7 * 86400 : (meter.session.hours || 5) * 3600;
-      setLimit({ kind: "plan", resetsAt, since: resetsAt - span, week, plan: data.plan });
+      const span = daily ? 86400 : week ? 7 * 86400 : (meter.session.hours || 5) * 3600;
+      setLimit({ kind: "plan", resetsAt, since: resetsAt - span, week, daily, plan: data.plan });
     }
     if (!bannerShown()) popup();
   }).catch(popup);

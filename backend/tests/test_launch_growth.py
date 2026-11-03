@@ -310,7 +310,7 @@ def test_message_flood_is_slowed_down(monkeypatch):
     import abuse
     monkeypatch.setenv("ABUSE_LIMITS", "on")
     abuse._hits.clear()
-    assert all(abuse.allow("chat", "flooder") for _ in range(20))
+    assert all(abuse.allow("chat", "flooder") for _ in range(abuse.LIMITS["chat"][0][0]))
     assert not abuse.allow("chat", "flooder")
     assert abuse.allow("chat", "someone-else")
     abuse._hits.clear()
