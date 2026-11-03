@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
-  Paperclip, X, Wand2, ImagePlus, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare,
+  Paperclip, X, Wand2, ImagePlus, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare, Wrench,
 } from "lucide-react";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit", "start_template"]);
@@ -35,7 +35,10 @@ export default function AppBuilder() {
   const [tab, setTab] = useState(() => (window.matchMedia?.("(max-width: 767px)").matches ? "chat" : "preview"));
   const [previewKey, setPreviewKey] = useState(0);
   // Auto-fix: after a build the user asked for, errors in the preview are sent back to Krish once, without a tap.
-  const [autoArmed, setAutoArmed] = useState(false);
+  // Auto-fix: errors in the preview go straight back to Krish, quietly. Up to 2 rounds after each build you ask
+  // for, and once when the app is opened with errors already in it.
+  const [autoArmed, setAutoArmed] = useState(true);
+  const autoLeft = useRef(1);
   const [historyFocus, setHistoryFocus] = useState(null);
   // A new app arrives with the user's request from the Apps page: the builder starts on it at once.
   const [fixAsk, setFixAsk] = useState(() => (location.state?.prompt ? { content: location.state.prompt, at: Date.now() } : null));
@@ -123,7 +126,7 @@ export default function AppBuilder() {
       <div className="flex min-h-0 flex-1">
         <BuilderChat app={app} appId={id} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
           previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")}
-          onTurnDone={(auto) => { setAutoArmed(!auto); setBuilding(false); }} onBuildStart={() => { setAutoArmed(false); setBuilding(true); }}
+          onTurnDone={(auto) => { if (!auto) autoLeft.current = 2; setAutoArmed(autoLeft.current > 0); setBuilding(false); }} onBuildStart={() => { setAutoArmed(false); setBuilding(true); }}
           onShowChanges={(commitId) => { setHistoryFocus({ id: commitId, at: Date.now() }); setTab("history"); }} />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
@@ -137,7 +140,7 @@ export default function AppBuilder() {
           <div className="min-h-0 flex-1">
             {(tab === "preview" || tab === "chat") && <PreviewTab url={previewUrl} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)}
               appId={id} onChanged={onFilesChanged} autoFix={autoArmed} intro={fresh ? (building ? "building" : "idle") : null}
-              onAutoFix={(content) => { setAutoArmed(false); setFixAsk({ content, at: Date.now(), auto: true }); }}
+              onAutoFix={(content) => { autoLeft.current -= 1; setAutoArmed(false); setFixAsk({ content, at: Date.now(), auto: true }); }}
               onFix={(content) => { setFixAsk({ content, at: Date.now() }); if (window.matchMedia?.("(max-width: 767px)").matches) setTab("chat"); }} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
             {tab === "terminal" && <TerminalTab appId={id} />}
@@ -345,7 +348,11 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
         )}
         {messages.map((m) => (
           <div key={m.id}>
-            <MessageBubble message={m} codeProject={false} compactSteps />
+            {m.role === "user" && m.content?.startsWith("Auto-fix:") ? (
+              <p className="flex items-center justify-end gap-1.5 text-[11.5px] text-muted-foreground" data-testid="builder-auto-fix-note">
+                <Wrench className="h-3 w-3" /> Found an error in the preview, fixing it
+              </p>
+            ) : <MessageBubble message={m} codeProject={false} compactSteps />}
             {!streaming && m.role === "assistant" && m.versions?.after && (
               <div className="mt-1.5 flex gap-1 md:ml-11" data-testid="builder-step-actions">
                 <button onClick={() => onShowChanges?.(m.versions.after)} data-testid="builder-see-changes"
@@ -490,6 +497,7 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
         return;
       }
       if (e.data.kind === "pick-cancel") { setPicking(false); return; }
+      if (/cdn\.tailwindcss\.com should not be used in production/.test(String(e.data.message))) return; // not a problem
       setLogs((l) => [...l.slice(-199), { level: e.data.level, message: String(e.data.message).slice(0, 2000) }]);
     };
     window.addEventListener("message", onMessage);
