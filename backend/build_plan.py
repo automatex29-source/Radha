@@ -127,3 +127,35 @@ async def missing_features(model: str, items: List[str], files: Dict[str, str]) 
     if not isinstance(missing, list):
         return []
     return [f"Not done yet: {m.strip()}" for m in missing if isinstance(m, str) and m.strip()][:6]
+
+
+REVIEW_PROMPT = (
+    "You are a senior engineer reviewing a web app an AI just wrote, before the user sees it. Find only real bugs "
+    "that would break something for the user: logic errors, an id or function used but not defined, event "
+    "handlers attached to the wrong element, state that isn't saved or re-rendered, crashes on empty or invalid "
+    "input, a form that reloads the page, layouts that break on a phone, unescaped user text put into innerHTML. "
+    "Ignore style taste, naming and small improvements. For each bug give the file and a one-sentence fix. "
+    "Reply with JSON only: {\"bugs\": [\"...\"]}, an empty list when the code is fine."
+)
+REVIEW_OUTPUT = 2000
+MAX_BUGS = 5
+
+
+async def review_code(model: str, files: Dict[str, str]) -> List[str]:
+    """A senior-engineer read of the finished files: real bugs as problems for the builder to fix ([] when the code
+    is fine, the review fails, or the files are too big for this model's budget)."""
+    budget = agent_llm.token_budget(model) if agent_llm.lean(model) else 60000
+    room = int((budget - REVIEW_OUTPUT - 1500) * agent_llm._CHARS_PER_TOKEN)
+    code = _files_text(files, room)
+    if code is None:
+        return []
+    try:
+        text = await _ask(model, REVIEW_PROMPT, "Files:\n" + code, REVIEW_OUTPUT)
+        found = re.search(r"\{.*\}", text, re.DOTALL)
+        bugs = json.loads(found.group(0)).get("bugs") if found else []
+    except Exception as exc:
+        logger.warning("reviewing the app's code failed: %s", str(exc)[:300])
+        return []
+    if not isinstance(bugs, list):
+        return []
+    return [f"Code review found a bug: {b.strip()}" for b in bugs if isinstance(b, str) and b.strip()][:MAX_BUGS]

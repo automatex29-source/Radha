@@ -41,6 +41,7 @@ from agent import browser as agent_browser
 import appdata
 import site_images
 import github_push
+import jsx_compile
 import limits
 
 router = APIRouter(prefix="/api")
@@ -208,7 +209,7 @@ _CONSOLE_BRIDGE = """<script>(function(){function s(l,a){try{parent.postMessage(
 
 # Click to edit: the builder asks the preview to let the user pick an element; the page outlines what's under the
 # pointer and sends back the clicked element (a CSS path, its HTML and text) instead of running the click.
-_PICK_BRIDGE = """<script>(function(){var on=false,box=null,tip=null;function css(e){if(e.id)return"#"+e.id;var p=[];while(e&&e.nodeType===1&&e!==document.body&&p.length<4){var s=e.tagName.toLowerCase();if(e.id){p.unshift("#"+e.id);break}var c=(e.getAttribute("class")||"").trim().split(/\\s+/).filter(function(x){return x&&x.indexOf(":")<0}).slice(0,2);if(c.length)s+="."+c.join(".");var sib=e.parentNode?Array.prototype.filter.call(e.parentNode.children,function(x){return x.tagName===e.tagName}):[];if(sib.length>1)s+=":nth-of-type("+(sib.indexOf(e)+1)+")";p.unshift(s);e=e.parentElement}return p.join(" > ")}function ui(){if(box)return;box=document.createElement("div");box.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #8b5cf6;background:rgba(139,92,246,.12);border-radius:4px;transition:all .06s";tip=document.createElement("div");tip.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;background:#8b5cf6;color:#fff;font:600 11px system-ui;padding:2px 6px;border-radius:4px";document.documentElement.appendChild(box);document.documentElement.appendChild(tip)}function off(){on=false;if(box){box.remove();tip.remove();box=tip=null}document.documentElement.style.cursor=""}function over(ev){if(!on)return;ui();var r=ev.target.getBoundingClientRect();box.style.left=r.left+"px";box.style.top=r.top+"px";box.style.width=r.width+"px";box.style.height=r.height+"px";tip.textContent=ev.target.tagName.toLowerCase()+(ev.target.id?"#"+ev.target.id:"");tip.style.left=r.left+"px";tip.style.top=Math.max(0,r.top-20)+"px"}function click(ev){if(!on)return;ev.preventDefault();ev.stopPropagation();var e=ev.target,h=e.outerHTML||"";if(h.length>700)h=h.slice(0,700)+"…";try{parent.postMessage({source:"radha-preview",kind:"pick",selector:css(e),html:h,text:(e.innerText||"").trim().slice(0,160),tag:e.tagName.toLowerCase()},"*")}catch(x){}off()}addEventListener("mouseover",over,true);addEventListener("click",click,true);addEventListener("keydown",function(e){if(on&&e.key==="Escape"){off();try{parent.postMessage({source:"radha-preview",kind:"pick-cancel"},"*")}catch(x){}}},true);addEventListener("message",function(e){if(e.source!==parent||!e.data||e.data.source!=="radha-builder")return;if(e.data.pick){on=true;document.documentElement.style.cursor="crosshair"}else off()})})();</script>"""
+_PICK_BRIDGE = """<script>(function(){var on=false,box=null,tip=null;function css(e){if(e.id)return"#"+e.id;var p=[];while(e&&e.nodeType===1&&e!==document.body&&p.length<4){var s=e.tagName.toLowerCase();if(e.id){p.unshift("#"+e.id);break}var c=(e.getAttribute("class")||"").trim().split(/\\s+/).filter(function(x){return x&&x.indexOf(":")<0}).slice(0,2);if(c.length)s+="."+c.join(".");var sib=e.parentNode?Array.prototype.filter.call(e.parentNode.children,function(x){return x.tagName===e.tagName}):[];if(sib.length>1)s+=":nth-of-type("+(sib.indexOf(e)+1)+")";p.unshift(s);e=e.parentElement}return p.join(" > ")}function ui(){if(box)return;box=document.createElement("div");box.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #8b5cf6;background:rgba(139,92,246,.12);border-radius:4px;transition:all .06s";tip=document.createElement("div");tip.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;background:#8b5cf6;color:#fff;font:600 11px system-ui;padding:2px 6px;border-radius:4px";document.documentElement.appendChild(box);document.documentElement.appendChild(tip)}function off(){on=false;if(box){box.remove();tip.remove();box=tip=null}document.documentElement.style.cursor=""}function over(ev){if(!on)return;ui();var r=ev.target.getBoundingClientRect();box.style.left=r.left+"px";box.style.top=r.top+"px";box.style.width=r.width+"px";box.style.height=r.height+"px";tip.textContent=ev.target.tagName.toLowerCase()+(ev.target.id?"#"+ev.target.id:"");tip.style.left=r.left+"px";tip.style.top=Math.max(0,r.top-20)+"px"}function click(ev){if(!on)return;ev.preventDefault();ev.stopPropagation();var e=ev.target,h=e.outerHTML||"";if(h.length>700)h=h.slice(0,700)+"…";try{parent.postMessage({source:"radha-preview",kind:"pick",selector:css(e),html:h,text:(e.innerText||"").trim().slice(0,160),tag:e.tagName.toLowerCase(),raw:(e.textContent||"").trim().slice(0,500),leaf:!e.children.length,color:getComputedStyle(e).color,bg:getComputedStyle(e).backgroundColor},"*")}catch(x){}off()}addEventListener("mouseover",over,true);addEventListener("click",click,true);addEventListener("keydown",function(e){if(on&&e.key==="Escape"){off();try{parent.postMessage({source:"radha-preview",kind:"pick-cancel"},"*")}catch(x){}}},true);addEventListener("message",function(e){if(e.source!==parent||!e.data||e.data.source!=="radha-builder")return;if(e.data.pick){on=true;document.documentElement.style.cursor="crosshair"}else off()})})();</script>"""
 
 
 def init(database):
@@ -226,6 +227,7 @@ async def ensure_indexes():
     await db.app_files.create_index([("appId", 1), ("path", 1)], unique=True)
     await db.app_blobs.create_index("hash", unique=True)
     await db.app_commits.create_index([("appId", 1), ("createdAt", -1)])
+    await db.apps.create_index("domain", unique=True, partialFilterExpression={"domain": {"$type": "string"}})
 
 
 def _now() -> str:
@@ -430,6 +432,15 @@ async def commit(app_id: str, message: str, author: str = "You") -> Optional[dic
     return public_commit(doc)
 
 
+async def checkpoint(app_id: str, message: str, author: str = "Krish AI") -> Optional[str]:
+    """Save the working copy as a version if it changed, and return the id of the version it now matches."""
+    made = await commit(app_id, message, author=author)
+    if made:
+        return made["id"]
+    head = await head_commit(app_id)
+    return head["id"] if head else None
+
+
 def public_commit(doc: dict) -> dict:
     return {k: doc.get(k) for k in ("id", "parent", "message", "author", "createdAt")} | {"fileCount": len(doc["files"])}
 
@@ -552,6 +563,16 @@ def app_prompt_files(files: Dict[str, str]) -> str:
     return "\n".join(f"- {p} ({len(c.encode('utf-8'))} bytes)" for p, c in sorted(files.items())) or "(no files yet)"
 
 
+REACT_HTM_RULE = ("For React, import react and react-dom/client from esm.sh and write components with htm "
+                  "(import htm from \"https://esm.sh/htm\") instead of JSX, since there is no build step.")
+REACT_JSX_RULE = ("For a React app, write it like a Vite project: index.html with <div id=\"root\"> and "
+                  "<script type=\"module\" src=\"src/main.jsx\">, then src/main.jsx, src/App.jsx and one .jsx file "
+                  "per component, in normal JSX (TypeScript .tsx works too). Krish AI compiles JSX and TypeScript "
+                  "itself, and plain imports (import { useState } from \"react\", import confetti from "
+                  "\"canvas-confetti\", import \"./App.css\") just work: there is no npm install. Use React for "
+                  "apps with many screens or a lot of state; plain HTML/JS is fine for simple pages.")
+
+
 async def app_prompt(database, app_id: str) -> str:
     app = await database.apps.find_one({"id": app_id})
     files = await snapshot(app_id)
@@ -566,8 +587,7 @@ async def app_prompt(database, app_id: str) -> str:
         "- The app is a static web app served from index.html. Use HTML/CSS/JS; load libraries from CDNs "
         "(esm.sh, unpkg, cdn.jsdelivr.net, cdn.tailwindcss.com). There is no npm install or build step, but any npm "
         "package works as an ES module from esm.sh, e.g. import confetti from \"https://esm.sh/canvas-confetti\" in a "
-        "<script type=\"module\">. For React, import react and react-dom/client from esm.sh and write components "
-        "with htm (import htm from \"https://esm.sh/htm\") instead of JSX, since there is no build step.\n"
+        "<script type=\"module\">. " + (REACT_JSX_RULE if jsx_compile.available() else REACT_HTM_RULE) + "\n"
         "- When asked for a new app or a big change, first write a short plan in your reply (3 to 6 bullets: the "
         "screens, the features, the files), then build the whole working app right away with write_file. Replace the "
         "starter files instead of building around them. Don't stop at a skeleton or placeholders: every button, form "
@@ -698,11 +718,14 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
     if content is None:
         return Response("Not found", status_code=404, media_type="text/plain", headers=headers)
     ctype = mimetypes.guess_type(path)[0] or "text/plain"
-    if path.endswith((".js", ".mjs")):
+    if path.endswith((".js", ".mjs") + jsx_compile.COMPILED_EXTS):
         ctype = "text/javascript"
+        if jsx_compile.available() and jsx_compile.needs_compile(path, content):
+            content = jsx_compile.compile_file(path, files)
     if ctype in ("text/html", "text/css", "text/javascript"):
         content = site_images.rewrite(content)  # AI pictures (krish-image.invalid links) come from this server
     if ctype == "text/html":
+        content = jsx_compile.relative_html(path, content, files)
         inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
@@ -935,12 +958,20 @@ async def _inline_syntax_errors(files: Dict[str, str], node: str, tmp: str) -> L
 async def _syntax_errors(files: Dict[str, str]) -> List[str]:
     """JavaScript that doesn't parse (usually a file cut off mid-way), in .js files and in pages' own <script>
     tags, checked with `node --check`."""
-    scripts = [p for p in files if p.endswith((".js", ".mjs"))]
+    # JSX and TypeScript are checked by compiling them (jsx_compile), not by node, which can't read them.
+    jsx = [p for p in files if jsx_compile.needs_compile(p, files[p])]
+    problems = []
+    if jsx and jsx_compile.available():
+        for path in jsx[:20]:
+            try:
+                await asyncio.to_thread(jsx_compile._esbuild, files[path], jsx_compile._loader(path))
+            except Exception as exc:
+                problems.append(f"{path} doesn't compile ({str(exc).strip()[:300]}), so none of it runs.")
+    scripts = [p for p in files if p.endswith((".js", ".mjs")) and p not in jsx]
     node = shutil.which("node")
     pages = any(p.endswith((".html", ".htm")) for p in files)
     if not (scripts or pages) or not node:
-        return []
-    problems = []
+        return problems
     with tempfile.TemporaryDirectory() as tmp:
         for path in scripts[:12]:
             target = os.path.join(tmp, re.sub(r"[^\w.-]", "_", path) + (".mjs" if _is_module(path, files) else ".cjs"))
@@ -1238,6 +1269,7 @@ def public_app(doc: dict) -> dict:
         "published": {"slug": pub["slug"], "url": f"/api/sites/{pub['slug']}/", "commitId": pub.get("commitId"),
                       "publishedAt": pub.get("publishedAt")} if pub else None,
         "github": doc.get("github"),
+        "domain": doc.get("domain"),
     }
 
 
@@ -1551,3 +1583,181 @@ async def boost_prompt(body: BoostIn, user_id: str = Depends(current_user_id)):
     if not text:
         raise HTTPException(status_code=502, detail="Couldn't improve the prompt. Try again.")
     return {"text": text}
+
+
+# ------------------------------------------------------------------ open a GitHub repository as an app
+class ImportIn(BaseModel):
+    repo: str = Field(min_length=3, max_length=300)
+
+
+@router.post("/apps/import")
+async def import_github(body: ImportIn, user_id: str = Depends(current_user_id)):
+    """Open an existing project from GitHub in the App Builder (public repos as is, private ones with the user's
+    connected GitHub account). Vite and React projects run in the preview thanks to jsx_compile."""
+    token = ""
+    try:
+        import connectors
+        token = (await connectors.secret_for(user_id, "github"))["access"]
+    except Exception:
+        token = ""  # not connected: public repositories still open
+    try:
+        repo = await github_push.download(body.repo, token)
+    except github_push.PushError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Couldn't reach GitHub: {str(exc)[:200]}")
+    files = {}
+    for path, content in repo["files"].items():
+        try:
+            files[clean_path(path)] = content
+        except ValueError:
+            continue
+    files = {p: c for p, c in files.items() if len(c.encode("utf-8")) <= MAX_FILE_BYTES}
+    if not files:
+        raise HTTPException(status_code=400, detail="That repository has no code files the App Builder can open.")
+    created = await create_app(AppIn(name=repo["name"][:80], description=(repo["description"] or f"Imported from {repo['url']}")[:500],
+                                     files=files), user_id)
+    await db.apps.update_one({"id": created["id"]}, {"$set": {"github": {"repo": repo["url"].split("github.com/")[-1],
+                                                                          "url": repo["url"], "importedAt": _now()}}})
+    return public_app(await db.apps.find_one({"id": created["id"]}))
+
+
+# ------------------------------------------------------------------ instant edits (no AI)
+# The preview's "Edit a part" can change words and colours directly: the text is replaced where it is written in
+# the code (when it is there exactly once), and styles go into one <style id="krish-edits"> block in the page.
+EDIT_STYLE_ID = "krish-edits"
+_EDITABLE = (".html", ".htm", ".js", ".mjs", ".jsx", ".tsx", ".ts", ".vue", ".svelte")
+_STYLE_PROPS = {"color", "background", "font-size", "font-weight", "border-radius", "padding", "text-align"}
+_SAFE_VALUE = re.compile(r"^[#\w\s.%(),-]{1,60}$")
+_SAFE_SELECTOR = re.compile(r"^[\w\s#.:>()\-\[\]=\"']{1,300}$")
+_EDIT_BLOCK = re.compile(r'<style id="' + EDIT_STYLE_ID + r'">(.*?)</style>\n?', re.DOTALL)
+_RULE = re.compile(r"\s*(.+?)\s*\{([^}]*)\}")
+
+
+class QuickEditIn(BaseModel):
+    kind: str = Field(pattern="^(text|style)$")
+    old: Optional[str] = Field(default=None, max_length=2000)
+    new: Optional[str] = Field(default=None, max_length=2000)
+    selector: Optional[str] = Field(default=None, max_length=300)
+    styles: Optional[Dict[str, str]] = None
+
+
+def replace_text_once(files: Dict[str, str], old: str, new: str) -> Optional[tuple]:
+    """(path, new content) when `old` is written exactly once in the app's code, else None."""
+    old = old.strip()
+    if not old:
+        return None
+    hits = [(p, c) for p, c in files.items() if p.endswith(_EDITABLE) and not p.startswith((SAMPLE_DIR + "/", ASSET_DIR + "/"))
+            for _ in range(c.count(old))]
+    if len(hits) != 1:
+        return None
+    path, content = hits[0]
+    return path, content.replace(old, new.strip(), 1)
+
+
+def add_styles(html: str, selector: str, styles: Dict[str, str]) -> str:
+    """The page with `styles` set on `selector` in its krish-edits block (made when missing, rule merged when the
+    selector already has one)."""
+    m = _EDIT_BLOCK.search(html)
+    rules = {}
+    for rm in _RULE.finditer(m.group(1) if m else ""):
+        props = {}
+        for decl in rm.group(2).split(";"):
+            if ":" in decl:
+                k, v = decl.split(":", 1)
+                props[k.strip()] = v.replace("!important", "").strip()
+        rules[rm.group(1)] = props
+    rules.setdefault(selector, {}).update(styles)
+    css = "\n".join(f"{sel} {{ " + " ".join(f"{k}: {v} !important;" for k, v in props.items()) + " }"
+                    for sel, props in rules.items())
+    block = f'<style id="{EDIT_STYLE_ID}">\n{css}\n</style>\n'
+    if m:
+        return html[:m.start()] + block + html[m.end():]
+    idx = html.lower().find("</head>")
+    return html[:idx] + block + html[idx:] if idx >= 0 else block + html
+
+
+@router.post("/apps/{app_id}/quick-edit")
+async def quick_edit(app_id: str, body: QuickEditIn, user_id: str = Depends(current_user_id)):
+    await owned_app(app_id, user_id)
+    files = await snapshot(app_id)
+    if body.kind == "text":
+        found = replace_text_once(files, body.old or "", body.new or "")
+        if not found:
+            raise HTTPException(status_code=409, detail="That text isn't written once in the code, so Krish will change it instead.")
+        path, content = found
+        await write_file(app_id, path, content)
+        return {"path": path, "changes": await changed_paths(app_id)}
+    styles = {k: v.strip() for k, v in (body.styles or {}).items() if k in _STYLE_PROPS and v and _SAFE_VALUE.match(v.strip())}
+    selector = (body.selector or "").strip()
+    if not styles or not _SAFE_SELECTOR.match(selector):
+        raise HTTPException(status_code=400, detail="Pick a part of the page and a style to change.")
+    page = "index.html" if "index.html" in files else next((p for p in files if p.endswith((".html", ".htm"))), None)
+    if not page:
+        raise HTTPException(status_code=400, detail="The app has no page to style.")
+    await write_file(app_id, page, add_styles(files[page], selector, styles))
+    return {"path": page, "changes": await changed_paths(app_id)}
+
+
+# ------------------------------------------------------------------ custom domains
+# A published app can answer on the owner's own domain: they point a CNAME at Krish AI's address, and the
+# server's host check (site_for_host, used by a middleware in server.py) serves the site for that host.
+_DOMAIN_RE = re.compile(r"^(?=.{4,253}$)(?!-)([a-z0-9-]{1,63}\.)+[a-z]{2,63}$")
+_DOMAIN_CACHE: Dict[str, tuple] = {}
+_DOMAIN_TTL = 60
+
+
+class DomainIn(BaseModel):
+    domain: str = Field(default="", max_length=253)
+
+
+def clean_domain(text: str) -> str:
+    d = re.sub(r"^https?://", "", (text or "").strip().lower()).split("/")[0].split(":")[0].rstrip(".")
+    return d
+
+
+def own_hosts() -> set:
+    hosts = {"localhost", "127.0.0.1", "0.0.0.0", "testserver"}
+    for value in (public_origin(), os.environ.get("FRONTEND_URL", ""), os.environ.get("BACKEND_URL", "")):
+        host = urlparse(value).hostname if value else None
+        if host:
+            hosts.add(host.lower())
+    hosts.update(h.strip().lower() for h in os.environ.get("APP_HOSTS", "").split(",") if h.strip())
+    return hosts
+
+
+@router.put("/apps/{app_id}/domain")
+async def set_domain(app_id: str, body: DomainIn, user_id: str = Depends(current_user_id)):
+    await owned_app(app_id, user_id)
+    domain = clean_domain(body.domain)
+    if not domain:
+        await db.apps.update_one({"id": app_id}, {"$set": {"domain": None, "updatedAt": _now()}})
+        _DOMAIN_CACHE.clear()
+        return {"app": public_app(await db.apps.find_one({"id": app_id})), "target": None}
+    if not _DOMAIN_RE.match(domain) or domain in own_hosts():
+        raise HTTPException(status_code=400, detail="Use a domain you own, like shop.example.com.")
+    taken = await db.apps.find_one({"domain": domain, "id": {"$ne": app_id}}, {"_id": 1})
+    if taken:
+        raise HTTPException(status_code=409, detail="That domain is already used by another app.")
+    await db.apps.update_one({"id": app_id}, {"$set": {"domain": domain, "updatedAt": _now()}})
+    _DOMAIN_CACHE.clear()
+    return {"app": public_app(await db.apps.find_one({"id": app_id})),
+            "target": urlparse(public_origin()).hostname}
+
+
+async def site_for_host(host: str) -> Optional[dict]:
+    """The published app answering on this custom domain, or None (cached for a minute)."""
+    host = clean_domain(host)
+    if not host or host in own_hosts():
+        return None
+    hit = _DOMAIN_CACHE.get(host)
+    if hit and time.monotonic() - hit[0] < _DOMAIN_TTL:
+        return hit[1]
+    app = await db.apps.find_one({"domain": host, "published": {"$ne": None}})
+    _DOMAIN_CACHE[host] = (time.monotonic(), app)
+    return app
+
+
+async def serve_domain(app: dict, path: str) -> Response:
+    version = await db.app_commits.find_one({"appId": app["id"], "id": app["published"]["commitId"]})
+    return _serve(await commit_files(version), path, bridge=False, cache="public, max-age=60", app_id=app["id"])

@@ -87,3 +87,90 @@ async def push(files: Dict[str, str], token: str, repo: str, message: str, priva
             _raise(upd, "update the branch")
     return {"url": info["html_url"], "repo": full, "branch": branch, "created": created,
             "commit": commit.json()["sha"]}
+
+
+# ------------------------------------------------------------------ import a repository into the App Builder
+import io
+import tarfile
+
+_URL_RE = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?"
+                     r"(?:/tree/([^/?#]+))?/?(?:[?#].*)?$")
+_SHORT_RE = re.compile(r"^([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100})$")
+_SKIP_DIRS = {"node_modules", ".git", "dist", "build", ".next", "out", "coverage", ".cache", "vendor", "__pycache__",
+              ".venv", "venv", ".turbo", ".vercel"}
+_TEXT_EXTS = {"html", "htm", "css", "scss", "js", "mjs", "cjs", "jsx", "ts", "tsx", "json", "md", "txt", "svg", "xml",
+              "yml", "yaml", "toml", "py", "csv", "env.example", "gitignore", "webmanifest", "vue", "svelte"}
+_SKIP_FILES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb"}
+MAX_IMPORT_FILES = 300
+MAX_IMPORT_FILE_BYTES = 512 * 1024
+MAX_IMPORT_BYTES = 8 * 1024 * 1024
+
+
+def parse_repo(text: str):
+    """(owner, name, branch or None) from a GitHub link or owner/name, else PushError."""
+    text = (text or "").strip()
+    m = _URL_RE.match(text) or _SHORT_RE.match(text)
+    if not m:
+        raise PushError("Paste a GitHub link like https://github.com/owner/repo, or owner/repo.")
+    groups = m.groups()
+    return groups[0], groups[1], (groups[2] if len(groups) > 2 else None)
+
+
+def _wanted(path: str, size: int) -> bool:
+    parts = path.split("/")
+    if any(p in _SKIP_DIRS for p in parts[:-1]) or parts[-1] in _SKIP_FILES or size > MAX_IMPORT_FILE_BYTES:
+        return False
+    name = parts[-1].lower()
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+    return ext in _TEXT_EXTS or name in ("license", "readme", "dockerfile", ".gitignore")
+
+
+def files_from_tarball(data: bytes) -> Dict[str, str]:
+    """The project's text files from a GitHub tarball (its top folder removed), skipping dependencies, build
+    output, lock files and anything binary or too big."""
+    files, total = {}, 0
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        for member in tar:
+            if not member.isfile():
+                continue
+            path = member.name.split("/", 1)[1] if "/" in member.name else member.name
+            if not path or not _wanted(path, member.size):
+                continue
+            raw = tar.extractfile(member).read()
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            if "\x00" in text:
+                continue
+            total += len(raw)
+            if total > MAX_IMPORT_BYTES or len(files) >= MAX_IMPORT_FILES:
+                raise PushError("That repository is too big to open in the App Builder (over "
+                                f"{MAX_IMPORT_FILES} files or {MAX_IMPORT_BYTES // (1024 * 1024)} MB of code).")
+            files[path] = text
+    return files
+
+
+async def download(repo: str, token: str = "", transport: Optional[httpx.AsyncBaseTransport] = None) -> dict:
+    """{"name", "description", "files"} for a repository: public ones without a token, private ones with the
+    user's connected GitHub account."""
+    owner, name, branch = parse_repo(repo)
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if token:
+        headers["Authorization"] = f"Bearer {token.strip()}"
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=60, follow_redirects=True,
+                                 transport=transport) as gh:
+        info = await gh.get(f"/repos/{owner}/{name}")
+        if info.status_code == 404:
+            raise PushError("GitHub can't find that repository. If it's private, connect your GitHub account first.")
+        if info.status_code >= 400:
+            _raise(info, "open that repository")
+        meta = info.json()
+        tar = await gh.get(f"/repos/{owner}/{name}/tarball/{branch or meta.get('default_branch') or ''}".rstrip("/"))
+        if tar.status_code >= 400:
+            _raise(tar, "download that repository")
+    files = files_from_tarball(tar.content)
+    if not files:
+        raise PushError("That repository has no code files the App Builder can open.")
+    return {"name": meta.get("name") or name, "description": meta.get("description") or "", "files": files,
+            "url": meta.get("html_url") or f"https://github.com/{owner}/{name}"}

@@ -5,7 +5,7 @@ import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { AppWindow, Loader2, Globe, Trash2, Sparkles, Wand2 } from "lucide-react";
+import { AppWindow, Loader2, Globe, Trash2, Sparkles, Wand2, Github } from "lucide-react";
 
 // Tap an idea to fill the box. The builder picks the matching starter itself.
 const IDEAS = [
@@ -28,8 +28,24 @@ function appName(text) {
 }
 
 function NewAppBox({ busy, onCreate }) {
+  const navigate = useNavigate();
   const [text, setText] = useState("");
   const [boosting, setBoosting] = useState(false);
+  const [repo, setRepo] = useState(null); // null: closed; a string: the GitHub link being typed
+  const [importing, setImporting] = useState(false);
+  const importRepo = async (e) => {
+    e.preventDefault();
+    if (!repo?.trim() || importing) return;
+    setImporting(true);
+    try {
+      const { data } = await api.post("/apps/import", { repo: repo.trim() });
+      toast.success(`Opened ${data.name}`);
+      navigate(`/apps/${data.id}`);
+    } catch (err) {
+      toast.error(formatApiError(err));
+      setImporting(false);
+    }
+  };
   const boost = async () => {
     if (!text.trim() || boosting) return;
     setBoosting(true);
@@ -64,6 +80,22 @@ function NewAppBox({ busy, onCreate }) {
             {i.label}
           </button>
         ))}
+      </div>
+      <div className="mt-2 px-1">
+        {repo === null ? (
+          <button onClick={() => setRepo("")} data-testid="import-github-open" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+            <Github className="h-3.5 w-3.5" /> Or open a project from GitHub
+          </button>
+        ) : (
+          <form onSubmit={importRepo} className="flex items-center gap-2" data-testid="import-github">
+            <Github className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <input autoFocus value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/owner/repo"
+              data-testid="import-github-input" className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:border-primary/60" />
+            <Button size="sm" type="submit" disabled={!repo.trim() || importing} data-testid="import-github-button">
+              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open"}
+            </Button>
+          </form>
+        )}
       </div>
     </section>
   );
