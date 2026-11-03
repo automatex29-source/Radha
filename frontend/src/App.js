@@ -45,11 +45,17 @@ function RememberAssistant() {
   return <Navigate to="/login" replace />;
 }
 
+// The owner's own link (/owner) also comes back after signing in.
+function RememberOwner() {
+  try { sessionStorage.setItem(AFTER_LOGIN, "/owner"); } catch { /* optional */ }
+  return <Navigate to="/login" replace />;
+}
+
 function takeRememberedPath() {
   try {
     const path = sessionStorage.getItem(AFTER_LOGIN);
     sessionStorage.removeItem(AFTER_LOGIN);
-    if (path && path.startsWith("/assistant/")) return path;
+    if (path && (path.startsWith("/assistant/") || path === "/owner")) return path;
   } catch { /* optional */ }
   return "/";
 }
@@ -78,6 +84,7 @@ function Gate() {
       <Routes>
         <Route path="/login" element={<AuthPage />} />
         <Route path="/assistant/:code" element={<RememberAssistant />} />
+        <Route path="/owner" element={<RememberOwner />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -102,6 +109,7 @@ function Gate() {
       <Route path="/automations" element={<AutomationsPage />} />
       <Route path="/help" element={<HelpPage />} />
       <Route path="/admin" element={<OwnerDashboard />} />
+      <Route path="/owner" element={<OwnerDashboard standalone />} />
       <Route path="/admin/users" element={<AdminUsersPage />} />
       <Route path="/discover" element={<DiscoverPage />} />
       <Route path="/assistant/:code" element={<AssistantInvite />} />

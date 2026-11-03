@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import BrandMark from "@/components/BrandMark";
 import { Check, Download, Loader2, Maximize2, PlusSquare, Share, Sparkles, X, Zap } from "lucide-react";
 import { canInstall, install, isIos, isStandalone, onInstallChange } from "@/lib/pwa";
@@ -29,6 +30,10 @@ function hidden() {
  * the close button (or Escape, or a swipe away on a phone) stops asking.
  */
 export default function InstallBanner() {
+  return useLocation().pathname === "/owner" ? null : <KrishInstallBanner />; // the owner app has its own button
+}
+
+function KrishInstallBanner() {
   const [ready, setReady] = useState(canInstall());
   const [show, setShow] = useState(false);
   const [leaving, setLeaving] = useState(false);

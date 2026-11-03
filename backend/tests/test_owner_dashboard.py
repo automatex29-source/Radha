@@ -122,3 +122,33 @@ def test_owner_sets_costs(client):
     d = client.get("/api/admin/dashboard?range=30d", headers=_h(boss["token"])).json()
     assert d["costs"]["hostingMonthly"] == 1500 and d["money"]["hostingCost"] == 1500
     assert client.put("/api/admin/dashboard/costs", json={"chat": -1}, headers=_h(boss["token"])).status_code == 422
+
+
+def test_usage_today_and_plan_signups(client):
+    db = client.server.db
+    boss = client.post("/api/auth/login", json={"email": "dash-boss@test.com", "password": "secret1"}).json()
+    ravi = _register(client, "dash-ravi@test.com", "Ravi")
+    limits = client.server.limits
+
+    async def seed():
+        await limits.add_fair_use(db, ravi["user"]["id"], limits.fair_use_limit("basic"))  # all of today's allowance
+    client.portal.call(seed)
+    d = client.get("/api/admin/dashboard?range=7d", headers=_h(boss["token"])).json()
+    u = d["usage"]
+    assert u["people"] >= 1 and u["atLimit"] >= 1 and u["top"][0]["email"] == "dash-ravi@test.com"
+    assert u["top"][0]["percent"] == 100
+    assert d["kpis"]["planSignups"]["value"] >= 1 and d["paymentsLive"] is False
+    assert 0 < d["ratios"]["activeShare"] <= 100
+
+
+def test_dashboard_is_kept_for_a_few_seconds(client, monkeypatch):
+    boss = client.post("/api/auth/login", json={"email": "dash-boss@test.com", "password": "secret1"}).json()
+    monkeypatch.setenv("OWNER_DASHBOARD_CACHE_SECONDS", "60")
+    first = client.get("/api/admin/dashboard?range=30d&fresh=true", headers=_h(boss["token"])).json()
+    _register(client, "dash-late@test.com", "Late")
+    again = client.get("/api/admin/dashboard?range=30d", headers=_h(boss["token"])).json()
+    assert again["generatedAt"] == first["generatedAt"]  # the same numbers, not worked out again
+    fresh = client.get("/api/admin/dashboard?range=30d&fresh=true", headers=_h(boss["token"])).json()
+    assert fresh["kpis"]["totalUsers"] == first["kpis"]["totalUsers"] + 1
+    client.put("/api/admin/dashboard/costs", json={"chat": 0.07}, headers=_h(boss["token"]))  # saving costs clears it
+    assert client.get("/api/admin/dashboard?range=30d", headers=_h(boss["token"])).json()["costs"]["chat"] == 0.07
