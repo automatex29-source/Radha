@@ -33,24 +33,31 @@ def is_limit(exc: Exception) -> bool:
     return type(exc).__name__ in ("RateLimitError",) or bool(_LIMIT_WORDS.search(str(exc)))
 
 
-def limit_message(exc: Exception, now: Optional[float] = None) -> str:
+def limit_info(exc: Exception, now: Optional[float] = None) -> dict:
+    """What the chat's limit card shows: the message, when it resets (epoch seconds, or None) and if it's daily."""
     text = str(exc)
     secs = wait_seconds(text)
     daily = "per day" in text.lower() or "daily" in text.lower()
-    if secs is not None:
-        when = limits._when((now or time.time()) + max(60.0, secs))
-        return (f"Krish AI's free AI has reached its {'daily' if daily else 'short-term'} limit. "
-                f"It works again {when}. You can also pick another model from the menu at the top.")
-    if daily:
-        return ("Krish AI's free AI has reached its daily limit. It works again in a few hours (the limit resets "
-                "once a day). You can also pick another model from the menu at the top.")
-    return ("Krish AI's free AI is at its limit right now. Try again in about a minute, or pick another model "
-            "from the menu at the top.")
+    resets = (now or time.time()) + max(60.0, secs) if secs is not None else None
+    if resets is not None:
+        message = (f"Krish AI's free AI has reached its {'daily' if daily else 'short-term'} limit. "
+                   f"It works again {limits._when(resets)}. You can also pick another model from the menu at the top.")
+    elif daily:
+        message = ("Krish AI's free AI has reached its daily limit. It works again in a few hours (the limit resets "
+                   "once a day). You can also pick another model from the menu at the top.")
+    else:
+        message = ("Krish AI's free AI is at its limit right now. Try again in about a minute, or pick another model "
+                   "from the menu at the top.")
+    return {"message": message, "resetsAt": int(resets) if resets else None, "daily": daily}
 
 
-def friendly(exc: Exception) -> Optional[str]:
-    """A message for the user when the error is a usage limit, else None (the usual "tap Regenerate" note)."""
-    return limit_message(exc) if is_limit(exc) else None
+def limit_message(exc: Exception, now: Optional[float] = None) -> str:
+    return limit_info(exc, now)["message"]
+
+
+def friendly(exc: Exception) -> Optional[dict]:
+    """The limit card for a usage-limit error, else None (the usual "tap Regenerate" note)."""
+    return limit_info(exc) if is_limit(exc) else None
 
 
 SHORT_ERROR = "The AI model had a problem with this reply. Tap Regenerate to try again."

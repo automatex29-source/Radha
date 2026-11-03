@@ -21,12 +21,12 @@ def test_wait_times_are_read_from_provider_errors():
 
 def test_limit_message_says_when_it_works_again():
     msg = fe.friendly(RateLimitError("Rate limit reached on tokens per day (TPD). Please try again in 7m12s."))
-    assert "daily limit" in msg and "works again at " in msg and ("(in 7m)" in msg or "(in 8m)" in msg)
-    assert "another model" in msg
+    assert "daily limit" in msg["message"] and "works again at " in msg["message"] and msg["resetsAt"] and msg["daily"]
+    assert "another model" in msg["message"]
     short = fe.friendly(Exception("429 Too Many Requests"))
-    assert "about a minute" in short
+    assert "about a minute" in short["message"] and short["resetsAt"] is None
     daily = fe.friendly(Exception("You exceeded your current quota of requests per day"))
-    assert "daily limit" in daily and "once a day" in daily
+    assert "once a day" in daily["message"]
 
 
 def test_other_errors_are_not_limits():

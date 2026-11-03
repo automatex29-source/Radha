@@ -485,6 +485,10 @@ export default function Workspace({ mode = null }) {
             showPlanLimit(JSON.parse(dataStr || '""'));
             continue;
           }
+          if (eventName === "ai_limit") {
+            st.aiLimit = JSON.parse(dataStr || "null");
+            continue;
+          }
           if (eventName === "web_hint") {
             st.webHint = true;
             continue;
@@ -525,8 +529,8 @@ export default function Workspace({ mode = null }) {
       // A reply for a chat that isn't on screen is saved by the server; it shows when that chat is opened.
       if (onScreen()) {
         showStream(null);
-        if (st.text || steps.length) {
-          setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: st.text, model, stopped,
+        if (st.text || steps.length || st.aiLimit) {
+          setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: st.text, model, stopped, aiLimit: st.aiLimit,
             sources: st.sources.length ? st.sources : null, related: st.related, webHint: st.webHint,
             steps, media: steps.flatMap((x) => x.media || []) }]);
         }

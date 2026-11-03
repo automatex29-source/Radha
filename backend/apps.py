@@ -1316,9 +1316,15 @@ async def create_app(body: AppIn, user_id: str = Depends(current_user_id)):
 async def get_app(app_id: str, user_id: str = Depends(current_user_id)):
     app = await owned_app(app_id, user_id)
     files = await db.app_files.find({"appId": app_id}, {"content": 0}).sort("path", 1).to_list(MAX_FILES)
-    sizes = {f["path"]: len(f["content"].encode("utf-8")) async for f in db.app_files.find({"appId": app_id})}
+    contents = {f["path"]: f["content"] async for f in db.app_files.find({"appId": app_id})}
+    sizes = {path: len(text.encode("utf-8")) for path, text in contents.items()}
     return {"app": public_app(app), "files": [{"path": f["path"], "size": sizes.get(f["path"], 0)} for f in files],
-            "changes": await changed_paths(app_id)}
+            "changes": await changed_paths(app_id), "fresh": is_blank(contents)}
+
+
+def is_blank(files: Dict[str, str]) -> bool:
+    """True while the app is still the empty starter: the builder shows its animated start screen instead."""
+    return files == TEMPLATES["blank"]
 
 
 @router.patch("/apps/{app_id}")

@@ -8,6 +8,7 @@ import GitHubPushButton from "@/components/GitHubPushButton";
 import DataTab from "@/components/DataTab";
 import DevicePreview from "@/components/DevicePreview";
 import { Button } from "@/components/ui/button";
+import KrishIntro from "@/components/KrishIntro";
 import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
@@ -26,6 +27,8 @@ export default function AppBuilder() {
   const location = useLocation();
   const [app, setApp] = useState(null);
   const [files, setFiles] = useState([]);
+  const [fresh, setFresh] = useState(false); // still the empty starter: the preview shows the start screen
+  const [building, setBuilding] = useState(false);
   const [changes, setChanges] = useState({});
   const [commits, setCommits] = useState([]);
   // Phones show one pane at a time, starting with the chat.
@@ -51,6 +54,7 @@ export default function AppBuilder() {
       setApp(data.app);
       setFiles(data.files);
       setChanges(data.changes);
+      setFresh(!!data.fresh);
       setCommits(history);
     } catch (e) {
       toast.error(formatApiError(e));
@@ -119,7 +123,7 @@ export default function AppBuilder() {
       <div className="flex min-h-0 flex-1">
         <BuilderChat app={app} appId={id} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
           previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")}
-          onTurnDone={(auto) => setAutoArmed(!auto)} onBuildStart={() => setAutoArmed(false)}
+          onTurnDone={(auto) => { setAutoArmed(!auto); setBuilding(false); }} onBuildStart={() => { setAutoArmed(false); setBuilding(true); }}
           onShowChanges={(commitId) => { setHistoryFocus({ id: commitId, at: Date.now() }); setTab("history"); }} />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
@@ -132,7 +136,7 @@ export default function AppBuilder() {
           </nav>
           <div className="min-h-0 flex-1">
             {(tab === "preview" || tab === "chat") && <PreviewTab url={previewUrl} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)}
-              appId={id} onChanged={onFilesChanged} autoFix={autoArmed}
+              appId={id} onChanged={onFilesChanged} autoFix={autoArmed} intro={fresh ? (building ? "building" : "idle") : null}
               onAutoFix={(content) => { setAutoArmed(false); setFixAsk({ content, at: Date.now(), auto: true }); }}
               onFix={(content) => { setFixAsk({ content, at: Date.now() }); if (window.matchMedia?.("(max-width: 767px)").matches) setTab("chat"); }} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
@@ -280,6 +284,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
               : { key: step.key, path: step.path, text: step.text }));
             return;
           }
+          if (name === "ai_limit") return; // the saved reply shows the limit card when the chat reloads
           if (name !== "tool" && name !== "tool_result") return;
           current = name === "tool" ? [...current.filter((s) => s.id !== step.id), step] : current.map((s) => (s.id === step.id ? step : s));
           setSteps(current);
@@ -459,7 +464,7 @@ function toHex(rgb) {
   return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
 }
 
-function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix, onAutoFix }) {
+function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix, onAutoFix, intro }) {
   const [logs, setLogs] = useState([]);
   const [device, setDevice] = useState("full");
   const [picking, setPicking] = useState(false);
@@ -615,7 +620,8 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
           )}
         </div>
       )}
-      <div className={`min-h-0 flex-1 ${width ? "flex justify-center overflow-auto bg-sunken p-3" : "bg-white"}`}>
+      <div className={`relative min-h-0 flex-1 ${width ? "flex justify-center overflow-auto bg-sunken p-3" : "bg-white"}`}>
+        {intro && <div className="absolute inset-0 z-10"><KrishIntro building={intro === "building"} /></div>}
         {url && (
           <iframe key={reloadKey} ref={frameRef} src={url} title="App preview" data-testid="app-preview-frame"
             onLoad={() => { if (picking) frameRef.current?.contentWindow?.postMessage({ source: "radha-builder", pick: true }, "*"); }}

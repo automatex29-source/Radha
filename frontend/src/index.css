@@ -464,3 +464,49 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 /* Owner dashboard charts: one blue for single series, orange for Max. Light and dark steps chosen separately. */
 .owner-viz { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-grid: rgba(15, 23, 42, 0.07); --viz-axis: #8a8a8a; --viz-surface: #ffffff; --viz-page: #f7f7f8; }
 .dark .owner-viz { --viz-1: #3987e5; --viz-2: #d95926; --viz-grid: rgba(255, 255, 255, 0.07); --viz-axis: #8f8f8f; --viz-surface: #121319; --viz-page: hsl(var(--background)); }
+
+/* App Builder start screen (KrishIntro): a 3D cube with orbiting rings on a deep indigo stage. */
+.krish-intro { background: radial-gradient(120% 90% at 50% 35%, #1b1748 0%, #0b0b1e 55%, #05050d 100%); perspective: 900px; }
+.krish-intro-grid { position: absolute; inset: -50% -20% 0; transform: rotateX(68deg) translateY(30%);
+  background-image: linear-gradient(rgb(129 140 248 / .18) 1px, transparent 1px), linear-gradient(90deg, rgb(129 140 248 / .18) 1px, transparent 1px);
+  background-size: 48px 48px; mask-image: linear-gradient(to top, black 10%, transparent 70%); animation: krish-grid 3s linear infinite; }
+@keyframes krish-grid { to { background-position: 0 48px, 0 0; } }
+.krish-intro-glow { position: absolute; width: 420px; height: 420px; border-radius: 9999px; top: 50%; left: 50%; transform: translate(-50%, -62%);
+  background: radial-gradient(circle, rgb(139 92 246 / .45), rgb(236 72 153 / .12) 45%, transparent 70%); filter: blur(10px); animation: krish-breathe 4s ease-in-out infinite; }
+@keyframes krish-breathe { 50% { opacity: .6; transform: translate(-50%, -62%) scale(1.12); } }
+.krish-intro-spark { position: absolute; bottom: -10px; width: 3px; height: 3px; border-radius: 9999px; background: #c4b5fd;
+  box-shadow: 0 0 8px #a78bfa; animation: krish-rise linear infinite; opacity: 0; }
+@keyframes krish-rise { 10% { opacity: .9; } 90% { opacity: .6; } to { transform: translateY(-110vh); opacity: 0; } }
+.krish-intro-stage { width: 180px; height: 180px; transform-style: preserve-3d; transition: transform .25s ease-out; cursor: pointer; }
+.krish-intro-cube { position: absolute; inset: 45px; transform-style: preserve-3d; animation: krish-spin 9s linear infinite; }
+.krish-intro-cube.building { animation-duration: 3.2s; }
+.krish-intro-cube.burst { animation: krish-spin 9s linear infinite, krish-pop .6s ease-out; }
+@keyframes krish-spin { from { transform: rotateX(-18deg) rotateY(0); } to { transform: rotateX(-18deg) rotateY(360deg); } }
+@keyframes krish-pop { 40% { scale: 1.35; } }
+.krish-intro-cube .face { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 18px;
+  font: 800 44px/1 system-ui, sans-serif; color: white; text-shadow: 0 0 18px rgb(255 255 255 / .7);
+  background: linear-gradient(135deg, rgb(99 102 241 / .92), rgb(168 85 247 / .88) 55%, rgb(236 72 153 / .85));
+  border: 1px solid rgb(255 255 255 / .35); box-shadow: inset 0 0 24px rgb(255 255 255 / .25), 0 0 30px rgb(139 92 246 / .5); }
+.krish-intro-cube .front { transform: translateZ(45px); } .krish-intro-cube .back { transform: rotateY(180deg) translateZ(45px); }
+.krish-intro-cube .right { transform: rotateY(90deg) translateZ(45px); } .krish-intro-cube .left { transform: rotateY(-90deg) translateZ(45px); }
+.krish-intro-cube .top { transform: rotateX(90deg) translateZ(45px); } .krish-intro-cube .bottom { transform: rotateX(-90deg) translateZ(45px); }
+.krish-intro-ring { position: absolute; inset: 0; border-radius: 9999px; border: 2px solid rgb(165 180 252 / .55); transform-style: preserve-3d;
+  box-shadow: 0 0 16px rgb(129 140 248 / .35); }
+.krish-intro-ring.r1 { animation: krish-orbit1 6s linear infinite; }
+.krish-intro-ring.r2 { inset: 14px; border-color: rgb(244 114 182 / .55); animation: krish-orbit2 8s linear infinite; }
+.krish-intro-ring.r3 { inset: -14px; border-color: rgb(192 132 252 / .35); border-style: dashed; animation: krish-orbit3 12s linear infinite; }
+.krish-intro-ring.fast { animation-duration: 2s; }
+@keyframes krish-orbit1 { from { transform: rotateX(70deg) rotateZ(0); } to { transform: rotateX(70deg) rotateZ(360deg); } }
+@keyframes krish-orbit2 { from { transform: rotateY(65deg) rotateZ(0); } to { transform: rotateY(65deg) rotateZ(-360deg); } }
+@keyframes krish-orbit3 { from { transform: rotateX(-60deg) rotateY(30deg) rotateZ(0); } to { transform: rotateX(-60deg) rotateY(30deg) rotateZ(360deg); } }
+.krish-intro-title { background: linear-gradient(90deg, #a5b4fc, #e879f9, #f472b6, #a5b4fc); background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: krish-shine 3s linear infinite; }
+@keyframes krish-shine { to { background-position: 200% center; } }
+.krish-intro-caret { display: inline-block; width: 8px; height: 1.1em; margin-left: 2px; vertical-align: -3px; background: #a5b4fc; animation: krish-blink 1s steps(1) infinite; }
+@keyframes krish-blink { 50% { opacity: 0; } }
+.krish-intro-bar { height: 100%; width: 40%; border-radius: 9999px; background: linear-gradient(90deg, #818cf8, #e879f9);
+  box-shadow: 0 0 12px #c084fc; animation: krish-bar 1.6s ease-in-out infinite; }
+@keyframes krish-bar { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+@media (prefers-reduced-motion: reduce) {
+  .krish-intro *, .krish-intro-grid { animation-duration: 0s !important; animation-iteration-count: 1 !important; }
+}
