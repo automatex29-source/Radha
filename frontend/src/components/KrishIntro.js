@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import KrishWordmark from "@/components/KrishWordmark";
 
@@ -35,22 +35,14 @@ function useTyping(lines) {
   return lines[state.i % lines.length].slice(0, state.n);
 }
 
-/** The preview's start screen while a new app is still the empty starter: the Krish AI chakra in 3D that turns,
- *  tilts toward the pointer and pulses while Krish builds, with what it is doing typed underneath. */
+/** The preview's start screen while a new app is still the empty starter: the Krish AI chakra, turning
+ *  smoothly and faster while Krish builds, with what it is doing typed underneath. */
 export default function KrishIntro({ building }) {
-  const ref = useRef(null);
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const [burst, setBurst] = useState(0);
   const typed = useTyping(building ? BUILD_LINES : IDLE_LINES);
 
-  const onMove = (e) => {
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
-    setTilt({ x: ((e.clientY - r.top) / r.height - 0.5) * -24, y: ((e.clientX - r.left) / r.width - 0.5) * 30 });
-  };
-
   return (
-    <div ref={ref} onMouseMove={onMove} onMouseLeave={() => setTilt({ x: 0, y: 0 })} data-testid="krish-intro"
+    <div data-testid="krish-intro"
       className="krish-intro relative flex h-full w-full select-none flex-col items-center justify-center overflow-hidden">
       <div className="krish-intro-grid" aria-hidden />
       <div className="krish-intro-glow" aria-hidden />
@@ -60,7 +52,7 @@ export default function KrishIntro({ building }) {
       ))}
 
       <button type="button" onClick={() => setBurst((b) => b + 1)} aria-label="Krish AI"
-        className="krish-intro-stage relative" style={{ transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)` }}>
+        className="krish-intro-stage relative">
         <div className={`krish-intro-ring r1 ${building ? "fast" : ""}`} />
         <div className={`krish-intro-ring r2 ${building ? "fast" : ""}`} />
         <div className={`krish-intro-ring r3 ${building ? "fast" : ""}`} />
@@ -81,7 +73,7 @@ export default function KrishIntro({ building }) {
           <div className="krish-intro-bar" />
         </div>
       )}
-      <p className="relative mt-6 text-[11.5px] text-white/40">Move your mouse, or tap the logo</p>
+      <p className="relative mt-6 text-[11.5px] text-white/40">Tap the logo</p>
     </div>
   );
 }
