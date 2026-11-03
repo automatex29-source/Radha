@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aarav Mehta — Product Designer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>body { font-family: Inter, system-ui, sans-serif; } .reveal { opacity: 0; transform: translateY(16px); transition: all .6s ease; } .reveal.show { opacity: 1; transform: none; }</style>
+</head>
+<body class="bg-zinc-950 text-zinc-100">
+  <header class="sticky top-0 z-20 border-b border-white/5 bg-zinc-950/80 backdrop-blur">
+    <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+      <a href="#" class="text-lg font-extrabold tracking-tight">aarav<span class="text-emerald-400">.</span></a>
+      <nav class="flex gap-5 text-sm text-zinc-400">
+        <a href="#work" class="hover:text-white">Work</a>
+        <a href="#about" class="hover:text-white">About</a>
+        <a href="#contact" class="hover:text-white">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="mx-auto max-w-5xl px-4 pb-16 pt-20">
+    <span class="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> Available for new projects</span>
+    <h1 class="mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-6xl">I design calm, useful products people <span class="text-emerald-400">love to use.</span></h1>
+    <p class="mt-5 max-w-xl text-lg text-zinc-400">Product designer in Bengaluru. 8 years shaping apps for fintech, health and education teams.</p>
+    <div class="mt-8 flex flex-wrap gap-3">
+      <a href="#work" class="rounded-xl bg-emerald-400 px-5 py-3 font-semibold text-zinc-950 transition hover:-translate-y-0.5">See my work</a>
+      <a href="#contact" class="rounded-xl border border-white/10 px-5 py-3 font-semibold transition hover:bg-white/5">Say hello</a>
+    </div>
+  </section>
+
+  <section id="work" class="mx-auto max-w-5xl px-4 py-12">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <h2 class="text-2xl font-bold">Selected work</h2>
+      <div id="filters" class="flex flex-wrap gap-2 text-sm"></div>
+    </div>
+    <div id="projects" class="mt-8 grid gap-6 sm:grid-cols-2"></div>
+  </section>
+
+  <section id="about" class="mx-auto grid max-w-5xl gap-10 px-4 py-16 md:grid-cols-2">
+    <div class="reveal">
+      <h2 class="text-2xl font-bold">About me</h2>
+      <p class="mt-4 text-zinc-400">I start with the people, not the pixels. Every project begins with interviews and quick prototypes, so the final design solves the real problem.</p>
+      <div id="stats" class="mt-8 grid grid-cols-3 gap-4"></div>
+    </div>
+    <div class="reveal">
+      <h3 class="font-semibold">Skills</h3>
+      <div id="skills" class="mt-4 flex flex-wrap gap-2"></div>
+    </div>
+  </section>
+
+  <section id="contact" class="mx-auto max-w-5xl px-4 py-16">
+    <div class="reveal rounded-3xl border border-white/10 bg-gradient-to-br from-emerald-500/15 to-transparent p-8 sm:p-12">
+      <h2 class="text-3xl font-bold">Let's build something together</h2>
+      <form id="contact-form" class="mt-6 grid gap-3 sm:grid-cols-2">
+        <input id="c-name" required placeholder="Your name" class="rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 outline-none focus:border-emerald-400" />
+        <input id="c-email" type="email" required placeholder="Email" class="rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 outline-none focus:border-emerald-400" />
+        <textarea id="c-msg" required rows="3" placeholder="Tell me about your project" class="rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 outline-none focus:border-emerald-400 sm:col-span-2"></textarea>
+        <button class="rounded-xl bg-emerald-400 px-5 py-3 font-semibold text-zinc-950 sm:w-fit">Send message</button>
+      </form>
+      <p id="sent" class="mt-4 hidden text-emerald-300">Thanks! I'll reply within a day.</p>
+    </div>
+  </section>
+  <footer class="border-t border-white/5 py-8 text-center text-sm text-zinc-500">© 2026 Aarav Mehta</footer>
+  <script src="app.js"></script>
+</body>
+</html>

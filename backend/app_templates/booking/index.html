@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Glow Studio — Book an appointment</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>body { font-family: Inter, system-ui, sans-serif; }</style>
+</head>
+<body class="min-h-screen bg-rose-50 text-slate-900">
+  <header class="border-b border-rose-100 bg-white/80 backdrop-blur">
+    <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+      <a href="#" class="flex items-center gap-2 font-extrabold"><span class="grid h-8 w-8 place-items-center rounded-xl bg-rose-500 text-white"><i data-lucide="sparkles" class="h-4 w-4"></i></span> Glow Studio</a>
+      <button id="my-btn" class="rounded-xl border border-rose-200 px-3 py-1.5 text-sm font-medium hover:bg-rose-50">My bookings (<span id="my-count">0</span>)</button>
+    </div>
+  </header>
+
+  <main class="mx-auto grid max-w-5xl gap-6 px-4 py-10 lg:grid-cols-[1fr_340px]">
+    <div class="space-y-6">
+      <section class="rounded-3xl bg-white p-6 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-widest text-rose-500">Step 1</p>
+        <h2 class="mt-1 text-xl font-bold">Choose a service</h2>
+        <div id="services" class="mt-4 grid gap-3 sm:grid-cols-2"></div>
+      </section>
+      <section class="rounded-3xl bg-white p-6 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-widest text-rose-500">Step 2</p>
+        <h2 class="mt-1 text-xl font-bold">Pick a day and time</h2>
+        <div id="days" class="mt-4 flex gap-2 overflow-x-auto pb-1"></div>
+        <div id="slots" class="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4"></div>
+      </section>
+      <section class="rounded-3xl bg-white p-6 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-widest text-rose-500">Step 3</p>
+        <h2 class="mt-1 text-xl font-bold">Your details</h2>
+        <form id="form" class="mt-4 grid gap-3 sm:grid-cols-2">
+          <input id="name" required placeholder="Full name" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-rose-400" />
+          <input id="phone" required pattern="[0-9+ ]{8,15}" placeholder="Phone number" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-rose-400" />
+          <button id="confirm" class="rounded-xl bg-rose-500 py-3 font-semibold text-white transition hover:bg-rose-600 disabled:opacity-40 sm:col-span-2" disabled>Confirm booking</button>
+        </form>
+      </section>
+    </div>
+    <aside class="h-fit rounded-3xl bg-slate-900 p-6 text-white lg:sticky lg:top-6">
+      <h3 class="font-semibold">Summary</h3>
+      <dl id="summary" class="mt-4 space-y-3 text-sm"></dl>
+    </aside>
+  </main>
+
+  <div id="modal" class="fixed inset-0 z-30 hidden place-items-center bg-black/40 p-4">
+    <div class="w-full max-w-md rounded-3xl bg-white p-6">
+      <div class="flex items-center justify-between"><h3 class="text-lg font-bold">My bookings</h3><button id="modal-close" aria-label="Close"><i data-lucide="x"></i></button></div>
+      <div id="my-list" class="mt-4 space-y-2"></div>
+    </div>
+  </div>
+  <div id="toast" class="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-full bg-slate-900 px-5 py-2.5 text-sm text-white opacity-0 transition-opacity"></div>
+  <script src="app.js"></script>
+</body>
+</html>

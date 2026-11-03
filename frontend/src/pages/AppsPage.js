@@ -4,30 +4,74 @@ import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger,
-} from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { AppWindow, Plus, Loader2, Globe, Trash2 } from "lucide-react";
+import { AppWindow, Loader2, Globe, Trash2, Sparkles, Wand2 } from "lucide-react";
 
-const TEMPLATES = [
-  { id: "blank", name: "Start from scratch", hint: "Empty HTML, CSS & JS app", title: "" },
-  { id: "todo", name: "To-do list", hint: "Tasks with filters, editing and saving", title: "My Tasks" },
-  { id: "dashboard", name: "Dashboard", hint: "Charts, stats and an orders table", title: "Sales Dashboard" },
-  { id: "landing", name: "Landing page", hint: "Hero, features, pricing, FAQ, sign-up", title: "Landing Page" },
-  { id: "shop", name: "Online shop", hint: "Products, search, categories and a cart", title: "My Shop" },
-  { id: "game", name: "Snake game", hint: "Neon arcade game with high score", title: "Neon Snake" },
-  { id: "react", name: "React + Tailwind", hint: "React components; any npm package via esm.sh", title: "" },
+// Tap an idea to fill the box. The builder picks the matching starter itself.
+const IDEAS = [
+  { label: "Habit tracker", prompt: "A habit tracker with daily check-ins, streaks and a weekly chart" },
+  { label: "Restaurant site", prompt: "A restaurant website with a menu, online ordering and table booking" },
+  { label: "Salon booking", prompt: "A booking app for a beauty salon: pick a service, a day and a time slot" },
+  { label: "Portfolio", prompt: "A personal portfolio for a designer with projects, skills and a contact form" },
+  { label: "AI chatbot", prompt: "An AI chatbot assistant with suggested questions and chat history" },
+  { label: "Sales dashboard", prompt: "A sales dashboard with stats, charts and a recent orders table" },
+  { label: "Online shop", prompt: "An online shop for handmade candles with a cart and checkout" },
+  { label: "Snake game", prompt: "A neon snake game with a high score and sound effects" },
 ];
+
+// "A habit tracker with daily check-ins" -> "Habit tracker"
+function appName(text) {
+  const words = text.replace(/[\r\n]+/g, " ").replace(/^(please\s+)?(make|build|create|design|i want|give me)\s+(me\s+)?(an?\s+|the\s+)?/i, "")
+    .split(/\s+/).slice(0, 4).join(" ").replace(/[^\p{L}\p{N}\s&'-]/gu, "").trim();
+  const name = words.split(/\s+(with|for|that|which|where|and)\s+/i)[0] || words || "My app";
+  return (name.charAt(0).toUpperCase() + name.slice(1)).slice(0, 40);
+}
+
+function NewAppBox({ busy, onCreate }) {
+  const [text, setText] = useState("");
+  const [boosting, setBoosting] = useState(false);
+  const boost = async () => {
+    if (!text.trim() || boosting) return;
+    setBoosting(true);
+    try {
+      const { data } = await api.post("/apps/boost", { text });
+      setText(data.text);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setBoosting(false);
+    }
+  };
+  return (
+    <section className="mt-6 rounded-2xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60" data-testid="new-app-box">
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} data-testid="new-app-input" autoFocus
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); onCreate(text); } }}
+        placeholder="Describe the app you want, like “a booking app for my salon”…"
+        className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-base focus:outline-none" />
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={boost} disabled={!text.trim() || boosting} data-testid="new-app-boost"
+          title="Turn a short idea into a detailed brief" className="gap-1.5 text-muted-foreground">
+          {boosting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Improve prompt
+        </Button>
+        <Button onClick={() => onCreate(text)} disabled={!text.trim() || busy} data-testid="create-app-button" className="ml-auto gap-1.5">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Build it
+        </Button>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border px-1 pt-3">
+        {IDEAS.map((i) => (
+          <button key={i.label} onClick={() => setText(i.prompt)} data-testid={`idea-${i.label}`}
+            className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+            {i.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export default function AppsPage() {
   const navigate = useNavigate();
   const [apps, setApps] = useState(null);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", description: "", template: "blank" });
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -42,16 +86,16 @@ export default function AppsPage() {
 
   useEffect(() => { load(); }, []);
 
-  const create = async () => {
-    if (!form.name.trim()) return;
+  // No form: the request becomes the app (its name comes from the first words), and the builder starts on it.
+  const create = async (prompt) => {
+    const text = prompt.trim();
+    if (!text || busy) return;
     setBusy(true);
     try {
-      const { data } = await api.post("/apps", form);
-      setOpen(false);
-      navigate(`/apps/${data.id}`);
+      const { data } = await api.post("/apps", { name: appName(text), description: text.slice(0, 500), template: "blank" });
+      navigate(`/apps/${data.id}`, { state: { prompt: text } });
     } catch (e) {
       toast.error(formatApiError(e));
-    } finally {
       setBusy(false);
     }
   };
@@ -72,50 +116,9 @@ export default function AppsPage() {
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-          <PageHero scene="apps" icon={AppWindow} title="Apps" subtitle="Describe an app and Krish AI builds it, with live preview, tests, version history and one-click publishing.">
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button data-testid="new-app-button" className="gap-1.5 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New app</Button>
-              </DialogTrigger>
-              <DialogContent className="max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>New app</DialogTitle>
-                  <DialogDescription>You can change everything later by chatting with the builder.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="app-name">Name</Label>
-                    <Input id="app-name" data-testid="app-name-input" value={form.name} placeholder="Habit tracker"
-                      onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="bg-card" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="app-desc">What should it do? (optional)</Label>
-                    <Textarea id="app-desc" data-testid="app-description-input" value={form.description} rows={3}
-                      placeholder="Track daily habits with streaks and a weekly chart"
-                      onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className="bg-card" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Starting point</Label>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {TEMPLATES.map((t) => (
-                        <button key={t.id} type="button" onClick={() => setForm((f) => ({ ...f, template: t.id, name: f.name.trim() ? f.name : t.title }))}
-                          data-testid={`template-${t.id}`}
-                          className={`rounded-lg border p-3 text-left transition-colors ${form.template === t.id ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"}`}>
-                          <p className="text-sm font-semibold">{t.name}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{t.hint}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={create} disabled={busy || !form.name.trim()} data-testid="create-app-button">
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create app"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </PageHero>
+          <PageHero scene="apps" icon={AppWindow} title="Apps" subtitle="Describe an app and Krish AI builds it, with live preview, tests, version history and one-click publishing." />
+
+          <NewAppBox busy={busy} onCreate={create} />
 
           {apps === null ? (
             <div className="mt-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
@@ -123,7 +126,7 @@ export default function AppsPage() {
             <div className="mt-16 flex flex-col items-center text-center" data-testid="apps-empty">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-strong"><AppWindow className="h-7 w-7 text-primary" /></div>
               <p className="mt-4 font-semibold">No apps yet</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">Create one and ask Krish AI for a to-do list, a dashboard, a game or a landing page.</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">Describe one above, or tap an idea, and Krish AI builds it in seconds.</p>
             </div>
           ) : (
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

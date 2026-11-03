@@ -206,6 +206,10 @@ DESIGN_GUIDE = (
 _STORAGE_SHIM = """<script>(function(){try{window.localStorage.getItem("x")}catch(e){function S(){var m={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null},setItem:function(k,v){m[k]=String(v)},removeItem:function(k){delete m[k]},clear:function(){m={}},key:function(i){return Object.keys(m)[i]||null},get length(){return Object.keys(m).length}}}try{Object.defineProperty(window,"localStorage",{value:S(),configurable:true});Object.defineProperty(window,"sessionStorage",{value:S(),configurable:true})}catch(e){}}})();</script>"""
 _CONSOLE_BRIDGE = """<script>(function(){function s(l,a){try{parent.postMessage({source:"radha-preview",level:l,message:Array.prototype.map.call(a,function(x){try{return typeof x==="string"?x:(x instanceof Error?x.message:JSON.stringify(x))}catch(e){return String(x)}}).join(" ")},"*")}catch(e){}}["log","info","warn","error"].forEach(function(l){var o=console[l];console[l]=function(){s(l,arguments);return o.apply(console,arguments)}});addEventListener("error",function(e){s("error",[e.message+(e.filename?" ("+e.filename.split("/").pop()+":"+e.lineno+")":"")])});addEventListener("unhandledrejection",function(e){s("error",["Unhandled promise rejection: "+((e.reason&&e.reason.message)||e.reason)])})})();</script>"""
 
+# Click to edit: the builder asks the preview to let the user pick an element; the page outlines what's under the
+# pointer and sends back the clicked element (a CSS path, its HTML and text) instead of running the click.
+_PICK_BRIDGE = """<script>(function(){var on=false,box=null,tip=null;function css(e){if(e.id)return"#"+e.id;var p=[];while(e&&e.nodeType===1&&e!==document.body&&p.length<4){var s=e.tagName.toLowerCase();if(e.id){p.unshift("#"+e.id);break}var c=(e.getAttribute("class")||"").trim().split(/\\s+/).filter(function(x){return x&&x.indexOf(":")<0}).slice(0,2);if(c.length)s+="."+c.join(".");var sib=e.parentNode?Array.prototype.filter.call(e.parentNode.children,function(x){return x.tagName===e.tagName}):[];if(sib.length>1)s+=":nth-of-type("+(sib.indexOf(e)+1)+")";p.unshift(s);e=e.parentElement}return p.join(" > ")}function ui(){if(box)return;box=document.createElement("div");box.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #8b5cf6;background:rgba(139,92,246,.12);border-radius:4px;transition:all .06s";tip=document.createElement("div");tip.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;background:#8b5cf6;color:#fff;font:600 11px system-ui;padding:2px 6px;border-radius:4px";document.documentElement.appendChild(box);document.documentElement.appendChild(tip)}function off(){on=false;if(box){box.remove();tip.remove();box=tip=null}document.documentElement.style.cursor=""}function over(ev){if(!on)return;ui();var r=ev.target.getBoundingClientRect();box.style.left=r.left+"px";box.style.top=r.top+"px";box.style.width=r.width+"px";box.style.height=r.height+"px";tip.textContent=ev.target.tagName.toLowerCase()+(ev.target.id?"#"+ev.target.id:"");tip.style.left=r.left+"px";tip.style.top=Math.max(0,r.top-20)+"px"}function click(ev){if(!on)return;ev.preventDefault();ev.stopPropagation();var e=ev.target,h=e.outerHTML||"";if(h.length>700)h=h.slice(0,700)+"…";try{parent.postMessage({source:"radha-preview",kind:"pick",selector:css(e),html:h,text:(e.innerText||"").trim().slice(0,160),tag:e.tagName.toLowerCase()},"*")}catch(x){}off()}addEventListener("mouseover",over,true);addEventListener("click",click,true);addEventListener("keydown",function(e){if(on&&e.key==="Escape"){off();try{parent.postMessage({source:"radha-preview",kind:"pick-cancel"},"*")}catch(x){}}},true);addEventListener("message",function(e){if(e.source!==parent||!e.data||e.data.source!=="radha-builder")return;if(e.data.pick){on=true;document.documentElement.style.cursor="crosshair"}else off()})})();</script>"""
+
 
 def init(database):
     global db
@@ -699,7 +703,7 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
     if ctype in ("text/html", "text/css", "text/javascript"):
         content = site_images.rewrite(content)  # AI pictures (krish-image.invalid links) come from this server
     if ctype == "text/html":
-        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
+        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
     return Response(content, media_type=f"{ctype}; charset=utf-8" if ctype.startswith("text/") else ctype, headers=headers)
@@ -1467,3 +1471,83 @@ async def serve_site(slug: str, path: str = ""):
         return Response("This site is not published.", status_code=404, media_type="text/plain")
     version = await db.app_commits.find_one({"appId": app["id"], "id": app["published"]["commitId"]})
     return _serve(await commit_files(version), path, bridge=False, cache="public, max-age=60", app_id=app["id"])
+
+
+# ------------------------------------------------------------------ next ideas and the prompt booster
+# After a build the App Builder offers a few one-tap next steps. They come from what the app doesn't have yet,
+# read from its files, so they are instant and cost no AI request.
+_IDEAS = [
+    (lambda c: "body.dark" not in c and "dark-mode" not in c and "darkmode" not in c and "theme" not in c,
+     "Add a dark mode switch", "Add a dark mode switch in the header that remembers the choice."),
+    (lambda c: "radha.auth" not in c and ("<form" in c or "cart" in c or "booking" in c),
+     "Add sign up and login", "Add sign up and login with RADHA.auth, and show the user's name in the header when signed in."),
+    (lambda c: "localstorage" not in c and "radha.db" not in c,
+     "Remember data after refresh", "Save the app's data so it is still there after a page refresh."),
+    (lambda c: "<form" in c and "radha.notify" not in c,
+     "Email me form messages", "When someone sends a form, email it to me with RADHA.notify and show a thank-you message."),
+    (lambda c: "search" not in c,
+     "Add a search bar", "Add a search bar that filters the main list as I type."),
+    (lambda c: "radha.ai" not in c,
+     "Add an AI helper", "Add a small AI helper chat button (bottom right) that answers questions about this app with RADHA.ai."),
+    (lambda c: "chart" not in c and ("<table" in c or "stat" in c or "total" in c),
+     "Add charts", "Add a chart (Chart.js) that shows the main numbers visually."),
+    (lambda c: "reveal" not in c and "fade-up" not in c and "@keyframes" not in c and "animation" not in c,
+     "Add smooth animations", "Add smooth animations: sections fade in on scroll and buttons have hover effects."),
+    (lambda c: "@media" not in c and "krish-ui.css" not in c and "tailwind" not in c,
+     "Make it phone friendly", "Make the whole app look great on a phone."),
+]
+MAX_IDEAS = 4
+
+
+def next_ideas(files: Dict[str, str]) -> List[dict]:
+    code = "\n".join(c for p, c in files.items() if p.endswith((".html", ".htm", ".js", ".mjs", ".css"))
+                     and not p.startswith((SAMPLE_DIR + "/", ASSET_DIR + "/")) and p != KIT_NAME).lower()
+    if not code:
+        return []
+    out = [{"label": label, "prompt": prompt} for test, label, prompt in _IDEAS if test(code)]
+    return out[:MAX_IDEAS]
+
+
+@router.get("/apps/{app_id}/ideas")
+async def app_ideas(app_id: str, user_id: str = Depends(current_user_id)):
+    await owned_app(app_id, user_id)
+    return {"ideas": next_ideas(await snapshot(app_id))}
+
+
+BOOST_SYSTEM = (
+    "You turn a short app idea into a clear brief for an AI app builder. Keep everything the user said (names, "
+    "colours, language, features) and add what a great version needs: who it is for, the screens or page "
+    "sections, 5 to 8 concrete features that must work, realistic sample content, and the look (style, colours, "
+    "mood). Write it as one short paragraph and then \"- \" bullets, under 140 words, in the same language as the "
+    "request. Output only the brief: no intro, no questions, no code."
+)
+
+
+class BoostIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/apps/boost")
+async def boost_prompt(body: BoostIn, user_id: str = Depends(current_user_id)):
+    """The builder's "Improve my prompt" button: one quick call that writes a fuller brief from a short ask."""
+    from agent import llm as agent_llm, prompt_boost
+
+    model = prompt_boost._model()
+    if not model:
+        raise HTTPException(status_code=503, detail="No AI model is set up to improve prompts")
+    out = []
+
+    async def run():
+        async for ev in agent_llm.stream_completion(model, [{"role": "system", "content": BOOST_SYSTEM},
+                                                            {"role": "user", "content": body.text}], []):
+            if ev["type"] == "text":
+                out.append(ev["text"])
+
+    try:
+        await asyncio.wait_for(run(), prompt_boost.TIMEOUT)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Couldn't improve the prompt: {str(exc)[:200]}")
+    text = "".join(out).strip()
+    if not text:
+        raise HTTPException(status_code=502, detail="Couldn't improve the prompt. Try again.")
+    return {"text": text}
