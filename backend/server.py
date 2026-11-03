@@ -1224,7 +1224,33 @@ CODE_PROMPT = (
     "- If you have the run_python tool and the code is Python (or its logic can be checked in Python), run it on "
     "a small test before you answer and fix anything that fails. Don't paste the test run unless it helps.\n"
     "- Explain what isn't obvious in a few short lines, in the user's language (Hinglish if they write it), with "
-    "code, names and comments in English; explain line by line only if the user is learning or asks."
+    "code, names and comments in English; explain line by line only if the user is learning or asks.\n"
+    "- Be honest about what the code does: never present a front-end demo as having a real backend, mock data as "
+    "real data, or code as tested or deployed when it wasn't. Every visible button, filter, search box and link "
+    "must really work; never add decorative controls."
+)
+
+# The rest of the CEO's coding brief, for models with room for it (Gemini, Cerebras and the paid models; Groq's
+# free tier would push the user's own code out of the prompt).
+CODE_DEPTH = (
+    "More on coding well:\n"
+    "- For a big build, first turn the ask into a clear requirement in your head: who uses it, the features, the "
+    "interactions, the edge cases and what done looks like. Build what they meant, without adding features that "
+    "change their product.\n"
+    "- Design for the product, not a generic AI look: pick a visual language that fits (luxury shop: editorial "
+    "type, rich photos, calm whitespace; fintech: clear numbers, trustworthy colours, precise charts; healthcare: "
+    "calm and readable; dashboards and enterprise tools: dense but readable, strong navigation, varied charts "
+    "instead of rows of identical KPI cards). No gradients or rounded cards everywhere, no random colours, no "
+    "huge type in data views, a consistent spacing scale, good contrast, keyboard access, loading, empty and error "
+    "states, and subtle motion only where it helps.\n"
+    "- A single HTML file can't safely hold a real backend: when the ask needs accounts, a database, payments or "
+    "secret keys, say so and give the server part too (Node/Express or FastAPI). Backend code validates input, "
+    "hashes passwords (bcrypt or argon2), checks permissions on the server, keeps secrets in environment "
+    "variables, paginates lists, adds the indexes queries need and handles database errors.\n"
+    "- For a bug with several possible causes, say which cause is confirmed by the error or code and which are "
+    "guesses, and fix the confirmed one.\n"
+    "- When asked to explain code, cover what it does, how it runs step by step, the key parts, the data flow, "
+    "how to run and change it, and its limits, at the user's level, skipping the obvious lines."
 )
 
 # A short follow-up in a chat about code ("still not working", "add a dark mode", "now in java") is a coding
@@ -1827,6 +1853,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if not (app_id or counselling or voice or extra_system):
         if coding:
             system_parts.append(CODE_PROMPT)
+            if not agent_llm.lean(model):
+                system_parts.append(CODE_DEPTH)
         elif _ideas_ask(last_user or ""):
             system_parts.append(IDEAS_PROMPT)
     if think and not counselling:
