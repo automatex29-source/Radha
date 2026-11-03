@@ -11,6 +11,14 @@
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="format-detection" content="telephone=no" />
         <link rel="manifest" href="/manifest.json" />
+        <script>
+          // The owner dashboard at /owner installs as its own phone app ("Krish Owner"), apart from Krish AI.
+          if (location.pathname === "/owner" || location.pathname.indexOf("/owner/") === 0) {
+            document.querySelector('link[rel="manifest"]').href = "/owner-manifest.json";
+            document.querySelector('meta[name="apple-mobile-web-app-title"]').content = "Krish Owner";
+            document.title = "Krish Owner";
+          }
+        </script>
         <meta name="description" content="Krish AI by EmpireX, your saarthi for every task: chat, research, build apps, make decks and docs, and automate tasks with AI. Free to start." />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="Krish AI" />

@@ -1,0 +1,17 @@
+{
+  "id": "/owner",
+  "name": "Krish Owner",
+  "short_name": "Krish Owner",
+  "description": "Krish AI owner analytics: people, messages, AI usage, plan sign-ups and revenue",
+  "start_url": "/owner",
+  "scope": "/owner",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

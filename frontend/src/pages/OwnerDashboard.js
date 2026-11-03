@@ -4,11 +4,12 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Respons
 import { toast } from "sonner";
 import {
   AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronUp, Clock, Download, Eye, EyeOff, Lightbulb, Loader2, Minus,
-  Pencil, RefreshCw, Search, ShieldCheck, ThumbsDown, TrendingDown, TrendingUp, Users,
+  Pencil, PlusSquare, RefreshCw, Search, ShieldCheck, ThumbsDown, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
+import { canInstall, install, isIos, isStandalone, onInstallChange } from "@/lib/pwa";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -334,7 +335,23 @@ function downloadCsv(name, rows) {
   URL.revokeObjectURL(url);
 }
 
-export default function OwnerDashboard() {
+/** On the owner's own link (/owner): add it to the home screen as its own app, "Krish Owner". */
+function InstallOwnerApp() {
+  const [ready, setReady] = useState(canInstall());
+  useEffect(() => onInstallChange(setReady), []);
+  if (isStandalone() || (!ready && !isIos())) return null;
+  const add = async () => {
+    if (ready) { if (await install()) toast.success("Krish Owner is on your home screen."); return; }
+    toast("On iPhone: tap Share, then Add to Home Screen.", { duration: 8000 });
+  };
+  return (
+    <Button size="sm" className="h-8" onClick={add} data-testid="owner-install-app">
+      <PlusSquare className="mr-1.5 h-3.5 w-3.5" /> Install app
+    </Button>
+  );
+}
+
+export default function OwnerDashboard({ standalone = false }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [range, setRange] = useState("24h");
@@ -402,13 +419,13 @@ export default function OwnerDashboard() {
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
-      <IconRail />
+      {!standalone && <IconRail />}
       <main className="owner-viz min-h-0 flex-1 overflow-y-auto bg-[var(--viz-page)]">
-        <div className="mx-auto w-full max-w-[1280px] px-4 pb-14 pt-6 sm:px-6">
+        <div className={`mx-auto w-full max-w-[1280px] px-4 pb-14 sm:px-6 ${standalone ? "pt-[max(1.5rem,env(safe-area-inset-top))]" : "pt-6"}`}>
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <ShieldCheck className="h-3.5 w-3.5" /> Owner analytics
+                <ShieldCheck className="h-3.5 w-3.5" /> {standalone ? "Krish Owner" : "Owner analytics"}
               </p>
               <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">Business overview</h1>
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" data-testid="owner-dash-updated">
@@ -429,6 +446,11 @@ export default function OwnerDashboard() {
               <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => load(true)} disabled={loading} title="Refresh now" aria-label="Refresh now" data-testid="owner-dash-refresh">
                 <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               </Button>
+              {standalone ? <InstallOwnerApp /> : (
+                <Button asChild variant="outline" size="sm" className="h-8" data-testid="owner-open-app">
+                  <a href="/owner" target="_blank" rel="noopener">Own link ↗</a>
+                </Button>
+              )}
               <Button variant="outline" size="sm" className="h-8" onClick={() => navigate("/admin/users")} data-testid="owner-dash-all-users">
                 <Users className="mr-1.5 h-3.5 w-3.5" /> Users & problems
               </Button>
