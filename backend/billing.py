@@ -83,6 +83,28 @@ def webhook_signature_ok(body: bytes, signature: str) -> bool:
     return bool(secret and signature) and hmac.compare_digest(_sign(secret, body), signature)
 
 
+GST_RATE = 18  # percent, charged on top of the price once the business has a GSTIN
+
+
+def gstin() -> str:
+    """The business's GST number (GSTIN). Unset, prices are charged as they are: GST may only be collected once
+    the business is registered."""
+    return os.environ.get("GSTIN", "").strip().upper()
+
+
+def with_gst(paise: int) -> tuple:
+    """(what the customer pays, the GST in it) for a price of `paise`: 18% on top when a GSTIN is set."""
+    if not gstin():
+        return paise, 0
+    gst = round(paise * GST_RATE / 100)
+    return paise + gst, gst
+
+
+def gst_fields(base: int, gst: int) -> dict:
+    """What a payment or subscription records about GST, so receipts can show the split."""
+    return {"baseAmount": base, "gst": gst, "gstin": gstin()} if gst else {}
+
+
 async def _create_razorpay_order(amount: int, receipt: str, notes: dict) -> dict:
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(f"{API}/orders", auth=(key_id(), _secret()),
@@ -116,15 +138,17 @@ async def create_order(db, user: dict, plan: str, code: str = "") -> dict:
         except promos.PromoError as exc:
             raise BillingError(str(exc))
         amount = promos.discounted(amount, promo["percentOff"])
+    base = amount
+    amount, gst = with_gst(base)
     receipt = uuid.uuid4().hex[:20]
     notes = {"userId": user["id"], "plan": plan, **({"promoCode": promo["code"]} if promo else {})}
     order = await _create_razorpay_order(amount, receipt, notes)
     await db.payments.insert_one({
         "orderId": order["id"], "userId": user["id"], "plan": plan, "amount": amount, "currency": "INR",
         "receipt": receipt, "status": "created", "createdAt": _now().isoformat(),
-        "promoCode": promo["code"] if promo else None,
+        "promoCode": promo["code"] if promo else None, **gst_fields(base, gst),
     })
-    return {"orderId": order["id"], "amount": amount, "currency": "INR", "keyId": key_id(),
+    return {"orderId": order["id"], "amount": amount, "currency": "INR", "keyId": key_id(), **gst_fields(base, gst),
             "plan": plan, "planName": limits.PLANS[plan]["name"],
             "promoCode": promo["code"] if promo else None, "percentOff": promo["percentOff"] if promo else 0,
             "name": user.get("name", ""), "email": user.get("email", "")}
@@ -262,13 +286,15 @@ async def subscribe(db, user: dict, plan: str) -> dict:
     on = await autopay_of(db, user["id"])
     if on and limits.ORDER.index(on["plan"]) >= limits.ORDER.index(plan):
         raise BillingError(f"Autopay for {limits.PLANS[on['plan']]['name']} is already on, so it renews by itself.")
-    amount = limits.PLANS[plan]["price"] * 100
+    base = limits.PLANS[plan]["price"] * 100
+    amount, gst = with_gst(base)
     plan_id = await _rzp_plan(db, plan, amount)
     sub = await _rzp("POST", "/subscriptions", {"plan_id": plan_id, "total_count": 60, "quantity": 1,
                                                 "customer_notify": 1, "notes": {"userId": user["id"], "plan": plan}})
     await db.subscriptions.insert_one({"id": sub["id"], "userId": user["id"], "plan": plan, "amount": amount,
-                                       "status": "created", "createdAt": _now().isoformat()})
+                                       "status": "created", "createdAt": _now().isoformat(), **gst_fields(base, gst)})
     return {"subscriptionId": sub["id"], "amount": amount, "currency": "INR", "keyId": key_id(), "plan": plan,
+            **gst_fields(base, gst),
             "planName": limits.PLANS[plan]["name"], "name": user.get("name", ""), "email": user.get("email", "")}
 
 
@@ -289,6 +315,7 @@ async def _charged(db, sub_id: str, payment_id: str, amount=None) -> bool:
     res = await db.payments.update_one({"paymentId": payment_id}, {"$setOnInsert": {
         "orderId": f"sub_{payment_id}", "paymentId": payment_id, "subscriptionId": sub_id, "userId": sub["userId"],
         "plan": sub["plan"], "amount": sub["amount"], "currency": "INR", "status": "paid", "autopay": True,
+        **{k: sub[k] for k in ("baseAmount", "gst", "gstin") if sub.get(k)},
         "createdAt": _now().isoformat(), "paidAt": _now().isoformat()}}, upsert=True)
     if res.upserted_id is None:
         return False

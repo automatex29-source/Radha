@@ -33,14 +33,14 @@ function highlights(plan, basic, video) {
   const { automation } = plan.total;
   const { videoSeconds, uploadMb } = plan.quality;
   if (plan.id === "basic") {
-    return { label: "Includes", items: ["Chat and search (fair daily use)", "Krish AI, our free model for every question",
+    return { label: "Includes", items: ["40 messages every 5 hours, with search", "A few Krish Pro answers a week, free",
       video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
   }
   if (plan.id === "max") {
     return { label: "Everything in Pro, plus", items: [`${x}x the usage of Basic`, ...(video ? [`Videos up to ${videoSeconds} seconds`] : []),
       plural(automation, "automation"), `Uploads up to ${uploadMb}MB`] };
   }
-  return { label: "Everything in Basic, plus", items: [`${x}x the usage of Basic`,
+  return { label: "Everything in Basic, plus", items: ["Unlimited chat on Krish Basic", `${x}x the usage of Basic`,
     ...(plan.premium ? ["Premium AI models and Think mode"] : []),
     ...(plan.quality.media === "premium" ? [video ? "HD pictures and real AI video" : "HD AI pictures"] : []),
     ...(plan.publish ? ["Publish apps to the web"] : []),
@@ -69,12 +69,13 @@ function untilText(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay }) {
+function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay, gstRate }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
   // Autopay on for this plan (or a bigger one) already renews it, so there's nothing to buy here.
   const renews = autopay && ORDER.indexOf(autopay.plan) >= ORDER.indexOf(plan.id);
-  const canBuy = paymentsOn && plan.price > 0 && !lower && !renews;
+  // Before payments are switched on the buttons still look and work normally; paying says it opens shortly.
+  const canBuy = plan.price > 0 && !lower && !renews;
   const was = plan.listPrice || plan.price; // the launch price is struck through from the regular price
   const price = offer && plan.price ? offer.prices[plan.id] ?? plan.price : plan.price;
   const { label, items } = highlights(plan, basic, video);
@@ -94,10 +95,16 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
       <div className="mt-3.5 flex items-end gap-2">
         <span className="text-[2.3rem] font-semibold leading-none tracking-tight tabular-nums">₹{price}</span>
         <span className="pb-1 text-[13px] text-muted-foreground">{plan.price ? "/ month" : "forever"}</span>
+        {plan.price > 0 && (
+          <span className="pb-1 text-[12px] text-muted-foreground" data-testid={`plan-per-day-${plan.id}`}>
+            · just ₹{Math.round(price / 30)}/day
+          </span>
+        )}
       </div>
       <div className="mt-2 flex h-5 items-center gap-2 text-[12px]">
         {price !== was && <span className="tabular-nums text-muted-foreground line-through">₹{was}</span>}
         {off > 0 && <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium" data-testid={`plan-launch-${plan.id}`}>Launch price · {off}% off</span>}
+        {gstRate > 0 && plan.price > 0 && <span className="text-muted-foreground" data-testid={`plan-gst-${plan.id}`}>+ {gstRate}% GST</span>}
       </div>
       <Button disabled={!canBuy || busy} onClick={() => onBuy(plan.id)} data-testid={`plan-button-${plan.id}`}
         className={`mt-3.5 h-10 w-full rounded-lg text-[0.88rem] font-medium shadow-none disabled:opacity-100 ${canBuy && popular
@@ -106,7 +113,6 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
           : "border border-border bg-muted/50 text-muted-foreground"}`}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" />
           : !plan.price ? (current ? "Current plan" : "Free")
-          : !paymentsOn ? (current ? "Current plan" : "Coming soon")
           : renews ? (current ? "Renews automatically" : "Included in your plan")
           : current ? `Add a month · ₹${price}` : lower ? "Included in your plan" : `Get ${plan.name}`}
       </Button>
@@ -231,6 +237,11 @@ export default function PlansPage() {
   useEffect(() => { load(); }, [load]);
 
   const buy = async (planId) => {
+    if (!data?.paymentsOn) {
+      setPicked(null);
+      toast("Payments open in a day or two. We'll email you the moment Pro and Max are ready.");
+      return;
+    }
     setBuying(planId);
     // Autopay (a monthly Razorpay subscription) unless an offer code is on: that's a one-time 30-day payment.
     let oneTime = !!(offer && offer.prices[planId]);
@@ -292,7 +303,7 @@ export default function PlansPage() {
             <h1 className="krish-display text-[1.9rem] leading-[1.05] sm:text-[2.5rem]">
               Choose the plan that <em className="text-[#4F46E5] dark:text-[#A5B4FC]">fits you</em>
             </h1>
-            <p className="mx-auto mt-1.5 max-w-lg text-[0.8rem] leading-snug text-muted-foreground max-sm:hidden">Everyday chat is free on every plan, with a fair daily limit. Upgrade for more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.</p>
+            <p className="mx-auto mt-1.5 max-w-lg text-[0.8rem] leading-snug text-muted-foreground max-sm:hidden">Upgrade for unlimited chat, Krish Pro and more app builds, {data?.video ? "pictures, decks and videos" : "pictures and decks"}.</p>
           </header>
 
           {!data ? (
@@ -312,14 +323,14 @@ export default function PlansPage() {
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
                     paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} video={data.video}
-                    shown={p.id === shownId} autopay={data.autopay} />
+                    shown={p.id === shownId} autopay={data.autopay} gstRate={data.gstRate} />
                 ))}
               </div>
 
               <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-muted-foreground" data-testid="plans-trust">
                 <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> Secure payments by Razorpay</span>
                 <span>UPI · Cards · Net banking</span>
-                <span className="flex items-center gap-1.5"><RefreshCcw className="h-3.5 w-3.5" /> {data.paymentsOn ? "Renews monthly, cancel anytime" : "Payments open soon"}</span>
+                <span className="flex items-center gap-1.5"><RefreshCcw className="h-3.5 w-3.5" /> Renews monthly, cancel anytime</span>
                 {data.paymentsOn && !codeOpen && !offer && (
                   <button type="button" onClick={() => setCodeOpen(true)} className="underline underline-offset-2 hover:text-foreground" data-testid="offer-code-open">Have an offer code?</button>
                 )}
@@ -349,8 +360,9 @@ export default function PlansPage() {
       </main>
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
       {picked && data && (
-        <PlanSheet plan={picked} current={data.plans.find((p) => p.id === data.plan)} basic={data.plans.find((p) => p.id === "basic")} user={user} price={priceOf(picked)}
-          offer={offer} video={data.video} busy={buying === picked.id} onPay={() => { const id = picked.id; setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
+        <PlanSheet plan={picked} user={user} priceOf={priceOf}
+          plans={data.plans.filter((p) => p.price && ORDER.indexOf(p.id) >= ORDER.indexOf(data.plan))}
+          offer={offer} video={data.video} gstRate={data.gstRate} busy={!!buying} onPay={(id) => { setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
       )}
       <PlanWelcome plan={welcome?.plan} user={user} until={welcome?.until} onClose={() => setWelcome(null)}
         onStart={() => { setWelcome(null); navigate("/"); }} />

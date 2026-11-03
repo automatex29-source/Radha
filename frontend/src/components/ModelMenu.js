@@ -42,7 +42,9 @@ export default function ModelMenu({ models, model, setModel, caps, label }) {
   const current = models.find((m) => m.id === model);
   const Icon = modelIcon(model);
   const ready = (m) => !caps || !!caps.agent?.[m.id];
-  const pick = (m) => (m.pro && !paidPlan ? navigate("/plans") : setModel(m.id));
+  // A Pro model with a free taste (Krish Pro) can be picked on Basic too: a few answers a week, then Krish Basic.
+  const locked = (m) => m.pro && !paidPlan && !m.taste;
+  const pick = (m) => (locked(m) ? navigate("/plans") : setModel(m.id));
   const groups = [["Everyday", models.filter((m) => !m.pro)], ["Pro models", models.filter((m) => m.pro)]].filter(([, list]) => list.length);
 
   return (
@@ -63,7 +65,7 @@ export default function ModelMenu({ models, model, setModel, caps, label }) {
             {i > 0 && <DropdownMenuSeparator className="my-1.5" />}
             <DropdownMenuLabel className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</DropdownMenuLabel>
             {list.map((m) => (
-              <Row key={m.id} m={m} selected={m.id === model} ready={ready(m)} locked={m.pro && !paidPlan} onPick={pick} />
+              <Row key={m.id} m={m} selected={m.id === model} ready={ready(m)} locked={locked(m)} onPick={pick} />
             ))}
           </div>
         ))}

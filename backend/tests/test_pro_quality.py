@@ -67,7 +67,7 @@ def test_plans_list_their_quality(client):
     import limits
     plans = {p["id"]: p for p in limits.public_plans()}
     basic, pro = plans["basic"]["quality"], plans["pro"]["quality"]
-    assert plans["pro"]["price"] == 299
+    assert plans["pro"]["price"] == 499
     assert basic["media"] == "free" and pro["media"] == "premium"
     assert pro["videoSeconds"] > basic["videoSeconds"] and pro["uploadMb"] > basic["uploadMb"]
     assert "memory" not in pro
@@ -91,11 +91,13 @@ def test_premium_messages_use_the_meter_by_length(client, monkeypatch):
     import limits
     import server
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
-    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": 3, "week": 100})
+    short, long = (limits.cost("chat", chars, "pro", "claude-sonnet-5-5") for chars in (10, 30000))
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": short * 2 + 1, "week": 1000})
     uid = _user(client, "cap-pro@test.com", "pro")
     pick = lambda chars: client.portal.call(server._pick_model, uid, {}, "claude-sonnet-5-5", False, chars)
-    assert pick(10) == "claude-sonnet-5-5"  # 1 credit
-    assert pick(6500) == server.AI_MODEL  # 3 credits don't fit in the 2 left: Krish Basic answers
+    assert pick(10) == "claude-sonnet-5-5"
+    assert long > short + 1
+    assert pick(30000) == server.AI_MODEL  # a long chat doesn't fit in what's left: Krish Basic answers
     assert pick(10) == "claude-sonnet-5-5"
 
 def test_uploads_follow_the_plan(client):
@@ -132,6 +134,8 @@ def test_long_videos_use_more_credits(client, monkeypatch):
     import server
     from agent import tools, video
     uid = _user(client, "long-max@test.com", "max")
+    minute = limits.cost("video", 60, "max")  # 60 seconds on the premium engine
+    monkeypatch.setitem(limits.PLANS["max"], "meter", {"session": minute * 3 // 2, "week": minute * 10})
     seen = []
 
     async def fake(prompt, seconds, *rest):
@@ -144,11 +148,10 @@ def test_long_videos_use_more_credits(client, monkeypatch):
 
     async def used():
         return (await limits.summary(server.db, uid))["meter"]["session"]["used"]
-    assert client.portal.call(used) == 600  # 60 seconds on the premium engine, 10 credits a second
-    monkeypatch.setitem(limits.PLANS["max"], "meter", {"session": 900, "week": 9000})
-    with pytest.raises(ValueError, match="needs 600 credits and you have 300 left"):
+    assert client.portal.call(used) == minute
+    with pytest.raises(ValueError, match=f"needs {minute} credits and you have {minute * 3 // 2 - minute} left"):
         client.portal.call(tools._generate_video, ctx, {"prompt": "another trip", "seconds": 60})
-    assert client.portal.call(used) == 600  # nothing taken for the video that couldn't be made
+    assert client.portal.call(used) == minute  # nothing taken for the video that couldn't be made
 
 
 def test_long_video_is_clips_joined(monkeypatch):
@@ -185,10 +188,12 @@ def test_long_video_is_clips_joined(monkeypatch):
 
 
 def test_video_length_follows_the_plan(client, monkeypatch):
+    import limits
     import media
     import server
     from agent import tools, video
     basic, pro = _user(client, "vid-basic@test.com"), _user(client, "vid-pro@test.com", "pro")
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": 10**5, "week": 10**5})
     seen = []
 
     async def fake(prompt, seconds, *rest):
@@ -200,3 +205,87 @@ def test_video_length_follows_the_plan(client, monkeypatch):
         client.portal.call(tools._generate_video, ctx, {"prompt": "a sunrise", "seconds": 30})
     assert seen == [(8, False), (12, True)]
     assert media.PREMIUM_MEDIA.get() is True  # set only while the video is made
+
+
+def test_krish_pro_picks_the_engine_for_each_question(client, monkeypatch):
+    import limits
+    import server
+    from agent import llm
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    assert [m["id"] for m in server.AVAILABLE_MODELS if m["pro"]] == [llm.PRO]  # one premium choice in the menu
+    uid = _user(client, "krish-pro@test.com", "pro")
+    pick = lambda conv, text, think=False: client.portal.call(server._pick_model, uid, conv, llm.PRO, think,
+                                                               len(text), text)
+    assert pick({}, "what should I cook tonight?") == "claude-haiku-5-5"  # everyday: the quick one
+    assert pick({}, "fix this python error: TypeError in my function") == "claude-sonnet-5-5"  # code: the smart one
+    assert pick({}, "plan my week", think=True) == "claude-sonnet-5-5"
+    uid = _user(client, "krish-pro-app@test.com", "pro")  # a fresh meter: a Sonnet build fits one session
+    assert pick({"appId": "a1"}, "make a todo app") == "claude-sonnet-5-5"  # app builds
+
+    # When what's left can't cover Sonnet, Krish Pro answers with Haiku before falling back to Krish Basic.
+    sonnet = limits.cost("chat", 60, "pro", "claude-sonnet-5-5")
+    monkeypatch.setitem(limits.PLANS["pro"], "meter", {"session": sonnet - 1, "week": 1000})
+    uid = _user(client, "krish-pro-low@test.com", "pro")  # a fresh meter
+    assert pick({}, "fix this python error: TypeError in my function") == "claude-haiku-5-5"
+
+    basic = _user(client, "krish-pro-basic@test.com")
+    # Basic gets a weekly taste of Krish Pro, on Haiku only (see the next test).
+    assert client.portal.call(server._pick_model, basic, {}, llm.PRO, False, 5, "fix my code error") == "claude-haiku-5-5"
+
+
+def test_basic_gets_a_weekly_taste_of_krish_pro_on_haiku(client, monkeypatch):
+    import limits
+    import server
+    from agent import llm
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    uid = _user(client, "taste@test.com")
+    conv = {}
+    pick = lambda text: client.portal.call(server._pick_model, uid, conv, llm.PRO, False, len(text), text)
+    # Haiku only, even for code, and only until the week's credits are used.
+    answers = [pick("fix this python error: TypeError in my function") for _ in range(limits.PRO_TASTE_WEEK)]
+    assert set(answers) == {"claude-haiku-5-5"} and "_notice" not in conv
+    assert pick("one more") == server.AI_MODEL  # used up: Krish Basic answers
+    assert conv["_notice"].startswith("You've used this week's free Krish Pro answers. Upgrade to Pro, or they refill on ")
+    conv.clear()
+    assert pick("and another") == server.AI_MODEL and "_notice" not in conv  # the popup shows once a week
+    assert client.portal.call(server._pick_model, uid, {"appId": "a1"}, llm.PRO, False, 5, "make an app") \
+        != "claude-haiku-5-5"  # no taste in the App Builder
+
+
+def test_basic_chat_has_40_messages_a_session_and_paid_plans_stay_unlimited(client, monkeypatch):
+    import limits
+    import server
+    from fastapi import HTTPException
+    basic, pro = _user(client, "chatcap@test.com"), _user(client, "chatcap-pro@test.com", "pro")
+    for _ in range(limits.BASIC_CHAT_SESSION):
+        client.portal.call(server._count_basic_chat, basic, {})
+    with pytest.raises(HTTPException) as err:
+        client.portal.call(server._count_basic_chat, basic, {})
+    assert err.value.status_code == 402
+    assert err.value.detail.startswith("You've used this session's free messages. Upgrade to Pro, or wait until ")
+    client.portal.call(server._count_basic_chat, basic, {"appId": "a1"})  # App Builder messages use the meter
+    for _ in range(limits.BASIC_CHAT_SESSION + 5):
+        client.portal.call(server._count_basic_chat, pro, {})
+
+    # The session refills after 5 hours.
+    async def age():
+        await server.db.usage.update_one({"_id": f"{basic}:chat"}, {"$inc": {"start": -limits.SESSION_HOURS * 3600}})
+    client.portal.call(age)
+    client.portal.call(server._count_basic_chat, basic, {})
+
+
+def test_basic_everyday_chat_starts_on_haiku_then_quietly_moves_to_the_free_engines(client, monkeypatch):
+    import limits
+    import server
+    from agent import llm
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(limits, "BASIC_BOOST_WEEK", 3)
+    basic, pro = _user(client, "boost@test.com"), _user(client, "boost-pro@test.com", "pro")
+    conv = {}
+    pick = lambda uid, c=conv: client.portal.call(server._pick_model, uid, c, server.AUTO_MODEL, False, 5, "hi")
+    assert [pick(basic) for _ in range(3)] == [llm.BASIC_PLUS] * 3
+    assert llm.concrete(llm.BASIC_PLUS) == "claude-haiku-5-5" and llm.paid(llm.BASIC_PLUS)  # never Sonnet
+    assert pick(basic) == server.AUTO_MODEL and "_notice" not in conv  # then the free engines, with nothing said
+    assert pick(pro) == server.AUTO_MODEL  # Pro and Max chat on Krish Basic stays on the free engines
+    assert client.portal.call(server._pick_model, _user(client, "boost-app@test.com"), {"appId": "a1"},
+                              server.AUTO_MODEL, False, 5, "make an app") != llm.BASIC_PLUS
