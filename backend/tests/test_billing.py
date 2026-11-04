@@ -289,3 +289,53 @@ def test_gst_collected_is_not_revenue():
     import owner_dashboard
     assert owner_dashboard._net({"amount": 58882, "gst": 8982}) == 49900
     assert owner_dashboard._net({"amount": 39900}) == 39900
+
+
+def test_the_customer_pays_the_platform_fee_on_top(client, fake_rzp_api, monkeypatch):
+    import billing
+    monkeypatch.setenv("PLATFORM_FEE_PERCENT", "2.36")
+    # Razorpay's 2.36% of the whole total is covered, rounded up to whole rupees.
+    assert billing.checkout(49900) == (51200, 0, 1300) and billing.checkout(129900) == (133100, 0, 3200)
+    for base in (49900, 129900, 24950):
+        total, _, fee = billing.checkout(base)
+        assert total - round(total * 0.0236) >= base and fee % 100 == 0
+
+    h = _user(client, "fee1@test.com")
+    assert client.get("/api/usage", headers=h).json()["platformFee"] == 2.36
+    order = client.post("/api/billing/order", headers=h, json={"plan": "pro"}).json()
+    assert (order["amount"], order["baseAmount"], order["platformFee"]) == (51200, 49900, 1300) and "gst" not in order
+    assert _pay(client, h, order).status_code == 200
+    paid = client.get("/api/billing/payments", headers=h).json()["payments"][0]
+    assert (paid["amount"], paid["baseAmount"], paid["platformFee"]) == (512, 499, 13)
+
+    # Autopay charges the fee every month too.
+    h2 = _user(client, "fee2@test.com")
+    sub = client.post("/api/billing/subscribe", headers=h2, json={"plan": "max"}).json()
+    assert sub["amount"] == 133100 and sub["platformFee"] == 3200
+    assert _hook(client, _charged(sub["subscriptionId"], "pay_f1", 133100)).status_code == 200
+    charge = client.get("/api/billing/payments", headers=h2).json()["payments"][0]
+    assert (charge["amount"], charge["baseAmount"], charge["platformFee"]) == (1331, 1299, 32)
+
+    # With a GSTIN, the fee covers Razorpay's cut of the price with GST.
+    monkeypatch.setenv("GSTIN", "27abcde1234f1z5")
+    assert billing.checkout(49900) == (58882 + billing.platform_fee(58882), 8982, billing.platform_fee(58882))
+
+    monkeypatch.setenv("PLATFORM_FEE_PERCENT", "0")
+    assert billing.checkout(49900)[2] == 0
+
+
+def test_the_platform_fee_is_not_revenue():
+    import owner_dashboard
+    assert owner_dashboard._net({"amount": 51200, "platformFee": 1300}) == 49900
+
+
+def test_without_autopay_switched_on_every_payment_is_one_time(client, fake_rzp_api, monkeypatch):
+    monkeypatch.setenv("RAZORPAY_AUTOPAY", "")
+    h = _user(client, "noauto@test.com")
+    assert client.get("/api/usage", headers=h).json()["autopayOn"] is False
+    r = client.post("/api/billing/subscribe", headers=h, json={"plan": "pro"})
+    assert r.status_code == 503  # the Plans page then makes a one-time order
+    order = client.post("/api/billing/order", headers=h, json={"plan": "pro"}).json()
+    assert order["amount"] == 49900 and _pay(client, h, order).status_code == 200
+    monkeypatch.setenv("RAZORPAY_AUTOPAY", "on")
+    assert client.get("/api/usage", headers=h).json()["autopayOn"] is True

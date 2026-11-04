@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { platformFee } from "@/lib/checkout";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import BrandMark from "@/components/BrandMark";
@@ -33,7 +34,7 @@ function benefits(plan, video) {
 
 /** Opens when someone taps a paid plan: a Pro/Max switch, the price, what it adds, then one Pay button.
  *  Phones scroll the middle and keep Pay stuck to the bottom. */
-export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 0, busy, onPay, onClose }) {
+export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 0, platformFeePct = 0, autopayOn = true, busy, onPay, onClose }) {
   const choices = plans?.length ? plans : plan ? [plan] : [];
   const [id, setId] = useState(plan?.id);
   if (!plan) return null;
@@ -41,10 +42,12 @@ export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 
   const price = priceOf ? priceOf(shown) : shown.price;
   const first = firstName(user?.name);
   // An offer code makes it a one-time 30-day payment; otherwise it's autopay, renewing every month.
-  const oneTime = !!(offer && price !== shown.price);
+  const withCode = !!(offer && price !== shown.price);
+  const oneTime = withCode || !autopayOn; // no autopay: each payment is 30 days
   const was = shown.listPrice || shown.price;
   const off = was > price ? Math.round((1 - price / was) * 100) : 0;
   const gst = Math.round(price * gstRate) / 100; // 18% GST on top once the business has a GSTIN
+  const fee = platformFee(price + gst, platformFeePct); // covers the payment gateway's fee
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent overlayClassName="bg-black/85 backdrop-blur-sm"
@@ -82,15 +85,16 @@ export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 
               <div className="flex items-baseline justify-center gap-2.5">
                 <span className="text-[3rem] font-semibold leading-none tracking-tight tabular-nums" data-testid="plan-sheet-price">₹{price.toLocaleString("en-IN")}</span>
                 {price !== was && <span className="text-lg tabular-nums text-muted-foreground line-through">₹{was.toLocaleString("en-IN")}</span>}
-                {(oneTime || off > 0) && (
+                {(withCode || off > 0) && (
                   <span className="self-center rounded-full bg-orange-500/12 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-orange-600 dark:bg-orange-500/15 dark:text-orange-300">
-                    {oneTime ? `${offer.percentOff}% off` : `${off}% off`}
+                    {withCode ? `${offer.percentOff}% off` : `${off}% off`}
                   </span>
                 )}
               </div>
               <p className="mt-1.5 text-[0.84rem] text-muted-foreground">
-                {oneTime ? `30 days of ${shown.name}, with ${offer.code}` : "per month"} · <span data-testid="plan-sheet-per-day">just ₹{Math.round(price / 30)}/day</span>
+                {withCode ? `30 days of ${shown.name}, with ${offer.code}` : oneTime ? "for 30 days" : "per month"} · <span data-testid="plan-sheet-per-day">just ₹{Math.round(price / 30)}/day</span>
                 {gst > 0 && <span data-testid="plan-sheet-gst"> · + ₹{rupees(gst)} GST</span>}
+                {fee > 0 && <span data-testid="plan-sheet-fee"> · + ₹{fee} platform fee</span>}
               </p>
             </div>
           </div>
@@ -113,7 +117,7 @@ export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 
         <div className="shrink-0 border-t border-border/70 bg-background px-6 pb-5 pt-4 sm:px-8">
           <Button onClick={() => onPay(shown.id)} disabled={busy} data-testid="plan-sheet-pay"
             className="h-12 w-full rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-base font-semibold text-white shadow-[0_10px_30px_-10px_rgba(249,115,22,0.8)] hover:from-orange-500/90 hover:to-amber-500/90">
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ₹{rupees(price + gst)}<ArrowRight className="ml-1.5 h-4 w-4" /></>}
+            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ₹{rupees(price + gst + fee)}<ArrowRight className="ml-1.5 h-4 w-4" /></>}
           </Button>
           <p className="mt-2.5 flex items-center justify-center gap-1.5 text-[11.5px] text-muted-foreground">
             <Lock className="h-3 w-3" /> Secure payment by Razorpay · {oneTime ? "No auto-renewal" : "Cancel anytime"}

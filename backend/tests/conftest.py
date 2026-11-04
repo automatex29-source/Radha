@@ -7,6 +7,8 @@ import pytest
 # Spam protection (rate limits, email DNS checks) is tested on its own in test_launch_growth.py.
 os.environ.setdefault("ABUSE_LIMITS", "off")
 os.environ.setdefault("EMAIL_DNS_CHECK", "off")
+os.environ.setdefault("RAZORPAY_AUTOPAY", "on")  # the autopay tests; production turns it on in Render
+os.environ.setdefault("PLATFORM_FEE_PERCENT", "0")  # amounts in the billing tests are prices without the fee
 # Making videos is off by default (see media.video_enabled); the video tests run the kept code with it on, and
 # test_video_off.py checks the default.
 os.environ.setdefault("VIDEO_GENERATION", "on")

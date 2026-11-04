@@ -8,6 +8,7 @@ import { Check, Copy, Loader2, Lock, RefreshCcw, Share2, Tag } from "lucide-reac
 import { Input } from "@/components/ui/input";
 import InviteDialog, { WhatsAppIcon } from "@/components/InviteDialog";
 import { INVITES_ON } from "@/lib/referral";
+import { platformFee } from "@/lib/checkout";
 import { inviteLink, inviteMessage } from "@/lib/referral";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
 import { useNavigate } from "react-router-dom";
@@ -69,7 +70,7 @@ function untilText(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay, gstRate }) {
+function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy, onBuy, offer, video, shown, autopay, gstRate, feePct }) {
   const popular = plan.id === "pro";
   const lower = ORDER.indexOf(plan.id) < ORDER.indexOf(currentPlan);
   // Autopay on for this plan (or a bigger one) already renews it, so there's nothing to buy here.
@@ -105,6 +106,11 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
         {price !== was && <span className="tabular-nums text-muted-foreground line-through">₹{was}</span>}
         {off > 0 && <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium" data-testid={`plan-launch-${plan.id}`}>Launch price · {off}% off</span>}
         {gstRate > 0 && plan.price > 0 && <span className="text-muted-foreground" data-testid={`plan-gst-${plan.id}`}>+ {gstRate}% GST</span>}
+        {feePct > 0 && plan.price > 0 && (
+          <span className="text-muted-foreground" data-testid={`plan-fee-${plan.id}`}>
+            + ₹{platformFee(price + Math.round(price * gstRate) / 100, feePct)} platform fee
+          </span>
+        )}
       </div>
       <Button disabled={!canBuy || busy} onClick={() => onBuy(plan.id)} data-testid={`plan-button-${plan.id}`}
         className={`mt-3.5 h-10 w-full rounded-lg text-[0.88rem] font-medium shadow-none disabled:opacity-100 ${canBuy && popular
@@ -243,11 +249,12 @@ export default function PlansPage() {
       return;
     }
     setBuying(planId);
-    // Autopay (a monthly Razorpay subscription) unless an offer code is on: that's a one-time 30-day payment.
-    let oneTime = !!(offer && offer.prices[planId]);
+    // Autopay (a monthly Razorpay subscription) unless an offer code is on, or autopay isn't switched on for the
+    // Razorpay account yet: then it's a one-time 30-day payment.
+    let oneTime = !!(offer && offer.prices[planId]) || !data.autopayOn;
     try {
       const start = async () => {
-        if (oneTime) return api.post("/billing/order", { plan: planId, code: offer.code });
+        if (oneTime) return api.post("/billing/order", { plan: planId, code: offer?.prices[planId] ? offer.code : "" });
         try {
           return await api.post("/billing/subscribe", { plan: planId });
         } catch (e) {
@@ -323,14 +330,14 @@ export default function PlansPage() {
                 {data.plans.map((p) => (
                   <PlanCard key={p.id} plan={p} basic={data.plans.find((x) => x.id === "basic")} current={p.id === data.plan} currentPlan={data.plan}
                     paymentsOn={data.paymentsOn} expires={data.planExpiresAt} busy={buying === p.id} onBuy={(id) => setPicked(data.plans.find((x) => x.id === id))} offer={offer} video={data.video}
-                    shown={p.id === shownId} autopay={data.autopay} gstRate={data.gstRate} />
+                    shown={p.id === shownId} autopay={data.autopay} gstRate={data.gstRate} feePct={data.platformFee} />
                 ))}
               </div>
 
               <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-muted-foreground" data-testid="plans-trust">
                 <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> Secure payments by Razorpay</span>
                 <span>UPI · Cards · Net banking</span>
-                <span className="flex items-center gap-1.5"><RefreshCcw className="h-3.5 w-3.5" /> Renews monthly, cancel anytime</span>
+                <span className="flex items-center gap-1.5"><RefreshCcw className="h-3.5 w-3.5" /> {data.autopayOn ? "Renews monthly, cancel anytime" : "30 days per payment, no auto-renewal"}</span>
                 {data.paymentsOn && !codeOpen && !offer && (
                   <button type="button" onClick={() => setCodeOpen(true)} className="underline underline-offset-2 hover:text-foreground" data-testid="offer-code-open">Have an offer code?</button>
                 )}
@@ -362,7 +369,7 @@ export default function PlansPage() {
       {picked && data && (
         <PlanSheet plan={picked} user={user} priceOf={priceOf}
           plans={data.plans.filter((p) => p.price && ORDER.indexOf(p.id) >= ORDER.indexOf(data.plan))}
-          offer={offer} video={data.video} gstRate={data.gstRate} busy={!!buying} onPay={(id) => { setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
+          offer={offer} video={data.video} gstRate={data.gstRate} platformFeePct={data.platformFee} autopayOn={data.autopayOn} busy={!!buying} onPay={(id) => { setPicked(null); buy(id); }} onClose={() => !buying && setPicked(null)} />
       )}
       <PlanWelcome plan={welcome?.plan} user={user} until={welcome?.until} onClose={() => setWelcome(null)}
         onStart={() => { setWelcome(null); navigate("/"); }} />

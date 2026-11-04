@@ -839,10 +839,12 @@ async def billing_payments(user_id: str = Depends(current_user_id)):
     rows = await db.payments.find({"userId": user_id, "status": {"$in": ["paid", "captured"]}},
                                   {"_id": 0, "orderId": 1, "plan": 1, "amount": 1, "currency": 1, "status": 1,
                                    "createdAt": 1, "paidAt": 1, "promoCode": 1, "autopay": 1, "baseAmount": 1,
-                                   "gst": 1, "gstin": 1}).sort("createdAt", -1).to_list(50)
+                                   "gst": 1, "gstin": 1, "platformFee": 1}).sort("createdAt", -1).to_list(50)
     return {"payments": [{**r, "planName": limits.PLANS.get(r.get("plan"), {}).get("name", r.get("plan")),
                           "amount": (r.get("amount") or 0) / 100,
-                          **({"baseAmount": r["baseAmount"] / 100, "gst": r["gst"] / 100} if r.get("gst") else {})}
+                          **({"baseAmount": r["baseAmount"] / 100} if r.get("baseAmount") else {}),
+                          **({"gst": r["gst"] / 100} if r.get("gst") else {}),
+                          **({"platformFee": r["platformFee"] / 100} if r.get("platformFee") else {})}
                          for r in rows]}
 
 
@@ -2945,7 +2947,8 @@ async def usage(user_id: str = Depends(current_user_id)):
     user = await db.users.find_one({"id": user_id}, {"plan": 1, "planExpiresAt": 1}) or {}
     expires = user.get("planExpiresAt") if limits.plan_from(user) != "basic" else None
     return {**await limits.summary(db, user_id), "paymentsOn": billing.enabled(), "planExpiresAt": expires,
-            "gstRate": billing.GST_RATE if billing.gstin() else 0,
+            "gstRate": billing.GST_RATE if billing.gstin() else 0, "platformFee": billing.platform_fee_percent(),
+            "autopayOn": billing.autopay_enabled(),
             "autopay": billing.public_autopay(await billing.autopay_of(db, user_id)),
             "video": media.video_enabled()}
 

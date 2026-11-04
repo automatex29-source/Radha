@@ -24,6 +24,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import math
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -65,6 +66,13 @@ def enabled() -> bool:
     return bool(key_id() and _secret())
 
 
+def autopay_enabled() -> bool:
+    """Monthly autopay (Razorpay Subscriptions) needs recurring payments switched on for the Razorpay account,
+    which a new account doesn't have: its checkout then says "No appropriate payment method found". Until
+    RAZORPAY_AUTOPAY=on is set, every payment is a one-time payment for 30 days."""
+    return os.environ.get("RAZORPAY_AUTOPAY", "").strip().lower() in ("on", "1", "true", "yes")
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -100,9 +108,42 @@ def with_gst(paise: int) -> tuple:
     return paise + gst, gst
 
 
-def gst_fields(base: int, gst: int) -> dict:
-    """What a payment or subscription records about GST, so receipts can show the split."""
-    return {"baseAmount": base, "gst": gst, "gstin": gstin()} if gst else {}
+def gst_fields(base: int, gst: int, fee: int = 0) -> dict:
+    """What a payment or subscription records about GST and the platform fee, so receipts can show the split."""
+    if not gst and not fee:
+        return {}
+    return {"baseAmount": base, **({"gst": gst, "gstin": gstin()} if gst else {}),
+            **({"platformFee": fee} if fee else {})}
+
+
+# The platform fee: added at checkout so the customer, not the business, pays Razorpay's fee (2% + 18% GST on
+# it = 2.36%). Worked out on the total so it still covers the fee taken on itself, and rounded up to whole
+# rupees: Pro Rs 499 + Rs 13, Max Rs 1,299 + Rs 32. PLATFORM_FEE_PERCENT changes it; 0 turns it off.
+PLATFORM_FEE_PERCENT = 2.36
+
+
+def platform_fee_percent() -> float:
+    raw = os.environ.get("PLATFORM_FEE_PERCENT", "").strip()
+    try:
+        pct = float(raw) if raw else PLATFORM_FEE_PERCENT
+    except ValueError:
+        pct = PLATFORM_FEE_PERCENT
+    return min(max(pct, 0.0), 10.0)
+
+
+def platform_fee(paise: int) -> int:
+    """The fee, in paise (whole rupees), on a checkout of `paise`. The Plans page works it out the same way."""
+    pct = platform_fee_percent()
+    if not pct or paise <= 0:
+        return 0
+    return math.ceil(paise * pct / (100 - pct) / 100) * 100
+
+
+def checkout(base: int) -> tuple:
+    """(what the customer pays, the GST in it, the platform fee in it) for a price of `base` paise."""
+    amount, gst = with_gst(base)
+    fee = platform_fee(amount)
+    return amount + fee, gst, fee
 
 
 async def _create_razorpay_order(amount: int, receipt: str, notes: dict) -> dict:
@@ -139,16 +180,16 @@ async def create_order(db, user: dict, plan: str, code: str = "") -> dict:
             raise BillingError(str(exc))
         amount = promos.discounted(amount, promo["percentOff"])
     base = amount
-    amount, gst = with_gst(base)
+    amount, gst, fee = checkout(base)
     receipt = uuid.uuid4().hex[:20]
     notes = {"userId": user["id"], "plan": plan, **({"promoCode": promo["code"]} if promo else {})}
     order = await _create_razorpay_order(amount, receipt, notes)
     await db.payments.insert_one({
         "orderId": order["id"], "userId": user["id"], "plan": plan, "amount": amount, "currency": "INR",
         "receipt": receipt, "status": "created", "createdAt": _now().isoformat(),
-        "promoCode": promo["code"] if promo else None, **gst_fields(base, gst),
+        "promoCode": promo["code"] if promo else None, **gst_fields(base, gst, fee),
     })
-    return {"orderId": order["id"], "amount": amount, "currency": "INR", "keyId": key_id(), **gst_fields(base, gst),
+    return {"orderId": order["id"], "amount": amount, "currency": "INR", "keyId": key_id(), **gst_fields(base, gst, fee),
             "plan": plan, "planName": limits.PLANS[plan]["name"],
             "promoCode": promo["code"] if promo else None, "percentOff": promo["percentOff"] if promo else 0,
             "name": user.get("name", ""), "email": user.get("email", "")}
@@ -277,6 +318,8 @@ async def subscribe(db, user: dict, plan: str) -> dict:
     """Start autopay for `plan`: makes a Razorpay subscription for the checkout to open."""
     if not enabled():
         raise BillingError("Payments are coming soon.")
+    if not autopay_enabled():
+        raise GatewayError("Autopay isn't switched on yet, so this is a one-time payment for 30 days.")
     if plan not in limits.PLANS or not limits.PLANS[plan]["price"]:
         raise BillingError("Pick Pro or Max to upgrade.")
     current = limits.plan_from(user)
@@ -287,14 +330,14 @@ async def subscribe(db, user: dict, plan: str) -> dict:
     if on and limits.ORDER.index(on["plan"]) >= limits.ORDER.index(plan):
         raise BillingError(f"Autopay for {limits.PLANS[on['plan']]['name']} is already on, so it renews by itself.")
     base = limits.PLANS[plan]["price"] * 100
-    amount, gst = with_gst(base)
+    amount, gst, fee = checkout(base)
     plan_id = await _rzp_plan(db, plan, amount)
     sub = await _rzp("POST", "/subscriptions", {"plan_id": plan_id, "total_count": 60, "quantity": 1,
                                                 "customer_notify": 1, "notes": {"userId": user["id"], "plan": plan}})
     await db.subscriptions.insert_one({"id": sub["id"], "userId": user["id"], "plan": plan, "amount": amount,
-                                       "status": "created", "createdAt": _now().isoformat(), **gst_fields(base, gst)})
+                                       "status": "created", "createdAt": _now().isoformat(), **gst_fields(base, gst, fee)})
     return {"subscriptionId": sub["id"], "amount": amount, "currency": "INR", "keyId": key_id(), "plan": plan,
-            **gst_fields(base, gst),
+            **gst_fields(base, gst, fee),
             "planName": limits.PLANS[plan]["name"], "name": user.get("name", ""), "email": user.get("email", "")}
 
 
@@ -315,7 +358,7 @@ async def _charged(db, sub_id: str, payment_id: str, amount=None) -> bool:
     res = await db.payments.update_one({"paymentId": payment_id}, {"$setOnInsert": {
         "orderId": f"sub_{payment_id}", "paymentId": payment_id, "subscriptionId": sub_id, "userId": sub["userId"],
         "plan": sub["plan"], "amount": sub["amount"], "currency": "INR", "status": "paid", "autopay": True,
-        **{k: sub[k] for k in ("baseAmount", "gst", "gstin") if sub.get(k)},
+        **{k: sub[k] for k in ("baseAmount", "gst", "gstin", "platformFee") if sub.get(k)},
         "createdAt": _now().isoformat(), "paidAt": _now().isoformat()}}, upsert=True)
     if res.upserted_id is None:
         return False
