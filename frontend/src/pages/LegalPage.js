@@ -79,8 +79,9 @@ const TERMS = {
     ["Plans and limits", [
       "Chat is free. Some features have daily limits on the free Basic plan.",
       "Pro (₹499 a month, launch price; regular price ₹999) and Max (₹1,299 a month, launch price; regular price ₹1,999) are paid through Razorpay.",
+      "A small platform fee of about 2.4%, which covers payment processing, is added on top of the price at checkout (₹13 on Pro, ₹32 on Max). Your receipt in Settings > Billing shows it separately.",
       "Where GST applies, 18% GST is added on top of the price at checkout, and your receipt in Settings > Billing shows the price, the GST and our GSTIN.",
-      "By default a paid plan renews every month by UPI Autopay or card, at the price shown when you subscribed. You can turn autopay off at any time in Settings > Billing: you keep the plan until the end of the month you paid for, then go back to Basic, and nothing in your account is deleted.",
+      "Where autopay is available, a paid plan renews every month by UPI Autopay or card, at the price shown when you subscribed. You can turn autopay off at any time in Settings > Billing: you keep the plan until the end of the month you paid for, then go back to Basic, and nothing in your account is deleted.",
       "A payment made with an offer code is a one-time payment for 30 days and does not renew.",
       "Refunds and cancellations are explained in the Refund Policy.",
       "We may change features and limits as the service grows.",
@@ -104,7 +105,7 @@ const REFUNDS = {
   intro: "This page explains how payments for the Pro and Max plans of Krish AI work, and when you can get your money back.",
   sections: [
     ["What you pay for", [
-      "Pro costs ₹499 and Max costs ₹1,299 a month at launch prices (regular prices ₹999 and ₹1,999). Each payment gives 30 days of the plan. Prices include all charges shown at checkout.",
+      "Pro costs ₹499 and Max costs ₹1,299 a month at launch prices (regular prices ₹999 and ₹1,999). Each payment gives 30 days of the plan. A platform fee of about 2.4% for payment processing is added at checkout. The total you pay is always shown before you pay.",
       "Payments are made through Razorpay with UPI, debit or credit card, net banking or a wallet. Krish AI is a digital service: nothing is shipped, and the plan starts as soon as the payment goes through.",
     ]],
     ["Autopay and cancelling", [

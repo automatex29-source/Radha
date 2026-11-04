@@ -64,8 +64,9 @@ _WORD = re.compile(r"[a-zA-Zऀ-ॿ]{4,}")
 
 
 def _net(payment: dict) -> int:
-    """What a payment brings in, in paise: GST collected on top belongs to the government, not to revenue."""
-    return payment["amount"] - (payment.get("gst") or 0)
+    """What a payment brings in, in paise: GST collected on top belongs to the government, and the platform fee
+    pays Razorpay, so neither is revenue."""
+    return payment["amount"] - (payment.get("gst") or 0) - (payment.get("platformFee") or 0)
 
 
 def _now() -> datetime:
@@ -405,7 +406,7 @@ async def _more(db, since: str, prev_since: str, now: datetime, users: dict, who
     lapsed = sorted(({**who(u["id"]), "plan": u.get("plan"), "expiresAt": u["planExpiresAt"]} for u in users.values()
                      if u.get("plan") in ("pro", "max") and u.get("planExpiresAt")
                      and since <= u["planExpiresAt"] < now_iso), key=lambda r: r["expiresAt"], reverse=True)
-    all_paid = await db.payments.find({"status": "paid"}, {"_id": 0, "userId": 1, "amount": 1, "gst": 1, "paidAt": 1}).to_list(None)
+    all_paid = await db.payments.find({"status": "paid"}, {"_id": 0, "userId": 1, "amount": 1, "gst": 1, "platformFee": 1, "paidAt": 1}).to_list(None)
     first_paid = {}
     for p in sorted(all_paid, key=lambda p: p["paidAt"]):
         first_paid.setdefault(p["userId"], p["paidAt"])
