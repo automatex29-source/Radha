@@ -8,7 +8,6 @@ import { Check, Copy, Loader2, Lock, RefreshCcw, Share2, Tag } from "lucide-reac
 import { Input } from "@/components/ui/input";
 import InviteDialog, { WhatsAppIcon } from "@/components/InviteDialog";
 import { INVITES_ON } from "@/lib/referral";
-import { platformFee } from "@/lib/checkout";
 import { inviteLink, inviteMessage } from "@/lib/referral";
 import { PlanSheet, PlanWelcome } from "@/components/PlanSheet";
 import { useNavigate } from "react-router-dom";
@@ -107,9 +106,7 @@ function PlanCard({ plan, basic, current, currentPlan, paymentsOn, expires, busy
         {off > 0 && <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium" data-testid={`plan-launch-${plan.id}`}>Launch price · {off}% off</span>}
         {gstRate > 0 && plan.price > 0 && <span className="text-muted-foreground" data-testid={`plan-gst-${plan.id}`}>+ {gstRate}% GST</span>}
         {feePct > 0 && plan.price > 0 && (
-          <span className="text-muted-foreground" data-testid={`plan-fee-${plan.id}`}>
-            + ₹{platformFee(price + Math.round(price * gstRate) / 100, feePct)} platform fee
-          </span>
+          <span className="text-[11px] text-muted-foreground" data-testid={`plan-fee-${plan.id}`}>+ charges</span>
         )}
       </div>
       <Button disabled={!canBuy || busy} onClick={() => onBuy(plan.id)} data-testid={`plan-button-${plan.id}`}
@@ -268,7 +265,9 @@ export default function PlansPage() {
         const rzp = new window.Razorpay({
           key: order.keyId, ...(oneTime ? { order_id: order.orderId, amount: order.amount, currency: order.currency }
             : { subscription_id: order.subscriptionId }),
-          name: "Krish AI", description: oneTime ? `${order.planName} plan · 1 month` : `${order.planName} plan · renews monthly`,
+          name: "Krish AI",
+          description: (oneTime ? `${order.planName} plan · 1 month` : `${order.planName} plan · renews monthly`)
+            + (order.platformFee ? ` · ₹${order.baseAmount / 100} + ₹${order.platformFee / 100} platform fee` : ""),
           prefill: { name: order.name, email: order.email },
           theme: { color: "#111111" },
           handler: async (res) => {

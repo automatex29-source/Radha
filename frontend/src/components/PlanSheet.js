@@ -94,7 +94,7 @@ export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 
               <p className="mt-1.5 text-[0.84rem] text-muted-foreground">
                 {withCode ? `30 days of ${shown.name}, with ${offer.code}` : oneTime ? "for 30 days" : "per month"} · <span data-testid="plan-sheet-per-day">just ₹{Math.round(price / 30)}/day</span>
                 {gst > 0 && <span data-testid="plan-sheet-gst"> · + ₹{rupees(gst)} GST</span>}
-                {fee > 0 && <span data-testid="plan-sheet-fee"> · + ₹{fee} platform fee</span>}
+                {fee > 0 && <span className="text-[0.75rem]" data-testid="plan-sheet-fee"> · + charges</span>}
               </p>
             </div>
           </div>
@@ -117,7 +117,7 @@ export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 
         <div className="shrink-0 border-t border-border/70 bg-background px-6 pb-5 pt-4 sm:px-8">
           <Button onClick={() => onPay(shown.id)} disabled={busy} data-testid="plan-sheet-pay"
             className="h-12 w-full rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-base font-semibold text-white shadow-[0_10px_30px_-10px_rgba(249,115,22,0.8)] hover:from-orange-500/90 hover:to-amber-500/90">
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ₹{rupees(price + gst + fee)}<ArrowRight className="ml-1.5 h-4 w-4" /></>}
+            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <>{fee > 0 ? "Continue to pay" : `Pay ₹${rupees(price + gst)}`}<ArrowRight className="ml-1.5 h-4 w-4" /></>}
           </Button>
           <p className="mt-2.5 flex items-center justify-center gap-1.5 text-[11.5px] text-muted-foreground">
             <Lock className="h-3 w-3" /> Secure payment by Razorpay · {oneTime ? "No auto-renewal" : "Cancel anytime"}
