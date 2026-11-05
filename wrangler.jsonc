@@ -1,0 +1,8 @@
+// Cloudflare deploy for the EmpireX company website (empirex-site/), served as static files.
+{
+  "name": "empirex",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./empirex-site"
+  }
+}
