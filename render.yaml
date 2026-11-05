@@ -14,6 +14,7 @@ services:
     buildFilter:
       ignoredPaths:
         - empirex-site/**
+        - wrangler.jsonc
     envVars:
       - key: MONGO_URL
         sync: false
