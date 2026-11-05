@@ -25,6 +25,8 @@ LIMITS = {
     "media": [(15, 60), (120, 3600)],
     "signup": [(SIGNUPS_PER_HOUR, 3600)],
     "report": [(20, 3600)],
+    "reset": [(5, 900), (20, 86400)],  # "Forgot password" emails asked for, per connection
+    "reset_link": [(30, 3600)],  # reset links tried, per connection
 }
 
 DISPOSABLE = {
@@ -78,6 +80,8 @@ MESSAGES = {
     "media": "That's a lot of requests in a short time. Please wait a minute and try again.",
     "signup": "Too many accounts were made from this internet connection. Please try again later.",
     "report": "Thanks, we've got enough reports from you for now.",
+    "reset": "Too many reset emails were asked for from this connection. Please try again later.",
+    "reset_link": "Too many tries from this connection. Please wait a while and try again.",
 }
 
 
