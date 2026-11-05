@@ -10,6 +10,10 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/
+    # Edits to the EmpireX company site don't redeploy Krish AI.
+    buildFilter:
+      ignoredPaths:
+        - empirex-site/**
     envVars:
       - key: MONGO_URL
         sync: false
@@ -79,3 +83,13 @@ services:
       # mid-upload (502). Files are still read and found by keyword search.
       - key: EMBEDDINGS
         value: "0"
+
+  # EmpireX company website: one static page, free, no sleep, no build step.
+  # After deploy, add a CNAME for empirex.krishai.net pointing at this site's onrender.com address.
+  - type: web
+    name: empirex
+    runtime: static
+    buildCommand: echo "EmpireX site, nothing to build"
+    staticPublishPath: ./empirex-site
+    domains:
+      - empirex.krishai.net
