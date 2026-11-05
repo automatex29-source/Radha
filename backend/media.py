@@ -493,6 +493,26 @@ EDGE_VOICES = {
     "pa": "pa-IN-OjasNeural",
 }
 VOICE_LANGUAGES = tuple(EDGE_VOICES)
+# A male voice asked for by its OpenAI name (Krish Robo speaks as "echo") gets a male Edge voice too, so the
+# robot doesn't switch to a woman's voice when there's no OpenAI key.
+MALE_VOICES = {"echo", "onyx", "ash", "fable"}
+EDGE_MALE_VOICES = {
+    "hi": os.environ.get("EDGE_VOICE_HI_MALE", "hi-IN-MadhurNeural"),
+    "en": os.environ.get("EDGE_VOICE_EN_MALE", "en-IN-PrabhatNeural"),
+    "bn": "bn-IN-BashkarNeural",
+    "mr": "mr-IN-ManoharNeural",
+    "gu": "gu-IN-NiranjanNeural",
+    "ta": "ta-IN-ValluvarNeural",
+    "te": "te-IN-MohanNeural",
+    "kn": "kn-IN-GaganNeural",
+    "ml": "ml-IN-MidhunNeural",
+    "ur": "ur-IN-SalmanNeural",
+    "es": "es-ES-AlvaroNeural",
+    "fr": "fr-FR-HenriNeural",
+    "de": "de-DE-ConradNeural",
+    "ar": "ar-SA-HamedNeural",
+    "pa": "pa-IN-OjasNeural",
+}
 
 # In auto mode, the script a reply is written in picks the voice.
 _SCRIPTS = [("pa", r"[\u0A00-\u0A7F]"), ("bn", r"[\u0980-\u09FF]"), ("gu", r"[\u0A80-\u0AFF]"), ("ta", r"[\u0B80-\u0BFF]"),
@@ -531,18 +551,20 @@ def speech_available() -> bool:
     return openai_configured() or edge_available()
 
 
-def edge_voice(text: str, lang: Optional[str] = None) -> str:
-    """The chosen language's voice; in auto mode, the voice for the script the text is written in."""
-    if lang in EDGE_VOICES:
-        return EDGE_VOICES[lang]
-    return EDGE_VOICES.get(script_language(text) or "en", EDGE_VOICES["en"])
+def edge_voice(text: str, lang: Optional[str] = None, voice: Optional[str] = None) -> str:
+    """The chosen language's voice; in auto mode, the voice for the script the text is written in. `voice` is the
+    OpenAI voice name asked for; a male one picks the male Edge voice."""
+    voices = EDGE_MALE_VOICES if voice in MALE_VOICES else EDGE_VOICES
+    code = lang if lang in voices else script_language(text) or "en"
+    return voices.get(code, voices["en"])
 
 
-async def _edge_speak(text: str, lang: Optional[str], speed: Optional[float] = None) -> bytes:
+async def _edge_speak(text: str, lang: Optional[str], speed: Optional[float] = None,
+                      voice: Optional[str] = None) -> bytes:
     import edge_tts
     audio = bytearray()
     rate = f"{round((speed or 1) * 100) - 100:+d}%"
-    async for chunk in edge_tts.Communicate(text[:MAX_TTS_CHARS], edge_voice(text, lang), rate=rate).stream():
+    async for chunk in edge_tts.Communicate(text[:MAX_TTS_CHARS], edge_voice(text, lang, voice), rate=rate).stream():
         if chunk["type"] == "audio":
             audio += chunk["data"]
     if not audio:
@@ -555,7 +577,7 @@ async def speak(text: str, voice: str = "nova", lang: Optional[str] = None, spee
     if not openai_configured():
         if not edge_available():
             raise MediaUnavailable("Set OPENAI_API_KEY on the backend for server voices.")
-        return await _edge_speak(text, lang, speed)
+        return await _edge_speak(text, lang, speed, voice)
     if voice not in TTS_VOICES:
         voice = "nova"
     extra = {"speed": speed} if speed else {}
