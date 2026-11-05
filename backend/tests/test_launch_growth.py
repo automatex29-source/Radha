@@ -412,3 +412,19 @@ def test_welcome_and_plan_emails_read_well():
     assert subject.startswith("You're on Krish AI Max, Asha") and "30 Nov 2026" in html and "automations" in text
     subject, html, _ = growth_mail.welcome("https://k.ai", "Asha", "", 7)
     assert subject.startswith("Welcome to Krish AI, Asha") and "Open Krish AI" in html
+
+
+def test_search_meta_public_pages_and_noindex():
+    import server
+    page = ('<head><link rel="canonical" href="https://krishai.net/" />'
+            '<meta name="description" content="x" /><meta property="og:url" content="https://krishai.net/" />'
+            '<title>Krish AI</title></head>')
+    home = server._search_meta(page, "login")
+    assert 'canonical" href="https://krishai.net/"' in home and "noindex" not in home
+    terms = server._search_meta(page, "terms/")
+    assert 'canonical" href="https://krishai.net/terms"' in terms and "<title>Terms of Service" in terms
+    for private in ("apps/123", "i/ABC1234", "share/xyz", "no-such-page"):
+        out = server._search_meta(page, private)
+        assert 'name="robots" content="noindex"' in out and "canonical" not in out and "og:url" not in out
+    shared_page = server._search_meta(page, "page/abc")
+    assert "noindex" not in shared_page and "canonical" not in shared_page

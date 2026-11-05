@@ -94,7 +94,7 @@ export default function AuthPage() {
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} EmpireX · Krish AI</p>
+          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} <a href="https://empirex.krishai.net" className="hover:text-foreground hover:underline">EmpireX</a> · Krish AI</p>
         </div>
       </div>
 

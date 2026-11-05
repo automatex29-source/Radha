@@ -3375,7 +3375,51 @@ if (FRONTEND_DIST / "index.html").is_file():
         if info:
             page = _invite_preview(page, info, _app_url(request))
         page = page.replace('content="/og-image.png"', f'content="{_app_url(request)}/og-image.png"')
+        page = _search_meta(page, full_path)
         return Response(page, media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+# The address Google should list (render's onrender.com copy and krishai.net must not count as two sites).
+SITE_URL = (os.environ.get("SITE_URL") or "https://krishai.net").rstrip("/")
+# Pages a signed-out visitor (and Google) can read, with the title and summary search results show.
+_PUBLIC_PAGES = {
+    "": ("Krish AI: free AI assistant by EmpireX", None),
+    "privacy": ("Privacy Policy · Krish AI", "How Krish AI by EmpireX keeps, uses and deletes your data."),
+    "terms": ("Terms of Service · Krish AI", "The terms for using Krish AI by EmpireX."),
+    "refunds": ("Refund Policy · Krish AI", "Cancellations and refunds for Krish AI Pro and Max plans."),
+}
+# Signed-out views of the same home page; Google should list just one of them.
+_HOME_ALIASES = {"login"}
+# Pages people view, link or share but that search results shouldn't list on their own.
+_INDEXABLE_PREFIXES = ("page/",)
+
+
+def _set_meta(page: str, prop: str, value: str) -> str:
+    import html as _html
+    return re.sub(rf'(<meta (?:property|name)="{re.escape(prop)}" content=")[^"]*"',
+                  lambda m: f'{m.group(1)}{_html.escape(value)}"', page)
+
+
+def _search_meta(page: str, full_path: str) -> str:
+    """Give each public page its own title, summary and canonical address, and keep signed-in screens
+    (chats, apps, settings) and invite links out of Google, so search shows the home page and its sitelinks."""
+    path = full_path.strip("/")
+    key = "" if path in _HOME_ALIASES else path
+    if key in _PUBLIC_PAGES:
+        title, desc = _PUBLIC_PAGES[key]
+        url = f"{SITE_URL}/{key}" if key else f"{SITE_URL}/"
+        page = re.sub(r'<link rel="canonical" href="[^"]*"', f'<link rel="canonical" href="{url}"', page)
+        page = _set_meta(page, "og:url", url)
+        page = re.sub(r"<title>[^<]*</title>", f"<title>{title}</title>", page, count=1)
+        if desc:
+            for prop in ("description", "og:description", "twitter:description"):
+                page = _set_meta(page, prop, desc)
+        return page
+    # Any other address is its own page, not the home page (a shared chat's preview must not become the home page's).
+    page = re.sub(r'\s*<link rel="canonical" href="[^"]*" />', "", page)
+    page = re.sub(r'\s*<meta property="og:url" content="[^"]*" />', "", page)
+    if path.startswith(_INDEXABLE_PREFIXES):
+        return page
+    return page.replace("</head>", '    <meta name="robots" content="noindex" />\n    </head>', 1)
 
 def _invite_preview(page: str, info: dict, base: str) -> str:
     """Swap the link preview (WhatsApp, X, email) for the inviter's personal one."""
@@ -3390,7 +3434,7 @@ def _invite_preview(page: str, info: dict, base: str) -> str:
     for prop, value in values.items():
         page = re.sub(rf'(<meta (?:property|name)="{re.escape(prop)}" content=")[^"]*"',
                       lambda m, v=value: f'{m.group(1)}{v}"', page)
-    return page.replace("<title>Krish AI</title>", f"<title>{title}</title>")
+    return re.sub(r"<title>[^<]*</title>", lambda m: f"<title>{title}</title>", page, count=1)
 
 
 app.add_middleware(
