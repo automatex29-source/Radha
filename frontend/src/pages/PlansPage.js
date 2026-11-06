@@ -33,7 +33,7 @@ function highlights(plan, basic, video) {
   const { automation } = plan.total;
   const { videoSeconds, uploadMb } = plan.quality;
   if (plan.id === "basic") {
-    return { label: "Includes", items: ["40 messages every 5 hours, with search", "A few Krish Pro answers a week, free",
+    return { label: "Includes", items: ["40 messages every 5 hours, with search", ...(plan.premiumAi ? ["A few Krish Pro answers a week, free"] : []),
       video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
   }
   if (plan.id === "max") {
@@ -45,7 +45,7 @@ function highlights(plan, basic, video) {
     ...(plan.quality.media === "premium" ? [video ? "HD pictures and real AI video" : "HD AI pictures"] : []),
     ...(plan.publish ? ["Publish apps to the web"] : []),
     `${plural(automation, "automation")}, ${uploadMb}MB uploads`,
-    ...(plan.premium ? ["Counsellor Pro"] : [])] };
+    ...(plan.publish ? ["Counsellor Pro"] : [])] };
 }
 
 
@@ -265,11 +265,14 @@ export default function PlansPage() {
         const rzp = new window.Razorpay({
           key: order.keyId, ...(oneTime ? { order_id: order.orderId, amount: order.amount, currency: order.currency }
             : { subscription_id: order.subscriptionId }),
-          name: "Krish AI",
-          description: (oneTime ? `${order.planName} plan · 1 month` : `${order.planName} plan · renews monthly`)
+          // What the customer sees in Razorpay's window: our logo and name, the plan and what it costs.
+          name: "Krish AI by EmpireX",
+          image: `${window.location.origin}/icon-512.png`,
+          description: `Krish ${order.planName} · ${oneTime ? "30 days, no auto-renewal" : "renews monthly, cancel anytime"}`
             + (order.platformFee ? ` · ₹${order.baseAmount / 100} + ₹${order.platformFee / 100} platform fee` : ""),
           prefill: { name: order.name, email: order.email },
-          theme: { color: "#111111" },
+          notes: { plan: order.planName, app: "Krish AI" },
+          theme: { color: "#F97316", backdrop_color: "#0B0B0F" },
           handler: async (res) => {
             try {
               const { data: account } = oneTime
