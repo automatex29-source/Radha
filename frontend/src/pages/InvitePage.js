@@ -102,8 +102,7 @@ export default function InvitePage() {
               <section className="mt-6 rounded-2xl border border-orange-500/30 bg-orange-500/5 p-5">
                 <p className="flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-orange-500" /> What your {days} free Pro days include</p>
                 <ul className="mt-3 grid gap-1.5 text-sm text-muted-foreground sm:grid-cols-2">
-                  <li>• Premium AI models for harder questions</li>
-                  <li>• HD AI pictures and Think mode</li>
+                  <li>• Unlimited chat</li>
                   <li>• 10x the usage of Basic, refilled every 5 hours</li>
                   <li>• Publish the apps you build</li>
                 </ul>

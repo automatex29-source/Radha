@@ -33,7 +33,7 @@ function highlights(plan, basic, video) {
   const { automation } = plan.total;
   const { videoSeconds, uploadMb } = plan.quality;
   if (plan.id === "basic") {
-    return { label: "Includes", items: ["40 messages every 5 hours, with search", "A few Krish Pro answers a week, free",
+    return { label: "Includes", items: ["40 messages every 5 hours, with search", ...(plan.premiumAi ? ["A few Krish Pro answers a week, free"] : []),
       video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
   }
   if (plan.id === "max") {
@@ -45,7 +45,7 @@ function highlights(plan, basic, video) {
     ...(plan.quality.media === "premium" ? [video ? "HD pictures and real AI video" : "HD AI pictures"] : []),
     ...(plan.publish ? ["Publish apps to the web"] : []),
     `${plural(automation, "automation")}, ${uploadMb}MB uploads`,
-    ...(plan.premium ? ["Counsellor Pro"] : [])] };
+    ...(plan.publish ? ["Counsellor Pro"] : [])] };
 }
 
 

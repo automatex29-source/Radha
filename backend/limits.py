@@ -507,8 +507,26 @@ def monthly(plan: str) -> Optional[dict]:
     return {"answers": answers, "builds": int(month // cost("build", 0, plan, "claude-sonnet-5-5"))}
 
 
+def premium_ai_ready() -> bool:
+    """True once a premium engine for Krish Pro is set up (ANTHROPIC_API_KEY). Until then Krish Pro answers with the
+    free engines, and the Plans page and upgrade popup don't promise premium answers."""
+    from agent import llm  # imported here, like media above
+
+    return any(llm.configured(m) for m in llm.PRO_MODELS)
+
+
 def public_plans() -> list:
-    return [{"id": p, **PLANS[p], "monthly": monthly(p)} for p in ORDER]
+    """The plans as the app shows them: what needs a premium key (premium answers, HD pictures) is only offered
+    once that key is set up."""
+    ai, pictures = premium_ai_ready(), bool(picture_usd())
+    shown = []
+    for p in ORDER:
+        plan = {"id": p, **PLANS[p], "monthly": monthly(p) if ai else None, "premiumAi": ai}
+        plan["premium"] = plan["premium"] and ai
+        if plan["quality"]["media"] == "premium" and not pictures:
+            plan["quality"] = {**plan["quality"], "media": "free"}
+        shown.append(plan)
+    return shown
 
 
 def meter_view(plan: str, doc: dict) -> dict:

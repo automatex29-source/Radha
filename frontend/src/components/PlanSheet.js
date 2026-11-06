@@ -11,24 +11,31 @@ const firstName = (name) => (name || "").trim().split(" ")[0];
 const rupees = (n) => n.toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 
 // What a plan adds, as a few rows: an icon, a short title and one line. No AI company or model names here.
+// Premium answers and HD pictures are only promised once their keys are set up (plan.premium, plan.quality.media).
 function benefits(plan, video) {
   const m = plan.monthly;
   const { uploadMb, videoSeconds } = plan.quality || {};
+  const hd = plan.quality?.media === "premium";
   if (plan.id === "max") {
+    const extras = [plan.premium ? "our smartest AI" : "unlimited chat", "publishing", hd && "HD pictures", "Counsellor Pro"].filter(Boolean);
     return [
-      { icon: Gauge, title: "More than double Pro", text: m ? `About ${m.answers} premium answers or ${m.builds} app builds a month.` : "More than twice the usage of Pro." },
+      { icon: Gauge, title: "More than double Pro", text: m ? `About ${m.answers} premium answers or ${m.builds} app builds a month.` : "More than twice Pro's usage, every week." },
       { icon: ImageIcon, title: "Create every day", text: video ? `More pictures, decks and videos up to ${videoSeconds} seconds.` : "More pictures, decks and builds than Pro." },
       { icon: Zap, title: `${plan.total.automation} automations`, text: "Krish runs your repeat jobs on a schedule." },
       { icon: Upload, title: "Bigger uploads", text: `Files up to ${uploadMb}MB.` },
-      { icon: Layers, title: "Everything in Pro", text: "Our smartest AI, publishing, HD pictures and memory." },
+      { icon: Layers, title: "Everything in Pro", text: `${extras.slice(0, -1).join(", ").replace(/^./, (c) => c.toUpperCase())} and ${extras.at(-1)}.` },
     ];
   }
   return [
-    { icon: Sparkles, title: "Smarter answers", text: "Our smartest AI steps in for code and hard questions." },
-    { icon: Gauge, title: "Much more usage", text: m ? `About ${m.answers} premium answers or ${m.builds} app builds a month, plus unlimited chat.` : "Unlimited everyday chat, plus far more premium answers." },
+    plan.premium
+      ? { icon: Sparkles, title: "Smarter answers", text: "Our smartest AI steps in for code and hard questions." }
+      : { icon: Sparkles, title: "Unlimited chat", text: "No message limit. Chat as much as you like, any time." },
+    { icon: Gauge, title: "Much more usage", text: m ? `About ${m.answers} premium answers or ${m.builds} app builds a month, plus unlimited chat.` : "Many times Basic's builds, pictures and decks." },
     { icon: Rocket, title: "Build and publish apps", text: "Make a website or app and put it live with one tap." },
-    { icon: ImageIcon, title: video ? "HD pictures and video" : "HD pictures", text: "Sharper posters, invites and slides." },
-    { icon: Brain, title: "Memory", text: "Krish remembers you across chats, and so does Counsellor Pro." },
+    hd
+      ? { icon: ImageIcon, title: video ? "HD pictures and video" : "HD pictures", text: "Sharper posters, invites and slides." }
+      : { icon: Zap, title: `${plan.total.automation} automations`, text: "Krish runs your repeat jobs on a schedule." },
+    { icon: Brain, title: "Counsellor Pro", text: "A counsellor who remembers your last talk." },
   ];
 }
 
@@ -66,7 +73,7 @@ export function PlanSheet({ plan, plans, user, priceOf, offer, video, gstRate = 
             </DialogTitle>
             <p className="relative mt-1.5 text-[0.88rem] text-muted-foreground">{shown.id === "max"
               ? "For people and businesses who create every day."
-              : "Smarter answers, more of everything, and your apps on the web."}</p>
+              : `${shown.premium ? "Smarter answers" : "Unlimited chat"}, more of everything, and your apps on the web.`}</p>
 
             {choices.length > 1 && (
               <div className="relative mx-auto mt-4 inline-flex rounded-full border border-border bg-muted/60 p-1" role="tablist">
@@ -142,7 +149,7 @@ export function PlanWelcome({ plan, user, until, onClose, onStart }) {
           {first ? `You're on ${plan.name}, ${first}!` : `You're on ${plan.name}!`}
         </DialogTitle>
         <p className="text-sm text-muted-foreground">
-          Thank you for supporting Krish AI. {plan.name} is active{until ? ` until ${until}` : ""}. Try a premium model or make something new today.
+          Thank you for supporting Krish AI. {plan.name} is active{until ? ` until ${until}` : ""}. Make something new today.
         </p>
         <Button onClick={onStart} className="mt-2 h-11 w-full rounded-lg bg-foreground font-medium text-background shadow-none hover:bg-foreground/90" data-testid="plan-welcome-start">
           Start creating <ArrowRight className="ml-1 h-4 w-4" />

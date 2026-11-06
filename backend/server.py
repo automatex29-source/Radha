@@ -97,8 +97,8 @@ CODER_MODEL = os.environ.get("CODER_MODEL", "").strip() or "openrouter/qwen/qwen
 AUTO_MODEL = agent_llm.AUTO
 AVAILABLE_MODELS = [
     {"id": AUTO_MODEL, "label": "Krish Basic", "description": "Free, and picks the best engine for each question", "pro": False},
-    {"id": agent_llm.PRO, "label": "Krish Pro", "description": "Picks the best engine for each question: quick for "
-     "everyday, our smartest for code and apps", "pro": True,
+    {"id": agent_llm.PRO, "label": "Krish Pro", "description": "Picks the best engine for each question, with more room "
+     "for code and apps", "pro": True,
      "taste": True},  # Basic can pick it too, for a few answers a week (limits.use_pro_taste)
 ]
 # The models Krish Pro picks from (see _pro_model); older chats that saved one of these by name keep working.
@@ -2321,6 +2321,8 @@ async def _pick_model(user_id: str, conv: dict, requested: str, think: bool = Fa
     the free builder makes it."""
     model = requested
     pro = await limits.is_pro(db, user_id)
+    if model == agent_llm.PRO and not limits.premium_ai_ready():
+        model = AUTO_MODEL  # no premium engine set up yet: Krish Pro answers with the best free engine
     if model == agent_llm.PRO and pro:
         model = _pro_model(conv, text or "", think)
     elif model == agent_llm.PRO and not conv.get("appId") and agent_llm.configured(limits.PRO_TASTE_MODEL):

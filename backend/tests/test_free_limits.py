@@ -276,7 +276,8 @@ def test_paid_credits_follow_what_each_engine_really_costs(monkeypatch):
     assert limits.cost("picture", 1, "basic") == 2
 
 
-def test_plan_popup_shows_what_a_month_really_buys_on_sonnet():
+def test_plan_popup_shows_what_a_month_really_buys_on_sonnet(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
     plans = {p["id"]: p for p in limits.public_plans()}
     assert plans["basic"]["monthly"] is None
     for plan in ("pro", "max"):

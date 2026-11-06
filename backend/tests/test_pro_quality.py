@@ -63,8 +63,9 @@ def test_basic_gets_the_free_picture_and_video_engines(monkeypatch):
         media.PREMIUM_MEDIA.reset(token)
 
 
-def test_plans_list_their_quality(client):
+def test_plans_list_their_quality(client, monkeypatch):
     import limits
+    monkeypatch.setenv("GEMINI_IMAGE_KEY", "k")  # HD pictures are offered once their billed key is set up
     plans = {p["id"]: p for p in limits.public_plans()}
     basic, pro = plans["basic"]["quality"], plans["pro"]["quality"]
     assert plans["pro"]["price"] == 499
@@ -289,3 +290,30 @@ def test_basic_everyday_chat_starts_on_haiku_then_quietly_moves_to_the_free_engi
     assert pick(pro) == server.AUTO_MODEL  # Pro and Max chat on Krish Basic stays on the free engines
     assert client.portal.call(server._pick_model, _user(client, "boost-app@test.com"), {"appId": "a1"},
                               server.AUTO_MODEL, False, 5, "make an app") != llm.BASIC_PLUS
+
+
+def test_paid_plans_work_on_the_free_engines_until_the_premium_keys_are_added(client, monkeypatch):
+    import limits
+    import server
+    from agent import llm
+    for key in ("ANTHROPIC_API_KEY", "LLM_GATEWAY_URL", "LLM_GATEWAY_KEY", "GEMINI_IMAGE_KEY", "FAL_KEY",
+                "OPENAI_API_KEY", "IMAGE_PROVIDER"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "k")
+    assert not limits.premium_ai_ready()
+    uid = _user(client, "pro-no-keys@test.com", "pro")
+    pick = lambda conv, text, think=False: client.portal.call(server._pick_model, uid, conv, llm.PRO, think,
+                                                               len(text), text)
+    for conv, text, think in (({}, "what should I cook tonight?", False), ({}, "fix this python error", True),
+                              ({"appId": "a1"}, "make a todo app", False)):
+        model = pick(conv, text, think)
+        assert not llm.paid(model) and llm.configured(model), model  # answers on a free engine, never errors
+    basic = _user(client, "basic-no-keys@test.com")
+    assert not llm.paid(client.portal.call(server._pick_model, basic, {}, llm.PRO, False, 5, "hi"))
+
+    # The Plans page and the upgrade popup don't promise premium answers or HD pictures yet.
+    plans = {p["id"]: p for p in limits.public_plans()}
+    for p in ("pro", "max"):
+        assert not plans[p]["premium"] and not plans[p]["premiumAi"] and plans[p]["monthly"] is None
+        assert plans[p]["quality"]["media"] == "free"
+        assert limits.PLANS[p]["premium"]  # what the plan itself includes is unchanged
