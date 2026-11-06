@@ -224,3 +224,20 @@ def test_welcome_questions_reach_the_prompt(client):
     # Skipping saves nothing but stops the questions.
     me = client.put("/api/auth/about", json={"skipped": True}).json()
     assert me["needsWelcome"] is False and me["about"] is None
+
+
+def test_counsellor_voice_call_talks_like_a_phone_call(client):
+    import counsellor
+    cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    CALLS.clear()
+    client.post(f"/api/conversations/{cid}/stream", json={"content": "I can't sleep before my exam", "voice": True})
+    system = next(k for k in CALLS if k.get("stream"))["messages"][0]["content"]
+    assert system.endswith(counsellor.VOICE) and "Voice mode is on" in system
+    assert counsellor.REPLIES not in system and not system.endswith(counsellor.BRIEF)
+
+
+def test_counsellor_prompt_is_not_a_fixed_template():
+    import counsellor
+    assert "not a template" in counsellor.PROMPT and "Ask at most one question" in counsellor.PROMPT
+    assert "never repeat advice you already gave" in counsellor.PROMPT
+    assert "at most one question" in counsellor.BRIEF

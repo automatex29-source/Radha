@@ -163,3 +163,10 @@ def test_speech_can_be_a_little_faster(monkeypatch):
     assert seen["rate"] == "+15%"
     asyncio.run(media._edge_speak("hello", "en"))
     assert seen["rate"] == "+0%"
+
+
+def test_krish_robo_keeps_a_male_voice_without_openai():
+    assert media.edge_voice("hello", "en", "echo") == media.EDGE_MALE_VOICES["en"]
+    assert media.edge_voice("नमस्ते दोस्त", "auto", "echo") == media.EDGE_MALE_VOICES["hi"]
+    assert media.edge_voice("hello", "en", "nova") == media.EDGE_VOICES["en"]
+    assert set(media.EDGE_MALE_VOICES) == set(media.EDGE_VOICES)

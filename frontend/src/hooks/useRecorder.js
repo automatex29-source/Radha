@@ -1,12 +1,15 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 
-// How long a pause ends a turn: short after a quick question, a little longer once they've talked a while
-// (people pause to think mid-sentence).
-const SILENCE_MS = 900;
-const SILENCE_LONG_MS = 1300;
-const NO_SPEECH_MS = 8000;
-const MAX_MS = 60000;
-const SPEECH_RMS = 0.035;
+// How long a pause ends a turn: a short question still sends quickly, but people who talk a while pause to
+// think mid-sentence, so they get longer before Krish takes the turn (a cut-off sentence gets a poor answer).
+const SILENCE_MS = 1200;
+const SILENCE_LONG_MS = 1800;
+const NO_SPEECH_MS = 12000;
+const MAX_MS = 90000;
+// Phone mics with noise suppression are quiet: a soft voice is about 0.015-0.03, so 0.035 missed people.
+const SPEECH_RMS = 0.018;
+// Speech is loud for a while, not one frame: a tap, click or breath doesn't count as talking.
+const SPEECH_HOLD_MS = 150;
 
 /**
  * Microphone recorder. `record()` resolves with the recorded Blob (or null if
@@ -46,7 +49,7 @@ export function useRecorder() {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       throw new Error("This browser can't record audio");
     }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     const recorder = new MediaRecorder(stream);
     const chunks = [];
     const st = { stream, recorder, cancelled: false, raf: 0, ctx: null };
@@ -65,6 +68,7 @@ export function useRecorder() {
       let heard = false;
       let firstLoud = 0;
       let lastLoud = started;
+      let loudSince = 0;
       let floor = 0; // background noise level, so a fan or traffic doesn't count as talking
       const tick = () => {
         analyser.getFloatTimeDomainData(buf);
@@ -75,7 +79,11 @@ export function useRecorder() {
         const now = performance.now();
         // Falls to quiet moments at once, rises only slowly, so it follows the room and not the voice.
         floor = !floor || rms < floor ? rms : floor + (rms - floor) * 0.001;
-        if (rms > Math.max(SPEECH_RMS, floor * 3)) { if (!heard) firstLoud = now; heard = true; lastLoud = now; }
+        if (rms > Math.max(SPEECH_RMS, floor * 2.5)) {
+          loudSince = loudSince || now;
+          if (heard) lastLoud = now;
+          else if (now - loudSince >= SPEECH_HOLD_MS) { heard = true; firstLoud = loudSince; lastLoud = now; }
+        } else loudSince = 0;
         const pause = heard && lastLoud - firstLoud > 4000 ? SILENCE_LONG_MS : SILENCE_MS;
         if (autoStop && ((heard && now - lastLoud > pause) || (!heard && now - started > NO_SPEECH_MS))) {
           if (!heard) st.cancelled = true;

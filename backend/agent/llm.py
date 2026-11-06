@@ -115,6 +115,7 @@ _GEMINI_FALLBACKS = (_GEMINI_FALLBACK, "cerebras/gpt-oss-120b")
 # Krish Coder writes long code (and builds apps), so Cerebras, which fits about 4x more than Groq, takes over first.
 _CODER_FALLBACKS = ("cerebras/gpt-oss-120b", _GEMINI_FALLBACK)
 _GEMINI_RETRY_PAUSE = 1.0
+_LITE = "gemini-3.5-flash-lite"
 # Google retires Gemini models for new keys; chats saved with an old name use the current one.
 _RENAMED = {"gemini-2.5-flash": "gemini-3.5-flash-lite", "claude-haiku-4-5-20251001": "claude-haiku-5-5"}
 # Gemini 3 wants each tool call sent back with the "thought signature" it came with. LiteLLM's streaming
@@ -153,7 +154,11 @@ def fallbacks_for(model: str, messages: List[dict]) -> List[str]:
     if _has_images(messages):
         return []  # pictures need Gemini; the free text models can't see them
     chain = _CODER_FALLBACKS if provider == "openrouter" else _LEAN_FALLBACKS.get(provider, _GEMINI_FALLBACKS)
-    return [m for m in chain if configured(m) and provider_for(m) != provider]
+    chain = [m for m in chain if configured(m) and provider_for(m) != provider]
+    # A fuller Gemini (the Counsellor's Flash) first hands over to Flash Lite, which has its own, larger allowance.
+    if provider == "gemini" and _RENAMED.get(model, model) != _LITE:
+        chain = [_LITE] + chain
+    return chain
 
 
 def lean(model: str) -> bool:

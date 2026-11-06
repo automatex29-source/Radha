@@ -701,7 +701,7 @@ export default function Workspace({ mode = null }) {
     if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
     // Krish Robo speaks the reply aloud while it is still being written.
     roboSpeakerRef.current?.stop();
-    const robo = counselling && roboSpeaks && !voice ? createSpeaker({ voice: KRISH_ROBO.voice, speed: 1.15 }) : null;
+    const robo = counselling && roboSpeaks && !voice ? createSpeaker({ voice: KRISH_ROBO.voice, speed: 1.05 }) : null;
     roboSpeakerRef.current = robo;
     const said = await runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId,
       robo ? (t) => { robo.push(t); onText?.(t); } : onText);
