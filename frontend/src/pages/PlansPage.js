@@ -265,11 +265,14 @@ export default function PlansPage() {
         const rzp = new window.Razorpay({
           key: order.keyId, ...(oneTime ? { order_id: order.orderId, amount: order.amount, currency: order.currency }
             : { subscription_id: order.subscriptionId }),
-          name: "Krish AI",
-          description: (oneTime ? `${order.planName} plan · 1 month` : `${order.planName} plan · renews monthly`)
+          // What the customer sees in Razorpay's window: our logo and name, the plan and what it costs.
+          name: "Krish AI by EmpireX",
+          image: `${window.location.origin}/icon-512.png`,
+          description: `Krish ${order.planName} · ${oneTime ? "30 days, no auto-renewal" : "renews monthly, cancel anytime"}`
             + (order.platformFee ? ` · ₹${order.baseAmount / 100} + ₹${order.platformFee / 100} platform fee` : ""),
           prefill: { name: order.name, email: order.email },
-          theme: { color: "#111111" },
+          notes: { plan: order.planName, app: "Krish AI" },
+          theme: { color: "#F97316", backdrop_color: "#0B0B0F" },
           handler: async (res) => {
             try {
               const { data: account } = oneTime
