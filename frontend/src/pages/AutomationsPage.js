@@ -20,7 +20,7 @@ import {
 import { toast } from "sonner";
 import {
   Workflow, Plus, Loader2, Play, Webhook, Clock, Copy, Trash2, CheckCircle2, XCircle, MessageSquare, Pencil, ArrowLeft,
-  Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp, Check,
+  Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp, Check, Square, PauseCircle, Lock,
 } from "lucide-react";
 import ScrollTable from "@/components/ScrollTable";
 
@@ -44,7 +44,7 @@ export default function AutomationsPage() {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null); // form object or null
   const [models, setModels] = useState([]);
-  const [options, setOptions] = useState({ email: false, planner: false });
+  const [options, setOptions] = useState({ email: false, planner: false, rules: null });
   const [phoneDetail, setPhoneDetail] = useState(false); // phones show the list or one automation, not both
 
   const load = useCallback(async () => {
@@ -73,6 +73,12 @@ export default function AutomationsPage() {
       toast.error(formatApiError(e));
     }
   };
+  const fresh = () => {
+    const f = blank();
+    // Basic runs daily or weekly; a plan's shortest repeat is the default interval.
+    if (options.rules?.minInterval) f.schedule.minutes = Math.max(60, options.rules.minInterval);
+    return f;
+  };
 
   const current = items?.find((a) => a.id === selected);
 
@@ -83,7 +89,7 @@ export default function AutomationsPage() {
         <div className={`radha-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5 max-md:max-w-none max-md:border-r-0 max-md:p-4 ${phoneDetail ? "max-md:hidden" : ""}`}>
           <PageHero compact scene="automations" icon={Workflow} title="Automations"
             subtitle="Your own AI agents. Each one plans its steps, uses search, research, code, files and images, and sends you the result.">
-            <Button size="sm" onClick={() => setEditing(blank())} data-testid="new-automation" className="gap-1.5 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New</Button>
+            <Button size="sm" onClick={() => setEditing(fresh())} data-testid="new-automation" className="gap-1.5 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New</Button>
           </PageHero>
 
           {items === null ? <div className="mt-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : items.length === 0 ? (
@@ -109,6 +115,11 @@ export default function AutomationsPage() {
                     </div>
                     <Switch checked={a.enabled} onCheckedChange={(v) => toggle(a, v)} onClick={(e) => e.stopPropagation()} data-testid={`toggle-${a.id}`} />
                   </div>
+                  {a.pausedReason && (
+                    <p className="mt-2 flex items-start gap-1 text-[11px] text-amber-700 dark:text-amber-400" data-testid={`paused-${a.id}`}>
+                      <PauseCircle className="mt-px h-3 w-3 shrink-0" /> {a.pausedReason}
+                    </p>
+                  )}
                   <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                     {a.lastStatus && <StatusBadge status={a.lastStatus} />}
                     {a.nextRunAt && <span>Next: {new Date(a.nextRunAt).toLocaleString()}</span>}
@@ -138,6 +149,8 @@ export default function AutomationsPage() {
 function StatusBadge({ status }) {
   if (status === "running") return <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><Loader2 className="h-3 w-3 animate-spin" /> Running</span>;
   if (status === "succeeded") return <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-3 w-3" /> Succeeded</span>;
+  if (status === "stopped") return <span className="flex items-center gap-1 text-muted-foreground"><Square className="h-3 w-3" /> Stopped</span>;
+  if (status === "skipped") return <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><PauseCircle className="h-3 w-3" /> Skipped</span>;
   return <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400"><XCircle className="h-3 w-3" /> Failed</span>;
 }
 
@@ -149,6 +162,10 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setSchedule = (patch) => setForm((f) => ({ ...f, schedule: { ...f.schedule, ...patch } }));
   const s = form.schedule;
+  const rules = options.rules || {};
+  const planName = options.planName || "your";
+  const intervals = [15, 30, 60, 120, 180, 360, 720].filter((m) => !rules.minInterval || m >= rules.minInterval);
+  const lockedInterval = options.rules && rules.minInterval == null;
   const [apps, setApps] = useState(null); // connected Telegram, WhatsApp, Slack and Discord (Settings > Connectors)
   useEffect(() => {
     api.get("/connectors").then(({ data }) => setApps(data.connectors.filter((c) => c.category === "messaging" && c.connected)))
@@ -198,6 +215,13 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
         <DialogHeader>
           <DialogTitle>{form.id ? "Edit automation" : "New automation"}</DialogTitle>
           <DialogDescription>An agent that plans its own steps and uses every tool. Describe the goal, or write the steps yourself.</DialogDescription>
+          {options.rules && (
+            <p className="text-[11px] text-muted-foreground" data-testid="plan-rules">
+              {planName} plan: {options.limit ? `${options.limit} automation${options.limit === 1 ? "" : "s"}, ` : ""}
+              {rules.minInterval == null ? "runs once a day or once a week" : `repeats as often as every ${rules.minInterval >= 60 ? "hour" : `${rules.minInterval} minutes`}`}.
+              {" "}<a href="/plans" className="font-medium text-primary hover:underline">See plans</a>
+            </p>
+          )}
         </DialogHeader>
         <div className="space-y-4">
           {options.planner && (
@@ -226,7 +250,9 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
               <select value={s.type} onChange={(e) => setSchedule({ type: e.target.value })} className={field} data-testid="schedule-type">
                 <option value="daily">Every day</option>
                 <option value="weekly">Every week</option>
-                <option value="interval">Every few minutes/hours</option>
+                <option value="interval" disabled={lockedInterval && s.type !== "interval"}>
+                  {lockedInterval ? "Every few hours (Pro and Max)" : rules.minInterval >= 60 ? "Every few hours" : "Every few minutes/hours"}
+                </option>
                 <option value="manual">Only manually / by webhook</option>
               </select>
             </div>
@@ -234,7 +260,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
               <div className="space-y-1.5">
                 <Label>Every</Label>
                 <select value={s.minutes} onChange={(e) => setSchedule({ minutes: e.target.value })} className={field}>
-                  {[15, 30, 60, 120, 180, 360, 720].map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m === 60 ? "" : "s"}`}</option>)}
+                  {intervals.map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m === 60 ? "" : "s"}`}</option>)}
                 </select>
               </div>
             )}
@@ -256,15 +282,20 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
               <Label>Model</Label>
               <select value={form.model || ""} onChange={(e) => set({ model: e.target.value })} className={field}>
                 <option value="">Default</option>
-                {models.map((m) => <option key={m.id} value={m.id} disabled={!m.ok}>{m.label}{m.ok ? "" : " (needs key)"}</option>)}
+                {models.map((m) => {
+                  const locked = m.pro && options.rules && !rules.premiumModels;
+                  return <option key={m.id} value={m.id} disabled={!m.ok || locked}>{m.label}{!m.ok ? " (needs key)" : locked ? " (Pro and Max)" : ""}</option>;
+                })}
               </select>
             </div>
           </div>
           <div className="space-y-3 rounded-xl border border-border bg-card p-3">
             <OptionRow icon={Brain} title="Remember previous runs" hint="Sees what it found last time, skips repeats and reports changes."
               checked={form.memory} onChange={(v) => set({ memory: v })} testid="opt-memory" />
-            <OptionRow icon={Gauge} title="Thorough mode" hint="More steps for long jobs such as research plus several files."
-              checked={form.thorough} onChange={(v) => set({ thorough: v })} testid="opt-thorough" />
+            <OptionRow icon={Gauge} title="Thorough mode"
+              hint={options.rules && !rules.thorough ? "More steps for long jobs. Part of the Max plan." : "More steps for long jobs such as research plus several files."}
+              checked={form.thorough} disabled={options.rules && !rules.thorough && !form.thorough} locked={options.rules && !rules.thorough}
+              onChange={(v) => set({ thorough: v })} testid="opt-thorough" />
             <OptionRow icon={Mail} title="Email me the result"
               hint={options.email ? "Sent to your account email after each run." : "Email isn't set up on the server yet."}
               checked={form.emailResult} disabled={!options.email && !form.emailResult} onChange={(v) => set({ emailResult: v })} testid="opt-email" />
@@ -307,12 +338,12 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
   );
 }
 
-function OptionRow({ icon: Icon, title, hint, checked, onChange, disabled, testid }) {
+function OptionRow({ icon: Icon, title, hint, checked, onChange, disabled, locked, testid }) {
   return (
     <div className="flex items-start gap-3">
       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{title}</p>
+        <p className="flex items-center gap-1 text-sm font-medium">{title}{locked && <Lock className="h-3 w-3 text-muted-foreground" />}</p>
         <p className="text-[11px] text-muted-foreground">{hint}</p>
       </div>
       <Switch checked={!!checked} onCheckedChange={onChange} disabled={disabled} data-testid={testid} />
@@ -320,7 +351,7 @@ function OptionRow({ icon: Icon, title, hint, checked, onChange, disabled, testi
   );
 }
 
-function RunCard({ run: r, onOpen, onPreview }) {
+function RunCard({ run: r, onOpen, onPreview, onStop }) {
   const [open, setOpen] = useState(false);
   const steps = Array.isArray(r.steps) ? r.steps : [];
   const long = (r.output || "").length > 600;
@@ -329,7 +360,13 @@ function RunCard({ run: r, onOpen, onPreview }) {
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <StatusBadge status={r.status} />
         <span className="text-muted-foreground">· {r.trigger} · {new Date(r.startedAt).toLocaleString()}</span>
-        <button onClick={onOpen} className="ml-auto flex items-center gap-1 text-brand hover:underline">
+        {r.status === "running" && (
+          <button onClick={onStop} data-testid={`stop-${r.id}`}
+            className="ml-auto flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-muted-foreground hover:border-rose-500/50 hover:text-rose-600">
+            <Square className="h-3 w-3" /> Stop
+          </button>
+        )}
+        <button onClick={onOpen} className={`${r.status === "running" ? "" : "ml-auto "}flex items-center gap-1 text-brand hover:underline`}>
           <MessageSquare className="h-3 w-3" /> Open conversation
         </button>
       </div>
@@ -344,7 +381,7 @@ function RunCard({ run: r, onOpen, onPreview }) {
           ))}
         </ol>
       )}
-      {r.error && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">{r.error}</p>}
+      {r.error && r.status !== "stopped" && <p className={`mt-2 text-xs ${r.status === "skipped" ? "text-amber-700 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"}`}>{r.error}</p>}
       {r.output && (
         <div className={`radha-prose mt-3 min-w-0 text-sm ${open || !long ? "" : "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"}`}>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{r.output}</ReactMarkdown>
@@ -396,6 +433,17 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
     return () => clearInterval(t);
   }, [running, loadRuns, onChanged]);
 
+  const stop = async (r) => {
+    try {
+      await api.post(`/automations/${a.id}/runs/${r.id}/stop`);
+      toast.success("Stopping the run");
+      setTimeout(() => { loadRuns().catch(() => {}); onChanged(); }, 800);
+    } catch (e) {
+      toast.error(formatApiError(e));
+      loadRuns().catch(() => {});
+    }
+  };
+
   const runNow = async () => {
     try {
       await api.post(`/automations/${a.id}/run`);
@@ -434,6 +482,7 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
           <div className="min-w-0 flex-1 max-sm:basis-full">
             <h2 className="text-xl font-bold tracking-tight">{a.name}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{a.scheduleText}{a.enabled ? "" : " · paused"}</p>
+            {a.pausedReason && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{a.pausedReason}</p>}
             <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]" data-testid="automation-features">
               {a.memory && <Feature icon={Brain} text="Remembers past runs" />}
               {a.thorough && <Feature icon={Gauge} text="Thorough" />}
@@ -443,7 +492,7 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
             </div>
           </div>
           <Button size="sm" variant="outline" onClick={onEdit} className="gap-1.5 border-border bg-card"><Pencil className="h-3.5 w-3.5" /> Edit</Button>
-          <Button size="sm" onClick={runNow} data-testid="run-now" className="gap-1.5"><Play className="h-3.5 w-3.5" /> Run now</Button>
+          <Button size="sm" onClick={runNow} disabled={running} data-testid="run-now" className="gap-1.5">{running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} {running ? "Running" : "Run now"}</Button>
           <button onClick={remove} title="Delete" className="rounded-md p-2 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
         </div>
         <p className="mt-4 whitespace-pre-wrap rounded-xl border border-border bg-card p-4 text-sm">{a.prompt}</p>
@@ -473,7 +522,7 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
         ) : (
           <div className="mt-2 space-y-3" data-testid="run-list">
             {runs.map((r) => (
-              <RunCard key={r.id} run={r} onPreview={setPreview} onOpen={() => navigate(`/?conversation=${r.conversationId}`)} />
+              <RunCard key={r.id} run={r} onPreview={setPreview} onStop={() => stop(r)} onOpen={() => navigate(`/?conversation=${r.conversationId}`)} />
             ))}
           </div>
         )}

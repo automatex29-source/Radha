@@ -229,6 +229,7 @@ class TestAgentAutomations:
         automations.init(database, fake_turn, "m")
 
         async def scenario():
+            await database.users.insert_one({"id": "u", "plan": "max"})  # Thorough mode is a Max feature
             auto = {"id": "a3", "userId": "u", "name": "News", "prompt": "p", "schedule": {"type": "manual"},
                     "thorough": True, "notifyUrl": "https://discord.example/hook"}
             await database.automations.insert_one(dict(auto))
@@ -267,3 +268,139 @@ class TestAgentAutomations:
         assert plan == {"name": "Price watch", "prompt": "1. Search...",
                         "schedule": {"type": "weekly", "time": "08:00", "weekday": 6, "minutes": 60}}
         assert automations.parse_plan({"schedule": "bad"}, "Watch prices daily")["schedule"]["type"] == "manual"
+
+
+class TestPlanRulesAndReliability:
+    def _db(self, name):
+        database = mongomock_motor.AsyncMongoMockClient()[name]
+        return database
+
+    def test_plan_rules_refuse_what_the_plan_lacks(self):
+        database = self._db("rules")
+        automations.init(database, None, "m")
+        from fastapi import HTTPException
+
+        async def scenario():
+            await database.users.insert_many([{"id": "free"}, {"id": "pro", "plan": "pro"}, {"id": "max", "plan": "max"}])
+            out = {}
+            cases = [("free", {"type": "interval", "minutes": 60}, None, False),
+                     ("free", {"type": "daily", "time": "08:00"}, "krish-pro", False),
+                     ("free", {"type": "daily", "time": "08:00"}, None, False),
+                     ("pro", {"type": "interval", "minutes": 15}, None, False),
+                     ("pro", {"type": "interval", "minutes": 60}, "krish-pro", False),
+                     ("pro", {"type": "daily", "time": "08:00"}, None, True),
+                     ("max", {"type": "interval", "minutes": 15}, "krish-pro", True)]
+            for i, (user, schedule, model, thorough) in enumerate(cases):
+                try:
+                    await automations.check_plan_rules(user, schedule, model, thorough)
+                    out[i] = "ok"
+                except HTTPException as exc:
+                    assert exc.status_code == 402
+                    out[i] = exc.detail
+            return out
+
+        out = run(scenario())
+        assert "once a day or once a week" in out[0] and "Upgrade to Pro" in out[0]
+        assert "premium" in out[1]
+        assert out[2] == "ok"
+        assert "every hour at most" in out[3]
+        assert out[4] == "ok"
+        assert "Max plan" in out[5]
+        assert out[6] == "ok"
+
+    def test_short_interval_waits_as_long_as_the_plan_allows(self):
+        now = utc(2026, 1, 1, 12, 0)
+        assert automations.next_run({"type": "interval", "minutes": 15}, now, 60) == utc(2026, 1, 1, 13, 0)
+        assert automations.next_run({"type": "interval", "minutes": 15}, now, None) == utc(2026, 1, 2, 12, 0)
+        assert automations.next_run({"type": "interval", "minutes": 15}, now, 15) == utc(2026, 1, 1, 12, 15)
+
+    def test_downgrade_pauses_automations_past_the_plan_count(self):
+        database = self._db("down")
+        started = []
+
+        async def fake_turn(conv_id, model, agent=False, **kw):
+            started.append(conv_id)
+            yield "data: \"ok\"\n\n"
+
+        automations.init(database, fake_turn, "m")
+
+        async def scenario():
+            await database.users.insert_one({"id": "u"})  # back on Basic, which keeps 1 automation
+            for i in range(3):
+                await database.automations.insert_one({
+                    "id": f"a{i}", "userId": "u", "name": "x", "prompt": "p",
+                    "schedule": {"type": "daily", "time": "08:00", "timezone": "UTC"}, "enabled": True,
+                    "nextRunAt": "2000-01-01T00:00:00+00:00", "lockedUntil": None, "createdAt": f"2026-01-0{i + 1}"})
+            await automations.tick()
+            await asyncio.gather(*list(automations._running))
+            return await database.automations.find({}).sort("createdAt", 1).to_list(10)
+
+        docs = run(scenario())
+        assert len(started) == 1
+        assert docs[0]["enabled"] is True and not docs[0].get("pausedReason")
+        assert all(d["enabled"] is False and "keeps 1 automation" in d["pausedReason"] for d in docs[1:])
+
+    def test_lost_run_is_marked_failed(self):
+        database = self._db("lost")
+        automations.init(database, None, "m")
+
+        async def scenario():
+            await database.automations.insert_one({"id": "a", "userId": "u", "lastStatus": "running"})
+            await database.automation_runs.insert_many([
+                {"id": "old", "automationId": "a", "status": "running", "startedAt": "2000-01-01T00:00:00+00:00",
+                 "heartbeatAt": "2000-01-01T00:00:00+00:00"},
+                {"id": "new", "automationId": "a", "status": "running", "startedAt": automations._iso(automations._now()),
+                 "heartbeatAt": automations._iso(automations._now())}])
+            await automations.recover_lost_runs()
+            return {r["id"]: r for r in await database.automation_runs.find({}).to_list(10)}
+
+        runs = run(scenario())
+        assert runs["old"]["status"] == "failed" and "restarted" in runs["old"]["error"]
+        assert runs["new"]["status"] == "running"
+
+    def test_stop_cancels_a_running_run(self):
+        database = self._db("stop")
+
+        async def slow_turn(conv_id, model, agent=False, **kw):
+            await database.messages.insert_one({"id": "m", "conversationId": conv_id, "role": "assistant",
+                                                "content": "Half done", "createdAt": "z"})
+            yield "data: \"Half\"\n\n"
+            await asyncio.sleep(30)
+            yield "data: \"never\"\n\n"
+
+        automations.init(database, slow_turn, "m")
+
+        async def scenario():
+            auto = {"id": "a", "userId": "u", "name": "x", "prompt": "p", "schedule": {"type": "manual"},
+                    "enabled": True, "createdAt": "1"}
+            await database.automations.insert_one(dict(auto))
+            r = await automations.start_run(auto, "manual")
+            await asyncio.sleep(0.05)
+            await automations.stop_run("a", r["id"], user_id="u")
+            await asyncio.gather(*list(automations._running))
+            return await database.automation_runs.find_one({"id": r["id"]})
+
+        doc = run(scenario())
+        assert doc["status"] == "stopped" and doc["output"] == "Half done" and "delivery" not in doc
+
+    def test_old_runs_are_pruned(self, monkeypatch):
+        database = self._db("prune")
+        monkeypatch.setattr(automations, "KEEP_RUNS", 3)
+
+        async def fake_turn(conv_id, model, agent=False, **kw):
+            yield "data: \"ok\"\n\n"
+
+        automations.init(database, fake_turn, "m")
+
+        async def scenario():
+            auto = {"id": "a", "userId": "u", "name": "x", "prompt": "p", "schedule": {"type": "manual"},
+                    "enabled": True, "createdAt": "1"}
+            await database.automations.insert_one(dict(auto))
+            for _ in range(5):
+                await automations.start_run(auto, "manual")
+                await asyncio.gather(*list(automations._running))
+                await asyncio.sleep(0.002)
+            return (await database.automation_runs.count_documents({}),
+                    await database.conversations.count_documents({}))
+
+        assert run(scenario()) == (3, 3)

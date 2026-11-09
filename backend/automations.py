@@ -6,6 +6,11 @@ full agent turn with every tool available, and records the outcome in
 larger step budget, can see what the previous run found (memory), and can
 deliver the result by email or to a Discord/Slack webhook. The scheduler claims due automations atomically in MongoDB,
 so several backend processes can run without double-firing.
+
+Each plan decides what its automations may do (limits.automation_rules): how often they repeat, Thorough mode and
+the premium models. A run is checked against the plan when it starts, so a downgrade takes effect on the next run,
+and automations beyond the plan's count are paused. Runs send a heartbeat while they work; one whose heartbeat stops
+(the server restarted) is marked failed, a run can be stopped, and only the newest KEEP_RUNS runs are kept.
 """
 import asyncio
 import ipaddress
@@ -37,6 +42,7 @@ router = APIRouter(prefix="/api")
 
 db = None
 run_turn: Optional[Callable] = None  # server.run_turn, injected by init()
+pick_model: Optional[Callable] = None  # server._pick_model: the plan's model and its credits, injected by init()
 default_model: str = ""
 
 TICK_SECONDS = 20
@@ -49,6 +55,11 @@ STEPS_NORMAL = 12
 STEPS_THOROUGH = 20
 MEMORY_CHARS = 1500
 MAX_RUN_STEPS_SHOWN = 30
+RUN_TIMEOUT_MINUTES = 15  # a run that takes longer is stopped (the scheduler's lock lasts LOCK_MINUTES)
+HEARTBEAT_SECONDS = 30
+STALE_MINUTES = 5  # a running run with no heartbeat for this long was lost (the server restarted)
+KEEP_RUNS = 50  # older runs, and their conversations, are deleted
+DAY_MINUTES = 60 * 24
 
 AGENT_INSTRUCTIONS = (
     "You are running as an autonomous agent for a saved automation. Nobody is watching, so never ask questions: "
@@ -73,11 +84,12 @@ _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
 _scheduler_task: Optional[asyncio.Task] = None
 _running: set = set()
+_tasks: dict = {}  # run id -> its task in this process, so Stop can cancel it
 
 
-def init(database, turn_runner: Callable, model: str):
-    global db, run_turn, default_model
-    db, run_turn, default_model = database, turn_runner, model
+def init(database, turn_runner: Callable, model: str, model_picker: Optional[Callable] = None):
+    global db, run_turn, default_model, pick_model
+    db, run_turn, default_model, pick_model = database, turn_runner, model, model_picker
 
 
 async def ensure_indexes():
@@ -88,6 +100,7 @@ async def ensure_indexes():
     await _replace_index(db.automations, "webhookSecret_1", "webhookSecret",
                          {"webhookSecret": {"$type": "string"}})
     await db.automation_runs.create_index([("automationId", 1), ("startedAt", -1)])
+    await db.automation_runs.create_index([("status", 1), ("heartbeatAt", 1)])
 
 
 async def _replace_index(collection, name: str, field: str, partial: dict):
@@ -133,11 +146,12 @@ def validate_schedule(s: Schedule) -> Schedule:
     return s
 
 
-def next_run(schedule: dict, after: datetime) -> Optional[datetime]:
-    """Next fire time strictly after `after` (UTC), or None for manual automations."""
+def next_run(schedule: dict, after: datetime, min_interval: Optional[int] = MIN_INTERVAL_MINUTES) -> Optional[datetime]:
+    """Next fire time strictly after `after` (UTC), or None for manual automations. An interval shorter than the
+    plan allows (`min_interval`; None means daily at most) waits that long instead."""
     kind = schedule.get("type")
     if kind == "interval":
-        return after + timedelta(minutes=schedule["minutes"])
+        return after + timedelta(minutes=max(schedule["minutes"], min_interval or DAY_MINUTES))
     if kind not in ("daily", "weekly"):
         return None
     tz = ZoneInfo(schedule.get("timezone") or "UTC")
@@ -165,6 +179,62 @@ def describe_schedule(s: dict) -> str:
     return "Manual only"
 
 
+# -------------------------------------------------------------- plan rules
+def _every(minutes: int) -> str:
+    return "hour" if minutes == 60 else f"{minutes // 60} hours" if minutes % 60 == 0 else f"{minutes} minutes"
+
+
+async def _rules(user_id: str) -> tuple:
+    plan = await limits.plan_of(db, user_id)
+    return plan, limits.automation_rules(plan)
+
+
+def _upgrade(plan: str) -> str:
+    nxt = limits.ORDER[limits.ORDER.index(plan) + 1] if plan != limits.ORDER[-1] else None
+    return f" Upgrade to {limits.PLANS[nxt]['name']} for more." if nxt else ""
+
+
+async def check_plan_rules(user_id: str, schedule: dict, model: Optional[str], thorough: bool):
+    """Refuse (402, so the app offers the plans page) what the user's plan doesn't include."""
+    plan, rules = await _rules(user_id)
+    name = limits.PLANS[plan]["name"]
+    problem = None
+    if schedule.get("type") == "interval":
+        least = rules["minInterval"]
+        if least is None:
+            problem = f"On the {name} plan an automation runs once a day or once a week."
+        elif (schedule.get("minutes") or 0) < least:
+            problem = f"On the {name} plan an automation can repeat every {_every(least)} at most."
+    if thorough and not rules["thorough"]:
+        problem = problem or "Thorough mode is part of the Max plan."
+    if model and _premium(model) and not rules["premiumModels"]:
+        problem = problem or "The premium AI models are part of the Pro and Max plans."
+    if problem:
+        raise HTTPException(status_code=402, detail=problem + _upgrade(plan))
+
+
+def _premium(model: str) -> bool:
+    from agent import llm as agent_llm
+    return model == agent_llm.PRO or agent_llm.paid(model)
+
+
+async def _allowed_ids(user_id: str, plan: str) -> set:
+    """The automations the plan keeps running: the oldest ones, up to its count (the rest are paused)."""
+    n = limits.PLANS[plan]["total"]["automation"] if limits.enabled() else 10 ** 6
+    docs = await db.automations.find({"userId": user_id}, {"id": 1}).sort("createdAt", 1).limit(n).to_list(None)
+    return {d["id"] for d in docs}
+
+
+async def _over_count(auto: dict) -> Optional[str]:
+    """Why the plan can't run this automation (it has more than the plan keeps), or None."""
+    plan = await limits.plan_of(db, auto["userId"])
+    if auto["id"] in await _allowed_ids(auto["userId"], plan):
+        return None
+    n = limits.PLANS[plan]["total"]["automation"]
+    return (f"Paused: the {limits.PLANS[plan]['name']} plan keeps {n} automation{'s' if n != 1 else ''} running. "
+            f"Delete one, or upgrade, to turn this back on.")
+
+
 # ------------------------------------------------------------------ running
 async def start_run(auto: dict, trigger: str, payload: Optional[str] = None) -> dict:
     """Create a run record and execute it in the background."""
@@ -177,14 +247,16 @@ async def start_run(auto: dict, trigger: str, payload: Optional[str] = None) -> 
         prompt += f"\n\nThis run was triggered by a webhook with this payload:\n```\n{payload[:MAX_PAYLOAD_CHARS]}\n```"
     run = {"id": uuid.uuid4().hex[:12], "automationId": auto["id"], "userId": auto["userId"], "trigger": trigger,
            "status": "running", "conversationId": conv["id"], "startedAt": _iso(ts), "finishedAt": None,
-           "output": None, "error": None, "media": []}
+           "output": None, "error": None, "media": [], "heartbeatAt": _iso(ts)}
     await db.conversations.insert_one(conv)
     await db.messages.insert_one({"id": str(uuid.uuid4()), "conversationId": conv["id"], "role": "user",
                                   "content": prompt, "model": None, "createdAt": _iso(ts)})
     await db.automation_runs.insert_one(run)
     task = asyncio.create_task(_execute(auto, run, conv, await _agent_context(auto)))
     _running.add(task)
+    _tasks[run["id"]] = task
     task.add_done_callback(_running.discard)
+    task.add_done_callback(lambda _t, rid=run["id"]: _tasks.pop(rid, None))
     return public_run(run)
 
 
@@ -206,28 +278,109 @@ def _step_view(step: dict) -> dict:
             "status": step.get("status"), "summary": (step.get("summary") or "")[:200]}
 
 
-async def _execute(auto: dict, run: dict, conv: dict, context: str = ""):
-    error = None
-    steps = STEPS_THOROUGH if auto.get("thorough") else STEPS_NORMAL
-    async with _semaphore:
+class _StopRequested(Exception):
+    pass
+
+
+async def _plan_check(auto: dict, conv: dict) -> tuple:
+    """(steps, model, why the run can't happen) for this run, by the user's plan right now."""
+    plan, rules = await _rules(auto["userId"])
+    steps = STEPS_THOROUGH if auto.get("thorough") and rules["thorough"] else STEPS_NORMAL
+    try:
+        await limits.check_fair_use(db, auto["userId"])
+    except limits.LimitReached as exc:
+        return steps, conv["model"], str(exc)
+    model = conv["model"]
+    if model and _premium(model) and not rules["premiumModels"]:
+        model = default_model
+    if pick_model:
         try:
-            async for chunk in run_turn(conv["id"], conv["model"], agent=True, extra_system=context or None,
-                                        max_steps=steps):
-                if chunk.startswith("event: error"):
-                    error = json.loads(chunk.split("data: ", 1)[1])
-        except Exception as exc:
-            logger.exception("Automation run failed")
-            error = str(exc)
+            model = await pick_model(auto["userId"], conv, model, new_chars=len(auto.get("prompt") or ""),
+                                     text=auto.get("prompt") or "")
+        except Exception:
+            logger.exception("Picking the automation's model failed")
+    return steps, model, None
+
+
+async def _execute(auto: dict, run: dict, conv: dict, context: str = ""):
+    error, status = None, None
+    async with _semaphore:
+        steps, model, blocked = await _plan_check(auto, conv)
+        if blocked:
+            error, status = blocked, "skipped"
+        else:
+            turn = run_turn(conv["id"], model, agent=True, extra_system=context or None, max_steps=steps)
+
+            async def consume():
+                nonlocal error
+                beat = asyncio.get_running_loop().time()
+                async for chunk in turn:
+                    if chunk.startswith("event: error"):
+                        error = json.loads(chunk.split("data: ", 1)[1])
+                    if asyncio.get_running_loop().time() - beat >= HEARTBEAT_SECONDS:
+                        beat = asyncio.get_running_loop().time()
+                        doc = await db.automation_runs.find_one_and_update(
+                            {"id": run["id"]}, {"$set": {"heartbeatAt": _iso(_now())}})
+                        if doc and doc.get("stopRequested"):  # Stop pressed on another server process
+                            raise _StopRequested()
+
+            try:
+                await asyncio.wait_for(consume(), RUN_TIMEOUT_MINUTES * 60)
+            except (asyncio.CancelledError, _StopRequested):
+                status, error = "stopped", "Stopped"
+            except asyncio.TimeoutError:
+                error = f"This run took longer than {RUN_TIMEOUT_MINUTES} minutes, so it was stopped."
+            except Exception as exc:
+                logger.exception("Automation run failed")
+                error = str(exc)
+            finally:
+                try:  # a stopped turn saves what it wrote so far
+                    await asyncio.shield(turn.aclose())
+                except Exception:
+                    pass
     reply = await db.messages.find_one({"conversationId": conv["id"], "role": "assistant"}, sort=[("createdAt", -1)])
-    status = "failed" if error or not reply else "succeeded"
+    status = status or ("failed" if error or not reply else "succeeded")
     update = {"status": status, "finishedAt": _iso(_now()), "error": error,
               "output": (reply or {}).get("content", "")[:MAX_OUTPUT_CHARS] or None,
               "media": (reply or {}).get("media") or [],
               "steps": [_step_view(s) for s in ((reply or {}).get("steps") or [])[:MAX_RUN_STEPS_SHOWN]]}
-    update["delivery"] = await _deliver(auto, {**run, **update})
+    if status != "stopped":
+        update["delivery"] = await _deliver(auto, {**run, **update})
     await db.automation_runs.update_one({"id": run["id"]}, {"$set": update})
     await db.automations.update_one({"id": auto["id"]}, {"$set": {
         "lastRunAt": update["finishedAt"], "lastStatus": status, "lockedUntil": None}})
+    try:
+        await _prune(auto["id"])
+    except Exception:
+        logger.exception("Pruning old automation runs failed")
+
+
+async def _prune(aid: str):
+    """Delete runs past the newest KEEP_RUNS, with their conversations."""
+    old = await db.automation_runs.find({"automationId": aid, "status": {"$ne": "running"}},
+                                        {"id": 1, "conversationId": 1}).sort("startedAt", -1).skip(KEEP_RUNS).to_list(None)
+    if not old:
+        return
+    conv_ids = [r["conversationId"] for r in old if r.get("conversationId")]
+    await db.messages.delete_many({"conversationId": {"$in": conv_ids}})
+    await db.conversations.delete_many({"id": {"$in": conv_ids}})
+    await db.automation_runs.delete_many({"id": {"$in": [r["id"] for r in old]}})
+
+
+async def recover_lost_runs():
+    """Mark runs whose heartbeat stopped (the server restarted mid-run) as failed, so they don't spin forever."""
+    cutoff = _iso(_now() - timedelta(minutes=STALE_MINUTES))
+    lost = await db.automation_runs.find(
+        {"status": "running", "$or": [{"heartbeatAt": {"$lt": cutoff}},
+                                      {"heartbeatAt": None, "startedAt": {"$lt": cutoff}}]},
+        {"id": 1, "automationId": 1}).to_list(200)
+    for r in lost:
+        if r["id"] in _tasks:  # still working in this process (a long tool step)
+            continue
+        await db.automation_runs.update_one({"id": r["id"], "status": "running"}, {"$set": {
+            "status": "failed", "finishedAt": _iso(_now()),
+            "error": "The server restarted while this was running. Press Run now to try again."}})
+        await db.automations.update_one({"id": r["automationId"]}, {"$set": {"lastStatus": "failed", "lockedUntil": None}})
 
 
 # ----------------------------------------------------------------- delivery
@@ -322,7 +475,13 @@ async def tick():
         )
         if not auto:
             return
-        nxt = next_run(auto["schedule"], now)
+        paused = await _over_count(auto)
+        if paused:  # the plan keeps fewer automations now (a downgrade)
+            await db.automations.update_one({"id": auto["id"]}, {"$set": {
+                "enabled": False, "nextRunAt": None, "lockedUntil": None, "pausedReason": paused}})
+            continue
+        _, rules = await _rules(auto["userId"])
+        nxt = next_run(auto["schedule"], now, rules["minInterval"])
         await db.automations.update_one({"id": auto["id"]}, {"$set": {"nextRunAt": _iso(nxt)}})
         await start_run(auto, "schedule")
 
@@ -330,6 +489,7 @@ async def tick():
 async def _loop():
     while True:
         try:
+            await recover_lost_runs()
             await tick()
         except Exception:
             logger.exception("Automation scheduler tick failed")
@@ -389,7 +549,7 @@ def public_automation(doc: dict) -> dict:
         "id": doc["id"], "name": doc["name"], "prompt": doc["prompt"], "schedule": doc["schedule"],
         "scheduleText": describe_schedule(doc["schedule"]), "model": doc.get("model"), "enabled": doc["enabled"],
         "nextRunAt": doc.get("nextRunAt") if doc["enabled"] else None, "lastRunAt": doc.get("lastRunAt"),
-        "lastStatus": doc.get("lastStatus"),
+        "lastStatus": doc.get("lastStatus"), "pausedReason": None if doc["enabled"] else doc.get("pausedReason"),
         "memory": doc.get("memory", True), "thorough": bool(doc.get("thorough")),
         "emailResult": bool(doc.get("emailResult")), "notifyUrl": doc.get("notifyUrl"),
         "sendTo": doc.get("sendTo") or [],
@@ -401,7 +561,7 @@ def public_automation(doc: dict) -> dict:
 def public_run(doc: dict) -> dict:
     return {k: doc.get(k) for k in ("id", "automationId", "trigger", "status", "conversationId", "startedAt",
                                     "finishedAt", "output", "error", "media", "steps",
-                                    "delivery")}
+                                    "delivery", "heartbeatAt")}
 
 
 async def _owned(aid: str, user_id: str) -> dict:
@@ -429,7 +589,10 @@ async def _clean_notify_url(url: Optional[str]) -> Optional[str]:
 
 @router.get("/automations/options")
 async def automation_options(user_id: str = Depends(current_user_id)):
-    return {"email": mailer.configured(), "planner": prompt_boost.available()}
+    plan, rules = await _rules(user_id)
+    return {"email": mailer.configured(), "planner": prompt_boost.available(), "plan": plan,
+            "planName": limits.PLANS[plan]["name"], "rules": rules,
+            "limit": limits.PLANS[plan]["total"]["automation"] if limits.enabled() else None}
 
 
 @router.post("/automations/plan")
@@ -472,12 +635,13 @@ def parse_plan(data: dict, goal: str) -> dict:
 async def create_automation(body: AutomationIn, user_id: str = Depends(current_user_id)):
     await limits.require(db, user_id, "automation")
     schedule = validate_schedule(body.schedule).model_dump()
+    await check_plan_rules(user_id, schedule, body.model, body.thorough)
     now = _now()
     doc = {"id": str(uuid.uuid4()), "userId": user_id, "name": body.name.strip(), "prompt": body.prompt.strip(),
            "schedule": schedule, "model": body.model, "enabled": body.enabled,
            "memory": body.memory, "thorough": body.thorough, "emailResult": body.emailResult,
            "notifyUrl": await _clean_notify_url(body.notifyUrl), "sendTo": _clean_send_to(body.sendTo),
-           "nextRunAt": _iso(next_run(schedule, now)) if body.enabled else None,
+           "nextRunAt": _iso(next_run(schedule, now, (await _rules(user_id))[1]["minInterval"])) if body.enabled else None,
            "lastRunAt": None, "lastStatus": None, "lockedUntil": None, "webhookSecret": None, "createdAt": _iso(now)}
     await db.automations.insert_one(doc)
     return public_automation(doc)
@@ -499,8 +663,16 @@ async def update_automation(aid: str, body: AutomationPatch, user_id: str = Depe
     if body.schedule:
         updates["schedule"] = validate_schedule(body.schedule).model_dump()
     merged = {**doc, **updates}
+    if {"schedule", "model", "thorough"} & updates.keys():
+        await check_plan_rules(user_id, merged["schedule"], merged.get("model"), bool(merged.get("thorough")))
+    if updates.get("enabled") and not doc["enabled"]:
+        paused = await _over_count(doc)
+        if paused:
+            raise HTTPException(status_code=402, detail=paused.replace("Paused: the", "The"))
+        updates["pausedReason"] = None
     if "schedule" in updates or "enabled" in updates:
-        updates["nextRunAt"] = _iso(next_run(merged["schedule"], _now())) if merged["enabled"] else None
+        rules = (await _rules(user_id))[1]
+        updates["nextRunAt"] = _iso(next_run(merged["schedule"], _now(), rules["minInterval"])) if merged["enabled"] else None
     for key in ("name", "prompt"):
         if key in updates:
             updates[key] = updates[key].strip()
@@ -522,7 +694,31 @@ async def delete_automation(aid: str, user_id: str = Depends(current_user_id)):
 
 @router.post("/automations/{aid}/run")
 async def run_now(aid: str, user_id: str = Depends(current_user_id)):
-    return await start_run(await _owned(aid, user_id), "manual")
+    auto = await _owned(aid, user_id)
+    if await db.automation_runs.count_documents({"automationId": aid, "status": "running"}):
+        raise HTTPException(status_code=409, detail="This automation is already running. Wait for it, or stop it.")
+    paused = await _over_count(auto)
+    if paused:
+        raise HTTPException(status_code=402, detail=paused.replace("Paused: the", "The"))
+    try:
+        await limits.check_fair_use(db, user_id)
+    except limits.LimitReached as exc:
+        raise limits.http_error(exc)
+    return await start_run(auto, "manual")
+
+
+@router.post("/automations/{aid}/runs/{rid}/stop")
+async def stop_run(aid: str, rid: str, user_id: str = Depends(current_user_id)):
+    """Stop a running run: right away in this process, or at its next heartbeat in another one."""
+    await _owned(aid, user_id)
+    doc = await db.automation_runs.find_one_and_update({"id": rid, "automationId": aid, "status": "running"},
+                                                       {"$set": {"stopRequested": True}})
+    if not doc:
+        raise HTTPException(status_code=409, detail="This run has already finished")
+    task = _tasks.get(rid)
+    if task:
+        task.cancel()
+    return {"ok": True}
 
 
 @router.get("/automations/{aid}/runs")
