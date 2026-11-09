@@ -76,10 +76,20 @@ PLAN_SYSTEM = (
     + ", and Excel, PowerPoint, Word/PDF, HTML, text and zip file creation. Reply with JSON only: "
     '{"name": "short title, max 6 words", "task": "clear instructions for the agent: numbered steps naming the '
     'tools to use, what to look for, the output format and which files to create", "schedule": {"type": '
-    '"daily|weekly|interval|manual", "time": "HH:MM", "weekday": 0-6 (0 = Monday), "minutes": 15-10080}}. '
-    "Pick the schedule the goal implies (daily at 08:00 when it says every day, manual when no timing is given). "
+    '"daily|weekly|interval|once|manual", "time": "HH:MM", "weekday": 0-6 (0 = Monday), "minutes": 15-10080, '
+    '"date": "YYYY-MM-DD (only for once)"}, "deliver": ["email", "telegram", "whatsapp", "slack", "discord"]}. '
+    "Pick the schedule the goal implies (daily at 08:00 when it says every day, once with a date for a single "
+    "future time such as 'tomorrow at 5 pm', manual when no timing is given). Put in deliver only the places the "
+    "goal asks for the result to go ('mail me', 'on WhatsApp'); leave it empty otherwise. "
     "Write the task in the same language as the goal, 60-180 words."
 )
+APPS_HINT = {
+    "gmail": "Gmail (search and read emails, write drafts and send emails)",
+    "google_calendar": "Google Calendar (read events, add events)",
+    "google_drive": "Google Drive (search and read files)",
+    "notion": "Notion (search, read and add pages)",
+    "github": "GitHub (read repositories, open issues)",
+}
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
 _scheduler_task: Optional[asyncio.Task] = None
@@ -125,10 +135,11 @@ async def current_user_id(request: Request) -> str:
 
 # ---------------------------------------------------------------- schedules
 class Schedule(BaseModel):
-    type: str = Field(pattern="^(manual|interval|daily|weekly)$")
+    type: str = Field(pattern="^(manual|once|interval|daily|weekly)$")
     minutes: Optional[int] = Field(default=None, ge=MIN_INTERVAL_MINUTES, le=60 * 24 * 7)
     time: Optional[str] = None  # "HH:MM" for daily/weekly
     weekday: Optional[int] = Field(default=None, ge=0, le=6)  # 0 = Monday
+    date: Optional[str] = None  # "YYYY-MM-DD" for a one-time job (with time, in timezone)
     timezone: str = "UTC"
 
 
@@ -143,7 +154,21 @@ def validate_schedule(s: Schedule) -> Schedule:
         raise HTTPException(status_code=400, detail="Daily and weekly schedules need a time as HH:MM")
     if s.type == "weekly" and s.weekday is None:
         raise HTTPException(status_code=400, detail="Weekly schedules need a weekday")
+    if s.type == "once":
+        if not (s.time and _TIME_RE.match(s.time)) or not _once_at(s.model_dump()):
+            raise HTTPException(status_code=400, detail="A one-time job needs a date and time")
     return s
+
+
+def _once_at(schedule: dict) -> Optional[datetime]:
+    """When a one-time job runs (UTC), or None if its date or time is missing or invalid."""
+    try:
+        day = datetime.strptime(schedule.get("date") or "", "%Y-%m-%d")
+        hour, minute = map(int, (schedule.get("time") or "").split(":"))
+        tz = ZoneInfo(schedule.get("timezone") or "UTC")
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
+    return datetime(day.year, day.month, day.day, hour, minute, tzinfo=tz).astimezone(timezone.utc)
 
 
 def next_run(schedule: dict, after: datetime, min_interval: Optional[int] = MIN_INTERVAL_MINUTES) -> Optional[datetime]:
@@ -152,6 +177,9 @@ def next_run(schedule: dict, after: datetime, min_interval: Optional[int] = MIN_
     kind = schedule.get("type")
     if kind == "interval":
         return after + timedelta(minutes=max(schedule["minutes"], min_interval or DAY_MINUTES))
+    if kind == "once":
+        at = _once_at(schedule)
+        return at if at and at > after else None
     if kind not in ("daily", "weekly"):
         return None
     tz = ZoneInfo(schedule.get("timezone") or "UTC")
@@ -176,6 +204,10 @@ def describe_schedule(s: dict) -> str:
         return f"Every day at {s['time']} ({s.get('timezone', 'UTC')})"
     if kind == "weekly":
         return f"Every {days[s['weekday']]} at {s['time']} ({s.get('timezone', 'UTC')})"
+    if kind == "once":
+        at = _once_at(s)
+        when = at.astimezone(ZoneInfo(s.get("timezone") or "UTC")).strftime("%a %-d %b %Y") if at else s.get("date")
+        return f"Once, on {when} at {s.get('time')} ({s.get('timezone', 'UTC')})"
     return "Manual only"
 
 
@@ -482,7 +514,8 @@ async def tick():
             continue
         _, rules = await _rules(auto["userId"])
         nxt = next_run(auto["schedule"], now, rules["minInterval"])
-        await db.automations.update_one({"id": auto["id"]}, {"$set": {"nextRunAt": _iso(nxt)}})
+        done = {"enabled": False} if auto["schedule"].get("type") == "once" else {}  # a one-time job is finished
+        await db.automations.update_one({"id": auto["id"]}, {"$set": {"nextRunAt": _iso(nxt), **done}})
         await start_run(auto, "schedule")
 
 
@@ -542,6 +575,7 @@ class AutomationPatch(BaseModel):
 
 class PlanIn(BaseModel):
     goal: str = Field(min_length=3, max_length=2000)
+    timezone: str = "UTC"
 
 
 def public_automation(doc: dict) -> dict:
@@ -602,7 +636,15 @@ async def plan_automation(body: PlanIn, user_id: str = Depends(current_user_id))
     if not prompt_boost.available():
         raise HTTPException(status_code=503, detail="No AI model is set up to write the plan")
     try:
-        text = await prompt_boost.ask(PLAN_SYSTEM, f"Goal: {body.goal.strip()}")
+        try:
+            tz = ZoneInfo(body.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            tz = ZoneInfo("UTC")
+        linked = [APPS_HINT[c] for c in APPS_HINT if c in await connectors.active(user_id)]
+        context = (f"Now: {datetime.now(tz).strftime('%A %Y-%m-%d %H:%M')} ({body.timezone}). "
+                   + (f"The user connected these apps, which the agent can use: {'; '.join(linked)}. " if linked
+                      else "The user has not connected Gmail, Calendar, Drive or Notion yet. "))
+        text = await prompt_boost.ask(PLAN_SYSTEM, f"{context}\nGoal: {body.goal.strip()}")
         match = re.search(r"\{.*\}", text, re.S)
         data = json.loads(match.group(0) if match else text)
     except Exception as exc:
@@ -616,8 +658,15 @@ def parse_plan(data: dict, goal: str) -> dict:
     name = str(data.get("name") or "").strip()[:100] or goal.strip()[:60]
     task = str(data.get("task") or "").strip()[:8000] or goal.strip()
     raw = data.get("schedule") if isinstance(data.get("schedule"), dict) else {}
-    kind = raw.get("type") if raw.get("type") in ("manual", "interval", "daily", "weekly") else "manual"
+    kind = raw.get("type") if raw.get("type") in ("manual", "once", "interval", "daily", "weekly") else "manual"
     schedule = {"type": kind}
+    if kind == "once":
+        date = str(raw.get("date") or "")
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+            schedule["date"] = date
+        except ValueError:
+            schedule["type"] = "manual"
     time = str(raw.get("time") or "08:00")
     schedule["time"] = time if _TIME_RE.match(time) else "08:00"
     try:
@@ -628,7 +677,9 @@ def parse_plan(data: dict, goal: str) -> dict:
         schedule["minutes"] = min(60 * 24 * 7, max(MIN_INTERVAL_MINUTES, int(raw.get("minutes", 60))))
     except (TypeError, ValueError):
         schedule["minutes"] = 60
-    return {"name": name, "prompt": task, "schedule": schedule}
+    deliver = data.get("deliver") if isinstance(data.get("deliver"), list) else []
+    return {"name": name, "prompt": task, "schedule": schedule, "emailResult": "email" in deliver,
+            "sendTo": [a for a in connectors.MESSAGING if a in deliver]}
 
 
 @router.post("/automations")

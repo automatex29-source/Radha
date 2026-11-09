@@ -266,7 +266,13 @@ class TestAgentAutomations:
         plan = automations.parse_plan({"name": "Price watch", "task": "1. Search...",
                                        "schedule": {"type": "weekly", "time": "25:00", "weekday": 9}}, "goal")
         assert plan == {"name": "Price watch", "prompt": "1. Search...",
-                        "schedule": {"type": "weekly", "time": "08:00", "weekday": 6, "minutes": 60}}
+                        "schedule": {"type": "weekly", "time": "08:00", "weekday": 6, "minutes": 60},
+                        "emailResult": False, "sendTo": []}
+        once = automations.parse_plan({"name": "Call mum", "task": "Remind me", "deliver": ["whatsapp", "fax", "email"],
+                                       "schedule": {"type": "once", "date": "2026-12-01", "time": "17:00"}}, "g")
+        assert once["schedule"]["type"] == "once" and once["schedule"]["date"] == "2026-12-01"
+        assert once["emailResult"] is True and once["sendTo"] == ["whatsapp"]
+        assert automations.parse_plan({"schedule": {"type": "once", "date": "soon"}}, "g")["schedule"]["type"] == "manual"
         assert automations.parse_plan({"schedule": "bad"}, "Watch prices daily")["schedule"]["type"] == "manual"
 
 
@@ -404,3 +410,39 @@ class TestPlanRulesAndReliability:
                     await database.conversations.count_documents({}))
 
         assert run(scenario()) == (3, 3)
+
+
+class TestOneTimeJobs:
+    def test_once_runs_at_its_local_time_then_never_again(self):
+        sched = {"type": "once", "date": "2026-12-01", "time": "17:00", "timezone": "Asia/Kolkata"}
+        at = utc(2026, 12, 1, 11, 30)
+        assert automations.next_run(sched, utc(2026, 11, 30)) == at
+        assert automations.next_run(sched, at) is None
+        assert "Once, on" in automations.describe_schedule(sched) and "17:00" in automations.describe_schedule(sched)
+
+    def test_once_needs_a_valid_date(self):
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException):
+            automations.validate_schedule(automations.Schedule(type="once", time="17:00", date="tomorrow"))
+        ok = automations.validate_schedule(automations.Schedule(type="once", time="17:00", date="2026-12-01"))
+        assert ok.date == "2026-12-01"
+
+    def test_tick_turns_a_one_time_job_off_after_it_starts(self):
+        database = mongomock_motor.AsyncMongoMockClient()["once"]
+
+        async def fake_turn(conv_id, model, agent=False, **kw):
+            yield "data: \"ok\"\n\n"
+
+        automations.init(database, fake_turn, "m")
+
+        async def scenario():
+            await database.automations.insert_one({
+                "id": "a", "userId": "u", "name": "x", "prompt": "p", "enabled": True, "createdAt": "1",
+                "schedule": {"type": "once", "date": "2000-01-01", "time": "08:00", "timezone": "UTC"},
+                "nextRunAt": "2000-01-01T08:00:00+00:00", "lockedUntil": None})
+            await automations.tick()
+            await asyncio.gather(*list(automations._running))
+            return await database.automations.find_one({"id": "a"}), await database.automation_runs.count_documents({})
+
+        auto, n = run(scenario())
+        assert n == 1 and auto["enabled"] is False and auto["nextRunAt"] is None

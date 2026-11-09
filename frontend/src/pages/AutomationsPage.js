@@ -34,8 +34,9 @@ const EXAMPLES = [
   { name: "Handle incoming webhook", prompt: "A webhook sent you an event. Summarise what happened in two sentences and list any follow-up actions.", schedule: { type: "manual" } },
 ];
 const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } };
+const tomorrow = () => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const blank = () => ({
-  name: "", prompt: "", schedule: { type: "daily", time: "08:00", weekday: 0, minutes: 60, timezone: localTz() }, model: "",
+  name: "", prompt: "", schedule: { type: "daily", time: "08:00", weekday: 0, minutes: 60, date: tomorrow(), timezone: localTz() }, model: "",
   memory: true, thorough: false, emailResult: false, notifyUrl: "", sendTo: [],
 });
 
@@ -81,6 +82,22 @@ export default function AutomationsPage() {
   };
 
   const current = items?.find((a) => a.id === selected);
+  const [ask, setAsk] = useState("");
+  const [asking, setAsking] = useState(false);
+  const tellKrish = async () => {
+    setAsking(true);
+    try {
+      const { data } = await api.post("/automations/plan", { goal: ask, timezone: localTz() });
+      const f = fresh();
+      setEditing({ ...f, name: data.name, prompt: data.prompt, schedule: { ...f.schedule, ...data.schedule },
+        emailResult: !!data.emailResult && options.email, sendTo: data.sendTo || [], fromAsk: true });
+      setAsk("");
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setAsking(false);
+    }
+  };
 
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
@@ -91,6 +108,21 @@ export default function AutomationsPage() {
             subtitle="Your own AI agents. Each one plans its steps, uses search, research, code, files and images, and sends you the result.">
             <Button size="sm" onClick={() => setEditing(fresh())} data-testid="new-automation" className="gap-1.5 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New</Button>
           </PageHero>
+
+          {options.planner && (
+            <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-3" data-testid="tell-krish">
+              <Label className="flex items-center gap-1.5 text-sm"><Sparkles className="h-3.5 w-3.5 text-primary" /> Tell Krish what to do</Label>
+              <Textarea rows={2} value={ask} onChange={(e) => setAsk(e.target.value)} className="mt-1.5 bg-card" data-testid="tell-krish-input"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ask.trim().length >= 3 && !asking) { e.preventDefault(); tellKrish(); } }}
+                placeholder="Every evening at 7, check my Gmail for new orders, add them to my sheet and send me the day's progress on Telegram" />
+              <div className="mt-2 flex items-center gap-2">
+                <Button size="sm" onClick={tellKrish} disabled={asking || ask.trim().length < 3} className="gap-1.5" data-testid="tell-krish-go">
+                  {asking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Set it up
+                </Button>
+                <p className="text-[11px] text-muted-foreground">You check the steps before it's saved.</p>
+              </div>
+            </div>
+          )}
 
           {items === null ? <div className="mt-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : items.length === 0 ? (
             <div className="mt-6 space-y-2" data-testid="automation-examples">
@@ -168,8 +200,12 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
   const lockedInterval = options.rules && rules.minInterval == null;
   const [apps, setApps] = useState(null); // connected Telegram, WhatsApp, Slack and Discord (Settings > Connectors)
   useEffect(() => {
-    api.get("/connectors").then(({ data }) => setApps(data.connectors.filter((c) => c.category === "messaging" && c.connected)))
-      .catch(() => setApps([]));
+    api.get("/connectors").then(({ data }) => {
+      const linked = data.connectors.filter((c) => c.category === "messaging" && c.connected);
+      setApps(linked);
+      // Steps Krish wrote may ask for an app that isn't connected yet; keep only the connected ones.
+      setForm((f) => ({ ...f, sendTo: (f.sendTo || []).filter((id) => linked.some((c) => c.id === id)) }));
+    }).catch(() => setApps([]));
   }, []);
   const toggleApp = (id) => set({ sendTo: (form.sendTo || []).includes(id) ? form.sendTo.filter((x) => x !== id) : [...(form.sendTo || []), id] });
 
@@ -179,6 +215,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
     if (s.type === "interval") schedule.minutes = Number(s.minutes);
     if (s.type === "daily" || s.type === "weekly") schedule.time = s.time;
     if (s.type === "weekly") schedule.weekday = Number(s.weekday);
+    if (s.type === "once") { schedule.time = s.time; schedule.date = s.date; }
     const body = {
       name: form.name, prompt: form.prompt, schedule, model: form.model || null,
       memory: form.memory, thorough: form.thorough, emailResult: form.emailResult, notifyUrl: form.notifyUrl.trim(),
@@ -198,8 +235,10 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
   const writePlan = async () => {
     setPlanning(true);
     try {
-      const { data } = await api.post("/automations/plan", { goal });
-      setForm((f) => ({ ...f, name: data.name, prompt: data.prompt, schedule: { ...f.schedule, ...data.schedule } }));
+      const { data } = await api.post("/automations/plan", { goal, timezone: s.timezone || localTz() });
+      setForm((f) => ({ ...f, name: data.name, prompt: data.prompt, schedule: { ...f.schedule, ...data.schedule },
+        emailResult: f.emailResult || (!!data.emailResult && options.email),
+        sendTo: [...new Set([...(f.sendTo || []), ...(data.sendTo || []).filter((id) => (apps || []).some((c) => c.id === id))])] }));
       toast.success("Steps written. Check them, then save.");
     } catch (e) {
       toast.error(formatApiError(e));
@@ -224,7 +263,12 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
           )}
         </DialogHeader>
         <div className="space-y-4">
-          {options.planner && (
+          {form.fromAsk && (
+            <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-[13px]" data-testid="from-ask">
+              Krish wrote the steps and picked the time. Check them, change anything, then press Create.
+            </p>
+          )}
+          {options.planner && !form.fromAsk && (
             <div className="space-y-1.5 rounded-xl border border-primary/30 bg-primary/5 p-3" data-testid="automation-planner">
               <Label className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-primary" /> Describe your goal in simple words</Label>
               <Textarea rows={2} value={goal} onChange={(e) => setGoal(e.target.value)} className="bg-card" data-testid="automation-goal"
@@ -253,6 +297,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
                 <option value="interval" disabled={lockedInterval && s.type !== "interval"}>
                   {lockedInterval ? "Every few hours (Pro and Max)" : rules.minInterval >= 60 ? "Every few hours" : "Every few minutes/hours"}
                 </option>
+                <option value="once">Just once</option>
                 <option value="manual">Only manually / by webhook</option>
               </select>
             </div>
@@ -272,7 +317,13 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
                 </select>
               </div>
             )}
-            {(s.type === "daily" || s.type === "weekly") && (
+            {s.type === "once" && (
+              <div className="space-y-1.5">
+                <Label>Date</Label>
+                <Input type="date" value={s.date || ""} onChange={(e) => setSchedule({ date: e.target.value })} data-testid="schedule-date" className="bg-card" />
+              </div>
+            )}
+            {(s.type === "daily" || s.type === "weekly" || s.type === "once") && (
               <div className="space-y-1.5">
                 <Label>Time ({s.timezone})</Label>
                 <Input type="time" value={s.time} onChange={(e) => setSchedule({ time: e.target.value })} data-testid="schedule-time" className="bg-card" />
