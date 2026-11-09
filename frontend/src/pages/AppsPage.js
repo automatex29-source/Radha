@@ -19,6 +19,19 @@ const IDEAS = [
   { label: "Snake game", prompt: "A neon snake game with a high score and sound effects" },
 ];
 
+// The kit's design styles (backend/design_themes.py). "Surprise me" lets Krish pick one that suits the app.
+const STYLES = [
+  { id: "", label: "Surprise me", swatch: "conic-gradient(from 0deg, #7c3aed, #06b6d4, #f472b6, #facc15, #7c3aed)" },
+  { id: "glass", label: "Glass", swatch: "linear-gradient(135deg, #c4b5fd, #a5f3fc)" },
+  { id: "aurora", label: "Aurora", swatch: "radial-gradient(circle at 30% 30%, #a78bfa, #22d3ee 55%, #07060d)" },
+  { id: "bento", label: "Bento", swatch: "linear-gradient(135deg, #f5f5f7 50%, #0a84ff 50%)" },
+  { id: "bold", label: "Bold", swatch: "linear-gradient(135deg, #ffd400 50%, #ff5c00 50%)" },
+  { id: "luxury", label: "Luxury", swatch: "linear-gradient(135deg, #f7f3ec 50%, #a67c37 50%)" },
+  { id: "minimal", label: "Minimal", swatch: "linear-gradient(135deg, #ffffff 50%, #111111 50%)" },
+  { id: "playful", label: "Playful", swatch: "linear-gradient(135deg, #ff4fa3, #7c5cff)" },
+  { id: "neon", label: "Neon", swatch: "linear-gradient(135deg, #05050a 40%, #00f0ff 70%, #ff2bd6)" },
+];
+
 // "A habit tracker with daily check-ins" -> "Habit tracker"
 function appName(text) {
   const words = text.replace(/[\r\n]+/g, " ").replace(/^(please\s+)?(make|build|create|design|i want|give me)\s+(me\s+)?(an?\s+|the\s+)?/i, "")
@@ -30,7 +43,12 @@ function appName(text) {
 function NewAppBox({ busy, onCreate }) {
   const navigate = useNavigate();
   const [text, setText] = useState("");
+  const [style, setStyle] = useState("");
   const [boosting, setBoosting] = useState(false);
+  const build = () => {
+    const picked = STYLES.find((s) => s.id === style);
+    onCreate(style ? `${text.trim()}\n\nDesign style: ${picked.label}.` : text);
+  };
   const [repo, setRepo] = useState(null); // null: closed; a string: the GitHub link being typed
   const [importing, setImporting] = useState(false);
   const importRepo = async (e) => {
@@ -61,7 +79,7 @@ function NewAppBox({ busy, onCreate }) {
   return (
     <section className="mt-6 rounded-2xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60" data-testid="new-app-box">
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} data-testid="new-app-input" autoFocus
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); onCreate(text); } }}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); build(); } }}
         placeholder="Describe the app you want, like “a booking app for my salon”…"
         className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-base focus:outline-none" />
       <div className="flex items-center gap-2">
@@ -69,11 +87,20 @@ function NewAppBox({ busy, onCreate }) {
           title="Turn a short idea into a detailed brief" className="gap-1.5 text-muted-foreground">
           {boosting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Improve prompt
         </Button>
-        <Button onClick={() => onCreate(text)} disabled={!text.trim() || busy} data-testid="create-app-button" className="ml-auto gap-1.5">
+        <Button onClick={build} disabled={!text.trim() || busy} data-testid="create-app-button" className="ml-auto gap-1.5">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Build it
         </Button>
       </div>
-      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border px-1 pt-3">
+      <div className="mt-3 flex items-center gap-1.5 overflow-x-auto border-t border-border px-1 pt-3 radha-scroll" role="radiogroup" aria-label="Design style" data-testid="new-app-styles">
+        <span className="shrink-0 pr-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Style</span>
+        {STYLES.map((s) => (
+          <button key={s.label} type="button" role="radio" aria-checked={style === s.id} onClick={() => setStyle(s.id)} data-testid={`style-${s.id || "auto"}`}
+            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${style === s.id ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"}`}>
+            <span className="h-3.5 w-3.5 rounded-full border border-border" style={{ background: s.swatch }} /> {s.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5 px-1">
         {IDEAS.map((i) => (
           <button key={i.label} onClick={() => setText(i.prompt)} data-testid={`idea-${i.label}`}
             className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">

@@ -41,6 +41,7 @@ from agent import browser as agent_browser
 import appdata
 import site_images
 import github_push
+import design_themes
 import jsx_compile
 import limits
 
@@ -173,7 +174,10 @@ DESIGN_GUIDE = (
     "reviews and teams: https://i.pravatar.cc/120?img=12 (img 1 to 70). Icons: Lucide, or an emoji in an icon tile. "
     "Add depth: blob top-right / blob bottom-left shapes (inside a relative or hero element), bg-mesh, bg-dots or "
     "bg-grid backgrounds, glass cards over photos, glow, float, shine, zoom on hover, and reveal on sections so they "
-    "animate in on scroll.\n"
+    "animate in on scroll. Whole looks come from one class on <body>: theme-glass, theme-aurora, theme-bento, "
+    "theme-bold, theme-luxury, theme-minimal, theme-playful or theme-neon. More motion: reveal-stagger, tilt, "
+    "spotlight, spin-border, orb, rings, marquee > marquee-track, text-shimmer, gradient-anim, data-count numbers, "
+    "typed words (class typed with data-words) and a bento grid.\n"
     "- Make it look like a modern, premium product: a clear hierarchy with a proper header, generous spacing, one "
     "accent color over a cohesive palette, soft gradients, rounded-2xl cards with subtle borders and shadows, "
     "hover, focus and active states, smooth transitions, friendly empty states and toasts instead of alert().\n"
@@ -282,6 +286,19 @@ async def write_file(app_id: str, path: str, content: str):
 KIT_NAME = "krish-ui.css"
 KIT_CSS = (Path(__file__).parent / "app_kit" / KIT_NAME).read_text(encoding="utf-8")
 _KIT_REF_RE = re.compile(r"""href\s*=\s*["']([^"']*krish-ui\.css)["']""", re.IGNORECASE)
+# The kit's motion half (phone menu button, scroll reveals, 3D tilt, count-ups): added to every page that links the
+# kit when it is served, and as a file beside it in the ZIP and on GitHub. The model never writes it.
+KIT_JS_NAME = "krish-ui.js"
+KIT_JS = (Path(__file__).parent / "app_kit" / KIT_JS_NAME).read_text(encoding="utf-8")
+
+
+def uses_kit(html: str) -> bool:
+    return bool(_KIT_REF_RE.search(html)) and KIT_JS_NAME not in html
+
+
+def _before_body_end(html: str, tag: str) -> str:
+    idx = html.lower().rfind("</body>")
+    return html[:idx] + tag + html[idx:] if idx >= 0 else html + tag
 
 
 async def _add_kit(app_id: str, path: str, content: str) -> None:
@@ -477,7 +494,15 @@ def public_origin() -> str:
 def portable(files: Dict[str, str]) -> Dict[str, str]:
     """Files as they should leave Krish AI (ZIP, GitHub): AI picture links point at this server."""
     origin = public_origin()
-    return {p: site_images.rewrite(c, origin) if origin else c for p, c in files.items()}
+    out = {p: site_images.rewrite(c, origin) if origin else c for p, c in files.items()}
+    for p, c in list(out.items()):
+        if p.endswith((".html", ".htm")) and uses_kit(c):
+            ref = _KIT_REF_RE.search(c).group(1).replace(KIT_NAME, KIT_JS_NAME)
+            out[p] = _before_body_end(c, f'<script src="{ref}"></script>\n')
+            target = _resolve(p, ref)
+            if target and target not in out:
+                out[target] = KIT_JS
+    return out
 
 
 async def export_zip(app: dict, include_git: bool = True) -> bytes:
@@ -726,6 +751,8 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
         content = site_images.rewrite(content)  # AI pictures (krish-image.invalid links) come from this server
     if ctype == "text/html":
         content = jsx_compile.relative_html(path, content, files)
+        if uses_kit(content):
+            content = _before_body_end(content, "<script>" + KIT_JS + "</script>")
         inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
@@ -1261,6 +1288,30 @@ class CommitIn(BaseModel):
     message: str = Field(min_length=1, max_length=500)
 
 
+async def choose_style(app_id: str, request: str) -> Optional[str]:
+    """Pick or keep the app's design style for this turn (design_themes.choose) and remember it on the app."""
+    app = await db.apps.find_one({"id": app_id}, {"theme": 1})
+    if not app:
+        return None
+    files = await snapshot(app_id)
+    first = is_blank(files) or _starter(files)
+    # Only the user's own words: not the code or errors that click-to-edit and auto-fix add after them.
+    words = "" if re.match(r"\s*(Auto-fix:|The preview shows)", request or "") else (request or "").split("\n\n")[0]
+    picked = re.search(r"(?im)^Design style:\s*(.+)$", request or "")  # the style chosen on the Apps page
+    if picked:
+        words = "Design style: " + picked.group(1) + "\n" + words
+    theme = design_themes.choose(words, app.get("theme"), app_id, first)
+    if theme and theme != app.get("theme"):
+        await db.apps.update_one({"id": app_id}, {"$set": {"theme": theme}})
+    return theme
+
+
+def _starter(files: Dict[str, str]) -> bool:
+    """Still exactly one of the starter templates (the instant start shown while the real app is written)."""
+    own = {p: c for p, c in files.items() if not p.startswith((SAMPLE_DIR + "/", ASSET_DIR + "/")) and p != KIT_NAME}
+    return any(own == {p: c for p, c in t.items() if p != KIT_NAME} for t in TEMPLATES.values())
+
+
 def public_app(doc: dict) -> dict:
     pub = doc.get("published")
     return {
@@ -1270,6 +1321,7 @@ def public_app(doc: dict) -> dict:
                       "publishedAt": pub.get("publishedAt")} if pub else None,
         "github": doc.get("github"),
         "domain": doc.get("domain"),
+        "theme": doc.get("theme"),
     }
 
 
@@ -1535,6 +1587,8 @@ _IDEAS = [
      "Make it phone friendly", "Make the whole app look great on a phone."),
 ]
 MAX_IDEAS = 4
+NEW_LOOK_PROMPT = ("Give the app a new look in a different style. Keep all the content, pages and features exactly as "
+                   "they are, and change only the design and motion.")
 
 
 def next_ideas(files: Dict[str, str]) -> List[dict]:
@@ -1543,6 +1597,9 @@ def next_ideas(files: Dict[str, str]) -> List[dict]:
     if not code:
         return []
     out = [{"label": label, "prompt": prompt} for test, label, prompt in _IDEAS if test(code)]
+    if 'class="theme-' in code or "class='theme-" in code or " theme-" in code:
+        # A Krish-designed app can always try another of the kit's styles (design_themes.py picks one it hasn't had).
+        out = out[:MAX_IDEAS - 1] + [{"label": "Try a new look", "prompt": NEW_LOOK_PROMPT}]
     return out[:MAX_IDEAS]
 
 
