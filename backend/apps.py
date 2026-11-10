@@ -198,12 +198,15 @@ DESIGN_GUIDE = (
     "the browser (nothing uploaded), handle a wrong or empty file with a clear message, and add a \"Try with "
     "sample\" button when a sample exists.\n"
     "- Responsive from phone to desktop, with labelled inputs and good contrast.\n"
-    "- Fonts: each Krish UI style brings its own font pair, and Hindi, Tamil, Bengali and the other Indian scripts "
-    "get matching fonts by themselves, so don't link fonts yourself. Only when the user names a font, link it from "
+    "- Fonts: each Krish UI style brings its own font pair, and when the app is in Hindi, Tamil, Bengali or another "
+    "Indian script it gets matching fonts by itself, so don't link fonts yourself. Only when the user names a font, link it from "
     "Google Fonts and set :root{--font:\"Its Name\", sans-serif; --display:\"Its Name\", sans-serif}. Set <html "
     "lang> to the page's language (hi for Hindi). Don't put Indian-script text in all caps or tight letter spacing.\n"
-    "- All app text (labels, placeholders, buttons, sample data) in one language, the one the request is in: "
-    "never two languages side by side (no \"नाम / Name\") unless asked.\n"
+    "- All app text (labels, placeholders, buttons, headings, sample data) in ONE language: English, unless the "
+    "user asks for another language (\"in Hindi\", \"Tamil mein\") or writes the whole request in that language's "
+    "own script. A request in Hinglish or another language written in English letters (\"cake shop ki website "
+    "banao\") still means an English app. Never show two languages side by side or mix scripts (no \"नाम / Name\", "
+    "no Hindi subtitle under an English heading, no language switch) unless the user asks for a bilingual app.\n"
     "- Every feature works for real: all buttons do something, input is validated, data persists in localStorage "
     "when that helps, and sample content is realistic (no lorem ipsum, no TODOs, no placeholders). Add the extra "
     "features a user would expect (e.g. for a to-do app: edit, complete, delete, filter, counts, clear completed).\n"
@@ -1838,8 +1841,8 @@ BOOST_SYSTEM = (
     "colours, language, features) and add what a great version needs: who it is for, the screens or page "
     "sections, 5 to 8 concrete features that must work, realistic sample content, and the look (style, colours, "
     "mood). Write it as one short paragraph and then \"- \" bullets, under 140 words, in the same language as the "
-    "request. Output only the brief: no intro, no questions, no code."
-)
+    "request. The app's own text is English unless the user "
+    "asked for another language, and never two languages side by side. Output only the brief: no intro, no questions, no code.")
 
 
 class BoostIn(BaseModel):
