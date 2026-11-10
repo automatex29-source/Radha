@@ -6,7 +6,7 @@ import IconRail from "@/components/IconRail";
 import MessageBubble from "@/components/MessageBubble";
 import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
-import { setServerSpeech, browserSpeechAvailable, unlockSpeech, getVoiceLang, createSpeaker } from "@/lib/voice";
+import { setServerSpeech, browserSpeechAvailable, unlockSpeech, getVoiceLang } from "@/lib/voice";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel from "@/components/CodePanel";
 import { extractFiles } from "@/lib/codeFiles";
@@ -15,7 +15,7 @@ import BreatheDialog from "@/components/BreatheDialog";
 import { sampleVideoFrames } from "@/lib/videoFrames";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Volume2, VolumeX, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
+import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
@@ -28,7 +28,6 @@ import LimitBanner from "@/components/LimitBanner";
 import AiLimitCard from "@/components/AiLimitCard";
 import { useT } from "@/lib/i18n";
 import { KRISH_ROBO } from "@/lib/counselAgents";
-import AgentPortrait from "@/components/AgentPortrait";
 
 // A big pool of everyday tasks; the home page shows 3 different ones on every visit.
 const STARTERS = [
@@ -64,7 +63,7 @@ function pickStarters() {
   return pool.slice(0, 3).map((s, i) => ({ ...s, tone: TONE_ORDER[(t + i * 2) % TONE_ORDER.length] }));
 }
 
-// The Counsellor tab: Krish Robo, a cheerful friend for whatever is on your mind (see backend/counsellor.py).
+// The Counsellor tab: a warm, honest friend for whatever is on your mind (see backend/counsellor.py).
 const COUNSEL_STARTERS = [
   { icon: Coffee, tone: "amber", hint: "No agenda, just vibes.", title: "Just wanna chat ☕", prompt: "Hey! Just wanna chat for a bit. How's it going?" },
   { icon: BookOpen, tone: "sky", hint: "Exams, deadlines, all of it.", title: "Study stress is real 📚", prompt: "Bro exams are coming and I'm lowkey stressed. Help me chill and make a plan?" },
@@ -184,15 +183,6 @@ export default function Workspace({ mode = null }) {
   const [planCard, setPlanCard] = useState(null); // the plan's meter ran out on the last send: a limit card in the chat
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
-  // Counsellor: Krish Robo reads each reply aloud, a little fast, as soon as it starts writing (on unless turned off).
-  const [roboSpeaks, setRoboSpeaks] = useState(() => { try { return localStorage.getItem("krish.robo.speaks") !== "0"; } catch { return true; } });
-  const roboSpeakerRef = useRef(null);
-  const toggleRoboSpeaks = () => setRoboSpeaks((v) => {
-    if (v) roboSpeakerRef.current?.stop();
-    else unlockSpeech();
-    saveFlag("krish.robo.speaks", !v);
-    return !v;
-  });
   useEffect(() => () => roboSpeakerRef.current?.stop(), []);
   const [previewItem, setPreviewItem] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -256,7 +246,8 @@ export default function Workspace({ mode = null }) {
   const speechEnabled = !!caps?.serverSpeech || browserSpeechAvailable();
 
   const activeConv = conversations.find((c) => c.id === activeId);
-  const chatAgent = counselling ? KRISH_ROBO : null;  // every Counsellor talk is with Krish Robo
+  // Krish Robo (the robot face and voice) is off for now: the Counsellor is a plain text chat.
+  const chatAgent = null;
 
   // Like Claude: the chat moves only when you open a chat (to its newest message) or send one
   // (your question near the top, the answer writing out below it). While Krish writes and when
@@ -676,7 +667,6 @@ export default function Workspace({ mode = null }) {
     const liveNote = frame ? [`[Live ${frame.source} view: the picture below is what my ${frame.source} shows right now.]`] : [];
     const content = [...videoNotes, ...liveNote, typed, ...codeBlocks].join("\n\n").trim();
     if (!content || streaming || tooManyStreams()) return "";
-    if (counselling && roboSpeaks && !voice) unlockSpeech(); // while the tap still counts, so phones let it speak
 
     let convId;
     try {
@@ -699,14 +689,7 @@ export default function Workspace({ mode = null }) {
     scrollNext.current = messages.length;
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
     if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
-    // Krish Robo speaks the reply aloud while it is still being written.
-    roboSpeakerRef.current?.stop();
-    const robo = counselling && roboSpeaks && !voice ? createSpeaker({ voice: KRISH_ROBO.voice, speed: 1.05 }) : null;
-    roboSpeakerRef.current = robo;
-    const said = await runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId,
-      robo ? (t) => { robo.push(t); onText?.(t); } : onText);
-    robo?.end(said || "");
-    return said;
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
   };
 
   // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
@@ -821,8 +804,7 @@ export default function Workspace({ mode = null }) {
             </div>
           ) : messages.length === 0 && !streaming ? (
             counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} onBreathe={() => setBreatheOpen(true)}
-              last={conversations[0]} onResume={openConversation}
-              speaks={roboSpeaks} onToggleSpeaks={toggleRoboSpeaks} /> : <EmptyState onPick={(p) => sendMessage(p)} />
+              last={conversations[0]} onResume={openConversation} /> : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
@@ -862,12 +844,6 @@ export default function Workspace({ mode = null }) {
         {counselling && (
           <p data-testid="counsellor-care-note" className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-5 pt-2 text-center text-[11px] leading-snug text-muted-foreground">
             {messages.length > 0 && (
-              <button onClick={toggleRoboSpeaks} data-testid="counsellor-voice-chat" aria-pressed={roboSpeaks}
-                className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:underline dark:text-violet-300">
-                {roboSpeaks ? <Volume2 className="h-3 w-3" /> : <VolumeX className="h-3 w-3" />} Voice {roboSpeaks ? "on" : "off"}
-              </button>
-            )}
-            {messages.length > 0 && (
               <button onClick={() => setBreatheOpen(true)} data-testid="breathe-button-chat"
                 className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:underline dark:text-violet-300">
                 <Wind className="h-3 w-3" /> Breathe with me
@@ -891,7 +867,7 @@ export default function Workspace({ mode = null }) {
           webMode={webMode} onToggleWeb={counselling ? undefined : toggleWeb}
           searchFocus={focus} onSearchFocus={setFocus} proSearch={pro} onTogglePro={togglePro}
           voiceEnabled={voiceEnabled} voiceHint="Voice needs GROQ_API_KEY (free) on the backend"
-          onVoiceMode={() => { unlockSpeech(); setVoiceOpen(true); }}
+          onVoiceMode={counselling ? undefined : () => { unlockSpeech(); setVoiceOpen(true); }}
           placeholder={chatAgent ? `Talk to ${chatAgent.name}…` : counselling ? "Type anything… how's your day going? 😊" : undefined} />
       </div>
       {counselling && <BreatheDialog open={breatheOpen} onOpenChange={setBreatheOpen} onDone={(text) => sendMessage(text)}
@@ -1133,28 +1109,7 @@ function MoodCheckIn({ onPick, pro }) {
   );
 }
 
-// Krish Robo, the Counsellor: type (or tap the mic) below, and it answers straight away, out loud if voice is on.
-function RoboCard({ speaks, onToggleSpeaks }) {
-  return (
-    <section data-testid="counsellor-robo" className="mt-6 flex items-center gap-3.5 rounded-3xl border border-border bg-card p-3.5 shadow-sm sm:gap-4 sm:p-4">
-      <span className="relative shrink-0">
-        <AgentPortrait id={KRISH_ROBO.id} className="h-14 w-14 sm:h-16 sm:w-16" />
-        <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-card bg-emerald-500" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[15px] font-bold text-foreground">{KRISH_ROBO.name}</p>
-        <p className="text-xs leading-snug text-muted-foreground">Online now. Ask anything and get an instant answer{speaks ? ", spoken out loud" : ""}.</p>
-      </div>
-      <button onClick={onToggleSpeaks} data-testid="counsellor-robo-voice" aria-pressed={speaks}
-        title={speaks ? "Krish Robo reads replies aloud. Tap to turn off." : "Tap so Krish Robo reads replies aloud."}
-        className={`flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition ${speaks ? "bg-gradient-to-r from-violet-600 to-pink-500 text-white shadow-md" : "border border-border text-muted-foreground hover:text-foreground"}`}>
-        {speaks ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />} {speaks ? "Voice on" : "Voice off"}
-      </button>
-    </section>
-  );
-}
-
-function CounselEmptyState({ onPick, onBreathe, last, onResume, speaks, onToggleSpeaks }) {
+function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const pro = user?.plan === "pro" || user?.plan === "max";
@@ -1170,7 +1125,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, speaks, onToggle
             {g.lead} <span className="krish-gradient-text">{g.highlight}</span>
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
-            Ask anything or talk about anything: exams, work, family, money, big dreams. Krish Robo gives you
+            Ask anything or talk about anything: exams, work, family, money, big dreams. The Counsellor gives you
             real answers and honest advice, in your own language ✨
           </p>
           {pro ? (
@@ -1193,7 +1148,6 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume, speaks, onToggle
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <RoboCard speaks={speaks} onToggleSpeaks={onToggleSpeaks} />
       <MoodCheckIn onPick={onPick} pro={pro} />
       <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
         <button onClick={onBreathe} data-testid="breathe-button"

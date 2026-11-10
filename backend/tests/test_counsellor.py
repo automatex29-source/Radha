@@ -78,7 +78,7 @@ def test_counsellor_is_krish_robo_without_religion_tools_or_memory(client):
     import counsellor
     call, body = _send(client, cid, "My name is Meera and I feel lost after failing my exam")
     system = call["messages"][0]["content"]
-    assert "You are Krish Robo" in system and "Tele-MANAS 14416" in system and "988" in system
+    assert "You are the Counsellor in Krish AI" in system and "Tele-MANAS 14416" in system and "988" in system
     assert "Gita" not in system and "Krishna" not in system  # global and not religious
     assert system.endswith(counsellor.BRIEF)  # short replies by default
     assert counsellor.REPLIES in system and "Make them feel known" in system
@@ -197,7 +197,7 @@ def test_counsellor_talks_are_with_krish_robo_on_every_plan(client):
         assert client.post("/api/conversations", json={"mode": "counsellor", "agent": gone}).status_code == 400
     call, _ = _send(client, conv["id"], "aaj mood off hai")
     system = call["messages"][0]["content"]
-    assert "You are Krish Robo" in system and system.endswith(counsellor.BRIEF)
+    assert "You are the Counsellor in Krish AI" in system and system.endswith(counsellor.BRIEF)
 
 
 def test_app_shows_the_same_agents():
@@ -238,6 +238,7 @@ def test_counsellor_voice_call_talks_like_a_phone_call(client):
 
 def test_counsellor_prompt_is_not_a_fixed_template():
     import counsellor
-    assert "not a template" in counsellor.PROMPT and "Ask at most one question" in counsellor.PROMPT
+    assert "not a template" in counsellor.PROMPT and "Keep it short" in counsellor.PROMPT and "Ask at most one question" in counsellor.PROMPT
     assert "never repeat advice you already gave" in counsellor.PROMPT
-    assert "at most one question" in counsellor.BRIEF
+    assert "at most one question" in counsellor.BRIEF and "40 to 90 words" in counsellor.BRIEF
+    assert "robot" not in counsellor.PROMPT.lower() and "Krish Robo" not in counsellor.PROMPT

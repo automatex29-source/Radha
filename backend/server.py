@@ -1326,7 +1326,7 @@ def _to_coder(model: str, conv: Optional[dict], coding: bool, history_docs: list
 LONG_CHAT_TOKENS = 6000
 
 
-# Krish Robo on the free plan: the fuller Gemini Flash (not Lite) writes warmer, more thoughtful replies to
+# The Counsellor on the free plan: the fuller Gemini Flash (not Lite) writes warmer, more thoughtful replies to
 # feelings and life questions. Lite, then gpt-oss, take over when its free allowance runs out.
 COUNSEL_FREE_MODEL = os.environ.get("COUNSEL_FREE_MODEL", "gemini-3.5-flash")
 
@@ -3436,7 +3436,7 @@ def _invite_preview(page: str, info: dict, base: str) -> str:
     who = _html.escape(info["name"]) or "A friend"
     title = f"{who} invited you to Krish AI 🎁"
     desc = (f"Join with this link and get {info['days']} days of Krish AI Pro, free. "
-            "Chat, study, build apps and talk things through with Krish Robo.")
+            "Chat, study, build apps and talk things through with the Counsellor.")
     picture = f"{base}/api/cards/invite/{info['code']}.png"
     values = {"og:title": title, "twitter:title": title, "og:description": desc, "twitter:description": desc,
               "description": desc, "og:image": picture, "twitter:image": picture}
