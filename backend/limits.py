@@ -46,6 +46,10 @@ PLANS = {
         "name": "Basic", "price": 0,
         "meter": {"session": 40, "week": 250},
         "total": {"automation": 1},
+        # What automations may do: the shortest repeat (None = daily or weekly only), Thorough mode, premium
+        # models, starting on events (a new email) and acting without asking first.
+        "automations": {"minInterval": None, "thorough": False, "premiumModels": False, "events": False,
+                        "noAsk": False},
         "publish": False, "premium": False,
         "quality": {"media": "free", "videoSeconds": 8, "uploadMb": 20},
     },
@@ -53,6 +57,8 @@ PLANS = {
         "name": "Pro", "price": 499, "listPrice": 999,
         "meter": paid_meter(499),
         "total": {"automation": 10},
+        "automations": {"minInterval": 60, "thorough": False, "premiumModels": True, "events": True,
+                        "noAsk": False},
         "publish": True, "premium": True,
         "quality": {"media": "premium", "videoSeconds": 12, "uploadMb": 50},
     },
@@ -60,6 +66,8 @@ PLANS = {
         "name": "Max", "price": 1299, "listPrice": 1999,
         "meter": paid_meter(1299),
         "total": {"automation": 30},
+        "automations": {"minInterval": 15, "thorough": True, "premiumModels": True, "events": True,
+                        "noAsk": True},
         "publish": True, "premium": True,
         "quality": {"media": "premium", "videoSeconds": 60, "uploadMb": 100},
     },
@@ -465,6 +473,13 @@ async def check_total(db, user_id: str, kind: str) -> None:
     collection = {"automation": db.automations}[kind]
     if await collection.count_documents({"userId": user_id}) >= PLANS[plan]["total"][kind]:
         raise LimitReached(kind, plan)
+
+
+def automation_rules(plan: str) -> dict:
+    """What the plan's automations may do (every rule is open when limits are off)."""
+    if not enabled():
+        return {"minInterval": 15, "thorough": True, "premiumModels": True, "events": True, "noAsk": True}
+    return PLANS[plan]["automations"]
 
 
 async def can_publish(db, user_id: str) -> bool:

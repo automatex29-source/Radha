@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://empirex.krishai.net/sitemap.xml
