@@ -446,3 +446,150 @@ class TestOneTimeJobs:
 
         auto, n = run(scenario())
         assert n == 1 and auto["enabled"] is False and auto["nextRunAt"] is None
+
+
+class TestAskFirstAndEmailTrigger:
+    def _setup(self, name, plan="pro", ask_first=True):
+        database = mongomock_motor.AsyncMongoMockClient()[name]
+        automations.init(database, None, "m")
+
+        async def seed():
+            await database.users.insert_one({"id": "u", "plan": plan})
+            await database.automations.insert_one({"id": "a", "userId": "u", "name": "Orders", "prompt": "p",
+                                                   "schedule": {"type": "manual"}, "enabled": True,
+                                                   "askFirst": ask_first, "createdAt": "1"})
+            await database.automation_runs.insert_one({"id": "r", "automationId": "a", "conversationId": "c",
+                                                       "status": "running"})
+        run(seed())
+        return database
+
+    def test_email_waits_for_ok_then_sends_on_approve(self, monkeypatch):
+        database = self._setup("ask")
+        sent = []
+
+        async def fake_send(user_id, mail):
+            sent.append((user_id, mail))
+            return "id1"
+
+        import connector_tools
+        monkeypatch.setattr(connector_tools, "send_gmail", fake_send)
+        mail = {"to": "client@example.com", "subject": "Invoice", "body": "Hi", "thread_id": None}
+
+        async def scenario():
+            out = await automations.gated("u", {"id": "c", "automationId": "a"}, "gmail_send", mail, "Send it")
+            pending = await automations.list_approvals(user_id="u")
+            decided = await automations.decide_approval(pending[0]["id"], automations.DecideIn(approve=True), user_id="u")
+            return out, pending, decided
+
+        out, pending, decided = run(scenario())
+        assert "Waiting for your OK" in out.summary
+        assert len(pending) == 1 and pending[0]["detail"]["to"] == "client@example.com" and pending[0]["runId"] == "r"
+        assert decided["status"] == "done" and sent == [("u", mail)]
+
+    def test_decline_never_sends_and_cannot_be_approved_later(self, monkeypatch):
+        database = self._setup("decline")
+        import connector_tools
+        from fastapi import HTTPException
+        monkeypatch.setattr(connector_tools, "send_gmail", lambda *a: (_ for _ in ()).throw(AssertionError("sent")))
+
+        async def scenario():
+            await automations.gated("u", {"id": "c", "automationId": "a"}, "gmail_send",
+                                    {"to": "x@y.z", "subject": "", "body": "b"}, "s")
+            ap = (await automations.list_approvals(user_id="u"))[0]
+            await automations.decide_approval(ap["id"], automations.DecideIn(approve=False), user_id="u")
+            with pytest.raises(HTTPException):
+                await automations.decide_approval(ap["id"], automations.DecideIn(approve=True), user_id="u")
+            return await automations.list_approvals(user_id="u")
+
+        assert run(scenario()) == []
+
+    def test_max_with_ask_first_off_sends_right_away(self, monkeypatch):
+        self._setup("noask", plan="max", ask_first=False)
+        import connector_tools
+        sent = []
+
+        async def fake_send(user_id, mail):
+            sent.append(mail)
+
+        monkeypatch.setattr(connector_tools, "send_gmail", fake_send)
+        out = run(automations.gated("u", {"id": "c", "automationId": "a"}, "gmail_send",
+                                    {"to": "x@y.z", "subject": "", "body": "b"}, "s"))
+        assert len(sent) == 1 and "Email sent" in out.summary
+
+    def test_pro_with_ask_first_off_still_asks(self, monkeypatch):
+        database = self._setup("proask", plan="pro", ask_first=False)
+        import connector_tools
+        monkeypatch.setattr(connector_tools, "send_gmail", lambda *a: (_ for _ in ()).throw(AssertionError("sent")))
+        out = run(automations.gated("u", {"id": "c", "automationId": "a"}, "gmail_send",
+                                    {"to": "x@y.z", "subject": "", "body": "b"}, "s"))
+        assert "Waiting" in out.summary
+
+    def test_plan_rules_for_email_trigger_and_asking(self):
+        database = mongomock_motor.AsyncMongoMockClient()["er"]
+        automations.init(database, None, "m")
+        from fastapi import HTTPException
+
+        async def scenario():
+            await database.users.insert_many([{"id": "free"}, {"id": "pro", "plan": "pro"}, {"id": "max", "plan": "max"}])
+            email = {"type": "email", "query": "from:shop.com"}
+            with pytest.raises(HTTPException) as e1:
+                await automations.check_plan_rules("free", email, None, False)
+            await automations.check_plan_rules("pro", email, None, False)
+            with pytest.raises(HTTPException) as e2:
+                await automations.check_plan_rules("pro", email, None, False, ask_first=False)
+            await automations.check_plan_rules("max", email, None, False, ask_first=False)
+            return e1.value.detail, e2.value.detail
+
+        d1, d2 = run(scenario())
+        assert "Pro and Max" in d1 and "Max plan" in d2
+
+    def test_inbox_check_runs_once_with_only_new_emails(self, monkeypatch):
+        database = mongomock_motor.AsyncMongoMockClient()["inbox"]
+        prompts = []
+
+        async def fake_turn(conv_id, model, agent=False, **kw):
+            msg = await database.messages.find_one({"conversationId": conv_id, "role": "user"})
+            prompts.append(msg["content"])
+            yield "data: \"ok\"\n\n"
+
+        automations.init(database, fake_turn, "m")
+        import connector_tools
+        inbox = [{"id": "e1", "from": "shop@x.com", "subject": "Order 1", "date": "d", "preview": "₹500"}]
+
+        async def fake_new(user_id, query, after, limit):
+            assert query == "from:x.com"
+            return list(inbox)
+
+        monkeypatch.setattr(connector_tools, "new_emails", fake_new)
+
+        async def due():
+            await database.automations.update_one({"id": "a"}, {"$set": {"nextRunAt": "2000-01-01T00:00:00+00:00"}})
+            await automations.tick()
+            await asyncio.gather(*list(automations._running))
+
+        async def scenario():
+            await database.users.insert_one({"id": "u", "plan": "pro"})
+            await database.automations.insert_one({
+                "id": "a", "userId": "u", "name": "Orders", "prompt": "Log orders", "enabled": True, "createdAt": "1",
+                "schedule": {"type": "email", "query": "from:x.com", "timezone": "UTC"}, "lockedUntil": None})
+            await due()  # first look: only notes the time
+            first = await database.automation_runs.count_documents({})
+            await due()  # e1 is new
+            await due()  # e1 was seen; nothing new
+            inbox.append({"id": "e2", "from": "shop@x.com", "subject": "Order 2", "date": "d", "preview": "₹900"})
+            await due()  # only e2 is new
+            auto = await database.automations.find_one({"id": "a"})
+            return first, auto
+
+        first, auto = run(scenario())
+        assert first == 0 and len(prompts) == 2
+        assert "Order 1" in prompts[0] and "new email" in prompts[0]
+        assert "Order 2" in prompts[1] and "Order 1" not in prompts[1]
+        assert auto["nextRunAt"] and auto["lockedUntil"] is None and set(auto["seenEmails"]) == {"e1", "e2"}
+
+    def test_mail_args_checks_addresses(self):
+        import connector_tools
+        assert connector_tools.mail_args({"to": "a@b.co, c@d.io", "body": "x"})["to"] == "a@b.co, c@d.io"
+        for bad in ({"to": "nobody", "body": "x"}, {"to": "a@b.co", "body": " "}):
+            with pytest.raises(ValueError):
+                connector_tools.mail_args(bad)

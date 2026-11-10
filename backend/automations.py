@@ -11,6 +11,11 @@ Each plan decides what its automations may do (limits.automation_rules): how oft
 the premium models. A run is checked against the plan when it starts, so a downgrade takes effect on the next run,
 and automations beyond the plan's count are paused. Runs send a heartbeat while they work; one whose heartbeat stops
 (the server restarted) is marked failed, a run can be stopped, and only the newest KEEP_RUNS runs are kept.
+
+An automation can also start when a new email arrives (schedule type "email", Pro and Max): the scheduler checks
+the user's Gmail every EMAIL_CHECK_MINUTES for mail matching its search and runs once with the new emails. Actions
+that reach other people (sending an email) wait for the user's OK in `automation_approvals` unless the automation
+has askFirst off, which only Max allows.
 """
 import asyncio
 import ipaddress
@@ -60,6 +65,9 @@ HEARTBEAT_SECONDS = 30
 STALE_MINUTES = 5  # a running run with no heartbeat for this long was lost (the server restarted)
 KEEP_RUNS = 50  # older runs, and their conversations, are deleted
 DAY_MINUTES = 60 * 24
+EMAIL_CHECK_MINUTES = 10
+MAX_EMAILS_PER_RUN = 10
+APPROVAL_DAYS = 7  # an OK not given in this time expires
 
 AGENT_INSTRUCTIONS = (
     "You are running as an autonomous agent for a saved automation. Nobody is watching, so never ask questions: "
@@ -76,10 +84,11 @@ PLAN_SYSTEM = (
     + ", and Excel, PowerPoint, Word/PDF, HTML, text and zip file creation. Reply with JSON only: "
     '{"name": "short title, max 6 words", "task": "clear instructions for the agent: numbered steps naming the '
     'tools to use, what to look for, the output format and which files to create", "schedule": {"type": '
-    '"daily|weekly|interval|once|manual", "time": "HH:MM", "weekday": 0-6 (0 = Monday), "minutes": 15-10080, '
-    '"date": "YYYY-MM-DD (only for once)"}, "deliver": ["email", "telegram", "whatsapp", "slack", "discord"]}. '
+    '"daily|weekly|interval|once|email|manual", "time": "HH:MM", "weekday": 0-6 (0 = Monday), "minutes": 15-10080, '
+    '"date": "YYYY-MM-DD (only for once)", "query": "Gmail search words (only for email), e.g. from:shop.com '
+    'subject:order"}, "deliver": ["email", "telegram", "whatsapp", "slack", "discord"]}. '
     "Pick the schedule the goal implies (daily at 08:00 when it says every day, once with a date for a single "
-    "future time such as 'tomorrow at 5 pm', manual when no timing is given). Put in deliver only the places the "
+    "future time such as 'tomorrow at 5 pm', email when it should start whenever a matching email arrives, manual when no timing is given). To send emails, the agent uses gmail_send (the user approves each one); to put data in a sheet it uses sheets_append. Put in deliver only the places the "
     "goal asks for the result to go ('mail me', 'on WhatsApp'); leave it empty otherwise. "
     "Write the task in the same language as the goal, 60-180 words."
 )
@@ -87,6 +96,7 @@ APPS_HINT = {
     "gmail": "Gmail (search and read emails, write drafts and send emails)",
     "google_calendar": "Google Calendar (read events, add events)",
     "google_drive": "Google Drive (search and read files)",
+    "google_sheets": "Google Sheets (read sheets, add rows, make new sheets)",
     "notion": "Notion (search, read and add pages)",
     "github": "GitHub (read repositories, open issues)",
 }
@@ -111,6 +121,7 @@ async def ensure_indexes():
                          {"webhookSecret": {"$type": "string"}})
     await db.automation_runs.create_index([("automationId", 1), ("startedAt", -1)])
     await db.automation_runs.create_index([("status", 1), ("heartbeatAt", 1)])
+    await db.automation_approvals.create_index([("userId", 1), ("status", 1), ("createdAt", -1)])
 
 
 async def _replace_index(collection, name: str, field: str, partial: dict):
@@ -135,11 +146,12 @@ async def current_user_id(request: Request) -> str:
 
 # ---------------------------------------------------------------- schedules
 class Schedule(BaseModel):
-    type: str = Field(pattern="^(manual|once|interval|daily|weekly)$")
+    type: str = Field(pattern="^(manual|once|interval|daily|weekly|email)$")
     minutes: Optional[int] = Field(default=None, ge=MIN_INTERVAL_MINUTES, le=60 * 24 * 7)
     time: Optional[str] = None  # "HH:MM" for daily/weekly
     weekday: Optional[int] = Field(default=None, ge=0, le=6)  # 0 = Monday
     date: Optional[str] = None  # "YYYY-MM-DD" for a one-time job (with time, in timezone)
+    query: Optional[str] = Field(default=None, max_length=300)  # Gmail search words for an "email" trigger
     timezone: str = "UTC"
 
 
@@ -154,6 +166,8 @@ def validate_schedule(s: Schedule) -> Schedule:
         raise HTTPException(status_code=400, detail="Daily and weekly schedules need a time as HH:MM")
     if s.type == "weekly" and s.weekday is None:
         raise HTTPException(status_code=400, detail="Weekly schedules need a weekday")
+    if s.type == "email":
+        s.query = (s.query or "").strip()
     if s.type == "once":
         if not (s.time and _TIME_RE.match(s.time)) or not _once_at(s.model_dump()):
             raise HTTPException(status_code=400, detail="A one-time job needs a date and time")
@@ -180,6 +194,8 @@ def next_run(schedule: dict, after: datetime, min_interval: Optional[int] = MIN_
     if kind == "once":
         at = _once_at(schedule)
         return at if at and at > after else None
+    if kind == "email":  # the next look in the inbox
+        return after + timedelta(minutes=EMAIL_CHECK_MINUTES)
     if kind not in ("daily", "weekly"):
         return None
     tz = ZoneInfo(schedule.get("timezone") or "UTC")
@@ -204,6 +220,9 @@ def describe_schedule(s: dict) -> str:
         return f"Every day at {s['time']} ({s.get('timezone', 'UTC')})"
     if kind == "weekly":
         return f"Every {days[s['weekday']]} at {s['time']} ({s.get('timezone', 'UTC')})"
+    if kind == "email":
+        query = (s.get("query") or "").strip()
+        return f"When a new email arrives{f' matching “{query}”' if query else ''}"
     if kind == "once":
         at = _once_at(s)
         when = at.astimezone(ZoneInfo(s.get("timezone") or "UTC")).strftime("%a %-d %b %Y") if at else s.get("date")
@@ -226,7 +245,8 @@ def _upgrade(plan: str) -> str:
     return f" Upgrade to {limits.PLANS[nxt]['name']} for more." if nxt else ""
 
 
-async def check_plan_rules(user_id: str, schedule: dict, model: Optional[str], thorough: bool):
+async def check_plan_rules(user_id: str, schedule: dict, model: Optional[str], thorough: bool,
+                           ask_first: bool = True):
     """Refuse (402, so the app offers the plans page) what the user's plan doesn't include."""
     plan, rules = await _rules(user_id)
     name = limits.PLANS[plan]["name"]
@@ -237,8 +257,12 @@ async def check_plan_rules(user_id: str, schedule: dict, model: Optional[str], t
             problem = f"On the {name} plan an automation runs once a day or once a week."
         elif (schedule.get("minutes") or 0) < least:
             problem = f"On the {name} plan an automation can repeat every {_every(least)} at most."
+    if schedule.get("type") == "email" and not rules["events"]:
+        problem = "Starting an automation when an email arrives is part of the Pro and Max plans."
     if thorough and not rules["thorough"]:
         problem = problem or "Thorough mode is part of the Max plan."
+    if not ask_first and not rules["noAsk"]:
+        problem = problem or "Letting an automation send emails without asking you is part of the Max plan."
     if model and _premium(model) and not rules["premiumModels"]:
         problem = problem or "The premium AI models are part of the Pro and Max plans."
     if problem:
@@ -268,6 +292,11 @@ async def _over_count(auto: dict) -> Optional[str]:
 
 
 # ------------------------------------------------------------------ running
+TRIGGER_INTRO = {"webhook": "This run was triggered by a webhook with this payload:",
+                 "email": "This run was started by new email in the user's Gmail. The new emails (read them in full "
+                          "with gmail_read when you need more than the preview):"}
+
+
 async def start_run(auto: dict, trigger: str, payload: Optional[str] = None) -> dict:
     """Create a run record and execute it in the background."""
     ts = _now()
@@ -276,7 +305,8 @@ async def start_run(auto: dict, trigger: str, payload: Optional[str] = None) -> 
             "projectId": None, "createdAt": _iso(ts), "updatedAt": _iso(ts)}
     prompt = auto["prompt"]
     if payload:
-        prompt += f"\n\nThis run was triggered by a webhook with this payload:\n```\n{payload[:MAX_PAYLOAD_CHARS]}\n```"
+        intro = TRIGGER_INTRO.get(trigger, TRIGGER_INTRO["webhook"])
+        prompt += f"\n\n{intro}\n```\n{payload[:MAX_PAYLOAD_CHARS]}\n```"
     run = {"id": uuid.uuid4().hex[:12], "automationId": auto["id"], "userId": auto["userId"], "trigger": trigger,
            "status": "running", "conversationId": conv["id"], "startedAt": _iso(ts), "finishedAt": None,
            "output": None, "error": None, "media": [], "heartbeatAt": _iso(ts)}
@@ -376,6 +406,7 @@ async def _execute(auto: dict, run: dict, conv: dict, context: str = ""):
               "output": (reply or {}).get("content", "")[:MAX_OUTPUT_CHARS] or None,
               "media": (reply or {}).get("media") or [],
               "steps": [_step_view(s) for s in ((reply or {}).get("steps") or [])[:MAX_RUN_STEPS_SHOWN]]}
+    update["waiting"] = await db.automation_approvals.count_documents({"runId": run["id"], "status": "pending"})
     if status != "stopped":
         update["delivery"] = await _deliver(auto, {**run, **update})
     await db.automation_runs.update_one({"id": run["id"]}, {"$set": update})
@@ -423,6 +454,9 @@ def _app_url() -> str:
 def _summary_text(auto: dict, run: dict, limit: int) -> str:
     head = f"{auto['name']}: {'finished' if run['status'] == 'succeeded' else 'failed'}"
     body = run.get("output") or run.get("error") or ""
+    if run.get("waiting"):
+        body = f"Waiting for your OK: {run['waiting']} action{'s' if run['waiting'] != 1 else ''} (open Automations " \
+               f"in Krish AI to approve).\n\n" + body
     files = [m.get("name") for m in run.get("media") or [] if m.get("name")]
     tail = (f"\n\nFiles: {', '.join(files)}" if files else "") + \
         (f"\nOpen in Krish AI: {_app_url()}/automations" if _app_url() else "")
@@ -496,6 +530,78 @@ async def _deliver(auto: dict, run: dict) -> list:
     return out
 
 
+# ---------------------------------------------------------- asking first
+ACTIONS = {"gmail_send": "Send email"}
+
+
+async def gated(user_id: str, conv: dict, kind: str, payload: dict, summary: str):
+    """Do an action that reaches other people from an automation run: right away when the automation may act
+    on its own (askFirst off, on a plan that allows it), otherwise saved for the user's OK."""
+    from agent.tools import ToolOutput
+    auto = await db.automations.find_one({"id": conv.get("automationId"), "userId": user_id}) or {}
+    _, rules = await _rules(user_id)
+    if auto and not auto.get("askFirst", True) and rules["noAsk"]:
+        result = await _do_action(user_id, kind, payload)
+        return ToolOutput(content=f"Done: {result}", summary=result)
+    run = await db.automation_runs.find_one({"conversationId": conv["id"]}, {"id": 1}) or {}
+    pending = await db.automation_approvals.count_documents({"runId": run.get("id"), "status": "pending"})
+    if run and pending >= 10:
+        raise ValueError("This run already has 10 actions waiting for the user's OK. Don't add more.")
+    doc = {"id": uuid.uuid4().hex[:12], "userId": user_id, "automationId": auto.get("id"),
+           "automationName": auto.get("name", ""), "runId": run.get("id"), "kind": kind, "payload": payload,
+           "summary": summary[:300], "status": "pending", "result": None, "createdAt": _iso(_now()),
+           "expiresAt": _iso(_now() + timedelta(days=APPROVAL_DAYS))}
+    await db.automation_approvals.insert_one(doc)
+    return ToolOutput(content="Saved for the user's OK: it happens when they approve it in Krish AI (Automations > "
+                              "Waiting for your OK). Don't try it again. Say in your Result that it is waiting for "
+                              "their OK.", summary="Waiting for your OK")
+
+
+async def _do_action(user_id: str, kind: str, payload: dict) -> str:
+    import connector_tools
+    if kind == "gmail_send":
+        await connector_tools.send_gmail(user_id, payload)
+        return f"Email sent to {payload['to']}"
+    raise ValueError("Unknown action")
+
+
+def public_approval(doc: dict) -> dict:
+    p = doc.get("payload") or {}
+    return {"id": doc["id"], "automationId": doc.get("automationId"), "automationName": doc.get("automationName"),
+            "runId": doc.get("runId"), "kind": doc["kind"], "label": ACTIONS.get(doc["kind"], doc["kind"]),
+            "summary": doc.get("summary"), "status": doc["status"], "result": doc.get("result"),
+            "createdAt": doc["createdAt"], "expiresAt": doc.get("expiresAt"),
+            "detail": {"to": p.get("to"), "subject": p.get("subject"), "body": p.get("body")}}
+
+
+# ------------------------------------------------------------------ inbox
+async def _check_inbox(auto: dict, now: datetime):
+    """Run the automation once with the emails that arrived since the last look. The first look only notes the
+    time, so old mail doesn't start a run."""
+    import connector_tools
+    since = auto.get("emailCheckedAt")
+    update = {"emailCheckedAt": _iso(now), "lockedUntil": None, "triggerError": None}
+    if since:
+        try:
+            emails = await connector_tools.new_emails(
+                auto["userId"], (auto["schedule"].get("query") or ""),
+                datetime.fromisoformat(since).timestamp() - 120, MAX_EMAILS_PER_RUN)
+        except Exception as exc:  # Gmail not connected, or access lost
+            await db.automations.update_one({"id": auto["id"]}, {"$set": {
+                "lockedUntil": None, "triggerError": str(exc)[:300]}})
+            return
+        seen = auto.get("seenEmails") or []
+        fresh = [e for e in emails if e["id"] not in seen]
+        update["seenEmails"] = ([e["id"] for e in fresh] + seen)[:200]
+        if fresh:
+            await db.automations.update_one({"id": auto["id"]}, {"$set": update})
+            payload = "\n\n".join(f"Email id {e['id']}\nFrom: {e['from']}\nDate: {e['date']}\nSubject: {e['subject']}"
+                                   f"\nPreview: {e['preview']}" for e in fresh)
+            await start_run({**auto, **update}, "email", payload)
+            return
+    await db.automations.update_one({"id": auto["id"]}, {"$set": update})
+
+
 async def tick():
     """Claim and start every automation that is due."""
     while True:
@@ -516,6 +622,14 @@ async def tick():
         nxt = next_run(auto["schedule"], now, rules["minInterval"])
         done = {"enabled": False} if auto["schedule"].get("type") == "once" else {}  # a one-time job is finished
         await db.automations.update_one({"id": auto["id"]}, {"$set": {"nextRunAt": _iso(nxt), **done}})
+        if auto["schedule"].get("type") == "email":
+            if not rules["events"]:  # the plan no longer starts automations from email
+                await db.automations.update_one({"id": auto["id"]}, {"$set": {
+                    "enabled": False, "nextRunAt": None, "lockedUntil": None,
+                    "pausedReason": "Paused: starting on new email is part of the Pro and Max plans."}})
+                continue
+            await _check_inbox(auto, now)
+            continue
         await start_run(auto, "schedule")
 
 
@@ -558,6 +672,7 @@ class AutomationIn(BaseModel):
     emailResult: bool = False
     notifyUrl: Optional[str] = Field(default=None, max_length=500)  # Discord/Slack/any webhook
     sendTo: List[str] = Field(default_factory=list, max_length=4)  # connected apps: telegram, whatsapp, slack, discord
+    askFirst: bool = True  # emails it sends wait for the user's OK (Max can turn this off)
 
 
 class AutomationPatch(BaseModel):
@@ -571,6 +686,7 @@ class AutomationPatch(BaseModel):
     emailResult: Optional[bool] = None
     notifyUrl: Optional[str] = Field(default=None, max_length=500)  # "" removes it
     sendTo: Optional[List[str]] = Field(default=None, max_length=4)
+    askFirst: Optional[bool] = None
 
 
 class PlanIn(BaseModel):
@@ -586,7 +702,8 @@ def public_automation(doc: dict) -> dict:
         "lastStatus": doc.get("lastStatus"), "pausedReason": None if doc["enabled"] else doc.get("pausedReason"),
         "memory": doc.get("memory", True), "thorough": bool(doc.get("thorough")),
         "emailResult": bool(doc.get("emailResult")), "notifyUrl": doc.get("notifyUrl"),
-        "sendTo": doc.get("sendTo") or [],
+        "sendTo": doc.get("sendTo") or [], "askFirst": doc.get("askFirst", True),
+        "triggerError": doc.get("triggerError"),
         "webhookUrl": f"/api/hooks/{doc['webhookSecret']}" if doc.get("webhookSecret") else None,
         "createdAt": doc["createdAt"],
     }
@@ -595,7 +712,7 @@ def public_automation(doc: dict) -> dict:
 def public_run(doc: dict) -> dict:
     return {k: doc.get(k) for k in ("id", "automationId", "trigger", "status", "conversationId", "startedAt",
                                     "finishedAt", "output", "error", "media", "steps",
-                                    "delivery", "heartbeatAt")}
+                                    "delivery", "heartbeatAt", "waiting")}
 
 
 async def _owned(aid: str, user_id: str) -> dict:
@@ -629,6 +746,39 @@ async def automation_options(user_id: str = Depends(current_user_id)):
             "limit": limits.PLANS[plan]["total"]["automation"] if limits.enabled() else None}
 
 
+@router.get("/automations/approvals")
+async def list_approvals(user_id: str = Depends(current_user_id)):
+    """Actions waiting for the user's OK, newest first (expired ones are marked so)."""
+    await db.automation_approvals.update_many({"userId": user_id, "status": "pending", "expiresAt": {"$lt": _iso(_now())}},
+                                              {"$set": {"status": "expired"}})
+    docs = await db.automation_approvals.find({"userId": user_id, "status": "pending"}).sort("createdAt", -1).to_list(50)
+    return [public_approval(d) for d in docs]
+
+
+class DecideIn(BaseModel):
+    approve: bool
+
+
+@router.post("/automations/approvals/{apid}")
+async def decide_approval(apid: str, body: DecideIn, user_id: str = Depends(current_user_id)):
+    doc = await db.automation_approvals.find_one_and_update(
+        {"id": apid, "userId": user_id, "status": "pending", "expiresAt": {"$gte": _iso(_now())}},
+        {"$set": {"status": "working" if body.approve else "declined", "decidedAt": _iso(_now())}})
+    if not doc:
+        raise HTTPException(status_code=409, detail="This was already handled, or it expired")
+    if not body.approve:
+        return public_approval({**doc, "status": "declined"})
+    try:
+        result = await _do_action(user_id, doc["kind"], doc["payload"])
+        status = "done"
+    except Exception as exc:
+        result, status = str(exc)[:300], "failed"
+    await db.automation_approvals.update_one({"id": apid}, {"$set": {"status": status, "result": result}})
+    if status == "failed":
+        raise HTTPException(status_code=502, detail=f"Couldn't do it: {result}")
+    return public_approval({**doc, "status": status, "result": result})
+
+
 @router.post("/automations/plan")
 async def plan_automation(body: PlanIn, user_id: str = Depends(current_user_id)):
     """Draft a name, detailed agent task and schedule from a plain-language goal."""
@@ -658,8 +808,11 @@ def parse_plan(data: dict, goal: str) -> dict:
     name = str(data.get("name") or "").strip()[:100] or goal.strip()[:60]
     task = str(data.get("task") or "").strip()[:8000] or goal.strip()
     raw = data.get("schedule") if isinstance(data.get("schedule"), dict) else {}
-    kind = raw.get("type") if raw.get("type") in ("manual", "once", "interval", "daily", "weekly") else "manual"
+    kind = raw.get("type") if raw.get("type") in ("manual", "once", "interval", "daily", "weekly", "email") \
+        else "manual"
     schedule = {"type": kind}
+    if kind == "email":
+        schedule["query"] = str(raw.get("query") or "").strip()[:300]
     if kind == "once":
         date = str(raw.get("date") or "")
         try:
@@ -686,11 +839,11 @@ def parse_plan(data: dict, goal: str) -> dict:
 async def create_automation(body: AutomationIn, user_id: str = Depends(current_user_id)):
     await limits.require(db, user_id, "automation")
     schedule = validate_schedule(body.schedule).model_dump()
-    await check_plan_rules(user_id, schedule, body.model, body.thorough)
+    await check_plan_rules(user_id, schedule, body.model, body.thorough, body.askFirst)
     now = _now()
     doc = {"id": str(uuid.uuid4()), "userId": user_id, "name": body.name.strip(), "prompt": body.prompt.strip(),
            "schedule": schedule, "model": body.model, "enabled": body.enabled,
-           "memory": body.memory, "thorough": body.thorough, "emailResult": body.emailResult,
+           "memory": body.memory, "thorough": body.thorough, "emailResult": body.emailResult, "askFirst": body.askFirst,
            "notifyUrl": await _clean_notify_url(body.notifyUrl), "sendTo": _clean_send_to(body.sendTo),
            "nextRunAt": _iso(next_run(schedule, now, (await _rules(user_id))[1]["minInterval"])) if body.enabled else None,
            "lastRunAt": None, "lastStatus": None, "lockedUntil": None, "webhookSecret": None, "createdAt": _iso(now)}
@@ -714,8 +867,11 @@ async def update_automation(aid: str, body: AutomationPatch, user_id: str = Depe
     if body.schedule:
         updates["schedule"] = validate_schedule(body.schedule).model_dump()
     merged = {**doc, **updates}
-    if {"schedule", "model", "thorough"} & updates.keys():
-        await check_plan_rules(user_id, merged["schedule"], merged.get("model"), bool(merged.get("thorough")))
+    if {"schedule", "model", "thorough", "askFirst"} & updates.keys():
+        await check_plan_rules(user_id, merged["schedule"], merged.get("model"), bool(merged.get("thorough")),
+                               merged.get("askFirst", True))
+    if "schedule" in updates and updates["schedule"].get("query") != (doc.get("schedule") or {}).get("query"):
+        updates.update(emailCheckedAt=None, seenEmails=[])  # a new search starts from now
     if updates.get("enabled") and not doc["enabled"]:
         paused = await _over_count(doc)
         if paused:
@@ -739,6 +895,7 @@ async def delete_automation(aid: str, user_id: str = Depends(current_user_id)):
     await db.messages.delete_many({"conversationId": {"$in": conv_ids}})
     await db.conversations.delete_many({"id": {"$in": conv_ids}})
     await db.automation_runs.delete_many({"automationId": aid})
+    await db.automation_approvals.delete_many({"automationId": aid, "status": "pending"})
     await db.automations.delete_one({"id": aid})
     return {"ok": True}
 
