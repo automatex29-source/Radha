@@ -1,8 +1,9 @@
 """Agent tools for the apps a user connects in Settings > Connectors (see connectors.py).
 
-Each tool is offered only once its app is connected (Tool.connector). Krish reads Drive, Calendar, Gmail, GitHub
-and Notion, adds Calendar events, Notion pages and GitHub issues, saves Gmail replies as drafts (never sends
-them), and sends messages to the user's own Telegram, WhatsApp, Slack or Discord.
+Each tool is offered only once its app is connected (Tool.connector). Krish reads Drive, Sheets, Calendar, Gmail,
+GitHub and Notion, adds Calendar events, sheet rows, Notion pages and GitHub issues, saves Gmail replies as drafts,
+and sends messages to the user's own Telegram, WhatsApp, Slack or Discord. Sending an email (gmail_send) works only
+in an automation, and waits for the user's OK there unless they let it send on its own (see automations.gated).
 """
 import base64
 import re
@@ -231,6 +232,128 @@ async def _gmail_draft(ctx: ToolContext, args: dict) -> ToolOutput:
                               "open Gmail > Drafts to check and send it.", summary=f"Draft to {to} saved")
 
 
+def _mail_raw(to: str, subject: str, body: str) -> str:
+    mail = EmailMessage()
+    mail["To"], mail["Subject"] = to, subject
+    mail.set_content(body)
+    return base64.urlsafe_b64encode(mail.as_bytes()).decode()
+
+
+_EMAIL_RE = re.compile(r"^[^@\s,<>]+@[^@\s,<>]+\.[^@\s,<>]+$")
+
+
+def mail_args(args: dict) -> dict:
+    """The checked to/subject/body/thread_id of an email to send."""
+    to, subject, body = (args.get("to") or "").strip(), (args.get("subject") or "").strip(), args.get("body") or ""
+    addresses = [a.strip() for a in to.split(",") if a.strip()]
+    if not addresses or len(addresses) > 10 or not all(_EMAIL_RE.match(a) for a in addresses):
+        raise ValueError("'to' must be one to ten email addresses, separated by commas")
+    if not body.strip():
+        raise ValueError("'body' is required")
+    return {"to": ", ".join(addresses), "subject": subject[:200], "body": body[:20_000],
+            "thread_id": (args.get("thread_id") or "").strip() or None}
+
+
+async def send_gmail(user_id: str, mail: dict) -> str:
+    """Send an email from the user's Gmail. Returns the sent message's id."""
+    token = (await connectors.secret_for(user_id, "gmail"))["access"]
+    message = {"raw": _mail_raw(mail["to"], mail.get("subject") or "", mail["body"])}
+    if mail.get("thread_id"):
+        message["threadId"] = mail["thread_id"]
+    sent = await _post(f"{GAPI}/gmail/v1/users/me/messages/send", token, message)
+    return sent.get("id", "")
+
+
+async def _gmail_send(ctx: ToolContext, args: dict) -> ToolOutput:
+    mail = mail_args(args)
+    conv = await ctx.db.conversations.find_one({"id": ctx.conversation_id}) if ctx.conversation_id else None
+    if not conv or not conv.get("automationId"):
+        raise ValueError("Emails are sent only by automations. In a chat, save it with gmail_draft for the user to send.")
+    import automations  # automations imports this module's helpers too
+    return await automations.gated(ctx.user_id, conv, "gmail_send", mail,
+                                   f"Send an email to {mail['to']}: {mail['subject'] or '(no subject)'}")
+
+
+async def new_emails(user_id: str, query: str, after: float, limit: int = 10) -> list:
+    """Emails matching `query` that arrived after the `after` timestamp, newest first: id, from, subject, date,
+    preview."""
+    token = (await connectors.secret_for(user_id, "gmail"))["access"]
+    q = f"{query.strip()} after:{int(after)}".strip()
+    ids = (await _get(f"{GAPI}/gmail/v1/users/me/messages", token,
+                      {"q": q, "maxResults": max(1, min(limit, 20))})).json().get("messages", [])
+    out = []
+    for m in ids:
+        msg = (await _get(f"{GAPI}/gmail/v1/users/me/messages/{m['id']}", token,
+                          {"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]})).json()
+        out.append({"id": m["id"], "from": _header(msg, "From"), "subject": _header(msg, "Subject"),
+                    "date": _header(msg, "Date"), "preview": msg.get("snippet", "")[:300]})
+    return out
+
+
+# ------------------------------------------------------------------- Sheets
+_SHEET_ID = re.compile(r"(?:/spreadsheets/d/)?([A-Za-z0-9_-]{25,100})")
+SHEETS = "https://sheets.googleapis.com/v4/spreadsheets"
+
+
+def _sheet_id(value: str) -> str:
+    m = _SHEET_ID.search((value or "").strip())
+    if not m:
+        raise ValueError("Give the sheet's link or id (from its address: docs.google.com/spreadsheets/d/<id>/...)")
+    return m.group(1)
+
+
+def _range(value: str) -> str:
+    rng = (value or "").strip()
+    if len(rng) > 120:
+        raise ValueError("'range' is too long")
+    return rng
+
+
+async def _sheets_read(ctx: ToolContext, args: dict) -> ToolOutput:
+    token = await _token(ctx, "google_sheets")
+    sid = _sheet_id(args.get("sheet"))
+    meta = (await _get(f"{SHEETS}/{sid}", token, {"fields": "properties.title,sheets.properties.title"})).json()
+    tabs = [t["properties"]["title"] for t in meta.get("sheets", [])]
+    rng = _range(args.get("range")) or (f"'{tabs[0]}'" if tabs else "A1:Z200")
+    values = (await _get(f"{SHEETS}/{sid}/values/{rng}", token)).json().get("values", [])
+    rows = "\n".join(" | ".join(str(c) for c in row) for row in values[:300])
+    title = meta.get("properties", {}).get("title", "Sheet")
+    return ToolOutput(content=f"# {title} (tabs: {', '.join(tabs)})\nRange {rng}, {len(values)} rows:\n{_clip(rows)}",
+                      summary=f"Read {len(values)} rows of {title}")
+
+
+async def _sheets_append(ctx: ToolContext, args: dict) -> ToolOutput:
+    token = await _token(ctx, "google_sheets")
+    sid = _sheet_id(args.get("sheet"))
+    rows = args.get("rows")
+    if not isinstance(rows, list) or not rows or not all(isinstance(r, list) for r in rows):
+        raise ValueError("'rows' must be a list of rows, each a list of cell values")
+    rows = [[("" if c is None else c) if isinstance(c, (int, float)) or c is None else str(c)[:5000] for c in r[:50]]
+            for r in rows[:500]]
+    rng = _range(args.get("range")) or "A1"
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{SHEETS}/{sid}/values/{rng}:append",
+                              params={"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"},
+                              json={"values": rows}, headers={"Authorization": f"Bearer {token}"})
+    _check(r)
+    where = r.json().get("updates", {}).get("updatedRange", rng)
+    return ToolOutput(content=f"Added {len(rows)} rows at {where}.", summary=f"Added {len(rows)} rows")
+
+
+async def _sheets_create(ctx: ToolContext, args: dict) -> ToolOutput:
+    token = await _token(ctx, "google_sheets")
+    title = (args.get("title") or "Krish AI sheet").strip()[:100]
+    body = {"properties": {"title": title}}
+    header = args.get("header")
+    if isinstance(header, list) and header:
+        body["sheets"] = [{"data": [{"rowData": [{"values": [
+            {"userEnteredValue": {"stringValue": str(h)[:200]}} for h in header[:50]]}]}]}]
+    made = await _post(SHEETS, token, body)
+    return ToolOutput(content=f"Made the sheet \"{title}\": {made.get('spreadsheetUrl', '')} "
+                              f"(id {made.get('spreadsheetId')}). Add rows with sheets_append.",
+                      summary=f"Made {title}")
+
+
 # ------------------------------------------------------------------- GitHub
 GH = {"Accept": "application/vnd.github+json"}
 
@@ -392,6 +515,20 @@ def register_tools(registry: ToolRegistry):
              "Give thread_id to reply in a thread.",
              _obj({"to": S, "subject": S, "body": S, "thread_id": S}, ["to", "body"]), _gmail_draft,
              label="Draft email", connector="gmail"),
+        Tool("gmail_send", "Send an email from the user's Gmail. Only in automations: it waits for the user's OK "
+             "unless they let this automation send on its own. Give thread_id to reply in a thread.",
+             _obj({"to": S, "subject": S, "body": S, "thread_id": S}, ["to", "body"]), _gmail_send,
+             label="Send email", connector="gmail"),
+        Tool("sheets_read", "Read a Google Sheet by its link or id. 'range' is optional, e.g. 'Orders!A1:F100'.",
+             _obj({"sheet": S, "range": S}, ["sheet"]), _sheets_read, label="Read Google Sheet",
+             connector="google_sheets"),
+        Tool("sheets_append", "Add rows to the end of a Google Sheet. 'rows' is a list of rows, each a list of cell "
+             "values. 'range' picks the tab, e.g. 'Orders!A1' (default: the first tab).",
+             _obj({"sheet": S, "range": S, "rows": {"type": "array", "items": {"type": "array", "items": S}}},
+                  ["sheet", "rows"]), _sheets_append, label="Add rows to sheet", connector="google_sheets"),
+        Tool("sheets_create", "Make a new Google Sheet, with an optional header row. Returns its link and id.",
+             _obj({"title": S, "header": {"type": "array", "items": S}}, ["title"]), _sheets_create,
+             label="Make Google Sheet", connector="google_sheets"),
         Tool("github_repos", "List the user's GitHub repositories.", _obj({}, []), _github_repos,
              label="List repositories", connector="github"),
         Tool("github_read", "Read a file, or list a folder, in one of the user's GitHub repositories.",

@@ -54,6 +54,13 @@ CONNECTORS = {
         "does": ["Find files by name or by words inside them", "Read Docs, Sheets, Slides and PDFs to answer you",
                  "Krish only reads. It never changes or deletes your files"],
     },
+    "google_sheets": {
+        "name": "Google Sheets", "category": "files", "plan": "pro", "how": "google",
+        "scopes": [GOOGLE + "spreadsheets"],
+        "blurb": "Read your sheets and add rows to them",
+        "does": ["Read a sheet you share by its link", "Add rows, like today's orders or prices, to a sheet",
+                 "Make a new sheet for an automation's results"],
+    },
     "google_calendar": {
         "name": "Google Calendar", "category": "work", "plan": "pro", "how": "google",
         "scopes": [GOOGLE + "calendar.events"],
@@ -66,7 +73,8 @@ CONNECTORS = {
         "scopes": [GOOGLE + "gmail.readonly", GOOGLE + "gmail.compose"],
         "blurb": "Summarise your inbox and draft replies",
         "does": ["Find and summarise emails", "Write replies as drafts in your Gmail",
-                 "Krish never sends an email for you. You send drafts yourself"],
+                 "Start an automation when a new email arrives",
+                 "Automations ask you before sending an email (on Max you can let them send without asking)"],
     },
     "github": {
         "name": "GitHub", "category": "work", "plan": "basic", "how": "oauth",
@@ -239,7 +247,8 @@ def prompt_line(connected: set) -> str:
     names = ", ".join(CONNECTORS[c]["name"] for c in CONNECTORS if c in connected)
     return (f"Connected apps: the user linked {names} to Krish. When they ask about their files, calendar, email, "
             "code, notes or want something sent to them, use those apps' tools instead of saying you can't reach "
-            "them. Never claim you sent an email: Gmail replies are saved as drafts for the user to send.")
+            "them. Never claim you sent an email: in a chat, Gmail replies are saved as drafts for the user to "
+            "send, and in an automation gmail_send says whether it sent or is waiting for the user's OK.")
 
 
 async def _save(user_id: str, cid: str, secret: dict, account: str, address: str = ""):
