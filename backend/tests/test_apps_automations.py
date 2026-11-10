@@ -309,9 +309,9 @@ class TestPlanRulesAndReliability:
         assert "once a day or once a week" in out[0] and "Upgrade to Pro" in out[0]
         assert "premium" in out[1]
         assert out[2] == "ok"
-        assert "every hour at most" in out[3]
+        assert "every hour at most" in out[3] and "Upgrade to Max" in out[3]
         assert out[4] == "ok"
-        assert "Max plan" in out[5]
+        assert "Max plan" in out[5] and "Upgrade to Max" in out[5]
         assert out[6] == "ok"
 
     def test_short_interval_waits_as_long_as_the_plan_allows(self):

@@ -245,28 +245,39 @@ def _upgrade(plan: str) -> str:
     return f" Upgrade to {limits.PLANS[nxt]['name']} for more." if nxt else ""
 
 
+def _lowest_plan(allows: Callable[[dict], bool]) -> Optional[str]:
+    """The cheapest plan whose automation rules allow something."""
+    return next((p for p in limits.ORDER if allows(limits.PLANS[p]["automations"])), None)
+
+
 async def check_plan_rules(user_id: str, schedule: dict, model: Optional[str], thorough: bool,
                            ask_first: bool = True):
-    """Refuse (402, so the app offers the plans page) what the user's plan doesn't include."""
+    """Refuse (402, so the app offers the plans page) what the user's plan doesn't include, naming the plan that
+    does."""
     plan, rules = await _rules(user_id)
     name = limits.PLANS[plan]["name"]
-    problem = None
+    problems = []  # (what's wrong, which rule allows it)
     if schedule.get("type") == "interval":
-        least = rules["minInterval"]
-        if least is None:
-            problem = f"On the {name} plan an automation runs once a day or once a week."
-        elif (schedule.get("minutes") or 0) < least:
-            problem = f"On the {name} plan an automation can repeat every {_every(least)} at most."
+        least, minutes = rules["minInterval"], schedule.get("minutes") or 0
+        if least is None or minutes < least:
+            problems.append((f"On the {name} plan an automation runs once a day or once a week." if least is None else
+                             f"On the {name} plan an automation can repeat every {_every(least)} at most.",
+                             lambda r: r["minInterval"] is not None and r["minInterval"] <= minutes))
     if schedule.get("type") == "email" and not rules["events"]:
-        problem = "Starting an automation when an email arrives is part of the Pro and Max plans."
+        problems.append(("Starting an automation when an email arrives is part of the Pro and Max plans.",
+                         lambda r: r["events"]))
     if thorough and not rules["thorough"]:
-        problem = problem or "Thorough mode is part of the Max plan."
+        problems.append(("Thorough mode is part of the Max plan.", lambda r: r["thorough"]))
     if not ask_first and not rules["noAsk"]:
-        problem = problem or "Letting an automation send emails without asking you is part of the Max plan."
+        problems.append(("Letting an automation send emails without asking you is part of the Max plan.",
+                         lambda r: r["noAsk"]))
     if model and _premium(model) and not rules["premiumModels"]:
-        problem = problem or "The premium AI models are part of the Pro and Max plans."
-    if problem:
-        raise HTTPException(status_code=402, detail=problem + _upgrade(plan))
+        problems.append(("The premium AI models are part of the Pro and Max plans.", lambda r: r["premiumModels"]))
+    if problems:
+        text, allows = problems[0]
+        need = _lowest_plan(allows)
+        more = f" Upgrade to {limits.PLANS[need]['name']} to use it." if need and need != plan else ""
+        raise HTTPException(status_code=402, detail=text + more)
 
 
 def _premium(model: str) -> bool:
