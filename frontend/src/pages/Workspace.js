@@ -1148,8 +1148,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
           <Mascot className="krish-float h-28 w-auto sm:h-40 md:h-44 lg:h-48" />
         </div>
       </div>
-      <MoodCheckIn onPick={onPick} pro={pro} />
-      <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+      <div className="mt-5 flex flex-wrap justify-center gap-2 sm:mt-6 sm:justify-start">
         <button onClick={onBreathe} data-testid="breathe-button"
           className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-[13px] font-medium text-violet-700 transition hover:-translate-y-0.5 hover:shadow-sm dark:border-violet-400/25 dark:bg-violet-500/10 dark:text-violet-200">
           <Wind className="h-3.5 w-3.5" /> Breathe with me
@@ -1165,7 +1164,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
       </div>
       <div className="relative mt-4 grid w-full gap-2.5 sm:mt-5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
         {COUNSEL_STARTERS.map((s, i) => (
-          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} hideOnPhone={i >= 2} />
+          <StarterCard key={i} s={s} i={i} onPick={onPick} testid={`counsellor-starter-${i}`} hideOnPhone={i >= 4} />
         ))}
       </div>
     </div>
