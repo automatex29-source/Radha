@@ -390,6 +390,8 @@ async def _execute(auto: dict, run: dict, conv: dict, context: str = ""):
                 async for chunk in turn:
                     if chunk.startswith("event: error"):
                         error = json.loads(chunk.split("data: ", 1)[1])
+                    elif chunk.startswith("event: ai_limit"):  # the AI's usage limit: the reply is only a note
+                        error = json.loads(chunk.split("data: ", 1)[1]).get("message") or "The AI is at its limit."
                     if asyncio.get_running_loop().time() - beat >= HEARTBEAT_SECONDS:
                         beat = asyncio.get_running_loop().time()
                         doc = await db.automation_runs.find_one_and_update(
