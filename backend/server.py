@@ -1860,6 +1860,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         agent = False
     if app_id:
         agent = True  # the app builder always works with its tools
+        try:
+            await apps.choose_style(app_id, last_user or "")  # a design style of its own (design_themes.py)
+        except Exception:
+            logger.exception("choosing the app's style failed")
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
     # Web search runs only when the user turns it on (or asks for a search in words); automations and the app
