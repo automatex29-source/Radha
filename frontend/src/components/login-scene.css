@@ -1,0 +1,111 @@
+/* Animated login art. Every moving part stops for people who ask for less motion. */
+.ls-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+
+/* ===== Aurora ===== */
+.ls-blob { position: absolute; border-radius: 9999px; filter: blur(70px); opacity: .55; mix-blend-mode: multiply; will-change: transform; }
+.dark .ls-blob { mix-blend-mode: screen; opacity: .45; }
+.ls-blob-a { width: 52vmax; height: 52vmax; left: -14vmax; top: -18vmax; background: #818cf8; animation: ls-drift-a 22s ease-in-out infinite; }
+.ls-blob-b { width: 44vmax; height: 44vmax; right: -12vmax; top: -8vmax; background: #67e8f9; animation: ls-drift-b 26s ease-in-out infinite; }
+.ls-blob-c { width: 46vmax; height: 46vmax; left: 10vmax; bottom: -22vmax; background: #f0abfc; animation: ls-drift-c 30s ease-in-out infinite; }
+.ls-blob-d { width: 30vmax; height: 30vmax; right: 8vmax; bottom: -6vmax; background: #fdba74; opacity: .4; animation: ls-drift-a 24s ease-in-out infinite reverse; }
+.dark .ls-blob-a { background: #4f46e5; } .dark .ls-blob-b { background: #0891b2; }
+.dark .ls-blob-c { background: #a21caf; } .dark .ls-blob-d { background: #ea580c; opacity: .22; }
+@keyframes ls-drift-a { 50% { transform: translate(12vmax, 8vmax) scale(1.15); } }
+@keyframes ls-drift-b { 50% { transform: translate(-10vmax, 12vmax) scale(.9); } }
+@keyframes ls-drift-c { 50% { transform: translate(8vmax, -10vmax) scale(1.1); } }
+.ls-stars { position: absolute; inset: 0; opacity: 0; }
+.dark .ls-stars { opacity: 1; }
+.ls-stars i { position: absolute; border-radius: 9999px; background: #fff; box-shadow: 0 0 6px #c7d2fe; animation: ls-twinkle 6s ease-in-out infinite; }
+@keyframes ls-twinkle { 0%, 100% { opacity: .15; } 50% { opacity: .9; } }
+.ls-grain { position: absolute; inset: 0; opacity: .5; background-image: radial-gradient(rgba(255,255,255,.7) 1px, transparent 1px); background-size: 3px 3px; mix-blend-mode: overlay; }
+.dark .ls-grain { opacity: .08; }
+/* The glass card gets a slow light running round its edge. */
+.ls-look-aurora .ls-card { position: relative; }
+.ls-look-aurora .ls-card::before { content: ""; position: absolute; inset: -1.5px; border-radius: inherit; padding: 1.5px; z-index: -1;
+  background: conic-gradient(from var(--ls-angle), transparent 0 70%, #818cf8 80%, #f0abfc 88%, #67e8f9 94%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: ls-spin-angle 6s linear infinite; }
+@property --ls-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes ls-spin-angle { to { --ls-angle: 360deg; } }
+
+/* ===== Orbit ===== */
+.ls-sun { position: absolute; width: 70vmax; height: 70vmax; left: 25%; top: 50%; transform: translate(-50%, -50%); border-radius: 9999px;
+  background: radial-gradient(circle, rgba(255,138,30,.22), rgba(129,140,248,.14) 40%, transparent 70%); animation: ls-breathe 8s ease-in-out infinite; }
+@media (max-width: 1023px) { .ls-sun { left: 50%; top: 8%; } }
+.ls-rays { position: absolute; inset: 0; opacity: .35;
+  background: repeating-conic-gradient(from 0deg at 25% 50%, rgba(99,102,241,.08) 0 3deg, transparent 3deg 12deg);
+  -webkit-mask: radial-gradient(circle at 25% 50%, #000 0, transparent 60%); mask: radial-gradient(circle at 25% 50%, #000 0, transparent 60%);
+  animation: ls-rot 120s linear infinite; transform-origin: 25% 50%; }
+@media (max-width: 1023px) { .ls-rays { display: none; } }
+@keyframes ls-breathe { 50% { transform: translate(-50%, -50%) scale(1.08); } }
+.ls-orbit { position: relative; display: grid; place-items: center; }
+.ls-orbit-lg { width: 340px; height: 340px; margin: 10px 0 34px 0; }
+.ls-orbit-sm { width: 210px; height: 210px; margin: -14px 0 -6px; }
+.ls-ring { position: absolute; border-radius: 9999px; border: 1.5px dashed hsl(var(--primary) / .28); }
+.ls-ring-1 { inset: 0; animation: ls-rot 80s linear infinite; }
+.ls-ring-2 { inset: 22%; border-style: solid; border-color: hsl(var(--primary) / .14); }
+.ls-ring-3 { inset: -12%; border-color: hsl(var(--primary) / .1); border-style: solid; }
+.ls-orbit-core { position: relative; width: 30%; height: 30%; display: grid; place-items: center; }
+.ls-core-mark { width: 100%; height: 100%; filter: drop-shadow(0 10px 30px rgb(255 138 30 / .35)); }
+.ls-core-glow { position: absolute; inset: -40%; border-radius: 9999px; background: radial-gradient(circle, rgba(255,160,70,.35), transparent 65%); animation: ls-pulse 3.6s ease-in-out infinite; }
+@keyframes ls-pulse { 50% { transform: scale(1.18); opacity: .6; } }
+.ls-orbit-track { position: absolute; inset: 0; animation: ls-rot 36s linear infinite; }
+.ls-track-inner { inset: 22%; animation-duration: 14s; animation-direction: reverse; }
+.ls-planet { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform: rotate(var(--a)) translateY(-50cqw); }
+.ls-orbit-lg .ls-planet { transform: rotate(var(--a)) translateY(-170px); }
+.ls-orbit-sm .ls-planet { transform: rotate(var(--a)) translateY(-105px); }
+.ls-planet-inner { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 8px 12px 8px 9px; border-radius: 9999px; background: hsl(var(--card)); color: var(--tone);
+  border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--tone) 22%, transparent); animation: ls-counter 36s linear infinite; }
+.ls-orbit-sm .ls-planet-inner { padding: 7px; }
+.ls-planet-inner em { font-style: normal; font-size: 12px; font-weight: 600; color: hsl(var(--foreground)); }
+@keyframes ls-counter { from { transform: translate(-50%, -50%) rotate(calc(-1 * var(--a))); } to { transform: translate(-50%, -50%) rotate(calc(-1 * var(--a) - 360deg)); } }
+.ls-moon { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; border-radius: 9999px;
+  background: linear-gradient(135deg, #818cf8, #f0abfc); box-shadow: 0 0 12px #a5b4fc; transform: rotate(var(--a)) translateY(-75px); }
+@keyframes ls-rot { to { transform: rotate(360deg); } }
+
+/* ===== Live demo ===== */
+.ls-dots { position: absolute; inset: -40px; background-image: radial-gradient(hsl(var(--primary) / .22) 1.2px, transparent 1.2px); background-size: 26px 26px;
+  -webkit-mask: radial-gradient(ellipse at 30% 40%, #000 0, transparent 70%); mask: radial-gradient(ellipse at 30% 40%, #000 0, transparent 70%);
+  animation: ls-pan 30s linear infinite; }
+@keyframes ls-pan { to { transform: translate(26px, 26px); } }
+.ls-sweep { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 40%, hsl(var(--primary) / .10) 50%, transparent 60%); background-size: 250% 100%; animation: ls-sweep 9s ease-in-out infinite; }
+@keyframes ls-sweep { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+.ls-demo { width: 100%; max-width: 470px; border-radius: 22px; overflow: hidden; background: hsl(var(--card) / .85); backdrop-filter: blur(14px);
+  border: 1px solid hsl(var(--border)); box-shadow: 0 30px 80px rgb(79 70 229 / .18), 0 2px 0 rgb(255 255 255 / .6) inset; transform: rotate(-1.5deg); }
+.dark .ls-demo { box-shadow: 0 30px 80px rgb(0 0 0 / .5), 0 0 0 1px rgb(129 140 248 / .12); }
+.ls-demo-bar { display: flex; align-items: center; gap: 6px; padding: 12px 16px; border-bottom: 1px solid hsl(var(--border)); }
+.ls-demo-bar span { width: 10px; height: 10px; border-radius: 9999px; background: hsl(var(--muted-foreground) / .3); }
+.ls-demo-bar b { margin-left: 8px; font-size: 12px; font-weight: 600; color: hsl(var(--muted-foreground)); }
+.ls-demo-body { padding: 18px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
+.ls-bubble { font-size: 14px; line-height: 1.5; border-radius: 16px; padding: 10px 14px; }
+.ls-bubble-me { align-self: flex-end; max-width: 80%; color: #fff; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-bottom-right-radius: 5px;
+  opacity: 0; transform: translateY(8px) scale(.96); transition: all .35s cubic-bezier(.3,1.4,.5,1); }
+.ls-bubble-me.is-in { opacity: 1; transform: none; }
+.ls-ai-row { display: flex; gap: 10px; align-items: flex-start; }
+.ls-bubble-ai { flex: 1; background: hsl(var(--muted) / .6); border-top-left-radius: 5px; min-height: 42px; }
+.ls-bubble-ai p { margin: 0 0 4px; opacity: 0; transform: translateX(-6px); transition: all .4s ease; color: hsl(var(--foreground)); }
+.ls-bubble-ai p.is-in { opacity: 1; transform: none; }
+.ls-typing { display: inline-flex; gap: 4px; padding: 6px 0; }
+.ls-typing i { width: 7px; height: 7px; border-radius: 9999px; background: hsl(var(--primary)); animation: ls-bounce 1s ease-in-out infinite; }
+.ls-typing i:nth-child(2) { animation-delay: .15s; } .ls-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes ls-bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-5px); opacity: 1; } }
+.ls-chip { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 4px 10px; border-radius: 9999px; font-size: 11.5px; font-weight: 600;
+  color: #059669; background: rgb(16 185 129 / .12); animation: ls-pop .4s cubic-bezier(.3,1.6,.5,1); }
+.dark .ls-chip { color: #6ee7b7; }
+@keyframes ls-pop { from { transform: scale(.6); opacity: 0; } }
+.ls-demo-input { display: flex; align-items: center; justify-content: space-between; margin: 0 14px 14px; padding: 10px 10px 10px 16px; border-radius: 14px;
+  border: 1px solid hsl(var(--border)); background: hsl(var(--background)); font-size: 13.5px; color: hsl(var(--muted-foreground)); }
+.ls-demo-mic { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9999px; color: #fff; background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+.ls-caret { display: inline-block; width: 2px; height: 1em; margin-left: 1px; vertical-align: -2px; background: hsl(var(--primary)); animation: ls-blink 1s steps(1) infinite; }
+@keyframes ls-blink { 50% { opacity: 0; } }
+.ls-caret-text { color: hsl(var(--foreground)); }
+.ls-ticker { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 9999px; background: hsl(var(--primary) / .08); border: 1px solid hsl(var(--primary) / .18); overflow: hidden; }
+.ls-ticker-text { font-size: 13px; color: hsl(var(--foreground) / .8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: ls-tick-in .5s ease both; }
+@keyframes ls-tick-in { from { opacity: 0; transform: translateY(10px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ls-backdrop *, .ls-orbit *, .ls-demo *, .ls-ticker *, .ls-look-aurora .ls-card::before { animation: none !important; transition: none !important; }
+}
+.ls-look-orbit .ls-mobile-mark { display: none; }

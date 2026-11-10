@@ -9,7 +9,7 @@ import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, Database, Cpu
 import { api } from "@/lib/api";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
-import Mascot from "@/components/Mascot";
+import { SceneBackdrop, SceneHero, SceneMobile } from "@/components/LoginScene";
 import GoogleButton from "@/components/GoogleButton";
 import { getRef } from "@/lib/referral";
 import { HELP_EMAIL } from "@/lib/contact";
@@ -66,8 +66,11 @@ export default function AuthPage() {
     }
   };
 
+  const look = new URLSearchParams(window.location.search).get("look") || "aurora";
+
   return (
-    <div className="krish-canvas grid min-h-dvh w-full lg:grid-cols-2">
+    <div className={`ls-look-${look} krish-canvas relative grid min-h-dvh w-full lg:grid-cols-2`}>
+      <SceneBackdrop look={look} />
       {/* Showcase panel */}
       <div className="relative hidden overflow-hidden lg:block">
         <div className="relative z-10 flex h-full flex-col justify-between p-12">
@@ -80,7 +83,7 @@ export default function AuthPage() {
           </div>
 
           <div className="max-w-md">
-            <Mascot className="krish-float -ml-2 mb-6 h-32 w-auto" />
+            <SceneHero look={look} />
             <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-foreground xl:text-5xl">
               Meet <span className="krish-gradient-text">Krish AI</span>, your saarthi for every task.
             </h1>
@@ -101,9 +104,10 @@ export default function AuthPage() {
       {/* Form panel */}
       <div className="relative flex items-center justify-center overflow-hidden px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:p-10">
         <ThemeToggle className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10" />
-        <div className="krish-glass relative w-full max-w-md rounded-3xl border border-white/70 p-6 shadow-[0_20px_60px_rgba(99,102,241,0.12)] radha-fade-up dark:border-white/5 sm:p-8">
+        <div className="ls-card krish-glass relative w-full max-w-md rounded-3xl border border-white/70 p-6 shadow-[0_20px_60px_rgba(99,102,241,0.12)] radha-fade-up dark:border-white/5 sm:p-8">
+          <SceneMobile look={look} />
           <div className="mb-6 flex items-center gap-3 lg:hidden">
-            <BrandMark className="h-11 w-11" />
+            <BrandMark className="ls-mobile-mark h-11 w-11" />
             <div className="leading-none">
               <p className="text-3xl leading-none"><KrishWordmark /></p>
               <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">by EmpireX</p>
