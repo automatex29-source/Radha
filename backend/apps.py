@@ -871,9 +871,183 @@ async def smoke_test(files: Dict[str, str], path: str = "index.html", app_id: Op
                 continue  # covered, detached or moved away: not the app's error
             if not page.url.startswith(PREVIEW_ORIGIN):
                 break
+        if len(errors) < 6:
+            # A fresh load for the deeper checks, so the clicks above can't hide a form or open a dialog.
+            stage[0] = "on load"
+            await page.goto(PREVIEW_ORIGIN + clean_path(path), wait_until="domcontentloaded", timeout=30_000)
+            await page.wait_for_timeout(700)
+            for problem in await _link_problems(page, files, path):
+                note("Broken link", problem)
+            await _form_problems(page, path, stage, note)
+        if len(errors) < 6:
+            stage[0] = "(390px wide)"
+            for problem in await _phone_problems(browser, handler, path):
+                note("On a phone", problem)
         return errors[:6]
     finally:
         await context.close()
+
+
+# What the browser checks read from the page (one evaluate each, so a slow page can't stall the test).
+_LINKS_JS = """() => [...document.querySelectorAll('a[href]')].filter(a => a.offsetParent !== null || a.getClientRects().length)
+  .slice(0, 60).map(a => ({href: a.getAttribute('href'), text: (a.innerText || a.getAttribute('aria-label') || '').trim().slice(0, 40)}))"""
+_ID_EXISTS_JS = "(id) => !!document.getElementById(id) || !!document.getElementsByName(id).length"
+
+
+async def _link_problems(page, files: Dict[str, str], path: str) -> List[str]:
+    """Nav and in-page links that lead nowhere: #pricing with no element of that id, or a page that isn't there."""
+    out = []
+    try:
+        links = await page.evaluate(_LINKS_JS)
+    except Exception:
+        return out
+    seen = set()
+    for link in links:
+        href, label = (link.get("href") or "").strip(), link.get("text") or "a link"
+        if not href or href in seen or href in ("#", "#!") or href.startswith(("javascript:", "mailto:", "tel:", "sms:", "whatsapp:")):
+            continue
+        seen.add(href)
+        if href.startswith("#"):
+            target = unquote(href[1:])
+            if re.match(r"^[\w\-:.]+$", target) and not await page.evaluate(_ID_EXISTS_JS, target):
+                out.append(f"“{label}” goes to {href}, but no section has id=\"{target}\". Add that id to the section it means.")
+        else:
+            local = _resolve(path, href.split("#")[0].split("?")[0])
+            if local and local not in files and local + "/index.html" not in files and local + ".html" not in files \
+                    and not local.endswith("/") and "." in local.rsplit("/", 1)[-1]:
+                out.append(f"“{label}” opens {href}, which isn't one of the app's files.")
+        if len(out) >= 3:
+            break
+    return out
+
+
+_FORMS_JS = """() => [...document.forms].filter(f => f.offsetParent !== null && f.querySelector('input:not([type=hidden]),textarea,select'))
+  .slice(0, 2).map((f, i) => { f.setAttribute('data-krish-test', i); return {i, name: (f.getAttribute('aria-label') || f.id ||
+  (f.querySelector('button,[type=submit]') || {}).innerText || 'form').trim().slice(0, 40)}; })"""
+# Fill a form the way a careful person would: a real-looking value for every field, then submit it.
+_FILL_JS = """(i) => {
+  const f = document.querySelector(`form[data-krish-test="${i}"]`); if (!f) return null;
+  const pad = n => String(n).padStart(2, '0'), d = new Date(Date.now() + 3 * 864e5);
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const set = (el, v) => { const proto = Object.getPrototypeOf(el), desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    desc && desc.set ? desc.set.call(el, v) : (el.value = v); el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); };
+  for (const el of f.querySelectorAll('input,textarea,select')) {
+    if (el.disabled || el.readOnly) continue;
+    const t = (el.type || '').toLowerCase(), hint = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.placeholder || '')).toLowerCase();
+    if (t === 'hidden' || t === 'submit' || t === 'button' || t === 'file' || t === 'reset') continue;
+    if (t === 'checkbox') { if (el.required || !el.checked) { el.checked = true; el.dispatchEvent(new Event('change', {bubbles: true})); } continue; }
+    if (t === 'radio') { if (!f.querySelector(`input[type=radio][name="${el.name}"]:checked`)) { el.checked = true; el.dispatchEvent(new Event('change', {bubbles: true})); } continue; }
+    if (el.tagName === 'SELECT') { const o = [...el.options].find((o, k) => k > 0 && o.value) || el.options[0]; if (o) set(el, o.value); continue; }
+    let v = 'Asha Patel';
+    if (t === 'email' || /mail/.test(hint)) v = 'asha.patel@example.com';
+    else if (t === 'tel' || /phone|mobile|tel/.test(hint)) v = '9876543210';
+    else if (t === 'number' || t === 'range') v = String(Math.max(Number(el.min) || 1, 1));
+    else if (t === 'date') v = date; else if (t === 'time') v = '11:30'; else if (t === 'datetime-local') v = date + 'T11:30';
+    else if (t === 'month') v = date.slice(0, 7); else if (t === 'url') v = 'https://example.com'; else if (t === 'color') v = '#3366ff';
+    else if (t === 'password') v = 'Krish-Test-2026'; else if (t === 'search') v = 'test';
+    else if (el.tagName === 'TEXTAREA') v = 'Hello! I would like to know more, please call me back.';
+    else if (/city|address|location/.test(hint)) v = 'Jaipur'; else if (/pin|zip/.test(hint)) v = '302001';
+    if (el.maxLength > 0) v = v.slice(0, el.maxLength);
+    set(el, v);
+  }
+  if (!f.checkValidity()) { const bad = f.querySelector(':invalid'); return {invalid: bad ? (bad.name || bad.id || bad.type) : 'a field'}; }
+  window.__krishBefore = document.body.innerText.length + '|' + document.body.innerHTML.length;
+  window.__krishDialog = 0; for (const k of ['alert', 'confirm']) { const o = window[k]; window[k] = function () { window.__krishDialog++; return k === 'confirm' ? true : undefined; }; }
+  const btn = f.querySelector('button[type=submit],input[type=submit],button:not([type])');
+  btn ? btn.click() : f.requestSubmit();
+  return {submitted: true};
+}"""
+_CHANGED_JS = ("() => window.__krishDialog > 0 || "
+               "window.__krishBefore !== (document.body.innerText.length + '|' + document.body.innerHTML.length)")
+
+
+async def _form_problems(page, path: str, stage: list, note) -> None:
+    """Fill in and submit each form: errors, a page reload (the form isn't handled) or nothing happening at all."""
+    try:
+        forms = await page.evaluate(_FORMS_JS)
+    except Exception:
+        return
+    for form in forms:
+        stage[0] = f"after submitting the “{form['name']}” form"
+        try:
+            before = page.url
+            res = await page.evaluate(_FILL_JS, form["i"])
+            if not res:
+                continue
+            if res.get("invalid"):
+                note("Form problem", f"filled with valid details, the field “{res['invalid']}” still isn't accepted, so the "
+                     "form can't be sent. Check its type, pattern and required settings.")
+                continue
+            await page.wait_for_timeout(900)
+            if page.url != before and page.url.split("#")[0].split("?")[0] == before.split("#")[0].split("?")[0]:
+                note("Form problem", "submitting it reloads the page and the details are lost. Handle the submit in "
+                     "JavaScript (event.preventDefault()), save or send the details, and show a confirmation.")
+                await page.goto(PREVIEW_ORIGIN + clean_path(path), wait_until="domcontentloaded", timeout=30_000)
+                await page.wait_for_timeout(500)
+                await page.evaluate(_FORMS_JS)  # the reload dropped the forms' test marks
+                continue
+            if page.url.startswith(PREVIEW_ORIGIN) and not await page.evaluate(_CHANGED_JS):
+                note("Form problem", "submitting it with valid details does nothing the user can see. Make it do its "
+                     "job and show a clear confirmation (a message, a toast or the new item in a list).")
+        except Exception:
+            continue
+
+
+_PHONE_JS = r"""() => {
+  const W = document.documentElement.clientWidth || innerWidth, out = {};
+  if (document.documentElement.scrollWidth > W + 4) {
+    let worst = null, wide = 0;
+    for (const el of document.body.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect(); if (!r.width || getComputedStyle(el).position === 'fixed') continue;
+      const over = r.right - W; if (over > wide + 1 && r.width > W * 0.3) { wide = over; worst = el; }
+    }
+    if (worst) { const c = (worst.getAttribute('class') || '').trim().split(/\s+/).slice(0, 2).join('.');
+      out.wide = {what: worst.tagName.toLowerCase() + (worst.id ? '#' + worst.id : '') + (c ? '.' + c : ''), px: Math.round(document.documentElement.scrollWidth)}; }
+  }
+  const head = document.querySelector('header, nav, .nav');
+  if (head) {
+    const links = [...head.querySelectorAll('a[href]')].filter(a => !a.closest('.brand') && a !== head.querySelector('a'));
+    const shown = links.filter(a => a.getClientRects().length && getComputedStyle(a).visibility !== 'hidden');
+    const toggles = [...head.querySelectorAll('button, [role=button], summary, label[for]')].filter(b => b.getClientRects().length);
+    if (links.length >= 3 && shown.length === 0 && toggles.length === 0) out.menu = links.length;
+  }
+  const small = [...document.querySelectorAll('button, a.btn, [role=button]')].filter(b => { const r = b.getBoundingClientRect();
+    return r.width && r.height && r.height < 28 && r.width < 28 && getComputedStyle(b).visibility !== 'hidden'; });
+  if (small.length >= 3) out.small = small.length;
+  return out;
+}"""
+
+
+async def _phone_problems(browser, handler, path: str) -> List[str]:
+    """Open the app as a phone (390px wide, touch): sideways scrolling, a menu with no way to open it, tiny buttons."""
+    out = []
+    phone = await browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
+                                      device_scale_factor=2, accept_downloads=False)
+    try:
+        await phone.route("**/*", handler)
+        page = await phone.new_page()
+        page.on("dialog", lambda d: asyncio.ensure_future(d.dismiss()))
+        await page.goto(PREVIEW_ORIGIN + clean_path(path), wait_until="domcontentloaded", timeout=30_000)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=4000)
+        except Exception:
+            pass
+        await page.wait_for_timeout(500)
+        found = await page.evaluate(_PHONE_JS)
+        if found.get("wide"):
+            out.append(f"the page scrolls sideways ({found['wide']['px']}px wide on a 390px screen); "
+                       f"{found['wide']['what']} is too wide. Let it wrap or shrink (max-width: 100%, flex-wrap, grids "
+                       "that drop to one column) so nothing sticks out.")
+        if found.get("menu"):
+            out.append("the menu links are hidden and there's no button to open them. Add a menu button that shows "
+                       "them (with Krish UI, put the links in .nav-links inside .nav and it appears by itself).")
+        if found.get("small"):
+            out.append(f"{found['small']} buttons are smaller than a fingertip (under 28px). Make tap targets at least 40px.")
+    except Exception:
+        pass
+    finally:
+        await phone.close()
+    return out
 
 
 # ------------------------------------------------------------- agent tools
