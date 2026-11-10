@@ -43,3 +43,13 @@ def test_kit_pages_get_the_motion_script():
 def test_new_look_idea_for_styled_apps():
     ideas = apps.next_ideas({"index.html": '<body class="theme-bold"><form></form>', "app.js": "x"})
     assert ideas[-1]["label"] == "Try a new look" and len(ideas) <= apps.MAX_IDEAS
+
+
+def test_live_3d_scenes_and_new_styles():
+    assert d.choose("make it liquid glass", "glass", "a1", False) == "liquid"
+    assert d.choose("a claymorphism learning app for kids", None, "a1", True) == "clay"
+    assert d.choose("a retro sunset cafe", None, "a1", True) == "sunset"
+    block = d.prompt_block("liquid")
+    assert 'data-scene="glass"' in block and "scene-bg" in block and "split" in block
+    assert "three@0.160.0" in apps.KIT_JS and "scene-fallback" in apps.KIT_JS
+    assert ".scene.scene-ready" in apps.KIT_CSS and "theme-liquid" in apps.KIT_CSS

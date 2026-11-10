@@ -1,8 +1,8 @@
 /* Krish UI: the built-in design kit for sites Krish AI builds. Plain HTML looks premium with it; a few classes do
    the rest. Set your brand once: :root { --accent: #db2777; --accent-2: #f97316; }
    Element styles are scoped under body so they beat Tailwind's reset, while Tailwind classes still win.
-   A whole look: <body class="theme-glass"> (glass, aurora, bento, bold, luxury, minimal, playful, neon). */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter+Tight:wght@500;600;700;800&family=Fredoka:wght@500;600;700&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@500;700&display=swap");
+   A whole look: <body class="theme-glass"> (glass, liquid, aurora, bento, bold, luxury, minimal, playful, neon, clay, sunset). */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter+Tight:wght@500;600;700;800&family=Fredoka:wght@500;600;700&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@500;700&family=Instrument+Serif:ital@0;1&family=Nunito:wght@600;700;800;900&family=Unbounded:wght@500;700;800&display=swap");
 
 :where(:root) {
   --accent: #6d28d9;
@@ -486,3 +486,83 @@ body.theme-neon button:not(.btn-outline):not(.btn-light):not(.btn-ghost):not(.ch
 body.theme-neon .btn-outline, body.theme-aurora .btn-outline { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .theme-bold .btn-outline, body.theme-bold button.btn-outline { border: 2.5px solid #111; box-shadow: 4px 4px 0 #111; border-radius: 12px; }
 .theme-luxury .btn-outline, body.theme-luxury button.btn-outline { border-radius: 0; text-transform: uppercase; letter-spacing: .14em; font-size: .78rem; padding: 1rem 1.8rem; }
+
+
+/* ---------- Live 3D scenes: <div class="scene" data-scene="glass|blob|galaxy|waves|rings"></div> ---------- */
+.scene { position: relative; width: 100%; min-height: 320px; aspect-ratio: 1; max-height: 620px; }
+.scene > canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block; opacity: 0; transition: opacity 1s ease; }
+.scene.scene-ready > canvas { opacity: 1; }
+.scene::before { content: ""; position: absolute; inset: 18%; border-radius: 50%; pointer-events: none; transition: opacity .8s;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.8), transparent 25%), conic-gradient(from var(--krish-angle), var(--accent), var(--accent-2), var(--accent));
+  filter: blur(2px); animation: krish-spin 9s linear infinite; opacity: .9; }
+.scene.scene-ready::before { opacity: 0; }
+.scene.scene-bg { position: absolute; inset: 0; aspect-ratio: auto; max-height: none; min-height: 0; z-index: 0; pointer-events: none; }
+.scene.scene-bg::before { inset: 25% 30%; filter: blur(60px); opacity: .5; }
+.hero .scene.scene-bg ~ .container { position: relative; z-index: 1; }
+
+/* Word-by-word headings, magnetic buttons, scroll progress */
+.ksplit .w { display: inline-block; opacity: 0; transform: translateY(.55em) rotate(2deg); filter: blur(6px);
+  animation: krish-word .8s cubic-bezier(.2,.7,.2,1) forwards; animation-delay: calc(var(--i, 0) * 70ms + 100ms); }
+@keyframes krish-word { to { opacity: 1; transform: none; filter: none; } }
+.magnetic { transition: transform .25s cubic-bezier(.2,.7,.2,1), box-shadow .2s; }
+.scroll-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 200; transform-origin: 0 50%; transform: scaleX(0); background: var(--gradient); pointer-events: none; }
+.glass-shine { position: relative; overflow: hidden; }
+.glass-shine::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(120deg, rgba(255,255,255,.55), rgba(255,255,255,0) 32%, rgba(255,255,255,0) 68%, rgba(255,255,255,.25)); mix-blend-mode: overlay; }
+@media (prefers-reduced-motion: reduce) { .ksplit .w { opacity: 1; transform: none; filter: none; } .scene::before { animation: none; } }
+
+/* Liquid: Apple-style liquid glass. Thick, bright, refracting glass with light catching its edges, over vivid colour. */
+:where(:root:has(body.theme-liquid)) { --accent: #0a84ff; --accent-2: #ff375f; --bg: #e9ecf5; --surface: rgba(255,255,255,.28); --soft: rgba(255,255,255,.22);
+  --text: #0b0b12; --muted: #3f4152; --radius: 30px; --border: rgba(255,255,255,.55); --font: "Inter", system-ui, sans-serif; --display: "Inter Tight", "Inter", sans-serif; }
+body.theme-liquid { background:
+  radial-gradient(36rem 26rem at 12% 8%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 62%),
+  radial-gradient(34rem 26rem at 92% 18%, color-mix(in srgb, var(--accent-2) 50%, transparent), transparent 62%),
+  radial-gradient(40rem 28rem at 60% 95%, color-mix(in srgb, #30d158 35%, transparent), transparent 62%),
+  radial-gradient(30rem 22rem at 20% 80%, color-mix(in srgb, #ffd60a 35%, transparent), transparent 62%), var(--bg); background-attachment: fixed; }
+.theme-liquid .card, .theme-liquid .panel, .theme-liquid .stat-card, .theme-liquid .list-item, .theme-liquid .sidebar, .theme-liquid .modal-box, .theme-liquid .cta, .theme-liquid .nav, .theme-liquid table {
+  background: radial-gradient(120% 60% at 20% -10%, rgba(255,255,255,.5), transparent 50%), linear-gradient(135deg, rgba(255,255,255,.42), rgba(255,255,255,.14));
+  backdrop-filter: blur(28px) saturate(1.9) brightness(1.06); -webkit-backdrop-filter: blur(28px) saturate(1.9) brightness(1.06);
+  border: 1px solid rgba(255,255,255,.6);
+  box-shadow: inset 0 1.5px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(255,255,255,.25), inset 1.5px 0 0 rgba(255,255,255,.35),
+    inset 0 0 22px rgba(255,255,255,.18), 0 18px 45px -18px rgba(20,20,60,.35); }
+.theme-liquid .cta { color: var(--text); } .theme-liquid .cta p { color: var(--muted); }
+.theme-liquid .hero, .theme-liquid .section-alt { background: transparent; }
+.theme-liquid .nav { border-radius: 0 0 24px 24px; border-top: 0; }
+body.theme-liquid button:not(.btn-outline):not(.btn-light):not(.btn-ghost):not(.chip):not(.nav-toggle):not(.tile), .theme-liquid .btn:not(.btn-outline):not(.btn-light):not(.btn-ghost):not(.chip):not(.nav-toggle):not(.tile) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, #fff), var(--accent)); box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 10px 25px -10px var(--accent); }
+.theme-liquid .btn-outline, body.theme-liquid button.btn-outline { background: rgba(255,255,255,.35); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-color: rgba(255,255,255,.7); box-shadow: inset 0 1px 0 rgba(255,255,255,.8); }
+.theme-liquid h1 { font-weight: 800; letter-spacing: -0.045em; }
+
+/* Clay: soft, puffy claymorphism. Pastel shapes that look squeezable. */
+:where(:root:has(body.theme-clay)) { --accent: #7c6cf2; --accent-2: #ff9f6b; --bg: #f1ecfa; --surface: #f7f3ff; --soft: #ebe4fa; --text: #2c2545; --muted: #6c6488;
+  --radius: 32px; --border: transparent; --font: "Nunito", system-ui, sans-serif; --display: "Nunito", system-ui, sans-serif;
+  --shadow: 12px 12px 28px rgba(124,108,242,.18), -10px -10px 24px rgba(255,255,255,.9), inset 2px 2px 4px rgba(255,255,255,.8), inset -4px -4px 10px rgba(124,108,242,.08);
+  --shadow-lg: 18px 18px 40px rgba(124,108,242,.24), -12px -12px 30px rgba(255,255,255,.95), inset 2px 2px 4px rgba(255,255,255,.8), inset -4px -4px 10px rgba(124,108,242,.1); }
+.theme-clay h1, .theme-clay h2 { font-weight: 900; letter-spacing: -0.02em; }
+.theme-clay .hero { background: var(--bg); }
+body.theme-clay button:not(.btn-outline):not(.btn-light):not(.btn-ghost):not(.chip):not(.nav-toggle):not(.tile), .theme-clay .btn:not(.btn-outline):not(.btn-light):not(.btn-ghost):not(.chip):not(.nav-toggle):not(.tile) {
+  box-shadow: 6px 8px 18px color-mix(in srgb, var(--accent) 40%, transparent), inset 2px 3px 6px rgba(255,255,255,.5), inset -3px -4px 8px rgba(0,0,0,.12); }
+.theme-clay .icon { border-radius: 20px; box-shadow: inset 2px 2px 5px rgba(255,255,255,.8), inset -3px -3px 8px rgba(124,108,242,.15); }
+.theme-clay .card:hover { transform: translateY(-6px) scale(1.01); }
+.theme-clay .btn-outline { box-shadow: var(--shadow); border: 0; }
+
+/* Sunset: retro-warm editorial. Glowing sunset gradient, italic serif headlines, film grain. */
+:where(:root:has(body.theme-sunset)) { --accent: #ff5e3a; --accent-2: #ffb347; --radius: 18px; --display: "Instrument Serif", Georgia, serif; --font: "Manrope", system-ui, sans-serif; }
+body.theme-sunset { --bg: #1a0f1f; --surface: rgba(255,255,255,.05); --soft: rgba(255,255,255,.07); --text: #fff3e6; --muted: #d9b9a8; --border: rgba(255,200,160,.16);
+  --shadow: 0 20px 50px -25px rgba(0,0,0,.8); --shadow-lg: 0 30px 70px -25px rgba(0,0,0,.9);
+  background: linear-gradient(180deg, #2b1030 0%, #1a0f1f 55%), var(--bg); }
+.theme-sunset .hero { background: radial-gradient(70rem 30rem at 50% 115%, #ff5e3a 0%, #ff8f4a 18%, #c2366d 38%, transparent 70%), linear-gradient(180deg, #2b1030, #4a1640 70%, #6b1d3f); }
+.theme-sunset .hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .09; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.theme-sunset h1, .theme-sunset h2 { font-weight: 400; letter-spacing: -0.01em; }
+.theme-sunset h1 { font-size: clamp(2.8rem, 7vw, 5.6rem); line-height: 1; }
+.theme-sunset h1 em, .theme-sunset h2 em { color: var(--accent-2); }
+.theme-sunset .nav { background: rgba(26,15,31,.6); } .theme-sunset .section-alt { background: rgba(255,255,255,.02); }
+.theme-sunset .eyebrow { color: var(--accent-2); }
+/* Words of a split heading keep the heading's gradient text. */
+.gradient-text .w, .text-shimmer .w, body.theme-aurora h1.ksplit .w { background: inherit; background-size: inherit; -webkit-background-clip: text; background-clip: text; color: transparent; }
+body.theme-aurora h1.ksplit { background: none; }
+body.theme-aurora h1.ksplit .w { background-image: linear-gradient(180deg, #fff, #c9c3e6); }
+/* Text over a full-background scene stays readable. */
+.scene.scene-bg::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 55% 45% at 50% 50%, color-mix(in srgb, var(--bg) 72%, transparent), transparent 75%); }

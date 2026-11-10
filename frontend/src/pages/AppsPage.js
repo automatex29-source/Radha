@@ -23,6 +23,7 @@ const IDEAS = [
 const STYLES = [
   { id: "", label: "Surprise me", swatch: "conic-gradient(from 0deg, #7c3aed, #06b6d4, #f472b6, #facc15, #7c3aed)" },
   { id: "glass", label: "Glass", swatch: "linear-gradient(135deg, #c4b5fd, #a5f3fc)" },
+  { id: "liquid", label: "Liquid glass", swatch: "radial-gradient(circle at 30% 25%, #fff, #0a84ff 45%, #ff375f)" },
   { id: "aurora", label: "Aurora", swatch: "radial-gradient(circle at 30% 30%, #a78bfa, #22d3ee 55%, #07060d)" },
   { id: "bento", label: "Bento", swatch: "linear-gradient(135deg, #f5f5f7 50%, #0a84ff 50%)" },
   { id: "bold", label: "Bold", swatch: "linear-gradient(135deg, #ffd400 50%, #ff5c00 50%)" },
@@ -30,6 +31,8 @@ const STYLES = [
   { id: "minimal", label: "Minimal", swatch: "linear-gradient(135deg, #ffffff 50%, #111111 50%)" },
   { id: "playful", label: "Playful", swatch: "linear-gradient(135deg, #ff4fa3, #7c5cff)" },
   { id: "neon", label: "Neon", swatch: "linear-gradient(135deg, #05050a 40%, #00f0ff 70%, #ff2bd6)" },
+  { id: "clay", label: "Clay", swatch: "radial-gradient(circle at 35% 30%, #fff, #b9b0ff 50%, #ff9f6b)" },
+  { id: "sunset", label: "Sunset", swatch: "linear-gradient(180deg, #4a1640, #c2366d 50%, #ff8f4a)" },
 ];
 
 // "A habit tracker with daily check-ins" -> "Habit tracker"
