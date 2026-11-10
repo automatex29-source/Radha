@@ -276,7 +276,27 @@
     update();
   }
 
-  function start() { navs(); reveals(); pointer(); counters(); typed(); extras(); scrolly(); scenes(); }
+  /* ---------- Fonts for Indian scripts (text drawn by JavaScript after the page loaded) ---------- */
+  var SCRIPTS = [[/[\u0900-\u097F]/, "Noto+Sans+Devanagari"], [/[\u0980-\u09FF]/, "Noto+Sans+Bengali"], [/[\u0A00-\u0A7F]/, "Noto+Sans+Gurmukhi"],
+    [/[\u0A80-\u0AFF]/, "Noto+Sans+Gujarati"], [/[\u0B00-\u0B7F]/, "Noto+Sans+Oriya"], [/[\u0B80-\u0BFF]/, "Noto+Sans+Tamil"],
+    [/[\u0C00-\u0C7F]/, "Noto+Sans+Telugu"], [/[\u0C80-\u0CFF]/, "Noto+Sans+Kannada"], [/[\u0D00-\u0D7F]/, "Noto+Sans+Malayalam"],
+    [/[\u0600-\u06FF]/, "Noto+Naskh+Arabic"]];
+  var fontsAdded = {};
+  function fonts() {
+    var text = (document.body && document.body.innerText || "").slice(0, 20000), need = [];
+    SCRIPTS.forEach(function (sc) {
+      if (fontsAdded[sc[1]] || !sc[0].test(text)) return;
+      fontsAdded[sc[1]] = true;
+      if (!document.querySelector('link[href*="' + sc[1] + '"]')) need.push("family=" + sc[1] + ":wght@400..700");
+    });
+    if (Object.keys(fontsAdded).length) document.documentElement.classList.add("krish-indic");
+    if (!need.length) return;
+    var l = document.createElement("link");
+    l.rel = "stylesheet"; l.href = "https://fonts.googleapis.com/css2?" + need.join("&") + "&display=swap";
+    document.head.appendChild(l);
+  }
+
+  function start() { fonts(); navs(); reveals(); pointer(); counters(); typed(); extras(); scrolly(); scenes(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
   // Pages that draw their content with JavaScript get the menu button and reveals once it is there.
@@ -285,7 +305,7 @@
     new MutationObserver(function () {
       if (queued) return;
       queued = true;
-      setTimeout(function () { queued = false; navs(); extras(); reveals(); scrolly(); scenes(); }, 120);
+      setTimeout(function () { queued = false; fonts(); navs(); extras(); reveals(); scrolly(); scenes(); }, 120);
     }).observe(document.documentElement, { childList: true, subtree: true });
   }
 })();

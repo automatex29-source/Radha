@@ -198,6 +198,10 @@ DESIGN_GUIDE = (
     "the browser (nothing uploaded), handle a wrong or empty file with a clear message, and add a \"Try with "
     "sample\" button when a sample exists.\n"
     "- Responsive from phone to desktop, with labelled inputs and good contrast.\n"
+    "- Fonts: each Krish UI style brings its own font pair, and Hindi, Tamil, Bengali and the other Indian scripts "
+    "get matching fonts by themselves, so don't link fonts yourself. Only when the user names a font, link it from "
+    "Google Fonts and set :root{--font:\"Its Name\", sans-serif; --display:\"Its Name\", sans-serif}. Set <html "
+    "lang> to the page's language (hi for Hindi). Don't put Indian-script text in all caps or tight letter spacing.\n"
     "- All app text (labels, placeholders, buttons, sample data) in one language, the one the request is in: "
     "never two languages side by side (no \"नाम / Name\") unless asked.\n"
     "- Every feature works for real: all buttons do something, input is validated, data persists in localStorage "
@@ -291,6 +295,51 @@ _KIT_REF_RE = re.compile(r"""href\s*=\s*["']([^"']*krish-ui\.css)["']""", re.IGN
 # kit when it is served, and as a file beside it in the ZIP and on GitHub. The model never writes it.
 KIT_JS_NAME = "krish-ui.js"
 KIT_JS = (Path(__file__).parent / "app_kit" / KIT_JS_NAME).read_text(encoding="utf-8")
+
+
+# Each style's fonts, linked in the page's head so they start loading at once (the kit's CSS only imports the
+# default pair). A page in Hindi or another Indian script also gets the matching Noto font.
+_GF = "https://fonts.googleapis.com/css2?"
+THEME_FONTS = {
+    "glass": "family=Sora:wght@500..800", "liquid": "family=Inter+Tight:wght@500..800",
+    "aurora": "family=Space+Grotesk:wght@500..700", "bento": "family=Manrope:wght@400..800",
+    "bold": "family=Space+Grotesk:wght@400..700&family=Bricolage+Grotesque:opsz,wght@12..96,600..800",
+    "luxury": "family=Manrope:wght@400..700&family=Fraunces:opsz,wght@9..144,400..700",
+    "minimal": "family=Inter+Tight:wght@400..800", "playful": "family=Fredoka:wght@400..700",
+    "neon": "family=Syne:wght@600..800&family=JetBrains+Mono:wght@500;700", "clay": "family=Nunito:wght@500..900",
+    "sunset": "family=Manrope:wght@400..700&family=Instrument+Serif:ital@0;1",
+}
+_SCRIPTS = [(r"[\u0900-\u097F]", "Noto+Sans+Devanagari"), (r"[\u0980-\u09FF]", "Noto+Sans+Bengali"),
+            (r"[\u0A00-\u0A7F]", "Noto+Sans+Gurmukhi"), (r"[\u0A80-\u0AFF]", "Noto+Sans+Gujarati"),
+            (r"[\u0B00-\u0B7F]", "Noto+Sans+Oriya"), (r"[\u0B80-\u0BFF]", "Noto+Sans+Tamil"),
+            (r"[\u0C00-\u0C7F]", "Noto+Sans+Telugu"), (r"[\u0C80-\u0CFF]", "Noto+Sans+Kannada"),
+            (r"[\u0D00-\u0D7F]", "Noto+Sans+Malayalam"), (r"[\u0600-\u06FF]", "Noto+Naskh+Arabic")]
+_SCRIPTS_RE = [(re.compile(r), f) for r, f in _SCRIPTS]
+_THEME_CLASS_RE = re.compile(r"""<body\b[^>]*\bclass\s*=\s*["'][^"']*\btheme-(\w+)""", re.IGNORECASE)
+
+
+def script_fonts(text: str) -> List[str]:
+    """The Noto fonts for the Indian scripts (and Urdu) the text is written in."""
+    return [f"family={family}:wght@400..700" for pattern, family in _SCRIPTS_RE if pattern.search(text or "")]
+
+
+def font_tags(html: str) -> str:
+    """<link>s for the fonts a kit page needs: its style's fonts and any Indian script it uses."""
+    m = _THEME_CLASS_RE.search(html)
+    families = ([THEME_FONTS[m.group(1)]] if m and m.group(1) in THEME_FONTS else []) + script_fonts(html)
+    tags = ""
+    if families:
+        tags = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
+                '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+                f'<link rel="stylesheet" href="{_GF}{"&".join(families)}&display=swap">')
+    if script_fonts(html):
+        tags += "<script>document.documentElement.classList.add('krish-indic')</script>"
+    return tags
+
+
+def _after_head(html: str, tag: str) -> str:
+    m = re.search(r"<head\b[^>]*>", html, re.IGNORECASE)
+    return html[:m.end()] + tag + html[m.end():] if m else tag + html
 
 
 def uses_kit(html: str) -> bool:
@@ -499,7 +548,7 @@ def portable(files: Dict[str, str]) -> Dict[str, str]:
     for p, c in list(out.items()):
         if p.endswith((".html", ".htm")) and uses_kit(c):
             ref = _KIT_REF_RE.search(c).group(1).replace(KIT_NAME, KIT_JS_NAME)
-            out[p] = _before_body_end(c, f'<script src="{ref}"></script>\n')
+            out[p] = _before_body_end(_after_head(c, font_tags(c)), f'<script src="{ref}"></script>\n')
             target = _resolve(p, ref)
             if target and target not in out:
                 out[target] = KIT_JS
@@ -753,7 +802,7 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
     if ctype == "text/html":
         content = jsx_compile.relative_html(path, content, files)
         if uses_kit(content):
-            content = _before_body_end(content, "<script>" + KIT_JS + "</script>")
+            content = _before_body_end(_after_head(content, font_tags(content)), "<script>" + KIT_JS + "</script>")
         inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content

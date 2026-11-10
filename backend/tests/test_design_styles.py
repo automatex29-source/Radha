@@ -53,3 +53,17 @@ def test_live_3d_scenes_and_new_styles():
     assert 'data-scene="glass"' in block and "scene-bg" in block and "split" in block
     assert "three@0.160.0" in apps.KIT_JS and "scene-fallback" in apps.KIT_JS
     assert ".scene.scene-ready" in apps.KIT_CSS and "theme-liquid" in apps.KIT_CSS
+
+
+def test_each_style_links_only_its_own_fonts_and_indian_scripts_get_noto():
+    page = '<html><head><link rel="stylesheet" href="krish-ui.css"></head><body class="theme-luxury"><h1>Cakes</h1></body></html>'
+    served = apps._serve({"index.html": page}, "index.html", bridge=False, cache="no-store").body.decode()
+    assert "family=Manrope" in served and "Fraunces" in served and "fonts.googleapis.com/css2?family=Noto" not in served and "krish-indic')" not in served
+    hindi = page.replace("Cakes", "स्वादिष्ट केक").replace("theme-luxury", "theme-glass")
+    served = apps._serve({"index.html": hindi}, "index.html", bridge=False, cache="no-store").body.decode()
+    assert "Noto+Sans+Devanagari" in served and "family=Sora" in served and "krish-indic" in served
+    assert served.index("Noto+Sans+Devanagari") < served.index("<h1>")  # in the head, so it loads at once
+    assert apps.script_fonts("வணக்கம்") == ["family=Noto+Sans+Tamil:wght@400..700"]
+    assert "var(--indic)" in apps.KIT_CSS and "text-wrap: balance" in apps.KIT_CSS
+    zipped = apps.portable({"index.html": hindi})["index.html"]
+    assert "Noto+Sans+Devanagari" in zipped and '<script src="krish-ui.js"></script>' in zipped

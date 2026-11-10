@@ -2,7 +2,7 @@
    the rest. Set your brand once: :root { --accent: #db2777; --accent-2: #f97316; }
    Element styles are scoped under body so they beat Tailwind's reset, while Tailwind classes still win.
    A whole look: <body class="theme-glass"> (glass, liquid, aurora, bento, bold, luxury, minimal, playful, neon, clay, sunset). */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter+Tight:wght@500;600;700;800&family=Fredoka:wght@500;600;700&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@500;700&family=Instrument+Serif:ital@0;1&family=Nunito:wght@600;700;800;900&family=Unbounded:wght@500;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&family=Plus+Jakarta+Sans:wght@600..800&display=swap");
 
 :where(:root) {
   --accent: #6d28d9;
@@ -19,6 +19,8 @@
   --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --display: "Plus Jakarta Sans", var(--font);
   --gradient: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --indic: "Noto Sans Devanagari", "Noto Sans Bengali", "Noto Sans Gurmukhi", "Noto Sans Gujarati", "Noto Sans Oriya",
+    "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Kannada", "Noto Sans Malayalam", "Noto Naskh Arabic", sans-serif;
 }
 body.dark, .dark body {
   --bg: #0e0b17; --surface: #17131f; --soft: #1f1a2b; --text: #f3f0fa; --muted: #a59fb8;
@@ -28,10 +30,10 @@ body.dark, .dark body {
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 16px; line-height: 1.65;
+  margin: 0; background: var(--bg); color: var(--text); font-family: var(--font), var(--indic); font-size: 16px; line-height: 1.65;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
-body h1, body h2, body h3, body h4 { font-family: var(--display); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 0.5em; font-weight: 800; }
+body h1, body h2, body h3, body h4 { font-family: var(--display), var(--indic); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 0.5em; font-weight: 800; }
 body h1 { font-size: clamp(2.3rem, 5.5vw, 4.2rem); }
 body h2 { font-size: clamp(1.75rem, 3.6vw, 2.6rem); }
 body h3 { font-size: 1.2rem; font-weight: 700; }
@@ -69,7 +71,7 @@ body section, .section { padding: clamp(3.5rem, 8vw, 6rem) 0; }
   background: color-mix(in srgb, var(--bg) 78%, transparent); border-bottom: 1px solid var(--border);
 }
 .nav > .container, .nav-inner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 68px; }
-.brand { display: flex; align-items: center; gap: 0.6rem; font-family: var(--display); font-weight: 800; font-size: 1.25rem; color: var(--text); }
+.brand { display: flex; align-items: center; gap: 0.6rem; font-family: var(--display), var(--indic); font-weight: 800; font-size: 1.25rem; color: var(--text); }
 .brand:hover { text-decoration: none; }
 .nav-links { display: flex; align-items: center; gap: 1.75rem; list-style: none; margin: 0; padding: 0; }
 .nav-links a { color: var(--muted); font-weight: 500; }
@@ -99,7 +101,7 @@ body section, .section { padding: clamp(3.5rem, 8vw, 6rem) 0; }
 /* Buttons */
 body button, .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.8rem 1.4rem; border: 0;
-  border-radius: 999px; background: var(--gradient); color: #fff; font: 600 0.95rem/1.2 var(--font); cursor: pointer;
+  border-radius: 999px; background: var(--gradient); color: #fff; font: 600 0.95rem/1.2 var(--font), var(--indic); cursor: pointer;
   text-decoration: none; box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--accent) 70%, transparent);
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, opacity 0.18s;
 }
@@ -132,7 +134,7 @@ body button:focus-visible, .btn:focus-visible, body a:focus-visible { outline: 3
   display: inline-flex; align-items: center; justify-content: center; width: 3rem; height: 3rem; border-radius: 14px;
   background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-size: 1.4rem; margin-bottom: 1rem;
 }
-.price { font-family: var(--display); font-weight: 800; font-size: 1.35rem; color: var(--text); }
+.price { font-family: var(--display), var(--indic); font-weight: 800; font-size: 1.35rem; color: var(--text); }
 .price small { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
 .badge {
   display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.75rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
@@ -143,7 +145,7 @@ body button:focus-visible, .btn:focus-visible, body a:focus-visible { outline: 3
 body blockquote { margin: 0; font-size: 1.05rem; }
 .quote { font-size: 1.05rem; }
 .avatar { width: 44px; height: 44px; border-radius: 999px; object-fit: cover; }
-.stat { font-family: var(--display); font-size: 2.4rem; font-weight: 800; }
+.stat { font-family: var(--display), var(--indic); font-size: 2.4rem; font-weight: 800; }
 
 /* Forms */
 body label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; }
@@ -259,13 +261,13 @@ body input.switch[type=checkbox]:checked::after { transform: translateX(1.1rem);
 .board { display: grid; gap: 0.6rem; padding: 0.8rem; background: var(--surface); border-radius: calc(var(--radius) + 4px); box-shadow: var(--shadow-lg); }
 .tile, body button.tile {
   display: flex; align-items: center; justify-content: center; aspect-ratio: 1; min-width: 64px; border-radius: 14px; background: var(--soft);
-  color: var(--text); font: 800 1.6rem/1 var(--display); box-shadow: none; padding: 0;
+  color: var(--text); font: 800 1.6rem/1 var(--display), var(--indic); box-shadow: none; padding: 0;
 }
 body button.tile:hover { background: color-mix(in srgb, var(--accent) 14%, var(--soft)); box-shadow: none; }
 .keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; }
 body .keypad button { border-radius: 16px; padding: 1rem 0; font-size: 1.15rem; background: var(--soft); color: var(--text); box-shadow: none; }
 body .keypad button.primary, .keypad .primary { background: var(--gradient); color: #fff; }
-.display { font: 700 clamp(2rem, 6vw, 2.8rem)/1.1 var(--display); text-align: right; padding: 1rem 0.5rem; overflow-x: auto; }
+.display { font: 700 clamp(2rem, 6vw, 2.8rem)/1.1 var(--display), var(--indic); text-align: right; padding: 1rem 0.5rem; overflow-x: auto; }
 
 /* ---------- Graphics: backgrounds, shapes, glass, motion ---------- */
 .bg-mesh {
@@ -313,7 +315,7 @@ body .keypad button.primary, .keypad .primary { background: var(--gradient); col
 .rounded-xl { border-radius: calc(var(--radius) + 8px); }
 .circle { border-radius: 50%; }
 .photo { width: 100%; object-fit: cover; border-radius: calc(var(--radius) + 8px); box-shadow: var(--shadow-lg); }
-.logos { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2.5rem; opacity: 0.6; filter: grayscale(1); font-family: var(--display); font-weight: 800; font-size: 1.3rem; }
+.logos { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2.5rem; opacity: 0.6; filter: grayscale(1); font-family: var(--display), var(--indic); font-weight: 800; font-size: 1.3rem; }
 .avatars { display: flex; }
 .avatars img { width: 40px; height: 40px; border-radius: 50%; border: 3px solid var(--surface); margin-left: -10px; object-fit: cover; }
 .avatars img:first-child { margin-left: 0; }
@@ -566,3 +568,20 @@ body.theme-aurora h1.ksplit .w { background-image: linear-gradient(180deg, #fff,
 /* Text over a full-background scene stays readable. */
 .scene.scene-bg::after { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse 55% 45% at 50% 50%, color-mix(in srgb, var(--bg) 72%, transparent), transparent 75%); }
+
+
+/* ---------- Typography ---------- */
+body { font-kerning: normal; font-optical-sizing: auto; font-synthesis-weight: none; }
+body h1, body h2, body h3, body h4, .section-title, .eyebrow { text-wrap: balance; }
+body p, body li, body blockquote, .lead { text-wrap: pretty; }
+body h1 { line-height: 1.06; } body h2 { line-height: 1.12; }
+body h3 { font-size: clamp(1.1rem, 1.6vw, 1.3rem); }
+.stat, .price, .display, .score, [data-count], body td, .stat-card .stat, .trend { font-variant-numeric: tabular-nums lining-nums; }
+.lead, .hero p, .section-title p { max-width: 62ch; }
+body small, .muted { letter-spacing: 0.005em; }
+body code, body kbd, body pre { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+/* Hindi and other Indian scripts: no negative tracking or caps (they break joined letters), taller lines. */
+.krish-indic body, .krish-indic body p { line-height: 1.8; }
+.krish-indic body h1, .krish-indic body h2, .krish-indic body h3, .krish-indic body h4, .krish-indic .brand, .krish-indic .eyebrow {
+  letter-spacing: 0 !important; line-height: 1.35; text-transform: none !important; }
+.krish-indic body h1 { line-height: 1.25; }
