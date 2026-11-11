@@ -93,8 +93,22 @@ def test_google_joins_an_existing_email_account(client):
     made = _register(client, "both@test.com")
     r = client.post("/api/auth/google", json=_google("both@test.com"))
     assert r.status_code == 200 and r.json()["user"]["id"] == made["user"]["id"]
-    assert r.json()["user"]["hasPassword"] and r.json()["user"]["google"]
-    assert client.post("/api/auth/login", json={"email": "both@test.com", "password": "secret1"}).status_code == 200
+    assert r.json()["user"]["google"]
+    # Sign-up never checked the email, so the password could be a stranger's: it stops working, and the
+    # stranger's signed-in device is signed out. Google's own sign-in keeps working.
+    assert not r.json()["user"]["hasPassword"]
+    assert client.post("/api/auth/login", json={"email": "both@test.com", "password": "secret1"}).status_code == 401
+    assert client.get("/api/auth/me", headers=_h(made["token"])).status_code == 401
+    assert client.get("/api/auth/me", headers=_h(r.json()["token"])).status_code == 200
+
+
+def test_google_keeps_a_password_the_owner_proved(client):
+    import server
+    made = _register(client, "proved@test.com")
+    client.portal.call(server.db.users.update_one, {"id": made["user"]["id"]}, {"$set": {"emailVerified": True}})
+    r = client.post("/api/auth/google", json=_google("proved@test.com"))
+    assert r.json()["user"]["hasPassword"]
+    assert client.post("/api/auth/login", json={"email": "proved@test.com", "password": "secret1"}).status_code == 200
 
 
 def test_bad_google_token_is_refused(client):

@@ -475,8 +475,8 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
   background: radial-gradient(circle, rgb(139 92 246 / .45), rgb(236 72 153 / .12) 45%, transparent 70%); filter: blur(10px); animation: krish-breathe 4s ease-in-out infinite; }
 @keyframes krish-breathe { 50% { opacity: .6; transform: translate(-50%, -62%) scale(1.12); } }
 .krish-intro-spark { position: absolute; bottom: -10px; width: 3px; height: 3px; border-radius: 9999px; background: #c4b5fd;
-  box-shadow: 0 0 8px #a78bfa; animation: krish-rise linear infinite; opacity: 0; }
-@keyframes krish-rise { 10% { opacity: .9; } 90% { opacity: .6; } to { transform: translateY(-110vh); opacity: 0; } }
+  box-shadow: 0 0 8px #a78bfa; animation: krish-spark-rise linear infinite; opacity: 0; }
+@keyframes krish-spark-rise { 10% { opacity: .9; } 90% { opacity: .6; } to { transform: translateY(-110vh); opacity: 0; } }
 .krish-intro-stage { width: 180px; height: 180px; transform-style: preserve-3d; transition: transform .25s ease-out; cursor: pointer; }
 .krish-intro-logo { position: absolute; inset: 22px; transform-style: preserve-3d; animation: krish-float 5s ease-in-out infinite;
  }
