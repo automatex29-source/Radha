@@ -36,7 +36,10 @@ PLAN_PROMPT = (
     "the checklist the finished app must meet: 5 to {n} lines, each starting with \"- \", each one concrete thing a "
     "user can see or do (a screen, a section, a working button or form, saved data, the sample content), and a last "
     "line naming the files to write. When the app already has its own pages and the request changes part of them, "
-    "list only that change and add \"Keep everything else exactly as it is\". Pick sensible details yourself for anything the user left open. Write only the "
+    "list only that change and add \"Keep everything else exactly as it is\". When the app takes orders, bookings, "
+    "sign-ups or payments, keeps stock or scores, or has admins, add one line for the backend: the collections in "
+    "backend.json with their main fields and who can read and change them, and the server functions "
+    "(api/<name>.js) for what visitors must not control, like prices, totals, stock and time slots. Pick sensible details yourself for anything the user left open. Write only the "
     "checklist, in English, with no intro and no code."
 )
 

@@ -27,6 +27,7 @@ import jwt
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+import appbackend
 from auth import JWT_ALGORITHM, _secret, hash_password, verify_password
 
 router = APIRouter(prefix="/api/appdata")
@@ -41,15 +42,16 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 _FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-SDK = """<script>(function(){var A=%s,B=new URL(location.href).origin+"/api/appdata/"+A,K="radha-user-"+A,T=null,U=null;
+SDK = """<script>(function(){var A=%s,D=%s,B=new URL(location.href).origin+"/api/appdata/"+A,K="radha-user-"+A,T=null,U=null;
 try{var s=JSON.parse(localStorage.getItem(K)||"null");if(s){T=s.token;U=s.user}}catch(e){}
 function keep(){try{T?localStorage.setItem(K,JSON.stringify({token:T,user:U})):localStorage.removeItem(K)}catch(e){}}
-async function call(m,p,b){var h={"Content-Type":"application/json"};if(T)h.Authorization="Bearer "+T;
+async function call(m,p,b){var h={"Content-Type":"application/json"};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]="1";
 var r=await fetch(B+p,{method:m,headers:h,body:b===undefined?undefined:JSON.stringify(b)});var j=null;try{j=await r.json()}catch(e){}
 if(!r.ok)throw new Error((j&&j.detail&&(j.detail.msg||j.detail))||("Request failed ("+r.status+")"));return j}
 function signed(r){T=r.token;U=r.user;keep();return U}
 var auth={get user(){return U},signup:function(e,p,n){return call("POST","/auth/signup",{email:e,password:p,name:n||""}).then(signed)},
-login:function(e,p){return call("POST","/auth/login",{email:e,password:p}).then(signed)},logout:function(){T=null;U=null;keep()}};
+login:function(e,p){return call("POST","/auth/login",{email:e,password:p}).then(signed)},logout:function(){T=null;U=null;keep()},
+get isAdmin(){return !!(U&&U.isAdmin)},refresh:function(){return T?call("GET","/auth/me").then(function(u){U=u;keep();return U},function(){T=null;U=null;keep();return null}):Promise.resolve(null)}};
 var q=function(c){return "/db/"+encodeURIComponent(c)};
 function qs(o){o=o||{};var p=[];if(o.mine)p.push("mine=1");if(o.where)p.push("where="+encodeURIComponent(JSON.stringify(o.where)));
 if(o.limit)p.push("limit="+(o.limit|0));if(o.oldest)p.push("oldest=1");return p.length?"?"+p.join("&"):""}
@@ -58,19 +60,21 @@ watch:function(c,cb,o){var on=true,last="";function tick(){if(!on)return;dbApi.l
 if(s!==last){last=s;cb(r)}}).catch(function(){}).then(function(){if(on)setTimeout(tick,(o&&o.every)||4000)})}tick();return function(){on=false}},get:function(c,id){return call("GET",q(c)+"/"+encodeURIComponent(id))},
 add:function(c,d,o){return call("POST",q(c),{data:d,private:!!(o&&o.private)})},update:function(c,id,d){return call("PATCH",q(c)+"/"+encodeURIComponent(id),{data:d})},
 remove:function(c,id){return call("DELETE",q(c)+"/"+encodeURIComponent(id))}};
-async function form(p,fd){var h={};if(T)h.Authorization="Bearer "+T;var r=await fetch(B+p,{method:"POST",headers:h,body:fd});var j=null;
+async function form(p,fd){var h={};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]="1";var r=await fetch(B+p,{method:"POST",headers:h,body:fd});var j=null;
 try{j=await r.json()}catch(e){}if(!r.ok)throw new Error((j&&j.detail&&(j.detail.msg||j.detail))||("Upload failed ("+r.status+")"));return j}
 function ai(p,o){o=o||{};return call("POST","/ai",{prompt:String(p),system:o.system||"",history:o.history||[],json:!!o.json}).then(function(r){return o.json?r.data:r.text})}
 var files={upload:function(f){var fd=new FormData();fd.append("file",f);return form("/files",fd)},remove:function(id){return call("DELETE","/files/"+encodeURIComponent(id))}};
 function notify(m){m=m||{};var x={};for(var k in m)if(["subject","message","replyTo"].indexOf(k)<0)x[k]=m[k];
 return call("POST","/notify",{subject:m.subject||"",message:m.message||JSON.stringify(x,null,1),replyTo:m.replyTo||m.email||"",fields:x})}
 function rfetch(u,o){o=o||{};return call("POST","/fetch",{url:String(u),method:(o.method||"GET").toUpperCase(),headers:o.headers||{},body:o.body===undefined?null:o.body})}
-window.RADHA={appId:A,auth:auth,db:dbApi,ai:ai,files:files,notify:notify,fetch:rfetch};})();</script>"""
+function api(n,i){return call("POST","/api/"+encodeURIComponent(n),{input:i===undefined?null:i}).then(function(r){return r.result})}
+window.RADHA={appId:A,auth:auth,db:dbApi,ai:ai,files:files,notify:notify,fetch:rfetch,api:api};if(T)auth.refresh();})();</script>"""
 
 
 def init(database):
     global db
     db = database
+    appbackend.init(database)  # the rules and server code read the same database
 
 
 async def ensure_indexes():
@@ -79,8 +83,9 @@ async def ensure_indexes():
     await db.appdata_users.create_index([("appId", 1), ("email", 1)], unique=True)
 
 
-def sdk_script(app_id: str) -> str:
-    return SDK % json.dumps(app_id)
+def sdk_script(app_id: str, draft: bool = False) -> str:
+    """The RADHA client for a page. `draft` (the builder's preview) runs the working copy's rules and server code."""
+    return SDK % (json.dumps(app_id), "true" if draft else "false")
 
 
 def _now() -> str:
@@ -120,8 +125,13 @@ def _viewer(request: Request, app_id: str) -> Optional[str]:
     return payload["sub"]
 
 
-def _public_user(u: dict) -> dict:
-    return {"id": u["id"], "email": u["email"], "name": u.get("name") or ""}
+def _public_user(u: dict, admin: bool = False) -> dict:
+    return {"id": u["id"], "email": u["email"], "name": u.get("name") or "", "isAdmin": admin}
+
+
+async def _user_out(app_id: str, user: dict, request: Optional[Request] = None) -> dict:
+    rules = await appbackend.rules_for(app_id, appbackend.is_draft(request) if request else False)
+    return _public_user(user, await appbackend.is_admin(app_id, user, rules))
 
 
 def _public_doc(d: dict) -> dict:
@@ -147,7 +157,7 @@ class LoginIn(BaseModel):
 
 
 @router.post("/{app_id}/auth/signup")
-async def signup(app_id: str, body: SignupIn):
+async def signup(app_id: str, body: SignupIn, request: Request):
     await _app(app_id)
     email = body.email.strip().lower()
     if not _EMAIL_RE.match(email):
@@ -159,15 +169,15 @@ async def signup(app_id: str, body: SignupIn):
     user = {"appId": app_id, "id": str(uuid.uuid4()), "email": email, "name": body.name.strip(),
             "passwordHash": hash_password(body.password), "createdAt": _now()}
     await db.appdata_users.insert_one(user)
-    return {"token": _token(app_id, user), "user": _public_user(user)}
+    return {"token": _token(app_id, user), "user": await _user_out(app_id, user, request)}
 
 
 @router.post("/{app_id}/auth/login")
-async def login(app_id: str, body: LoginIn):
+async def login(app_id: str, body: LoginIn, request: Request):
     user = await db.appdata_users.find_one({"appId": app_id, "email": body.email.strip().lower()})
     if not user or not verify_password(body.password, user.get("passwordHash", "")):
         raise HTTPException(status_code=401, detail="Wrong email or password")
-    return {"token": _token(app_id, user), "user": _public_user(user)}
+    return {"token": _token(app_id, user), "user": await _user_out(app_id, user, request)}
 
 
 @router.get("/{app_id}/auth/me")
@@ -176,7 +186,7 @@ async def me(app_id: str, request: Request):
     user = uid and await db.appdata_users.find_one({"appId": app_id, "id": uid})
     if not user:
         raise HTTPException(status_code=401, detail="Not signed in")
-    return _public_user(user)
+    return await _user_out(app_id, user, request)
 
 
 # ------------------------------------------------------------------ documents
@@ -211,59 +221,86 @@ def _where(raw: Optional[str]) -> dict:
     return out
 
 
+async def _context(app_id: str, collection: str, request: Request):
+    """(uid, the collection's rules or None, the viewer with isAdmin or None) for one request."""
+    uid = _viewer(request, app_id)
+    rules = await appbackend.rules_for(app_id, appbackend.is_draft(request))
+    rule = appbackend.collection_rule(rules, collection)
+    who = await appbackend.viewer(app_id, uid, rules) if rule else None
+    return uid, rule, who
+
+
 @router.get("/{app_id}/db/{collection}")
 async def list_docs(app_id: str, collection: str, request: Request, mine: bool = Query(False),
                     where: Optional[str] = Query(None, max_length=2000), limit: int = Query(LIST_LIMIT, ge=1, le=LIST_LIMIT),
                     oldest: bool = Query(False)):
-    uid = _viewer(request, app_id)
-    query = {"appId": app_id, "collection": _collection(collection), **_visible(uid), **_where(where)}
+    collection = _collection(collection)
+    uid, rule, who = await _context(app_id, collection, request)
+    query = {"appId": app_id, "collection": collection, **_visible(uid), **_where(where)}
+    if rule:
+        query.update(appbackend.read_filter(rule, who))
     if mine:
         if not uid:
             raise HTTPException(status_code=401, detail="Log in to see your items")
         query["ownerId"] = uid
     docs = await db.appdata_docs.find(query).sort("createdAt", 1 if oldest else -1).limit(limit).to_list(limit)
-    return [_public_doc(d) for d in docs]
+    return [appbackend.strip_hidden(rule, _public_doc(d), who) for d in docs]
 
 
 @router.get("/{app_id}/db/{collection}/{doc_id}")
 async def get_doc(app_id: str, collection: str, doc_id: str, request: Request):
-    uid = _viewer(request, app_id)
-    doc = await db.appdata_docs.find_one({"appId": app_id, "collection": _collection(collection), "id": doc_id, **_visible(uid)})
+    collection = _collection(collection)
+    uid, rule, who = await _context(app_id, collection, request)
+    query = {"appId": app_id, "collection": collection, "id": doc_id, **_visible(uid)}
+    if rule:
+        query.update(appbackend.read_filter(rule, who))
+    doc = await db.appdata_docs.find_one(query)
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
-    return _public_doc(doc)
+    return appbackend.strip_hidden(rule, _public_doc(doc), who)
 
 
 @router.post("/{app_id}/db/{collection}")
 async def add_doc(app_id: str, collection: str, body: DocIn, request: Request):
     await _app(app_id)
-    uid = _viewer(request, app_id)
-    _check_size(body.data)
+    collection = _collection(collection)
+    uid, rule, who = await _context(app_id, collection, request)
+    if rule:
+        appbackend.allowed(rule, "create", who)
+    data = await appbackend.check_data(app_id, collection, rule, body.data)
+    _check_size(data)
     if body.private and not uid:
         raise HTTPException(status_code=401, detail="Log in to save private items")
     if await db.appdata_docs.count_documents({"appId": app_id}) >= MAX_DOCS:
         raise HTTPException(status_code=403, detail="This app's database is full")
     ts = _now()
-    doc = {"appId": app_id, "collection": _collection(collection), "id": str(uuid.uuid4()), "data": body.data,
+    doc = {"appId": app_id, "collection": collection, "id": str(uuid.uuid4()), "data": data,
            "ownerId": uid, "private": body.private, "createdAt": ts, "updatedAt": ts}
     await db.appdata_docs.insert_one(doc)
     return _public_doc(doc)
 
 
-async def _owned(app_id: str, collection: str, doc_id: str, uid: Optional[str]) -> dict:
-    doc = await db.appdata_docs.find_one({"appId": app_id, "collection": _collection(collection), "id": doc_id, **_visible(uid)})
+async def _owned(app_id: str, collection: str, doc_id: str, request: Request, action: str):
+    """The document `action` (update or delete) is about, after the rules: (doc, rule)."""
+    uid, rule, who = await _context(app_id, collection, request)
+    query = {"appId": app_id, "collection": collection, "id": doc_id}
+    if not (who and who["isAdmin"]):
+        query.update(_visible(uid))
+    doc = await db.appdata_docs.find_one(query)
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
-    if doc.get("ownerId") and doc["ownerId"] != uid:
+    if rule:
+        appbackend.allowed(rule, action, who, doc)
+    elif doc.get("ownerId") and doc["ownerId"] != uid:
         raise HTTPException(status_code=403, detail="Only the person who created this can change it")
-    return doc
+    return doc, rule
 
 
 @router.patch("/{app_id}/db/{collection}/{doc_id}")
 async def update_doc(app_id: str, collection: str, doc_id: str, body: DocPatch, request: Request):
-    uid = _viewer(request, app_id)
-    doc = await _owned(app_id, collection, doc_id, uid)
-    data = {**doc["data"], **body.data}
+    collection = _collection(collection)
+    doc, rule = await _owned(app_id, collection, doc_id, request, "update")
+    data = await appbackend.check_data(app_id, collection, rule, body.data, old=doc["data"], doc_id=doc_id)
     _check_size(data)
     doc.update(data=data, updatedAt=_now())
     await db.appdata_docs.update_one({"_id": doc["_id"]}, {"$set": {"data": data, "updatedAt": doc["updatedAt"]}})
@@ -272,7 +309,7 @@ async def update_doc(app_id: str, collection: str, doc_id: str, body: DocPatch, 
 
 @router.delete("/{app_id}/db/{collection}/{doc_id}")
 async def delete_doc(app_id: str, collection: str, doc_id: str, request: Request):
-    doc = await _owned(app_id, collection, doc_id, _viewer(request, app_id))
+    doc, _ = await _owned(app_id, _collection(collection), doc_id, request, "delete")
     await db.appdata_docs.delete_one({"_id": doc["_id"]})
     return {"ok": True}
 
@@ -281,3 +318,4 @@ async def delete_app_data(app_id: str):
     await db.appdata_docs.delete_many({"appId": app_id})
     await db.appdata_users.delete_many({"appId": app_id})
     await db.appdata_files.delete_many({"appId": app_id})
+    await db.appbackend_errors.delete_many({"appId": app_id})

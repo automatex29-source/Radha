@@ -716,10 +716,42 @@ async def app_prompt(database, app_id: str) -> str:
         "picture or document (max 2 MB) and returns {url, name}; await RADHA.fetch(url, {method, headers, body}) "
         "calls any public API from the server (no CORS problems) and returns {status, ok, data, text}. "
         "Show a loading state while these run and a friendly message if they fail.\n"
-        "- Keep your chat replies short: say what you built or changed.\n\n"
+        + BACKEND_GUIDE
+        + "- Keep your chat replies short: say what you built or changed.\n\n"
         + DESIGN_GUIDE
     )
 
+
+# How the builder writes a backend like a software engineer would (appbackend.py enforces and tests it).
+BACKEND_GUIDE = (
+    "- Real backend: build it like a software engineer whenever the app takes orders, bookings, payments, "
+    "sign-ups, stock, scores, roles, or any data one visitor must not be able to change for another. Never trust "
+    "the browser with prices, totals, stock, slots or who may do what.\n"
+    "  1. Data model and rules in backend.json, enforced by the server on every RADHA.db call: "
+    "{\"admins\": [], \"collections\": {\"products\": {\"read\": \"anyone\", \"create\": \"admin\", "
+    "\"update\": \"admin\", \"delete\": \"admin\", \"fields\": {\"name\": {\"type\": \"string\", "
+    "\"required\": true, \"max\": 80}, \"price\": {\"type\": \"number\", \"min\": 0, \"required\": true}}}, "
+    "\"orders\": {\"read\": \"owner\", \"create\": \"nobody\", \"update\": \"admin\", \"delete\": \"admin\", "
+    "\"fields\": {\"product\": {\"type\": \"ref\", \"to\": \"products\", \"required\": true}, "
+    "\"phone\": {\"type\": \"phone\", \"required\": true, \"hidden\": true}}}}}. Who: anyone, signed-in, owner "
+    "(the person who created the item), admin, nobody (only server code). Field types: string, text, number, "
+    "integer, boolean, email, phone, date, url, ref (to another collection), list, object, any; options: required, "
+    "default, min, max, options (a list of allowed values), unique, hidden (only its owner and admins see it). "
+    "List every collection the pages use. The app owner is always an admin; RADHA.auth.isAdmin is true for admins, "
+    "so show admin screens (add products, see all orders, change status) only to them.\n"
+    "  2. Server code for anything that must be trusted: api/<name>.js, called from the page with "
+    "const result = await RADHA.api(\"<name>\", input). Write it as an ES module: export default async function "
+    "(input, ctx) { ... return result } with ctx.user ({id, email, name, isAdmin} or null), ctx.db.get(c, id), "
+    "ctx.db.list(c, {where, limit, mine}), ctx.db.find(c, where), ctx.db.count(c, where), ctx.db.add(c, data), "
+    "ctx.db.update(c, id, data), ctx.db.remove(c, id) (full access, field rules still apply), ctx.ai(prompt), "
+    "ctx.notify({subject, message, ...fields}), ctx.fetch(url, opts), ctx.requireUser(), ctx.requireAdmin() and "
+    "ctx.fail(\"friendly message\", status). Validate the input first and ctx.fail with a clear message when it's "
+    "wrong; read prices from the database, never from the input; check stock or slot clashes before saving. "
+    "Add export const examples = [{...}] with one or two realistic inputs: every function is run with them, and "
+    "with an empty input, before the user sees the app, and a crash comes back to you to fix.\n"
+    "  3. In the page, show the error message from a failed RADHA.api or RADHA.db call next to the form, disable "
+    "the button while it runs, and re-load the list after a change.\n"
+)
 
 _HTML_BODY = r"((?:<!doctype html[^>]*>\s*)?<html[\s>].*</html>)"
 _HTML_FENCED_RE = re.compile(r"```[ \t]*html?[^\n]*\n\s*" + _HTML_BODY + r"\s*?\n[ \t]*```", re.IGNORECASE | re.DOTALL)
@@ -806,7 +838,7 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
         content = jsx_compile.relative_html(path, content, files)
         if uses_kit(content):
             content = _before_body_end(_after_head(content, font_tags(content)), "<script>" + KIT_JS + "</script>")
-        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
+        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id, draft=bridge) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
     return Response(content, media_type=f"{ctype}; charset=utf-8" if ctype.startswith("text/") else ctype, headers=headers)
