@@ -45,7 +45,7 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SDK = """<script>(function(){var A=%s,D=%s,B=new URL(location.href).origin+"/api/appdata/"+A,K="radha-user-"+A,T=null,U=null;
 try{var s=JSON.parse(localStorage.getItem(K)||"null");if(s){T=s.token;U=s.user}}catch(e){}
 function keep(){try{T?localStorage.setItem(K,JSON.stringify({token:T,user:U})):localStorage.removeItem(K)}catch(e){}}
-async function call(m,p,b){var h={"Content-Type":"application/json"};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]="1";
+async function call(m,p,b){var h={"Content-Type":"application/json"};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]=D;
 var r=await fetch(B+p,{method:m,headers:h,body:b===undefined?undefined:JSON.stringify(b)});var j=null;try{j=await r.json()}catch(e){}
 if(!r.ok)throw new Error((j&&j.detail&&(j.detail.msg||j.detail))||("Request failed ("+r.status+")"));return j}
 function signed(r){T=r.token;U=r.user;keep();return U}
@@ -60,7 +60,7 @@ watch:function(c,cb,o){var on=true,last="";function tick(){if(!on)return;dbApi.l
 if(s!==last){last=s;cb(r)}}).catch(function(){}).then(function(){if(on)setTimeout(tick,(o&&o.every)||4000)})}tick();return function(){on=false}},get:function(c,id){return call("GET",q(c)+"/"+encodeURIComponent(id))},
 add:function(c,d,o){return call("POST",q(c),{data:d,private:!!(o&&o.private)})},update:function(c,id,d){return call("PATCH",q(c)+"/"+encodeURIComponent(id),{data:d})},
 remove:function(c,id){return call("DELETE",q(c)+"/"+encodeURIComponent(id))}};
-async function form(p,fd){var h={};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]="1";var r=await fetch(B+p,{method:"POST",headers:h,body:fd});var j=null;
+async function form(p,fd){var h={};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]=D;var r=await fetch(B+p,{method:"POST",headers:h,body:fd});var j=null;
 try{j=await r.json()}catch(e){}if(!r.ok)throw new Error((j&&j.detail&&(j.detail.msg||j.detail))||("Upload failed ("+r.status+")"));return j}
 function ai(p,o){o=o||{};return call("POST","/ai",{prompt:String(p),system:o.system||"",history:o.history||[],json:!!o.json}).then(function(r){return o.json?r.data:r.text})}
 var files={upload:function(f){var fd=new FormData();fd.append("file",f);return form("/files",fd)},remove:function(id){return call("DELETE","/files/"+encodeURIComponent(id))}};
@@ -85,7 +85,7 @@ async def ensure_indexes():
 
 def sdk_script(app_id: str, draft: bool = False) -> str:
     """The RADHA client for a page. `draft` (the builder's preview) runs the working copy's rules and server code."""
-    return SDK % (json.dumps(app_id), "true" if draft else "false")
+    return SDK % (json.dumps(app_id), json.dumps(appbackend.draft_key(app_id)) if draft else "null")
 
 
 def _now() -> str:
@@ -130,8 +130,7 @@ def _public_user(u: dict, admin: bool = False) -> dict:
 
 
 async def _user_out(app_id: str, user: dict, request: Optional[Request] = None) -> dict:
-    rules = await appbackend.rules_for(app_id, appbackend.is_draft(request) if request else False)
-    return _public_user(user, await appbackend.is_admin(app_id, user, rules))
+    return _public_user(user, appbackend.is_admin(user, appbackend.is_draft(request, app_id)))
 
 
 def _public_doc(d: dict) -> dict:
@@ -224,9 +223,10 @@ def _where(raw: Optional[str]) -> dict:
 async def _context(app_id: str, collection: str, request: Request):
     """(uid, the collection's rules or None, the viewer with isAdmin or None) for one request."""
     uid = _viewer(request, app_id)
-    rules = await appbackend.rules_for(app_id, appbackend.is_draft(request))
+    draft = appbackend.is_draft(request, app_id)
+    rules = await appbackend.rules_for(app_id, draft)
     rule = appbackend.collection_rule(rules, collection)
-    who = await appbackend.viewer(app_id, uid, rules) if rule else None
+    who = await appbackend.viewer(app_id, uid, rules, draft) if rule else None
     return uid, rule, who
 
 

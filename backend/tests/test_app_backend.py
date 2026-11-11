@@ -16,7 +16,6 @@ import appcloud  # noqa: E402
 import appdata  # noqa: E402
 
 RULES = """{
-  "admins": ["boss@shop.com"],
   "collections": {
     "products": {"read": "anyone", "create": "admin", "update": "admin", "delete": "admin",
                  "fields": {"name": {"type": "string", "required": true, "max": 40},
@@ -77,6 +76,13 @@ def token(c, email):
                                                  json={"email": email, "password": "secret1"}).json()["token"]}
 
 
+def admin(c, database, email):
+    """A user the owner made admin in the Data tab."""
+    headers = token(c, email)
+    c.portal.call(database.appdata_users.update_one, {"email": email}, {"$set": {"role": "admin"}})
+    return headers
+
+
 def test_rules_parse_and_explain_mistakes():
     rules, problems = appbackend.parse_rules(RULES)
     assert not problems and rules["collections"]["orders"]["create"] == "nobody"
@@ -86,12 +92,12 @@ def test_rules_parse_and_explain_mistakes():
 
 
 def test_only_admins_change_products_and_fields_are_checked(env):
-    c, _, _ = env
+    c, database, _ = env
     visitor = c.post("/api/appdata/app1/db/products", json={"data": {"name": "Cake", "price": 5}})
     assert visitor.status_code == 401
     shopper = token(c, "ann@x.com")
     assert c.post("/api/appdata/app1/db/products", json={"data": {"name": "Cake", "price": 5}}, headers=shopper).status_code == 403
-    boss = token(c, "boss@shop.com")
+    boss = admin(c, database, "boss@shop.com")
     assert c.post("/api/appdata/app1/auth/login", json={"email": "boss@shop.com", "password": "secret1"}).json()["user"]["isAdmin"]
     bad = c.post("/api/appdata/app1/db/products", json={"data": {"name": "Cake", "price": "free"}}, headers=boss)
     assert bad.status_code == 400 and bad.json()["detail"] == "Price must be a number"
@@ -107,14 +113,40 @@ def test_only_admins_change_products_and_fields_are_checked(env):
     assert c.patch(f"/api/appdata/app1/db/products/{ok['id']}", json={"data": {"price": 500}}, headers=boss).json()["data"]["price"] == 500
 
 
-def test_app_owner_is_admin_and_can_make_others_admin(env):
+def test_nobody_becomes_admin_by_email_only_the_owner_decides(env):
     c, database, _ = env
-    maker = token(c, "maker@krish.ai")
-    assert c.get("/api/appdata/app1/auth/me", headers=maker).json()["isAdmin"]
+    # sign-ups don't check emails, so using the owner's own email (or any listed one) proves nothing
+    c.portal.call(database.app_files.update_one, {"appId": "app1", "path": "backend.json"},
+                  {"$set": {"content": RULES.replace('"collections"', '"admins": ["sneaky@x.com"], "collections"', 1)}})
+    for email in ("maker@krish.ai", "sneaky@x.com"):
+        h = token(c, email)
+        assert not c.get("/api/appdata/app1/auth/me", headers=h).json()["isAdmin"]
+        assert c.post("/api/appdata/app1/db/products", json={"data": {"name": "Cake", "price": 5}}, headers=h).status_code == 403
     helper = token(c, "help@x.com")
     assert c.post("/api/appdata/app1/db/products", json={"data": {"name": "Cake", "price": 5}}, headers=helper).status_code == 403
     c.portal.call(database.appdata_users.update_one, {"email": "help@x.com"}, {"$set": {"role": "admin"}})
     assert c.post("/api/appdata/app1/db/products", json={"data": {"name": "Cake", "price": 5}}, headers=helper).status_code == 200
+
+
+def test_only_the_owners_preview_can_use_the_working_copy(env):
+    c, database, put = env
+    # published version: products open to anyone; working copy (unfinished): products closed
+    c.portal.call(database.app_blobs.insert_one, {"hash": "h1", "content": RULES.replace('"create": "admin"', '"create": "anyone"', 1)})
+    c.portal.call(database.app_commits.insert_one, {"appId": "app1", "id": "v1", "files": {"backend.json": "h1"}})
+    c.portal.call(database.apps.update_one, {"id": "app1"}, {"$set": {"published": {"slug": "s", "commitId": "v1"}}})
+    item = {"data": {"name": "Cake", "price": 5}}
+    assert c.post("/api/appdata/app1/db/products", json=item).status_code == 200  # the live rules
+    for fake in ("1", "true", appbackend.draft_key("other-app"), "garbage"):
+        assert c.post("/api/appdata/app1/db/products", json=item, headers={"X-Radha-Draft": fake}).status_code == 200
+    draft = {"X-Radha-Draft": appbackend.draft_key("app1")}
+    assert c.post("/api/appdata/app1/db/products", json=item, headers=draft).status_code == 401  # working copy's rules
+    # in the owner's preview a signed-in test account is an admin; outside it, the same account is not
+    h = token(c, "tester@x.com")
+    assert c.get("/api/appdata/app1/auth/me", headers={**h, **draft}).json()["isAdmin"]
+    assert not c.get("/api/appdata/app1/auth/me", headers=h).json()["isAdmin"]
+    # the key is only ever put into preview pages
+    assert appbackend.draft_key("app1")[:10] in appdata.sdk_script("app1", draft=True)
+    assert "X-Radha-Draft" in appdata.sdk_script("app1") and "D=null" in appdata.sdk_script("app1")
 
 
 def test_owner_only_reads_and_hidden_fields(env):
@@ -141,7 +173,7 @@ def test_collections_without_rules_keep_the_simple_rules(env):
 def test_server_function_places_an_order_with_trusted_price(env):
     c, database, put = env
     put("api/place-order.js", PLACE_ORDER)
-    boss = token(c, "boss@shop.com")
+    boss = admin(c, database, "boss@shop.com")
     cake = c.post("/api/appdata/app1/db/products", json={"data": {"name": "Truffle", "price": 450}}, headers=boss).json()
     ann = token(c, "ann@x.com")
     r = c.post("/api/appdata/app1/api/place-order", json={"input": {"productId": cake["id"], "qty": 2, "phone": "98765 43210", "total": 1}},
@@ -180,5 +212,5 @@ def test_function_timeout_and_sandbox_has_no_network(env, monkeypatch):
     c, _, put = env
     monkeypatch.setattr(appbackend, "FUNCTION_SECONDS", 2)
     put("api/spin.js", "export default async function () { while (true) {} }")
-    r = c.post("/api/appdata/app1/api/spin", json={"input": {}}, headers={"X-Radha-Draft": "1"})
+    r = c.post("/api/appdata/app1/api/spin", json={"input": {}}, headers={"X-Radha-Draft": appbackend.draft_key("app1")})
     assert r.status_code == 504

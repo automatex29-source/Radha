@@ -6,7 +6,6 @@ could save half an order, and nothing on the server could check stock or a time 
 
 backend.json   the data model and its rules, enforced by the server on every RADHA.db call:
     {
-      "admins": ["owner@shop.com"],
       "collections": {
         "products": {"read": "anyone", "create": "admin", "update": "admin", "delete": "admin",
                      "fields": {"name": {"type": "string", "required": true, "max": 80},
@@ -33,8 +32,11 @@ api/<name>.js  server code the page calls with `await RADHA.api("name", input)`:
     ctx.ai, ctx.notify, ctx.fetch, ctx.fail(message, status), ctx.requireUser() and ctx.requireAdmin().
     `export const examples = [{...}]` gives test inputs: the App Builder runs each one before it shows the app.
 
-Admins are the emails in "admins", the app owner's own Krish AI email, and app users the owner made admin
-in the Data tab. The preview runs the working copy; the published site runs the published version.
+Admins are the app users the owner made admin in the Data tab, and, in the owner's own preview, every
+signed-in account. Nothing a visitor can type makes them an admin: app sign-ups don't check email
+addresses, so an email (even the owner's) is never proof. The preview runs the working copy and the
+published site runs the published version; only a preview page carries the signed draft key that picks
+the working copy (draft_key), so a visitor can't switch a live app to unfinished code.
 """
 import hashlib
 import json
@@ -42,14 +44,16 @@ import logging
 import re
 import shutil
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import jwt
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from agent import sandbox
+from auth import JWT_ALGORITHM, _secret
 
 logger = logging.getLogger("radha.appbackend")
 
@@ -100,7 +104,6 @@ def parse_rules(text: str) -> Tuple[Optional[dict], List[str]]:
         return out
     if not isinstance(raw, dict):
         return None, [f"{RULES_FILE} must be a JSON object with \"collections\""]
-    admins = [str(a).strip().lower() for a in raw.get("admins") or [] if isinstance(a, str)]
     collections = {}
     for name, spec in (raw.get("collections") or {}).items():
         if not _NAME_RE.match(str(name)):
@@ -130,7 +133,7 @@ def parse_rules(text: str) -> Tuple[Optional[dict], List[str]]:
                 problems.append(f"{RULES_FILE}: {name}.fields.{field} is a ref, so \"to\" must name another collection")
             rule["fields"][str(field)] = {**fspec, "type": ftype}
         collections[str(name)] = rule
-    out = ({"admins": admins, "collections": collections, "strict": raw.get("strict") is True}, problems)
+    out = ({"collections": collections, "strict": raw.get("strict") is True}, problems)
     if len(_parsed) > 2000:
         _parsed.clear()
     _parsed[key] = out
@@ -160,8 +163,25 @@ async def rules_for(app_id: str, draft: bool) -> Optional[dict]:
     return parse_rules(text)[0]
 
 
-def is_draft(request: Request) -> bool:
-    return request.headers.get("X-Radha-Draft") == "1"
+DRAFT_HOURS = 12
+
+
+def draft_key(app_id: str) -> str:
+    """A signed key, put only into the owner's preview pages, that makes RADHA calls use the working copy."""
+    payload = {"type": "appdraft", "app": app_id, "exp": datetime.now(timezone.utc) + timedelta(hours=DRAFT_HOURS)}
+    return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
+
+
+def is_draft(request: Optional[Request], app_id: str) -> bool:
+    """True only for a request from the owner's preview of this app (a valid draft key for this app)."""
+    key = request.headers.get("X-Radha-Draft", "") if request else ""
+    if not key or key == "1":
+        return False
+    try:
+        payload = jwt.decode(key, _secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.PyJWTError:
+        return False
+    return payload.get("type") == "appdraft" and payload.get("app") == app_id
 
 
 def collection_rule(rules: Optional[dict], collection: str) -> Optional[dict]:
@@ -175,7 +195,7 @@ def collection_rule(rules: Optional[dict], collection: str) -> Optional[dict]:
 
 
 # ------------------------------------------------------------------ who is asking
-async def viewer(app_id: str, uid: Optional[str], rules: Optional[dict]) -> Optional[dict]:
+async def viewer(app_id: str, uid: Optional[str], rules: Optional[dict], draft: bool = False) -> Optional[dict]:
     """The signed-in app user as {id, email, name, isAdmin}, or None."""
     if not uid:
         return None
@@ -183,18 +203,13 @@ async def viewer(app_id: str, uid: Optional[str], rules: Optional[dict]) -> Opti
     if not user:
         return None
     return {"id": uid, "email": user["email"], "name": user.get("name") or "",
-            "isAdmin": await is_admin(app_id, user, rules)}
+            "isAdmin": is_admin(user, draft)}
 
 
-async def is_admin(app_id: str, user: dict, rules: Optional[dict]) -> bool:
-    if user.get("role") == "admin":
-        return True
-    email = (user.get("email") or "").lower()
-    if rules and email in rules["admins"]:
-        return True
-    app = await db.apps.find_one({"id": app_id}, {"userId": 1})
-    owner = app and app.get("userId") and await db.users.find_one({"id": app["userId"]}, {"email": 1})
-    return bool(owner and (owner.get("email") or "").lower() == email)
+def is_admin(user: dict, draft: bool = False) -> bool:
+    """An admin is a user the app's owner made admin in the Data tab. In the owner's own preview (draft),
+    every signed-in account is one, so the owner can try the admin screens before publishing."""
+    return user.get("role") == "admin" or draft
 
 
 def allowed(rule: dict, action: str, who: Optional[dict], doc: Optional[dict] = None) -> None:
@@ -522,9 +537,9 @@ async def call_function(app_id: str, name: str, body: CallIn, request: Request):
     appcloud._limit("api", app_id, request)
     if len(json.dumps(body.input, default=str)) > appdata.MAX_DOC_BYTES:
         raise HTTPException(status_code=413, detail="The request is too large")
-    draft = is_draft(request)
+    draft = is_draft(request, app_id)
     rules = await rules_for(app_id, draft)
-    who = await viewer(app_id, appdata._viewer(request, app_id), rules)
+    who = await viewer(app_id, appdata._viewer(request, app_id), rules, draft)
     files = await _code_files(app_id, draft)
     out = await run_function(app_id, files, name, body.input, who, rules, request=request)
     if out["ok"]:
