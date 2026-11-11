@@ -1369,13 +1369,20 @@ def _to_coder(model: str, conv: Optional[dict], coding: bool, history_docs: list
 LONG_CHAT_TOKENS = 6000
 
 
-def _auto_model(history_docs: list, text: Optional[str], coding: bool = False) -> str:
+# The Counsellor on the free plan: the fuller Gemini Flash (not Lite) writes warmer, more thoughtful replies to
+# feelings and life questions. Lite, then gpt-oss, take over when its free allowance runs out.
+COUNSEL_FREE_MODEL = os.environ.get("COUNSEL_FREE_MODEL", "gemini-3.5-flash")
+
+
+def _auto_model(history_docs: list, text: Optional[str], coding: bool = False, counselling: bool = False) -> str:
     """The free model that answers a Krish AI question. Pictures go to Gemini (it can see them), long chats to
     Cerebras (most room), hard questions to gpt-oss-120b (it reasons), everything else to Gemini (quick). Coding
     questions then move to Krish Coder in _to_coder. Gemini hands over to Groq, then Cerebras, when it runs out."""
     recent = [m for m in history_docs if m["role"] == "user"][-1:]
     if any(m.get("images") for m in recent):
         wanted = ["gemini-3.5-flash-lite"]
+    elif counselling:
+        wanted = [COUNSEL_FREE_MODEL, "gemini-3.5-flash-lite", "cerebras/gpt-oss-120b", "openai/gpt-oss-120b"]
     elif agent_llm.estimate_tokens([m.get("content") or "" for m in history_docs]) > LONG_CHAT_TOKENS:
         wanted = ["cerebras/gpt-oss-120b", "openai/gpt-oss-120b"]
     elif coding or _hard_ask(text or "") or _code_ask(text or ""):
@@ -1823,7 +1830,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
     coding = _coding_turn(history_docs)
     if model == AUTO_MODEL:
-        model = _auto_model(history_docs, last_user, coding)
+        model = _auto_model(history_docs, last_user, coding, counselling)
     if _to_coder(model, conv, coding, history_docs, counselling or voice or bool(extra_system)):
         model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
@@ -1982,8 +1989,12 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(voice_prompt(voice_lang, settings_lang))
     if ask_replies:
         system_parts.append(counsellor.REPLIES)
+    if counselling and counsellor.verse_note(history_docs):
+        system_parts.append(counsellor.NO_VERSE)
     if counselling and not voice:
         system_parts.append(counsellor.BRIEF)
+    if counselling and voice:
+        system_parts.append(counsellor.VOICE)
     system_prompt = "\n\n".join(system_parts)
     # The Counsellor never shows letters from a script the person didn't use (see counsellor.keep_scripts).
     scripts = counsellor.allowed_scripts([m["content"] for m in history_docs if m["role"] == "user"],
@@ -3317,7 +3328,7 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
 @api.post("/audio/speech")
 async def text_to_speech(body: SpeechIn, user_id: str = Depends(current_user_id)):
     try:
-        audio = await media.speak(body.text, body.voice or "nova", body.lang)
+        audio = await media.speak(body.text, body.voice or "nova", body.lang, body.speed)
     except media.MediaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
@@ -3496,7 +3507,7 @@ def _invite_preview(page: str, info: dict, base: str) -> str:
     who = _html.escape(info["name"]) or "A friend"
     title = f"{who} invited you to Krish AI 🎁"
     desc = (f"Join with this link and get {info['days']} days of Krish AI Pro, free. "
-            "Chat, study, build apps and talk things through with Krish Robo.")
+            "Chat, study, build apps and talk things through with the Counsellor.")
     picture = f"{base}/api/cards/invite/{info['code']}.png"
     values = {"og:title": title, "twitter:title": title, "og:description": desc, "twitter:description": desc,
               "description": desc, "og:image": picture, "twitter:image": picture}
