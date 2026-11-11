@@ -75,6 +75,7 @@ import invite_card
 import connectors
 import connector_tools
 import plugins
+import people_db
 from agent import default_registry, run_agent, ToolContext
 from agent import browser as agent_browser
 from agent import llm as agent_llm
@@ -82,8 +83,10 @@ from agent.runtime import HEARTBEAT_SECONDS as _HEARTBEAT_SECONDS, MAX_STEPS as 
 
 # ---------------------------------------------------------------- infra setup
 mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ.get("DB_NAME") or "radha"]
+# Account details (people_db.USER_COLLECTIONS) are kept in their own database, USERS_DB_NAME; `db` sends each
+# collection to the right one, so the code below still just says db.users, db.messages and so on.
+db = people_db.connect(AsyncIOMotorClient, mongo_url, os.environ.get("DB_NAME") or "radha")
+client = db.main.client
 
 # Emergent Universal Key (only used on Emergent). Elsewhere, set provider keys instead.
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
@@ -591,6 +594,7 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     await db.referrals.delete_many({"$or": [{"inviterId": user_id}, {"friendId": user_id}]})
     await db.usage.delete_many({"_id": {"$regex": f"^{re.escape(user_id)}:"}})
     await db.users.delete_one({"id": user_id})
+    await people_db.forget_old_copy(db, user_id)
     _login_failures.pop(user["email"], None)
     return {"ok": True}
 
@@ -3523,6 +3527,7 @@ async def _ensure_auth_secret():
 
 @app.on_event("startup")
 async def startup():
+    await people_db.move_existing_users(db)
     await db.users.create_index("email", unique=True)
     await db.password_resets.create_index("tokenHash")
     await db.conversations.create_index([("userId", 1), ("updatedAt", -1)])
@@ -3583,3 +3588,5 @@ async def shutdown():
     monitor.stop()
     await agent_browser.manager.shutdown()
     client.close()
+    if db.people.client is not client:
+        db.people.client.close()
