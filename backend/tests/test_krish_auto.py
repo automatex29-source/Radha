@@ -67,3 +67,15 @@ def test_basic_plan_gets_krish_ai_instead_of_paid_models(monkeypatch):
     assert asyncio.run(server._pick_model("u1", {}, server.AUTO_MODEL)) == server.AUTO_MODEL
     monkeypatch.setattr(server, "db", FakeDB("pro"))
     assert asyncio.run(server._pick_model("u1", {}, "claude-sonnet-5-5")) == "claude-sonnet-5-5"
+
+
+def test_free_counsellor_gets_fuller_gemini_then_lite(monkeypatch):
+    server = _server()
+    from agent import llm
+    keys(monkeypatch, "GEMINI_API_KEY", "GROQ_API_KEY")
+    talk = [{"role": "user", "content": "I feel lonely in my new city"}]
+    assert server._auto_model(talk, talk[0]["content"], counselling=True) == server.COUNSEL_FREE_MODEL
+    assert server._auto_model(talk, talk[0]["content"]) == GEMINI  # ordinary chat stays on Lite
+    # Flash's free allowance runs out: Lite answers, then Groq.
+    assert llm.fallbacks_for(server.COUNSEL_FREE_MODEL, [])[:2] == [GEMINI, "openai/gpt-oss-120b"]
+    assert GEMINI not in llm.fallbacks_for(GEMINI, [])

@@ -2039,14 +2039,35 @@ def clean_domain(text: str) -> str:
     return d
 
 
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "testserver"}
+# Hosting providers' shared addresses: nobody owns a name there by pointing a CNAME, so none can be claimed.
+_SHARED_SUFFIXES = (".onrender.com", ".pages.dev", ".workers.dev")
+
+
 def own_hosts() -> set:
-    hosts = {"localhost", "127.0.0.1", "0.0.0.0", "testserver"}
-    for value in (public_origin(), os.environ.get("FRONTEND_URL", ""), os.environ.get("BACKEND_URL", "")):
+    hosts = set(_LOCAL_HOSTS)
+    for value in (public_origin(), os.environ.get("FRONTEND_URL", ""), os.environ.get("BACKEND_URL", ""),
+                  os.environ.get("APP_URL", ""), os.environ.get("SITE_URL") or "https://krishai.net"):
         host = urlparse(value).hostname if value else None
         if host:
             hosts.add(host.lower())
     hosts.update(h.strip().lower() for h in os.environ.get("APP_HOSTS", "").split(",") if h.strip())
     return hosts
+
+
+def reserved_domain(domain: str) -> bool:
+    """Krish AI's own addresses, and every name under them (www.krishai.net, empirex.krishai.net...).
+
+    An app claiming one of these would be served instead of Krish AI itself for everyone who opens it, so a
+    fake sign-in page could be put on krishai.net."""
+    domain = (domain or "").lower().removeprefix("www.")
+    if domain.endswith(_SHARED_SUFFIXES):
+        return True
+    for host in own_hosts():
+        base = host.removeprefix("www.")
+        if domain == base or (host not in _LOCAL_HOSTS and domain.endswith("." + base)):
+            return True
+    return False
 
 
 @router.put("/apps/{app_id}/domain")
@@ -2057,7 +2078,7 @@ async def set_domain(app_id: str, body: DomainIn, user_id: str = Depends(current
         await db.apps.update_one({"id": app_id}, {"$set": {"domain": None, "updatedAt": _now()}})
         _DOMAIN_CACHE.clear()
         return {"app": public_app(await db.apps.find_one({"id": app_id})), "target": None}
-    if not _DOMAIN_RE.match(domain) or domain in own_hosts():
+    if not _DOMAIN_RE.match(domain) or reserved_domain(domain):
         raise HTTPException(status_code=400, detail="Use a domain you own, like shop.example.com.")
     taken = await db.apps.find_one({"domain": domain, "id": {"$ne": app_id}}, {"_id": 1})
     if taken:
@@ -2071,7 +2092,7 @@ async def set_domain(app_id: str, body: DomainIn, user_id: str = Depends(current
 async def site_for_host(host: str) -> Optional[dict]:
     """The published app answering on this custom domain, or None (cached for a minute)."""
     host = clean_domain(host)
-    if not host or host in own_hosts():
+    if not host or reserved_domain(host):
         return None
     hit = _DOMAIN_CACHE.get(host)
     if hit and time.monotonic() - hit[0] < _DOMAIN_TTL:

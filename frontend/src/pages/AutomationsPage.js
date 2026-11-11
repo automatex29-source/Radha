@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import {
   Workflow, Plus, Loader2, Play, Webhook, Clock, Copy, Trash2, CheckCircle2, XCircle, MessageSquare, Pencil, ArrowLeft,
   Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp, Check, Square, PauseCircle, Lock, Hand, Inbox, ShieldCheck,
+  CalendarClock, Repeat, MousePointerClick, Timer, Zap, ListChecks,
 } from "lucide-react";
 import ScrollTable from "@/components/ScrollTable";
 
@@ -39,6 +40,43 @@ const EXAMPLES = [
 const APP_NAMES = { gmail: "Gmail", google_sheets: "Google Sheets", google_calendar: "Google Calendar", google_drive: "Google Drive" };
 const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } };
 const tomorrow = () => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+// Short, human times: "in 8 min", "Today, 7:00 PM", "Tomorrow, 7:30 AM", "Mon 16 Nov, 9:00 AM", "12 min ago".
+function when(iso, now = Date.now()) {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const diff = t - now, mins = Math.round(Math.abs(diff) / 60000);
+  if (mins < 1) return diff >= 0 ? "in under a minute" : "just now";
+  if (mins < 60) return diff >= 0 ? `in ${mins} min` : `${mins} min ago`;
+  const d = new Date(t), clock = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const day = (x) => new Date(x).toDateString();
+  if (day(t) === day(now)) return `Today, ${clock}`;
+  if (day(t) === day(now + 86400000)) return `Tomorrow, ${clock}`;
+  if (day(t) === day(now - 86400000)) return `Yesterday, ${clock}`;
+  return `${d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}, ${clock}`;
+}
+const took = (r) => {
+  if (!r.finishedAt || !r.startedAt) return "";
+  const s = Math.max(0, Math.round((new Date(r.finishedAt) - new Date(r.startedAt)) / 1000));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+};
+const TRIGGERS = { schedule: "On schedule", manual: "Run now", webhook: "Webhook", email: "New email" };
+// The icon and colour for how a job starts.
+const KINDS = {
+  email: { icon: Inbox, tint: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+  daily: { icon: Clock, tint: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  weekly: { icon: CalendarClock, tint: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
+  interval: { icon: Repeat, tint: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  once: { icon: Timer, tint: "bg-rose-500/10 text-rose-600 dark:text-rose-400" },
+  manual: { icon: MousePointerClick, tint: "bg-slate-500/10 text-slate-600 dark:text-slate-300" },
+};
+const kindOf = (a) => KINDS[a?.schedule?.type] || KINDS.manual;
+// Quick ideas that fill the Tell Krish box.
+const ASK_IDEAS = [
+  "Every night at 9, total today's orders from my Gmail and send me the numbers on Telegram",
+  "When a new enquiry email arrives, write a reply and ask me before sending it",
+  "Every Monday at 9, compare competitor prices and make an Excel sheet",
+];
 const blank = () => ({
   name: "", prompt: "", schedule: { type: "daily", time: "08:00", weekday: 0, minutes: 60, date: tomorrow(), timezone: localTz() }, model: "",
   memory: true, thorough: false, emailResult: false, notifyUrl: "", sendTo: [], askFirst: true,
@@ -120,14 +158,14 @@ export default function AutomationsPage() {
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className={`radha-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5 max-md:max-w-none max-md:border-r-0 max-md:p-4 ${phoneDetail ? "max-md:hidden" : ""}`}>
           <PageHero compact scene="automations" icon={Workflow} title="Automations"
-            subtitle="Jobs Krish does for you on time, or when an email arrives: it plans the steps, works in your apps and sends you the result.">
+            subtitle="Jobs Krish does for you on time, or when an email comes in.">
             <Button size="sm" onClick={() => setEditing(fresh())} data-testid="new-automation" className="gap-1.5 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New</Button>
           </PageHero>
 
           {options.planner && (
             <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-3" data-testid="tell-krish">
               <Label className="flex items-center gap-1.5 text-sm"><Sparkles className="h-3.5 w-3.5 text-primary" /> Tell Krish what to do</Label>
-              <Textarea rows={2} value={ask} onChange={(e) => setAsk(e.target.value)} className="mt-1.5 bg-card" data-testid="tell-krish-input"
+              <Textarea rows={3} value={ask} onChange={(e) => setAsk(e.target.value)} className="mt-1.5 bg-card" data-testid="tell-krish-input"
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ask.trim().length >= 3 && !asking) { e.preventDefault(); tellKrish(); } }}
                 placeholder="Every evening at 7, check my Gmail for new orders, add them to my sheet and send me the day's progress on Telegram" />
               <div className="mt-2 flex items-center gap-2">
@@ -136,10 +174,21 @@ export default function AutomationsPage() {
                 </Button>
                 <p className="text-[11px] text-muted-foreground">You check the steps before it's saved.</p>
               </div>
+              {!ask && items?.length === 0 && (
+                <div className="mt-2.5 flex flex-col gap-1.5" data-testid="ask-ideas">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Try one</p>
+                  {ASK_IDEAS.map((idea) => (
+                    <button key={idea} type="button" onClick={() => setAsk(idea)}
+                      className="flex items-start gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+                      <Zap className="mt-px h-3 w-3 shrink-0 text-primary" /> {idea}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {approvals.length > 0 && <Approvals items={approvals} onDone={() => { loadApprovals(); load(); }} />}
+          {approvals.length > 0 && <Approvals items={approvals} hideOnWide={current?.id} onDone={() => { loadApprovals(); load(); }} />}
 
           {items === null ? <div className="mt-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : items.length === 0 ? (
             <div className="mt-6 space-y-2" data-testid="automation-examples">
@@ -148,28 +197,31 @@ export default function AutomationsPage() {
             </div>
           ) : (
             <div className="mt-5 space-y-2">
+              <Summary items={items} approvals={approvals} options={options} />
               <IdeasRow rules={options.rules} onPick={pickExample} />
               {items.map((a) => (
                 <div key={a.id} onClick={() => { setSelected(a.id); setPhoneDetail(true); }} data-testid={`automation-${a.id}`}
                   className={`cursor-pointer rounded-xl border p-3.5 transition-colors ${a.id === selected ? "border-primary/60 bg-primary/5" : "border-border bg-card hover:border-primary/40"}`}>
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-start gap-3">
+                    <KindIcon a={a} />
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-2 text-sm font-semibold max-md:break-words md:truncate">{a.name}</p>
-                      <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground"><Clock className="h-3 w-3" /> {a.scheduleText}</p>
+                      <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{a.scheduleText}</p>
                     </div>
                     <Switch checked={a.enabled} onCheckedChange={(v) => toggle(a, v)} onClick={(e) => e.stopPropagation()} data-testid={`toggle-${a.id}`} />
                   </div>
                   {a.triggerError && a.enabled && (
-                    <p className="mt-2 flex items-start gap-1 text-[11px] text-rose-600 dark:text-rose-400"><XCircle className="mt-px h-3 w-3 shrink-0" /> {a.triggerError}</p>
+                    <p className="mt-2 flex items-start gap-1 pl-12 text-[11px] text-rose-600 dark:text-rose-400"><XCircle className="mt-px h-3 w-3 shrink-0" /> {a.triggerError}</p>
                   )}
                   {a.pausedReason && (
-                    <p className="mt-2 flex items-start gap-1 text-[11px] text-amber-700 dark:text-amber-400" data-testid={`paused-${a.id}`}>
+                    <p className="mt-2 flex items-start gap-1 pl-12 text-[11px] text-amber-700 dark:text-amber-400" data-testid={`paused-${a.id}`}>
                       <PauseCircle className="mt-px h-3 w-3 shrink-0" /> {a.pausedReason}
                     </p>
                   )}
-                  <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                    {a.lastStatus && <StatusBadge status={a.lastStatus} />}
-                    {a.nextRunAt && <span>Next: {new Date(a.nextRunAt).toLocaleString()}</span>}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-12 text-[11px] text-muted-foreground">
+                    {a.lastStatus ? <StatusBadge status={a.lastStatus} /> : <span>Not run yet</span>}
+                    {a.nextRunAt && <span className="flex items-center gap-1" title={new Date(a.nextRunAt).toLocaleString()}><Clock className="h-3 w-3" /> {a.schedule?.type === "email" ? "Checks inbox" : "Next"} {when(a.nextRunAt)}</span>}
+                    {approvals.some((p) => p.automationId === a.id) && <span className="flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400"><Hand className="h-3 w-3" /> Needs your OK</span>}
                     {a.webhookUrl && <span className="flex items-center gap-1"><Webhook className="h-3 w-3" /> webhook</span>}
                   </div>
                 </div>
@@ -179,16 +231,71 @@ export default function AutomationsPage() {
         </div>
         <div className={`min-w-0 flex-1 ${phoneDetail ? "" : "max-md:hidden"}`}>
           {current ? <AutomationDetail key={current.id} automation={current} onChanged={load} onBack={() => setPhoneDetail(false)}
+            approvals={approvals.filter((p) => p.automationId === current.id)} onApprovalsDone={() => { loadApprovals(); load(); }}
             onEdit={() => setEditing({ ...current, schedule: { ...blank().schedule, ...current.schedule }, model: current.model || "", notifyUrl: current.notifyUrl || "", sendTo: current.sendTo || [], askFirst: current.askFirst !== false })} /> : (
-            <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
-              <Workflow className="h-10 w-10 text-primary" />
-              <p className="mt-3 text-sm">Create an automation to see its runs here.</p>
-            </div>
+            <HowItWorks />
           )}
         </div>
       </div>
       {editing && <AutomationDialog form={editing} models={models} options={options} onClose={() => setEditing(null)}
         onSaved={(a) => { setEditing(null); setSelected(a.id); setPhoneDetail(true); load(); }} />}
+    </div>
+  );
+}
+
+function KindIcon({ a, size = "h-9 w-9" }) {
+  const { icon: Icon, tint } = kindOf(a);
+  return <span className={`flex ${size} shrink-0 items-center justify-center rounded-xl ${tint} ${a.enabled === false ? "opacity-50" : ""}`}><Icon className="h-4 w-4" /></span>;
+}
+
+function Summary({ items, approvals, options }) {
+  const on = items.filter((a) => a.enabled).length;
+  const failing = items.filter((a) => a.enabled && a.lastStatus === "failed").length;
+  const next = items.filter((a) => a.enabled && a.nextRunAt && a.schedule?.type !== "email")
+    .sort((x, y) => new Date(x.nextRunAt) - new Date(y.nextRunAt))[0];
+  const tiles = [
+    { label: options.limit ? `of ${options.limit} jobs on ${options.planName || "your plan"}` : "jobs", value: options.limit ? items.length : on, tone: "" },
+    { label: "need your OK", value: approvals.length, tone: approvals.length ? "text-amber-600 dark:text-amber-400" : "" },
+    { label: failing === 1 ? "job failing" : "jobs failing", value: failing, tone: failing ? "text-rose-600 dark:text-rose-400" : "" },
+  ];
+  return (
+    <div className="mb-3" data-testid="automation-summary">
+      <div className="grid grid-cols-3 gap-2">
+        {tiles.map((t) => (
+          <div key={t.label} className="rounded-xl border border-border bg-card px-3 py-2">
+            <p className={`text-lg font-bold tabular-nums leading-tight ${t.tone}`}>{t.value}</p>
+            <p className="text-[10px] leading-tight text-muted-foreground">{t.label}</p>
+          </div>
+        ))}
+      </div>
+      {next && <p className="mt-2 flex items-center gap-1 px-1 text-[11px] text-muted-foreground"><Clock className="h-3 w-3" /> Up next: <span className="font-medium text-foreground">{next.name}</span> {when(next.nextRunAt)}</p>}
+    </div>
+  );
+}
+
+function HowItWorks() {
+  const steps = [
+    { icon: Sparkles, title: "Say what you want", text: "Type it in plain words, or pick a ready-made job. Krish writes the steps and picks the time." },
+    { icon: CalendarClock, title: "Krish does it for you", text: "On time (daily, weekly, every hour) or when a new email comes in. It searches, reads your apps and makes files." },
+    { icon: ShieldCheck, title: "You get the result", text: "By email, Telegram or WhatsApp. Emails it writes wait for your OK before they are sent." },
+  ];
+  return (
+    <div className="flex h-full items-center justify-center p-8 max-md:hidden" data-testid="how-it-works">
+      <div className="w-full max-w-md">
+        <Workflow className="h-9 w-9 text-primary" />
+        <h2 className="mt-3 text-xl font-bold tracking-tight">How automations work</h2>
+        <ol className="mt-5 space-y-4">
+          {steps.map((s, i) => (
+            <li key={s.title} className="flex gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">{i + 1}</span>
+              <div>
+                <p className="flex items-center gap-1.5 text-sm font-semibold"><s.icon className="h-3.5 w-3.5 text-primary" /> {s.title}</p>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">{s.text}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }
@@ -231,7 +338,7 @@ function IdeasRow({ rules, onPick }) {
   );
 }
 
-function Approvals({ items, onDone }) {
+function Approvals({ items, onDone, hideOnWide, inDetail = false }) {
   const [busy, setBusy] = useState(null);
   const [open, setOpen] = useState(null);
   const decide = async (ap, approve) => {
@@ -247,13 +354,14 @@ function Approvals({ items, onDone }) {
     }
   };
   return (
-    <div className="mt-5 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3" data-testid="approvals">
-      <p className="flex items-center gap-1.5 text-sm font-semibold"><Hand className="h-4 w-4 text-amber-600 dark:text-amber-400" /> Waiting for your OK ({items.length})</p>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">Krish asks before it sends anything for you.</p>
+    <div className={`rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 ${inDetail ? "mt-4" : "mt-5"} ${hideOnWide && items.every((ap) => ap.automationId === hideOnWide) ? "md:hidden" : ""}`}
+      data-testid={inDetail ? "detail-approvals" : "approvals"}>
+      <p className="flex items-center gap-1.5 text-sm font-semibold"><Hand className="h-4 w-4 text-amber-600 dark:text-amber-400" /> {inDetail ? "This job is waiting for your OK" : "Waiting for your OK"} ({items.length})</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">Krish asks before it sends anything for you. Read it, then send it or not.</p>
       <div className="mt-2 space-y-2">
         {items.map((ap) => (
-          <div key={ap.id} className="rounded-lg border border-border bg-card p-3" data-testid={`approval-${ap.id}`}>
-            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><Mail className="h-3 w-3" /> {ap.automationName} · {new Date(ap.createdAt).toLocaleString()}</p>
+          <div key={ap.id} className={`rounded-lg border border-border bg-card p-3 ${hideOnWide === ap.automationId ? "md:hidden" : ""}`} data-testid={`approval-${ap.id}`}>
+            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><Mail className="h-3 w-3" /> {ap.automationName} · {when(ap.createdAt)}</p>
             {ap.detail?.to ? (
               <>
                 <p className="mt-1 text-sm"><span className="text-muted-foreground">To</span> <span className="font-medium">{ap.detail.to}</span></p>
@@ -390,22 +498,29 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
             <Textarea rows={6} value={form.prompt} onChange={(e) => set({ prompt: e.target.value })} data-testid="automation-prompt" className="bg-card"
               placeholder={"1. Search the web for…\n2. Compare with last time…\n3. Create a PDF report…"} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>When</Label>
-              <select value={s.type} onChange={(e) => setSchedule({ type: e.target.value })} className={field} data-testid="schedule-type">
-                <option value="daily">Every day</option>
-                <option value="weekly">Every week</option>
-                <option value="interval" disabled={lockedInterval && s.type !== "interval"}>
-                  {lockedInterval ? "Every few hours (Pro and Max)" : rules.minInterval >= 60 ? "Every few hours" : "Every few minutes/hours"}
-                </option>
-                <option value="email" disabled={options.rules && !rules.events && s.type !== "email"}>
-                  {options.rules && !rules.events ? "When an email arrives (Pro and Max)" : "When a new email arrives"}
-                </option>
-                <option value="once">Just once</option>
-                <option value="manual">Only manually / by webhook</option>
-              </select>
+          <div className="space-y-1.5">
+            <Label>When should it run?</Label>
+            <div className="grid grid-cols-3 gap-1.5 max-sm:grid-cols-2" role="radiogroup" data-testid="schedule-type">
+              {[
+                { id: "daily", label: "Every day" }, { id: "weekly", label: "Every week" },
+                { id: "interval", label: rules.minInterval >= 60 || lockedInterval ? "Every few hours" : "Every few min", locked: lockedInterval, need: "Pro" },
+                { id: "email", label: "On new email", locked: options.rules && !rules.events, need: "Pro" },
+                { id: "once", label: "Just once" }, { id: "manual", label: "Only when I say" },
+              ].map((o) => {
+                const Icon = KINDS[o.id].icon, on = s.type === o.id, off = o.locked && !on;
+                return (
+                  <button key={o.id} type="button" role="radio" aria-checked={on} disabled={off} onClick={() => setSchedule({ type: o.id })}
+                    data-testid={`when-${o.id}`} title={off ? `Part of the ${o.need} and Max plans` : undefined}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left text-[13px] transition-colors ${on ? "border-primary bg-primary/10 font-medium text-foreground" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"} ${off ? "cursor-not-allowed opacity-50" : ""}`}>
+                    <Icon className={`h-3.5 w-3.5 shrink-0 ${on ? "text-primary" : ""}`} />
+                    <span className="min-w-0 truncate">{o.label}</span>
+                    {o.locked && <Lock className="ml-auto h-3 w-3 shrink-0" />}
+                  </button>
+                );
+              })}
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             {s.type === "interval" && (
               <div className="space-y-1.5">
                 <Label>Every</Label>
@@ -453,6 +568,9 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
               </select>
             </div>
           </div>
+          <p className="flex items-start gap-1.5 rounded-lg bg-surface px-3 py-2 text-[12px] text-muted-foreground" data-testid="schedule-preview">
+            <CalendarClock className="mt-px h-3.5 w-3.5 shrink-0 text-primary" /> {schedulePreview(s)}
+          </p>
           <div className="space-y-3 rounded-xl border border-border bg-card p-3">
             <OptionRow icon={Brain} title="Remember previous runs" hint="Sees what it found last time, skips repeats and reports changes."
               checked={form.memory} onChange={(v) => set({ memory: v })} testid="opt-memory" />
@@ -506,6 +624,16 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
   );
 }
 
+function schedulePreview(s) {
+  const at = s.time ? new Date(`2000-01-01T${s.time}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  if (s.type === "daily") return `Runs every day at ${at}, your time (${s.timezone}).`;
+  if (s.type === "weekly") return `Runs every ${DAYS[Number(s.weekday) || 0]} at ${at}, your time (${s.timezone}).`;
+  if (s.type === "interval") { const m = Number(s.minutes); return `Runs every ${m < 60 ? `${m} minutes` : m === 60 ? "hour" : `${m / 60} hours`}, all day.`; }
+  if (s.type === "email") return `Looks in your Gmail every 10 minutes and runs once for the new emails${(s.query || "").trim() ? ` matching “${s.query.trim()}”` : ""}.`;
+  if (s.type === "once") return s.date ? `Runs once on ${new Date(`${s.date}T00:00`).toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })} at ${at}, then turns itself off.` : "Pick a date.";
+  return "Runs only when you press Run now (or a webhook calls it).";
+}
+
 function OptionRow({ icon: Icon, title, hint, checked, onChange, disabled, locked, testid }) {
   return (
     <div className="flex items-start gap-3">
@@ -527,7 +655,7 @@ function RunCard({ run: r, onOpen, onPreview, onStop }) {
     <div className="rounded-xl border border-border bg-card p-4" data-testid={`run-${r.id}`}>
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <StatusBadge status={r.status} />
-        <span className="text-muted-foreground">· {r.trigger} · {new Date(r.startedAt).toLocaleString()}</span>
+        <span className="text-muted-foreground" title={new Date(r.startedAt).toLocaleString()}>· {TRIGGERS[r.trigger] || r.trigger} · {when(r.startedAt)}{took(r) ? ` · took ${took(r)}` : ""}</span>
         {r.status === "running" && (
           <button onClick={onStop} data-testid={`stop-${r.id}`}
             className="ml-auto flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-muted-foreground hover:border-rose-500/50 hover:text-rose-600">
@@ -550,7 +678,7 @@ function RunCard({ run: r, onOpen, onPreview, onStop }) {
         </ol>
       )}
       {r.waiting > 0 && (
-        <p className="mt-2 flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400"><Hand className="h-3 w-3" /> {r.waiting} action{r.waiting === 1 ? "" : "s"} waiting for your OK (see the list on the left)</p>
+        <p className="mt-2 flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400"><Hand className="h-3 w-3" /> {r.waiting} action{r.waiting === 1 ? "" : "s"} waiting for your OK (see above)</p>
       )}
       {r.error && r.status !== "stopped" && <p className={`mt-2 text-xs ${r.status === "skipped" ? "text-amber-700 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"}`}>{r.error}</p>}
       {r.output && (
@@ -579,7 +707,8 @@ function RunCard({ run: r, onOpen, onPreview, onStop }) {
   );
 }
 
-function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
+function AutomationDetail({ automation: a, onChanged, onEdit, onBack, approvals = [], onApprovalsDone }) {
+  const [advanced, setAdvanced] = useState(!!a.webhookUrl);
   const navigate = useNavigate();
   const [runs, setRuns] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -650,7 +779,8 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
           <ArrowLeft className="h-4 w-4" /> All automations
         </button>
         <div className="flex flex-wrap items-start gap-3">
-          <div className="min-w-0 flex-1 max-sm:basis-full">
+          <KindIcon a={a} size="h-11 w-11" />
+          <div className="min-w-0 flex-1 max-sm:basis-[calc(100%-3.5rem)]">
             <h2 className="text-xl font-bold tracking-tight">{a.name}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{a.scheduleText}{a.enabled ? "" : " · paused"}</p>
             {a.pausedReason && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{a.pausedReason}</p>}
@@ -667,30 +797,45 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
           <Button size="sm" onClick={runNow} disabled={running} data-testid="run-now" className="gap-1.5">{running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} {running ? "Running" : "Run now"}</Button>
           <button onClick={remove} title="Delete" className="rounded-md p-2 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
         </div>
-        <p className="mt-4 whitespace-pre-wrap rounded-xl border border-border bg-card p-4 text-sm">{a.prompt}</p>
+        <Stats a={a} runs={runs} />
+        {approvals.length > 0 && <Approvals items={approvals} onDone={onApprovalsDone} inDetail />}
+        <Steps text={a.prompt} />
 
-        <div className="mt-4 rounded-xl border border-border bg-card p-4">
-          <p className="flex items-center gap-1.5 text-sm font-semibold"><Webhook className="h-4 w-4 text-primary" /> Webhook trigger</p>
-          {hookUrl ? (
-            <>
-              <p className="mt-1 text-xs text-muted-foreground">POST any JSON to this secret URL to start a run; the payload is passed to the task.</p>
-              <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1.5">
-                <code className="truncate text-[11px] text-brand" data-testid="webhook-url">{hookUrl}</code>
-                <button onClick={() => { navigator.clipboard.writeText(hookUrl); toast.success("Webhook URL copied"); }} className="ml-auto text-muted-foreground hover:text-foreground"><Copy className="h-3.5 w-3.5" /></button>
-              </div>
-              <div className="mt-2 flex gap-3 text-xs">
-                <button onClick={() => webhook(true)} className="text-brand hover:underline">Rotate URL</button>
-                <button onClick={() => webhook(false)} className="text-muted-foreground hover:text-destructive">Remove</button>
-              </div>
-            </>
-          ) : (
-            <button onClick={() => webhook(true)} data-testid="create-webhook" className="mt-2 text-xs text-brand hover:underline">Create a webhook URL</button>
+        <div className="mt-4 rounded-xl border border-border bg-card">
+          <button onClick={() => setAdvanced((o) => !o)} className="flex w-full items-center gap-1.5 px-4 py-3 text-left text-sm font-semibold" data-testid="advanced-toggle">
+            <Webhook className="h-4 w-4 text-primary" /> Start it from another app (webhook)
+            <span className="ml-auto text-xs font-normal text-muted-foreground">{hookUrl ? "On" : "Optional"}</span>
+            {advanced ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          </button>
+          {advanced && (
+            <div className="border-t border-border px-4 pb-4 pt-3">
+              {hookUrl ? (
+                <>
+                  <p className="text-xs text-muted-foreground">Send any JSON to this secret link to start a run. What you send is given to the job.</p>
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1.5">
+                    <code className="truncate text-[11px] text-brand" data-testid="webhook-url">{hookUrl}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(hookUrl); toast.success("Webhook URL copied"); }} className="ml-auto text-muted-foreground hover:text-foreground"><Copy className="h-3.5 w-3.5" /></button>
+                  </div>
+                  <div className="mt-2 flex gap-3 text-xs">
+                    <button onClick={() => webhook(true)} className="text-brand hover:underline">Rotate URL</button>
+                    <button onClick={() => webhook(false)} className="text-muted-foreground hover:text-destructive">Remove</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">For website forms, Zapier or your own code: they call a secret link and this job runs.</p>
+                  <button onClick={() => webhook(true)} data-testid="create-webhook" className="mt-2 text-xs font-medium text-brand hover:underline">Create a webhook URL</button>
+                </>
+              )}
+            </div>
           )}
         </div>
 
         <h3 className="mt-6 text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground">Runs</h3>
         {runs === null ? <Loader2 className="mt-4 h-5 w-5 animate-spin text-primary" /> : runs.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">No runs yet. Use Run now to try it.</p>
+          <div className="mt-2 rounded-xl border border-dashed border-border p-5 text-center">
+            <p className="text-sm text-muted-foreground">No runs yet. Press <span className="font-medium text-foreground">Run now</span> to try it and see the result here.</p>
+          </div>
         ) : (
           <div className="mt-2 space-y-3" data-testid="run-list">
             {runs.map((r) => (
@@ -700,6 +845,48 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack }) {
         )}
       </div>
       {preview && <PreviewPanel item={preview} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+function Stats({ a, runs }) {
+  const done = (runs || []).filter((r) => r.status === "succeeded" || r.status === "failed");
+  const ok = done.filter((r) => r.status === "succeeded").length;
+  const last = (runs || [])[0];
+  const cells = [
+    { label: "Last run", value: last ? when(last.startedAt) : "Not yet" },
+    { label: a.schedule?.type === "email" ? "Next check" : "Next run", value: a.enabled ? (a.nextRunAt ? when(a.nextRunAt) : a.schedule?.type === "manual" ? "When you press Run" : "None") : "Paused" },
+    { label: "Worked", value: done.length ? `${ok} of ${done.length}` : "–", tone: done.length && ok < done.length ? "text-amber-600 dark:text-amber-400" : "" },
+  ];
+  return (
+    <div className="mt-4 grid grid-cols-3 gap-2" data-testid="automation-stats">
+      {cells.map((c) => (
+        <div key={c.label} className="min-w-0 rounded-xl border border-border bg-card px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{c.label}</p>
+          <p className={`mt-0.5 truncate text-sm font-semibold ${c.tone || ""}`}>{c.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The job's steps: a numbered list when written as "1. … 2. …", otherwise the text as written.
+function Steps({ text }) {
+  const lines = (text || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const numbered = lines.length > 1 && lines.every((l) => /^\d+[.)]\s/.test(l));
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-card p-4" data-testid="automation-steps">
+      <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><ListChecks className="h-3.5 w-3.5 text-primary" /> What it does</p>
+      {numbered ? (
+        <ol className="mt-2 space-y-1.5">
+          {lines.map((l, i) => (
+            <li key={i} className="flex gap-2.5 text-sm">
+              <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">{i + 1}</span>
+              <span className="min-w-0">{l.replace(/^\d+[.)]\s*/, "")}</span>
+            </li>
+          ))}
+        </ol>
+      ) : <p className="mt-2 whitespace-pre-wrap text-sm">{text}</p>}
     </div>
   );
 }

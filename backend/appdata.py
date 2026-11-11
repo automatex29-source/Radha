@@ -19,6 +19,7 @@ Storage (MongoDB):  appdata_docs {appId, collection, id, data, ownerId, private,
 """
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -27,6 +28,7 @@ import jwt
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+import abuse
 import appbackend
 from auth import JWT_ALGORITHM, _secret, hash_password, verify_password
 
@@ -155,9 +157,47 @@ class LoginIn(BaseModel):
     password: str = Field(max_length=200)
 
 
+# Password guessing on an app's sign-in: 10 wrong passwords lock that account (in that app) for 15 minutes, and
+# one connection gets 30 wrong tries across all accounts and apps. Kept in memory, like abuse.py.
+LOGIN_MAX_FAILURES = 10
+IP_MAX_FAILURES = 30
+LOGIN_WINDOW_SECONDS = 15 * 60
+SIGNUPS_PER_HOUR = 20  # per connection and app
+_failures: dict = {}  # key -> monotonic times of recent wrong passwords
+
+
+def _recent(key: str) -> list:
+    cutoff = time.monotonic() - LOGIN_WINDOW_SECONDS
+    recent = [t for t in _failures.get(key, []) if t > cutoff]
+    if recent:
+        _failures[key] = recent
+    else:
+        _failures.pop(key, None)
+    return recent
+
+
+def _failed(*keys: str) -> None:
+    now = time.monotonic()
+    for key in keys:
+        _failures.setdefault(key, []).append(now)
+    if len(_failures) > 50000:  # keep memory bounded under a flood of made-up emails
+        _failures.clear()
+
+
+def _signup_allowed(app_id: str, request: Request) -> None:
+    key = f"signup|{app_id}|{abuse.client_ip(request)}"
+    if not abuse.enabled():
+        return
+    recent = [t for t in _failures.get(key, []) if t > time.monotonic() - 3600]
+    if len(recent) >= SIGNUPS_PER_HOUR:
+        raise HTTPException(status_code=429, detail="Too many accounts were made from here. Please try again later.")
+    _failures[key] = recent + [time.monotonic()]
+
+
 @router.post("/{app_id}/auth/signup")
 async def signup(app_id: str, body: SignupIn, request: Request):
     await _app(app_id)
+    _signup_allowed(app_id, request)
     email = body.email.strip().lower()
     if not _EMAIL_RE.match(email):
         raise HTTPException(status_code=400, detail="Enter a valid email address")
@@ -173,9 +213,17 @@ async def signup(app_id: str, body: SignupIn, request: Request):
 
 @router.post("/{app_id}/auth/login")
 async def login(app_id: str, body: LoginIn, request: Request):
-    user = await db.appdata_users.find_one({"appId": app_id, "email": body.email.strip().lower()})
+    email = body.email.strip().lower()
+    account, ip = f"login|{app_id}|{email}", f"login-ip|{abuse.client_ip(request)}"
+    if len(_recent(account)) >= LOGIN_MAX_FAILURES:
+        raise HTTPException(status_code=429, detail="Too many wrong passwords. Please wait 15 minutes and try again.")
+    if abuse.enabled() and len(_recent(ip)) >= IP_MAX_FAILURES:
+        raise HTTPException(status_code=429, detail="Too many wrong sign-ins from here. Please wait 15 minutes.")
+    user = await db.appdata_users.find_one({"appId": app_id, "email": email})
     if not user or not verify_password(body.password, user.get("passwordHash", "")):
+        _failed(account, ip)
         raise HTTPException(status_code=401, detail="Wrong email or password")
+    _failures.pop(account, None)
     return {"token": _token(app_id, user), "user": await _user_out(app_id, user, request)}
 
 
