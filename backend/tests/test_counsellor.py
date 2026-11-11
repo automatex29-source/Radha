@@ -79,7 +79,8 @@ def test_counsellor_is_krish_robo_without_religion_tools_or_memory(client):
     call, body = _send(client, cid, "My name is Meera and I feel lost after failing my exam")
     system = call["messages"][0]["content"]
     assert "You are the Counsellor in Krish AI" in system and "Tele-MANAS 14416" in system and "988" in system
-    assert "Gita" not in system and "Krishna" not in system  # global and not religious
+    assert "Gita 2.47" in system and "Most replies have no verse" in system  # the Gita only when it truly fits
+    assert counsellor.NO_VERSE not in system
     assert system.endswith(counsellor.BRIEF)  # short replies by default
     assert counsellor.REPLIES in system and "Make them feel known" in system
     assert "Never call anyone \"bestie\"" in system
@@ -178,11 +179,11 @@ def test_script_guard_keeps_the_persons_own_script():
 
 def test_counsellor_rules_stay_in_the_prompt():
     import counsellor
-    for rule in ("same script", "no religious teachings", "respect every faith", "no slang and no jokes",
+    for rule in ("same script", "Never preach or push it", "respect every faith", "no slang and no jokes",
                  "Give real answers, not just chat", "answer out loud in the language they speak",
                  "Make them feel good, for real"):
         assert rule in counsellor.PROMPT
-    assert "No religious quotes" in counsellor.BRIEF and "script" in counsellor.BRIEF
+    assert "Gita verse only if it truly fits" in counsellor.BRIEF and "script" in counsellor.BRIEF
     assert "answer it directly" in counsellor.BRIEF
     assert "findahelpline.com" in counsellor.HELPLINES
 
@@ -242,3 +243,11 @@ def test_counsellor_prompt_is_not_a_fixed_template():
     assert "never repeat advice you already gave" in counsellor.PROMPT
     assert "at most one question" in counsellor.BRIEF and "40 to 90 words" in counsellor.BRIEF
     assert "robot" not in counsellor.PROMPT.lower() and "Krish Robo" not in counsellor.PROMPT
+
+
+def test_gita_verses_stay_occasional():
+    import counsellor
+    quoted = [{"role": "assistant", "content": "> **Gita 2.47:** You have a right to your work."},
+              {"role": "user", "content": "thanks"}]
+    assert counsellor.verse_note(quoted) == counsellor.NO_VERSE
+    assert counsellor.verse_note([{"role": "assistant", "content": "Take one small step today."}]) == ""

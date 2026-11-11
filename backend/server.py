@@ -1942,6 +1942,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(voice_prompt(voice_lang, settings_lang))
     if ask_replies:
         system_parts.append(counsellor.REPLIES)
+    if counselling and counsellor.verse_note(history_docs):
+        system_parts.append(counsellor.NO_VERSE)
     if counselling and not voice:
         system_parts.append(counsellor.BRIEF)
     if counselling and voice:
