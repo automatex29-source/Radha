@@ -67,3 +67,17 @@ def test_each_style_links_only_its_own_fonts_and_indian_scripts_get_noto():
     assert "var(--indic)" in apps.KIT_CSS and "text-wrap: balance" in apps.KIT_CSS
     zipped = apps.portable({"index.html": hindi})["index.html"]
     assert "Noto+Sans+Devanagari" in zipped and '<script src="krish-ui.js"></script>' in zipped
+
+
+def test_transitions_are_built_into_the_kit_and_the_prompt():
+    from pathlib import Path
+    kit = Path(__file__).resolve().parents[1] / "app_kit"
+    css, js = (kit / "krish-ui.css").read_text(), (kit / "krish-ui.js").read_text()
+    assert "@view-transition { navigation: auto; }" in css
+    for move in ("slide", "zoom", "fade", "blur", "wipe"):
+        assert f'html[data-transition="{move}"]' in css
+    assert "startViewTransition" in js and "data-morph" in js and "data-theme-toggle" in js
+    assert "[data-theme-toggle]" in css  # the dark mode button stays on phones
+    block = d.prompt_block("neon")
+    assert 'data-transition="wipe"' in block and 'data-show="#menu"' in block and "krish.transition" in block
+    assert all("transition" in t for t in d.THEMES.values())
