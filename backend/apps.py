@@ -41,6 +41,7 @@ from agent import browser as agent_browser
 import appdata
 import site_images
 import github_push
+import design_themes
 import jsx_compile
 import limits
 
@@ -173,7 +174,11 @@ DESIGN_GUIDE = (
     "reviews and teams: https://i.pravatar.cc/120?img=12 (img 1 to 70). Icons: Lucide, or an emoji in an icon tile. "
     "Add depth: blob top-right / blob bottom-left shapes (inside a relative or hero element), bg-mesh, bg-dots or "
     "bg-grid backgrounds, glass cards over photos, glow, float, shine, zoom on hover, and reveal on sections so they "
-    "animate in on scroll.\n"
+    "animate in on scroll. Whole looks come from one class on <body>: theme-glass, theme-liquid, theme-aurora, "
+    "theme-bento, theme-bold, theme-luxury, theme-minimal, theme-playful, theme-neon, theme-clay or theme-sunset. "
+    "A live 3D hero: <div class=\"scene\" data-scene=\"glass\"></div> (or blob, galaxy, waves, rings). More motion: split, magnetic, reveal-stagger, tilt, "
+    "spotlight, spin-border, orb, rings, marquee > marquee-track, text-shimmer, gradient-anim, data-count numbers, "
+    "typed words (class typed with data-words) and a bento grid.\n"
     "- Make it look like a modern, premium product: a clear hierarchy with a proper header, generous spacing, one "
     "accent color over a cohesive palette, soft gradients, rounded-2xl cards with subtle borders and shadows, "
     "hover, focus and active states, smooth transitions, friendly empty states and toasts instead of alert().\n"
@@ -193,6 +198,10 @@ DESIGN_GUIDE = (
     "the browser (nothing uploaded), handle a wrong or empty file with a clear message, and add a \"Try with "
     "sample\" button when a sample exists.\n"
     "- Responsive from phone to desktop, with labelled inputs and good contrast.\n"
+    "- Fonts: each Krish UI style brings its own font pair, and Hindi, Tamil, Bengali and the other Indian scripts "
+    "get matching fonts by themselves, so don't link fonts yourself. Only when the user names a font, link it from "
+    "Google Fonts and set :root{--font:\"Its Name\", sans-serif; --display:\"Its Name\", sans-serif}. Set <html "
+    "lang> to the page's language (hi for Hindi). Don't put Indian-script text in all caps or tight letter spacing.\n"
     "- All app text (labels, placeholders, buttons, sample data) in one language, the one the request is in: "
     "never two languages side by side (no \"नाम / Name\") unless asked.\n"
     "- Every feature works for real: all buttons do something, input is validated, data persists in localStorage "
@@ -282,6 +291,64 @@ async def write_file(app_id: str, path: str, content: str):
 KIT_NAME = "krish-ui.css"
 KIT_CSS = (Path(__file__).parent / "app_kit" / KIT_NAME).read_text(encoding="utf-8")
 _KIT_REF_RE = re.compile(r"""href\s*=\s*["']([^"']*krish-ui\.css)["']""", re.IGNORECASE)
+# The kit's motion half (phone menu button, scroll reveals, 3D tilt, count-ups): added to every page that links the
+# kit when it is served, and as a file beside it in the ZIP and on GitHub. The model never writes it.
+KIT_JS_NAME = "krish-ui.js"
+KIT_JS = (Path(__file__).parent / "app_kit" / KIT_JS_NAME).read_text(encoding="utf-8")
+
+
+# Each style's fonts, linked in the page's head so they start loading at once (the kit's CSS only imports the
+# default pair). A page in Hindi or another Indian script also gets the matching Noto font.
+_GF = "https://fonts.googleapis.com/css2?"
+THEME_FONTS = {
+    "glass": "family=Sora:wght@500..800", "liquid": "family=Inter+Tight:wght@500..800",
+    "aurora": "family=Space+Grotesk:wght@500..700", "bento": "family=Manrope:wght@400..800",
+    "bold": "family=Space+Grotesk:wght@400..700&family=Bricolage+Grotesque:opsz,wght@12..96,600..800",
+    "luxury": "family=Manrope:wght@400..700&family=Fraunces:opsz,wght@9..144,400..700",
+    "minimal": "family=Inter+Tight:wght@400..800", "playful": "family=Fredoka:wght@400..700",
+    "neon": "family=Syne:wght@600..800&family=JetBrains+Mono:wght@500;700", "clay": "family=Nunito:wght@500..900",
+    "sunset": "family=Manrope:wght@400..700&family=Instrument+Serif:ital@0;1",
+}
+_SCRIPTS = [(r"[\u0900-\u097F]", "Noto+Sans+Devanagari"), (r"[\u0980-\u09FF]", "Noto+Sans+Bengali"),
+            (r"[\u0A00-\u0A7F]", "Noto+Sans+Gurmukhi"), (r"[\u0A80-\u0AFF]", "Noto+Sans+Gujarati"),
+            (r"[\u0B00-\u0B7F]", "Noto+Sans+Oriya"), (r"[\u0B80-\u0BFF]", "Noto+Sans+Tamil"),
+            (r"[\u0C00-\u0C7F]", "Noto+Sans+Telugu"), (r"[\u0C80-\u0CFF]", "Noto+Sans+Kannada"),
+            (r"[\u0D00-\u0D7F]", "Noto+Sans+Malayalam"), (r"[\u0600-\u06FF]", "Noto+Naskh+Arabic")]
+_SCRIPTS_RE = [(re.compile(r), f) for r, f in _SCRIPTS]
+_THEME_CLASS_RE = re.compile(r"""<body\b[^>]*\bclass\s*=\s*["'][^"']*\btheme-(\w+)""", re.IGNORECASE)
+
+
+def script_fonts(text: str) -> List[str]:
+    """The Noto fonts for the Indian scripts (and Urdu) the text is written in."""
+    return [f"family={family}:wght@400..700" for pattern, family in _SCRIPTS_RE if pattern.search(text or "")]
+
+
+def font_tags(html: str) -> str:
+    """<link>s for the fonts a kit page needs: its style's fonts and any Indian script it uses."""
+    m = _THEME_CLASS_RE.search(html)
+    families = ([THEME_FONTS[m.group(1)]] if m and m.group(1) in THEME_FONTS else []) + script_fonts(html)
+    tags = ""
+    if families:
+        tags = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
+                '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+                f'<link rel="stylesheet" href="{_GF}{"&".join(families)}&display=swap">')
+    if script_fonts(html):
+        tags += "<script>document.documentElement.classList.add('krish-indic')</script>"
+    return tags
+
+
+def _after_head(html: str, tag: str) -> str:
+    m = re.search(r"<head\b[^>]*>", html, re.IGNORECASE)
+    return html[:m.end()] + tag + html[m.end():] if m else tag + html
+
+
+def uses_kit(html: str) -> bool:
+    return bool(_KIT_REF_RE.search(html)) and KIT_JS_NAME not in html
+
+
+def _before_body_end(html: str, tag: str) -> str:
+    idx = html.lower().rfind("</body>")
+    return html[:idx] + tag + html[idx:] if idx >= 0 else html + tag
 
 
 async def _add_kit(app_id: str, path: str, content: str) -> None:
@@ -477,7 +544,15 @@ def public_origin() -> str:
 def portable(files: Dict[str, str]) -> Dict[str, str]:
     """Files as they should leave Krish AI (ZIP, GitHub): AI picture links point at this server."""
     origin = public_origin()
-    return {p: site_images.rewrite(c, origin) if origin else c for p, c in files.items()}
+    out = {p: site_images.rewrite(c, origin) if origin else c for p, c in files.items()}
+    for p, c in list(out.items()):
+        if p.endswith((".html", ".htm")) and uses_kit(c):
+            ref = _KIT_REF_RE.search(c).group(1).replace(KIT_NAME, KIT_JS_NAME)
+            out[p] = _before_body_end(_after_head(c, font_tags(c)), f'<script src="{ref}"></script>\n')
+            target = _resolve(p, ref)
+            if target and target not in out:
+                out[target] = KIT_JS
+    return out
 
 
 async def export_zip(app: dict, include_git: bool = True) -> bytes:
@@ -726,6 +801,8 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
         content = site_images.rewrite(content)  # AI pictures (krish-image.invalid links) come from this server
     if ctype == "text/html":
         content = jsx_compile.relative_html(path, content, files)
+        if uses_kit(content):
+            content = _before_body_end(_after_head(content, font_tags(content)), "<script>" + KIT_JS + "</script>")
         inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
@@ -843,9 +920,183 @@ async def smoke_test(files: Dict[str, str], path: str = "index.html", app_id: Op
                 continue  # covered, detached or moved away: not the app's error
             if not page.url.startswith(PREVIEW_ORIGIN):
                 break
+        if len(errors) < 6:
+            # A fresh load for the deeper checks, so the clicks above can't hide a form or open a dialog.
+            stage[0] = "on load"
+            await page.goto(PREVIEW_ORIGIN + clean_path(path), wait_until="domcontentloaded", timeout=30_000)
+            await page.wait_for_timeout(700)
+            for problem in await _link_problems(page, files, path):
+                note("Broken link", problem)
+            await _form_problems(page, path, stage, note)
+        if len(errors) < 6:
+            stage[0] = "(390px wide)"
+            for problem in await _phone_problems(browser, handler, path):
+                note("On a phone", problem)
         return errors[:6]
     finally:
         await context.close()
+
+
+# What the browser checks read from the page (one evaluate each, so a slow page can't stall the test).
+_LINKS_JS = """() => [...document.querySelectorAll('a[href]')].filter(a => a.offsetParent !== null || a.getClientRects().length)
+  .slice(0, 60).map(a => ({href: a.getAttribute('href'), text: (a.innerText || a.getAttribute('aria-label') || '').trim().slice(0, 40)}))"""
+_ID_EXISTS_JS = "(id) => !!document.getElementById(id) || !!document.getElementsByName(id).length"
+
+
+async def _link_problems(page, files: Dict[str, str], path: str) -> List[str]:
+    """Nav and in-page links that lead nowhere: #pricing with no element of that id, or a page that isn't there."""
+    out = []
+    try:
+        links = await page.evaluate(_LINKS_JS)
+    except Exception:
+        return out
+    seen = set()
+    for link in links:
+        href, label = (link.get("href") or "").strip(), link.get("text") or "a link"
+        if not href or href in seen or href in ("#", "#!") or href.startswith(("javascript:", "mailto:", "tel:", "sms:", "whatsapp:")):
+            continue
+        seen.add(href)
+        if href.startswith("#"):
+            target = unquote(href[1:])
+            if re.match(r"^[\w\-:.]+$", target) and not await page.evaluate(_ID_EXISTS_JS, target):
+                out.append(f"“{label}” goes to {href}, but no section has id=\"{target}\". Add that id to the section it means.")
+        else:
+            local = _resolve(path, href.split("#")[0].split("?")[0])
+            if local and local not in files and local + "/index.html" not in files and local + ".html" not in files \
+                    and not local.endswith("/") and "." in local.rsplit("/", 1)[-1]:
+                out.append(f"“{label}” opens {href}, which isn't one of the app's files.")
+        if len(out) >= 3:
+            break
+    return out
+
+
+_FORMS_JS = """() => [...document.forms].filter(f => f.offsetParent !== null && f.querySelector('input:not([type=hidden]),textarea,select'))
+  .slice(0, 2).map((f, i) => { f.setAttribute('data-krish-test', i); return {i, name: (f.getAttribute('aria-label') || f.id ||
+  (f.querySelector('button,[type=submit]') || {}).innerText || 'form').trim().slice(0, 40)}; })"""
+# Fill a form the way a careful person would: a real-looking value for every field, then submit it.
+_FILL_JS = """(i) => {
+  const f = document.querySelector(`form[data-krish-test="${i}"]`); if (!f) return null;
+  const pad = n => String(n).padStart(2, '0'), d = new Date(Date.now() + 3 * 864e5);
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const set = (el, v) => { const proto = Object.getPrototypeOf(el), desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    desc && desc.set ? desc.set.call(el, v) : (el.value = v); el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); };
+  for (const el of f.querySelectorAll('input,textarea,select')) {
+    if (el.disabled || el.readOnly) continue;
+    const t = (el.type || '').toLowerCase(), hint = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.placeholder || '')).toLowerCase();
+    if (t === 'hidden' || t === 'submit' || t === 'button' || t === 'file' || t === 'reset') continue;
+    if (t === 'checkbox') { if (el.required || !el.checked) { el.checked = true; el.dispatchEvent(new Event('change', {bubbles: true})); } continue; }
+    if (t === 'radio') { if (!f.querySelector(`input[type=radio][name="${el.name}"]:checked`)) { el.checked = true; el.dispatchEvent(new Event('change', {bubbles: true})); } continue; }
+    if (el.tagName === 'SELECT') { const o = [...el.options].find((o, k) => k > 0 && o.value) || el.options[0]; if (o) set(el, o.value); continue; }
+    let v = 'Asha Patel';
+    if (t === 'email' || /mail/.test(hint)) v = 'asha.patel@example.com';
+    else if (t === 'tel' || /phone|mobile|tel/.test(hint)) v = '9876543210';
+    else if (t === 'number' || t === 'range') v = String(Math.max(Number(el.min) || 1, 1));
+    else if (t === 'date') v = date; else if (t === 'time') v = '11:30'; else if (t === 'datetime-local') v = date + 'T11:30';
+    else if (t === 'month') v = date.slice(0, 7); else if (t === 'url') v = 'https://example.com'; else if (t === 'color') v = '#3366ff';
+    else if (t === 'password') v = 'Krish-Test-2026'; else if (t === 'search') v = 'test';
+    else if (el.tagName === 'TEXTAREA') v = 'Hello! I would like to know more, please call me back.';
+    else if (/city|address|location/.test(hint)) v = 'Jaipur'; else if (/pin|zip/.test(hint)) v = '302001';
+    if (el.maxLength > 0) v = v.slice(0, el.maxLength);
+    set(el, v);
+  }
+  if (!f.checkValidity()) { const bad = f.querySelector(':invalid'); return {invalid: bad ? (bad.name || bad.id || bad.type) : 'a field'}; }
+  window.__krishBefore = document.body.innerText.length + '|' + document.body.innerHTML.length;
+  window.__krishDialog = 0; for (const k of ['alert', 'confirm']) { const o = window[k]; window[k] = function () { window.__krishDialog++; return k === 'confirm' ? true : undefined; }; }
+  const btn = f.querySelector('button[type=submit],input[type=submit],button:not([type])');
+  btn ? btn.click() : f.requestSubmit();
+  return {submitted: true};
+}"""
+_CHANGED_JS = ("() => window.__krishDialog > 0 || "
+               "window.__krishBefore !== (document.body.innerText.length + '|' + document.body.innerHTML.length)")
+
+
+async def _form_problems(page, path: str, stage: list, note) -> None:
+    """Fill in and submit each form: errors, a page reload (the form isn't handled) or nothing happening at all."""
+    try:
+        forms = await page.evaluate(_FORMS_JS)
+    except Exception:
+        return
+    for form in forms:
+        stage[0] = f"after submitting the “{form['name']}” form"
+        try:
+            before = page.url
+            res = await page.evaluate(_FILL_JS, form["i"])
+            if not res:
+                continue
+            if res.get("invalid"):
+                note("Form problem", f"filled with valid details, the field “{res['invalid']}” still isn't accepted, so the "
+                     "form can't be sent. Check its type, pattern and required settings.")
+                continue
+            await page.wait_for_timeout(900)
+            if page.url != before and page.url.split("#")[0].split("?")[0] == before.split("#")[0].split("?")[0]:
+                note("Form problem", "submitting it reloads the page and the details are lost. Handle the submit in "
+                     "JavaScript (event.preventDefault()), save or send the details, and show a confirmation.")
+                await page.goto(PREVIEW_ORIGIN + clean_path(path), wait_until="domcontentloaded", timeout=30_000)
+                await page.wait_for_timeout(500)
+                await page.evaluate(_FORMS_JS)  # the reload dropped the forms' test marks
+                continue
+            if page.url.startswith(PREVIEW_ORIGIN) and not await page.evaluate(_CHANGED_JS):
+                note("Form problem", "submitting it with valid details does nothing the user can see. Make it do its "
+                     "job and show a clear confirmation (a message, a toast or the new item in a list).")
+        except Exception:
+            continue
+
+
+_PHONE_JS = r"""() => {
+  const W = document.documentElement.clientWidth || innerWidth, out = {};
+  if (document.documentElement.scrollWidth > W + 4) {
+    let worst = null, wide = 0;
+    for (const el of document.body.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect(); if (!r.width || getComputedStyle(el).position === 'fixed') continue;
+      const over = r.right - W; if (over > wide + 1 && r.width > W * 0.3) { wide = over; worst = el; }
+    }
+    if (worst) { const c = (worst.getAttribute('class') || '').trim().split(/\s+/).slice(0, 2).join('.');
+      out.wide = {what: worst.tagName.toLowerCase() + (worst.id ? '#' + worst.id : '') + (c ? '.' + c : ''), px: Math.round(document.documentElement.scrollWidth)}; }
+  }
+  const head = document.querySelector('header, nav, .nav');
+  if (head) {
+    const links = [...head.querySelectorAll('a[href]')].filter(a => !a.closest('.brand') && a !== head.querySelector('a'));
+    const shown = links.filter(a => a.getClientRects().length && getComputedStyle(a).visibility !== 'hidden');
+    const toggles = [...head.querySelectorAll('button, [role=button], summary, label[for]')].filter(b => b.getClientRects().length);
+    if (links.length >= 3 && shown.length === 0 && toggles.length === 0) out.menu = links.length;
+  }
+  const small = [...document.querySelectorAll('button, a.btn, [role=button]')].filter(b => { const r = b.getBoundingClientRect();
+    return r.width && r.height && r.height < 28 && r.width < 28 && getComputedStyle(b).visibility !== 'hidden'; });
+  if (small.length >= 3) out.small = small.length;
+  return out;
+}"""
+
+
+async def _phone_problems(browser, handler, path: str) -> List[str]:
+    """Open the app as a phone (390px wide, touch): sideways scrolling, a menu with no way to open it, tiny buttons."""
+    out = []
+    phone = await browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
+                                      device_scale_factor=2, accept_downloads=False)
+    try:
+        await phone.route("**/*", handler)
+        page = await phone.new_page()
+        page.on("dialog", lambda d: asyncio.ensure_future(d.dismiss()))
+        await page.goto(PREVIEW_ORIGIN + clean_path(path), wait_until="domcontentloaded", timeout=30_000)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=4000)
+        except Exception:
+            pass
+        await page.wait_for_timeout(500)
+        found = await page.evaluate(_PHONE_JS)
+        if found.get("wide"):
+            out.append(f"the page scrolls sideways ({found['wide']['px']}px wide on a 390px screen); "
+                       f"{found['wide']['what']} is too wide. Let it wrap or shrink (max-width: 100%, flex-wrap, grids "
+                       "that drop to one column) so nothing sticks out.")
+        if found.get("menu"):
+            out.append("the menu links are hidden and there's no button to open them. Add a menu button that shows "
+                       "them (with Krish UI, put the links in .nav-links inside .nav and it appears by itself).")
+        if found.get("small"):
+            out.append(f"{found['small']} buttons are smaller than a fingertip (under 28px). Make tap targets at least 40px.")
+    except Exception:
+        pass
+    finally:
+        await phone.close()
+    return out
 
 
 # ------------------------------------------------------------- agent tools
@@ -1261,6 +1512,30 @@ class CommitIn(BaseModel):
     message: str = Field(min_length=1, max_length=500)
 
 
+async def choose_style(app_id: str, request: str) -> Optional[str]:
+    """Pick or keep the app's design style for this turn (design_themes.choose) and remember it on the app."""
+    app = await db.apps.find_one({"id": app_id}, {"theme": 1})
+    if not app:
+        return None
+    files = await snapshot(app_id)
+    first = is_blank(files) or _starter(files)
+    # Only the user's own words: not the code or errors that click-to-edit and auto-fix add after them.
+    words = "" if re.match(r"\s*(Auto-fix:|The preview shows)", request or "") else (request or "").split("\n\n")[0]
+    picked = re.search(r"(?im)^Design style:\s*(.+)$", request or "")  # the style chosen on the Apps page
+    if picked:
+        words = "Design style: " + picked.group(1) + "\n" + words
+    theme = design_themes.choose(words, app.get("theme"), app_id, first)
+    if theme and theme != app.get("theme"):
+        await db.apps.update_one({"id": app_id}, {"$set": {"theme": theme}})
+    return theme
+
+
+def _starter(files: Dict[str, str]) -> bool:
+    """Still exactly one of the starter templates (the instant start shown while the real app is written)."""
+    own = {p: c for p, c in files.items() if not p.startswith((SAMPLE_DIR + "/", ASSET_DIR + "/")) and p != KIT_NAME}
+    return any(own == {p: c for p, c in t.items() if p != KIT_NAME} for t in TEMPLATES.values())
+
+
 def public_app(doc: dict) -> dict:
     pub = doc.get("published")
     return {
@@ -1270,6 +1545,7 @@ def public_app(doc: dict) -> dict:
                       "publishedAt": pub.get("publishedAt")} if pub else None,
         "github": doc.get("github"),
         "domain": doc.get("domain"),
+        "theme": doc.get("theme"),
     }
 
 
@@ -1535,6 +1811,8 @@ _IDEAS = [
      "Make it phone friendly", "Make the whole app look great on a phone."),
 ]
 MAX_IDEAS = 4
+NEW_LOOK_PROMPT = ("Give the app a new look in a different style. Keep all the content, pages and features exactly as "
+                   "they are, and change only the design and motion.")
 
 
 def next_ideas(files: Dict[str, str]) -> List[dict]:
@@ -1543,6 +1821,9 @@ def next_ideas(files: Dict[str, str]) -> List[dict]:
     if not code:
         return []
     out = [{"label": label, "prompt": prompt} for test, label, prompt in _IDEAS if test(code)]
+    if 'class="theme-' in code or "class='theme-" in code or " theme-" in code:
+        # A Krish-designed app can always try another of the kit's styles (design_themes.py picks one it hasn't had).
+        out = out[:MAX_IDEAS - 1] + [{"label": "Try a new look", "prompt": NEW_LOOK_PROMPT}]
     return out[:MAX_IDEAS]
 
 
@@ -1722,14 +2003,35 @@ def clean_domain(text: str) -> str:
     return d
 
 
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "testserver"}
+# Hosting providers' shared addresses: nobody owns a name there by pointing a CNAME, so none can be claimed.
+_SHARED_SUFFIXES = (".onrender.com", ".pages.dev", ".workers.dev")
+
+
 def own_hosts() -> set:
-    hosts = {"localhost", "127.0.0.1", "0.0.0.0", "testserver"}
-    for value in (public_origin(), os.environ.get("FRONTEND_URL", ""), os.environ.get("BACKEND_URL", "")):
+    hosts = set(_LOCAL_HOSTS)
+    for value in (public_origin(), os.environ.get("FRONTEND_URL", ""), os.environ.get("BACKEND_URL", ""),
+                  os.environ.get("APP_URL", ""), os.environ.get("SITE_URL") or "https://krishai.net"):
         host = urlparse(value).hostname if value else None
         if host:
             hosts.add(host.lower())
     hosts.update(h.strip().lower() for h in os.environ.get("APP_HOSTS", "").split(",") if h.strip())
     return hosts
+
+
+def reserved_domain(domain: str) -> bool:
+    """Krish AI's own addresses, and every name under them (www.krishai.net, empirex.krishai.net...).
+
+    An app claiming one of these would be served instead of Krish AI itself for everyone who opens it, so a
+    fake sign-in page could be put on krishai.net."""
+    domain = (domain or "").lower().removeprefix("www.")
+    if domain.endswith(_SHARED_SUFFIXES):
+        return True
+    for host in own_hosts():
+        base = host.removeprefix("www.")
+        if domain == base or (host not in _LOCAL_HOSTS and domain.endswith("." + base)):
+            return True
+    return False
 
 
 @router.put("/apps/{app_id}/domain")
@@ -1740,7 +2042,7 @@ async def set_domain(app_id: str, body: DomainIn, user_id: str = Depends(current
         await db.apps.update_one({"id": app_id}, {"$set": {"domain": None, "updatedAt": _now()}})
         _DOMAIN_CACHE.clear()
         return {"app": public_app(await db.apps.find_one({"id": app_id})), "target": None}
-    if not _DOMAIN_RE.match(domain) or domain in own_hosts():
+    if not _DOMAIN_RE.match(domain) or reserved_domain(domain):
         raise HTTPException(status_code=400, detail="Use a domain you own, like shop.example.com.")
     taken = await db.apps.find_one({"domain": domain, "id": {"$ne": app_id}}, {"_id": 1})
     if taken:
@@ -1754,7 +2056,7 @@ async def set_domain(app_id: str, body: DomainIn, user_id: str = Depends(current
 async def site_for_host(host: str) -> Optional[dict]:
     """The published app answering on this custom domain, or None (cached for a minute)."""
     host = clean_domain(host)
-    if not host or host in own_hosts():
+    if not host or reserved_domain(host):
         return None
     hit = _DOMAIN_CACHE.get(host)
     if hit and time.monotonic() - hit[0] < _DOMAIN_TTL:
