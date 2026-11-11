@@ -183,7 +183,6 @@ export default function Workspace({ mode = null }) {
   const [planCard, setPlanCard] = useState(null); // the plan's meter ran out on the last send: a limit card in the chat
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
-  useEffect(() => () => roboSpeakerRef.current?.stop(), []);
   const [previewItem, setPreviewItem] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
   // Think (careful answers) and Study (tutor) stay on for this browser until turned off.
@@ -400,7 +399,6 @@ export default function Workspace({ mode = null }) {
   };
 
   const stopGeneration = () => {
-    roboSpeakerRef.current?.stop();
     streamsRef.current.get(activeIdRef.current)?.controller.abort();
   };
 
