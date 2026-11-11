@@ -14,14 +14,15 @@ from fastapi import HTTPException, Request
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_DAYS = 7
 
-# user id -> unix second; sign-in tokens made before it are refused. Filled from the database at startup
+# user id -> unix time in milliseconds; sign-in tokens made before it are refused (milliseconds, so a token made
+# in the same second as a password reset is still cut off). Filled from the database at startup
 # (users.tokensValidAfter) and kept up to date by revoke_sessions().
 _valid_after: dict = {}
 
 
 def revoke_sessions(user_id: str) -> int:
     """Make every sign-in token this account already has stop working. Returns the cut-off to store."""
-    cutoff = int(time.time())
+    cutoff = int(time.time() * 1000)
     _valid_after[user_id] = cutoff
     return cutoff
 
@@ -59,6 +60,7 @@ def create_access_token(user_id: str, email: str) -> str:
         "email": email,
         "type": "access",
         "iat": int(time.time()),
+        "iat_ms": int(time.time() * 1000),
         "exp": datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_DAYS),
     }
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
@@ -80,7 +82,8 @@ def decode_token(token: str) -> dict:
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
         cutoff = _valid_after.get(payload.get("sub"))
-        if cutoff and int(payload.get("iat") or 0) < cutoff:
+        made = payload.get("iat_ms") or int(payload.get("iat") or 0) * 1000
+        if cutoff and int(made) < cutoff:
             raise HTTPException(status_code=401, detail="Signed out. Please sign in again.")
         return payload
     except jwt.ExpiredSignatureError:

@@ -420,14 +420,22 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
     doc = await db.users.find_one({"googleId": info["sub"]}) or await db.users.find_one({"email": info["email"]})
     referral = None
     if doc:
-        await db.users.update_one({"id": doc["id"]}, {"$set": {"googleId": info["sub"], "lastLoginAt": ts, "lastSeenAt": ts},
-                                                      "$inc": {"loginCount": 1}})
+        changes = {"googleId": info["sub"], "lastLoginAt": ts, "lastSeenAt": ts, "emailVerified": True}
+        if not doc.get("googleId") and doc.get("password_hash") and not doc.get("emailVerified"):
+            # Sign-up doesn't check that the email is really yours, so someone could make a password account
+            # with another person's email and wait for them to arrive with Google. Google has now proved who
+            # owns the email: that password stops working and every other device is signed out. The owner can
+            # set a password again with "Forgot password".
+            changes.update(password_hash="", tokensValidAfter=revoke_sessions(doc["id"]))
+            logger.warning("Google sign-in took over an unverified password account %s; its password was removed",
+                           doc["id"])
+        await db.users.update_one({"id": doc["id"]}, {"$set": changes, "$inc": {"loginCount": 1}})
         await monitor.login(db, doc["id"], "google")
     else:
         abuse.require("signup", abuse.client_ip(request))  # Google confirmed the email, so no email check
         doc = {
             "id": str(uuid.uuid4()), "email": info["email"], "name": info["name"].strip() or "Friend",
-            "password_hash": "", "googleId": info["sub"],
+            "password_hash": "", "googleId": info["sub"], "emailVerified": True,
             "createdAt": ts, "updatedAt": ts, "lastLoginAt": ts, "lastSeenAt": ts, "loginCount": 1,
         }
         try:
@@ -577,7 +585,8 @@ async def reset_password(body: ResetPasswordIn, request: Request):
     # A new password signs the account out on every phone and computer (whoever knew the old one is out).
     cutoff = revoke_sessions(user["id"])
     await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.password),
-                                                            "tokensValidAfter": cutoff, "updatedAt": now_iso()}})
+                                                            "tokensValidAfter": cutoff, "emailVerified": True,
+                                                            "updatedAt": now_iso()}})
     await monitor.login(db, user["id"], "reset")
     # Any other links sent earlier stop working too.
     await db.password_resets.update_many({"userId": user["id"], "usedAt": None}, {"$set": {"usedAt": now_iso()}})
