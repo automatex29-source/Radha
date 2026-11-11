@@ -1,6 +1,7 @@
 """Offline tests for the app builder (files, versions, git export, serving) and automations."""
 import asyncio
 import io
+import json
 import os
 import subprocess
 import sys
@@ -192,6 +193,29 @@ class TestScheduler:
         assert run_doc["status"] == "failed" and run_doc["error"] == "No API key" and run_doc["trigger"] == "webhook"
         assert '"event": "push"' in first_msg["content"]
 
+    def test_ai_usage_limit_fails_the_run(self):
+        """The AI's limit note is saved as the reply, but the run did no work: it is a failure, not a result."""
+        database = mongomock_motor.AsyncMongoMockClient()["lim"]
+        note = "Krish AI's free AI has reached its daily limit. It works again at 10:17 PM."
+
+        async def limited_turn(conv_id, model, agent=False, **kw):
+            await database.messages.insert_one({"id": "r", "conversationId": conv_id, "role": "assistant",
+                                                "content": note, "createdAt": "2026-01-01T00:00:00+00:00"})
+            yield f'event: ai_limit\ndata: {json.dumps({"message": note, "resetsAt": None, "daily": True})}\n\n'
+
+        automations.init(database, limited_turn, "m")
+
+        async def scenario():
+            auto = {"id": "a3", "userId": "u", "name": "x", "prompt": "p", "schedule": {"type": "manual"}}
+            await database.automations.insert_one(dict(auto))
+            await automations.start_run(auto, "manual")
+            await asyncio.gather(*list(automations._running))
+            return await database.automation_runs.find_one({}), await database.automations.find_one({"id": "a3"})
+
+        run_doc, auto = run(scenario())
+        assert run_doc["status"] == "failed" and "works again" in run_doc["error"]
+        assert auto["lastStatus"] == "failed"
+
 
 class TestAgentAutomations:
     def test_memory_steps_and_webhook_delivery(self, monkeypatch):
@@ -309,9 +333,9 @@ class TestPlanRulesAndReliability:
         assert "once a day or once a week" in out[0] and "Upgrade to Pro" in out[0]
         assert "premium" in out[1]
         assert out[2] == "ok"
-        assert "every hour at most" in out[3]
+        assert "every hour at most" in out[3] and "Upgrade to Max" in out[3]
         assert out[4] == "ok"
-        assert "Max plan" in out[5]
+        assert "Max plan" in out[5] and "Upgrade to Max" in out[5]
         assert out[6] == "ok"
 
     def test_short_interval_waits_as_long_as_the_plan_allows(self):
