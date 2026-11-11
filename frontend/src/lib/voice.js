@@ -1,4 +1,5 @@
 import { api, API, getToken } from "@/lib/api";
+import { hideRelatedLine } from "@/lib/citations";
 
 const EXT = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/wav": "wav" };
 
@@ -331,10 +332,11 @@ export function createSpeaker({ voice, onStart, lang, speed } = {}) {
   running.catch(() => {}); // callers that don't await `done` shouldn't see an unhandled rejection
 
   return {
-    push(text) { if (!stopped && !ended) take(text || "", false); },
+    // The Counsellor's "Replies: a | b | c" chips (and the chat's "Related:" line) are shown, never read aloud.
+    push(text) { if (!stopped && !ended) take(hideRelatedLine(text || ""), false); },
     end(text) {
       if (stopped || ended) return;
-      take(text || "", true);
+      take(hideRelatedLine(text || ""), true);
       ended = true;
       wake?.();
     },
@@ -353,7 +355,7 @@ export function createSpeaker({ voice, onStart, lang, speed } = {}) {
  * Listens to the microphone while a reply is playing and calls `onSpeech` once the
  * person starts talking over it. Returns a function that stops listening.
  */
-export async function watchForSpeech(onSpeech, { holdMs = 300 } = {}) {
+export async function watchForSpeech(onSpeech, { holdMs = 450 } = {}) {
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -413,6 +415,9 @@ export function speechText(markdown) {
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-•]\s+/gm, "")
+    // Voices read emoji out by name ("red heart"), which breaks a warm sentence.
+    .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu, "")
     .replace(/[*_~>|]/g, "")
     .replace(/\n{2,}/g, "\n")
     .trim();

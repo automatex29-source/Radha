@@ -78,8 +78,9 @@ def test_counsellor_is_krish_robo_without_religion_tools_or_memory(client):
     import counsellor
     call, body = _send(client, cid, "My name is Meera and I feel lost after failing my exam")
     system = call["messages"][0]["content"]
-    assert "You are Krish Robo" in system and "Tele-MANAS 14416" in system and "988" in system
-    assert "Gita" not in system and "Krishna" not in system  # global and not religious
+    assert "You are the Counsellor in Krish AI" in system and "Tele-MANAS 14416" in system and "988" in system
+    assert "Gita 2.47" in system and "Most replies have no verse" in system  # the Gita only when it truly fits
+    assert counsellor.NO_VERSE not in system
     assert system.endswith(counsellor.BRIEF)  # short replies by default
     assert counsellor.REPLIES in system and "Make them feel known" in system
     assert "Never call anyone \"bestie\"" in system
@@ -178,11 +179,11 @@ def test_script_guard_keeps_the_persons_own_script():
 
 def test_counsellor_rules_stay_in_the_prompt():
     import counsellor
-    for rule in ("same script", "no religious teachings", "respect every faith", "no slang and no jokes",
+    for rule in ("same script", "Never preach or push it", "respect every faith", "no slang and no jokes",
                  "Give real answers, not just chat", "answer out loud in the language they speak",
                  "Make them feel good, for real"):
         assert rule in counsellor.PROMPT
-    assert "No religious quotes" in counsellor.BRIEF and "script" in counsellor.BRIEF
+    assert "Gita verse only if it truly fits" in counsellor.BRIEF and "script" in counsellor.BRIEF
     assert "answer it directly" in counsellor.BRIEF
     assert "findahelpline.com" in counsellor.HELPLINES
 
@@ -197,7 +198,7 @@ def test_counsellor_talks_are_with_krish_robo_on_every_plan(client):
         assert client.post("/api/conversations", json={"mode": "counsellor", "agent": gone}).status_code == 400
     call, _ = _send(client, conv["id"], "aaj mood off hai")
     system = call["messages"][0]["content"]
-    assert "You are Krish Robo" in system and system.endswith(counsellor.BRIEF)
+    assert "You are the Counsellor in Krish AI" in system and system.endswith(counsellor.BRIEF)
 
 
 def test_app_shows_the_same_agents():
@@ -224,3 +225,29 @@ def test_welcome_questions_reach_the_prompt(client):
     # Skipping saves nothing but stops the questions.
     me = client.put("/api/auth/about", json={"skipped": True}).json()
     assert me["needsWelcome"] is False and me["about"] is None
+
+
+def test_counsellor_voice_call_talks_like_a_phone_call(client):
+    import counsellor
+    cid = client.post("/api/conversations", json={"mode": "counsellor"}).json()["id"]
+    CALLS.clear()
+    client.post(f"/api/conversations/{cid}/stream", json={"content": "I can't sleep before my exam", "voice": True})
+    system = next(k for k in CALLS if k.get("stream"))["messages"][0]["content"]
+    assert system.endswith(counsellor.VOICE) and "Voice mode is on" in system
+    assert counsellor.REPLIES not in system and not system.endswith(counsellor.BRIEF)
+
+
+def test_counsellor_prompt_is_not_a_fixed_template():
+    import counsellor
+    assert "not a template" in counsellor.PROMPT and "Keep it short" in counsellor.PROMPT and "Ask at most one question" in counsellor.PROMPT
+    assert "never repeat advice you already gave" in counsellor.PROMPT
+    assert "at most one question" in counsellor.BRIEF and "40 to 90 words" in counsellor.BRIEF
+    assert "robot" not in counsellor.PROMPT.lower() and "Krish Robo" not in counsellor.PROMPT
+
+
+def test_gita_verses_stay_occasional():
+    import counsellor
+    quoted = [{"role": "assistant", "content": "> **Gita 2.47:** You have a right to your work."},
+              {"role": "user", "content": "thanks"}]
+    assert counsellor.verse_note(quoted) == counsellor.NO_VERSE
+    assert counsellor.verse_note([{"role": "assistant", "content": "Take one small step today."}]) == ""

@@ -27,7 +27,9 @@ function grabFrame(video) {
 }
 
 function getBargeIn() {
-  try { return localStorage.getItem(BARGE_KEY) !== "0"; } catch { return true; }
+  // Off unless they turn it on: through a phone speaker Krish's own voice reaches the mic, cut its reply short
+  // and was heard as if they had spoken.
+  try { return localStorage.getItem(BARGE_KEY) === "1"; } catch { return false; }
 }
 
 /**
@@ -168,6 +170,8 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
         stopWatching();
         speakerRef.current = null;
         if (!activeRef.current || nextRef.current === "pause") break;
+        // Let the last word of the reply fade from the speaker before listening, so it isn't recorded too.
+        if (speaker.started && nextRef.current === "listen") await new Promise((r) => setTimeout(r, 350));
       }
     } catch (e) {
       if (activeRef.current) setError(e?.response?.data?.detail || e.message || "Voice error");

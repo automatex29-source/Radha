@@ -26,7 +26,7 @@ const USES = [
   { id: "business", label: "Business & marketing", icon: TrendingUp, tone: "from-violet-500 to-fuchsia-500" },
   { id: "slides", label: "Slides & documents", icon: Presentation, tone: "from-rose-500 to-pink-500" },
   { id: "create", label: "Pictures & videos", icon: Palette, tone: "from-fuchsia-500 to-purple-600" },
-  { id: "talk", label: "Life advice & a friend", icon: Heart, robo: true, tone: "from-pink-500 to-rose-500" },
+  { id: "talk", label: "Life advice & a friend", icon: Heart, tone: "from-pink-500 to-rose-500" },
   { id: "everyday", label: "Everyday answers & news", icon: Globe, tone: "from-cyan-500 to-blue-600" },
 ];
 // The part of Krish AI each use leads to on the end screen. `study` turns Study mode on (see Workspace).
@@ -37,7 +37,7 @@ const FEATURES = {
   business: { icon: Zap, title: "Automations", text: "Agents that do your repeat tasks on a schedule.", path: "/automations", tone: "from-violet-500 to-fuchsia-500" },
   slides: { icon: Presentation, title: "Decks", text: "Beautiful slides from a single line.", path: "/decks", tone: "from-rose-500 to-pink-500" },
   create: { icon: Image, title: "Pictures & videos", text: "Ask in chat: \"make a poster for my shop\".", path: "/", tone: "from-fuchsia-500 to-purple-600" },
-  talk: { icon: Heart, robo: true, title: "Counsellor", text: "Krish Robo listens and answers right away.", path: "/counsellor", tone: "from-pink-500 to-rose-500" },
+  talk: { icon: Heart, title: "Counsellor", text: "A kind friend who listens and gives honest advice.", path: "/counsellor", tone: "from-pink-500 to-rose-500" },
   everyday: { icon: Compass, title: "Discover", text: "Today's news and answers with live web search.", path: "/discover", tone: "from-cyan-500 to-blue-600" },
 };
 const COUNTRIES = ["India", "Nepal", "Bangladesh", "Sri Lanka", "Pakistan", "United Arab Emirates", "Saudi Arabia",
