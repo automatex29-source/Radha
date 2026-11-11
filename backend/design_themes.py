@@ -90,6 +90,13 @@ THEMES = {
 }
 
 # Words in a request that name a style.
+# The page-to-page move that suits each style (krish-ui.css: html[data-transition]).
+for _name, _move in {"glass": "zoom", "liquid": "blur", "aurora": "blur", "bento": "slide", "bold": "wipe",
+                     "luxury": "fade", "minimal": "fade", "playful": "zoom", "neon": "wipe", "clay": "zoom",
+                     "sunset": "slide"}.items():
+    if _name in THEMES:
+        THEMES[_name].setdefault("transition", _move)
+
 _ASKED = [
     ("glass", r"glass|glassy|glassmorph|frosted|transparent|see.?through|kaanch|kanch"),
     ("liquid", r"liquid|liquid.?glass|ios ?2\d|apple glass|glossy|water"),
@@ -188,6 +195,15 @@ def prompt_block(theme: Optional[str]) -> str:
         "- More motion by class: split on the h1 (words rise in one by one), magnetic on the main button, "
         "data-speed=\"0.2\" on an image or shape for parallax, and <div class=\"scroll-progress\"></div> right after "
         "<body> for a reading bar.\n"
+        "- Transitions (built in): links between the app's own pages already morph instead of flashing; set the move "
+        "with <html data-transition=\"" + t.get("transition", "zoom") + "\"> (slide, zoom, fade, blur, wipe; this style suits "
+        + t.get("transition", "zoom") + "). For an app with several screens in one page, give each screen "
+        "<section class=\"screen\" id=\"menu\"> and switch with buttons <button data-show=\"#menu\">: the kit hides the "
+        "others, marks the active button and animates the change. In your own JS use krish.transition(() => "
+        "{ ...change the page... }, {type: 'slide'}) for anything that swaps content (opening an item, next step, "
+        "filters). Put the same data-morph=\"item-3\" on a card and on its detail view so the card grows into it. "
+        "A dark mode button gets data-theme-toggle (a circle reveal from where it was tapped). "
+        "<div class=\"page-intro\"></div> right after <body> adds an opening curtain on landing pages.\n"
         "- If the user's request is a change to the content or a feature, keep this style exactly as it is.\n"
     )
 

@@ -383,7 +383,7 @@ body .keypad button.primary, .keypad .primary { background: var(--gradient); col
   .nav > .container, .nav-inner { flex-wrap: nowrap; }
   .nav .nav-links.open { animation: krish-fade-up .25s ease both; gap: .25rem; z-index: 60; background: var(--bg); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-lg); }
   .nav .nav-links.open a { padding: .7rem .5rem; font-size: 1.05rem; color: var(--text); }
-  .nav > .container > .btn, .nav-inner > .btn { display: none; }
+  .nav > .container > .btn:not([data-theme-toggle]), .nav-inner > .btn:not([data-theme-toggle]) { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .krish-io .reveal, .krish-io .reveal-stagger > * { opacity: 1 !important; transform: none !important; } }
 
@@ -585,3 +585,54 @@ body code, body kbd, body pre { font-family: "JetBrains Mono", ui-monospace, SFM
 .krish-indic body h1, .krish-indic body h2, .krish-indic body h3, .krish-indic body h4, .krish-indic .brand, .krish-indic .eyebrow {
   letter-spacing: 0 !important; line-height: 1.35; text-transform: none !important; }
 .krish-indic body h1 { line-height: 1.25; }
+
+/* ---------- Transitions between pages, screens and themes (View Transitions; krish-ui.js drives them) ----------
+   Links to the app's other pages morph instead of flashing white. <html data-transition="slide|zoom|fade|blur|wipe">
+   picks the move (default: a soft rise). The nav stays put while the content changes. Elements with the same
+   data-morph="x" on two screens grow from one into the other (a card into its detail view). */
+@view-transition { navigation: auto; }
+::view-transition-group(krish-nav) { z-index: 50; }
+::view-transition-group(*) { animation-duration: 0.5s; animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+::view-transition-old(root) { animation: 0.32s cubic-bezier(0.4, 0, 1, 1) both krish-vt-out; }
+::view-transition-new(root) { animation: 0.55s cubic-bezier(0.22, 1, 0.36, 1) both krish-vt-in; }
+@keyframes krish-vt-out { to { opacity: 0; transform: translateY(-10px) scale(0.985); filter: blur(4px); } }
+@keyframes krish-vt-in { from { opacity: 0; transform: translateY(18px) scale(1.01); filter: blur(6px); } }
+html[data-transition="fade"]::view-transition-old(root) { animation-name: krish-vt-fade-out; }
+html[data-transition="fade"]::view-transition-new(root) { animation-name: krish-vt-fade-in; }
+@keyframes krish-vt-fade-out { to { opacity: 0; } }
+@keyframes krish-vt-fade-in { from { opacity: 0; } }
+html[data-transition="slide"]::view-transition-old(root) { animation: 0.45s cubic-bezier(0.65, 0, 0.35, 1) both krish-vt-slide-out; }
+html[data-transition="slide"]::view-transition-new(root) { animation: 0.45s cubic-bezier(0.65, 0, 0.35, 1) both krish-vt-slide-in; }
+html[data-transition="slide"].krish-back::view-transition-old(root) { animation-name: krish-vt-slide-out-back; }
+html[data-transition="slide"].krish-back::view-transition-new(root) { animation-name: krish-vt-slide-in-back; }
+@keyframes krish-vt-slide-out { to { transform: translateX(-30%); opacity: 0; } }
+@keyframes krish-vt-slide-in { from { transform: translateX(100%); } }
+@keyframes krish-vt-slide-out-back { to { transform: translateX(30%); opacity: 0; } }
+@keyframes krish-vt-slide-in-back { from { transform: translateX(-100%); } }
+html[data-transition="zoom"]::view-transition-old(root) { animation: 0.4s cubic-bezier(0.4, 0, 1, 1) both krish-vt-zoom-out; }
+html[data-transition="zoom"]::view-transition-new(root) { animation: 0.6s cubic-bezier(0.22, 1, 0.36, 1) both krish-vt-zoom-in; }
+@keyframes krish-vt-zoom-out { to { opacity: 0; transform: scale(1.12); filter: blur(8px); } }
+@keyframes krish-vt-zoom-in { from { opacity: 0; transform: scale(0.88); } }
+html[data-transition="blur"]::view-transition-old(root) { animation: 0.4s ease both krish-vt-blur-out; }
+html[data-transition="blur"]::view-transition-new(root) { animation: 0.55s ease both krish-vt-blur-in; }
+@keyframes krish-vt-blur-out { to { opacity: 0; filter: blur(18px) saturate(1.6); } }
+@keyframes krish-vt-blur-in { from { opacity: 0; filter: blur(18px) saturate(1.6); } }
+html[data-transition="wipe"]::view-transition-old(root) { animation: none; }
+html[data-transition="wipe"]::view-transition-new(root) { animation: 0.7s cubic-bezier(0.77, 0, 0.18, 1) both krish-vt-wipe; }
+@keyframes krish-vt-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+/* The circle reveal (theme switch, or data-transition="circle" on a button) is animated by krish-ui.js
+   from the point that was tapped. */
+html.krish-circle::view-transition-old(root), html.krish-circle::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.krish-circle::view-transition-old(root) { z-index: 1; }
+html.krish-circle::view-transition-new(root) { z-index: 2; }
+/* Screens inside one page: [data-show="#id"] buttons switch between .screen siblings with the same moves. */
+.screen[hidden] { display: none !important; }
+[data-show].active, [data-show][aria-current="page"] { color: var(--accent); }
+/* A first-load curtain: <div class="page-intro"></div> right after <body> sweeps away as the page opens. */
+.page-intro { position: fixed; inset: 0; z-index: 9999; pointer-events: none; background: var(--gradient, var(--accent));
+  animation: krish-intro 0.9s cubic-bezier(0.77, 0, 0.18, 1) 0.15s both; }
+@keyframes krish-intro { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 0 100% 0); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  .page-intro { display: none; }
+}

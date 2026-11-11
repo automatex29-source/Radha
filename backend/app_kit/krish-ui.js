@@ -6,7 +6,10 @@
    - .typed[data-words="fast|simple|yours"] types and rotates words
    - .scene[data-scene="glass|blob|galaxy|waves|rings"] draws a live 3D scene (Three.js, loaded only when used)
    - .magnetic buttons lean to the pointer, .split headings rise in word by word, [data-speed] parallax,
-     .scroll-progress fills as the page scrolls */
+     .scroll-progress fills as the page scrolls
+   - transitions: links to the app's other pages, [data-show="#screen"] buttons, [data-theme-toggle] and
+     krish.transition(update, {type, from}) animate with View Transitions (see the CSS); data-morph="x" pairs
+     grow from one screen into the other */
 (function () {
   if (window.__krishUI) return;
   window.__krishUI = true;
@@ -296,7 +299,124 @@
     document.head.appendChild(l);
   }
 
-  function start() { fonts(); navs(); reveals(); pointer(); counters(); typed(); extras(); scrolly(); scenes(); }
+  // ---------- Transitions ----------
+  var canVT = !!document.startViewTransition && !still;
+  function pinNav() {
+    var nav = document.querySelector("body > header") || document.querySelector(".nav");
+    if (nav && !document.querySelector("[style*=krish-nav]")) nav.style.viewTransitionName = "krish-nav";
+  }
+  function visible(el) { return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length); }
+  function nameMorphs(on) {
+    // Only the visible element of each data-morph pair gets the name, so each name is unique per snapshot.
+    var seen = {};
+    document.querySelectorAll("[data-morph]").forEach(function (el) {
+      var key = "km-" + String(el.getAttribute("data-morph")).replace(/[^\w-]/g, "_");
+      if (on && visible(el) && !seen[key]) { el.style.viewTransitionName = key; seen[key] = 1; }
+      else if (el.style.viewTransitionName && el.style.viewTransitionName.indexOf("km-") === 0) el.style.viewTransitionName = "";
+    });
+  }
+  // Run `update` (a function that changes the page) as an animated transition. opts.type: slide, zoom, fade,
+  // blur, wipe, circle (from opts.from, a click event or {x, y}); opts.back for a slide the other way.
+  function transition(update, opts) {
+    opts = opts || {};
+    if (!canVT) { update(); return Promise.resolve(); }
+    var root = document.documentElement, before = root.getAttribute("data-transition"), type = opts.type || before;
+    if (type && type !== "circle") root.setAttribute("data-transition", type);
+    root.classList.toggle("krish-back", !!opts.back);
+    root.classList.toggle("krish-circle", type === "circle");
+    nameMorphs(true);
+    var vt = document.startViewTransition(function () {
+      nameMorphs(false);
+      var r = update();
+      return Promise.resolve(r).then(function () { nameMorphs(true); });
+    });
+    if (type === "circle") {
+      var p = opts.from || {}, x = p.clientX != null ? p.clientX : (p.x != null ? p.x : innerWidth / 2),
+        y = p.clientY != null ? p.clientY : (p.y != null ? p.y : innerHeight / 2);
+      var r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      vt.ready.then(function () {
+        root.animate({ clipPath: ["circle(0px at " + x + "px " + y + "px)", "circle(" + r + "px at " + x + "px " + y + "px)"] },
+          { duration: 650, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" });
+      }).catch(function () {});
+    }
+    return vt.finished.catch(function () {}).then(function () {
+      nameMorphs(false);
+      root.classList.remove("krish-circle", "krish-back");
+      if (before === null) root.removeAttribute("data-transition"); else root.setAttribute("data-transition", before);
+    });
+  }
+  window.krish = window.krish || {};
+  window.krish.transition = transition;
+
+  var screenOrder = function (el) { return Array.prototype.indexOf.call(el.parentNode.children, el); };
+  function showScreen(target, btn, ev) {
+    var screen = document.querySelector(target);
+    if (!screen) return;
+    var group = Array.prototype.filter.call(screen.parentNode.children, function (s) { return s.classList.contains("screen"); });
+    var current = group.filter(function (s) { return !s.hidden; })[0];
+    if (current === screen) return;
+    var back = current && screenOrder(screen) < screenOrder(current);
+    transition(function () {
+      group.forEach(function (s) { s.hidden = s !== screen; });
+      document.querySelectorAll("[data-show]").forEach(function (b) {
+        var on = b.getAttribute("data-show") === target;
+        b.classList.toggle("active", on);
+        if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+      });
+      if (screen.getBoundingClientRect().top < 0) scrollTo({ top: 0 });
+      screen.dispatchEvent(new CustomEvent("krish:show", { bubbles: true }));
+    }, { type: btn.getAttribute("data-transition") || undefined, from: ev, back: back });
+  }
+  function toggleTheme(btn, ev) {
+    transition(function () {
+      var dark = !document.body.classList.contains("dark");
+      document.body.classList.toggle("dark", dark);
+      try { localStorage.setItem("krish-theme", dark ? "dark" : "light"); } catch (e) {}
+      btn.setAttribute("aria-pressed", dark ? "true" : "false");
+    }, { type: "circle", from: ev });
+  }
+  var transitionsReady = false;
+  function transitions() {
+    pinNav();
+    // The first .screen of each group shows until a button picks another.
+    var parents = [];
+    document.querySelectorAll(".screen").forEach(function (s) { if (parents.indexOf(s.parentNode) < 0) parents.push(s.parentNode); });
+    parents.forEach(function (p) {
+      if (p.__krishScreens) return;
+      p.__krishScreens = true;
+      var group = Array.prototype.filter.call(p.children, function (s) { return s.classList.contains("screen"); });
+      var shown = group.filter(function (s) { return !s.hidden; });
+      var start = location.hash && group.filter(function (s) { return "#" + s.id === location.hash; })[0];
+      if (start || shown.length !== 1) group.forEach(function (s, i) { s.hidden = start ? s !== start : i > 0; });
+    });
+    if (transitionsReady) return;
+    transitionsReady = true;
+    try { if (localStorage.getItem("krish-theme") === "dark" && document.querySelector("[data-theme-toggle]")) document.body.classList.add("dark"); } catch (e) {}
+    document.addEventListener("click", function (ev) {
+      var t = ev.target.closest && ev.target.closest("[data-show], [data-theme-toggle]");
+      if (!t) return;
+      ev.preventDefault();
+      if (t.hasAttribute("data-theme-toggle")) toggleTheme(t, ev);
+      else showScreen(t.getAttribute("data-show"), t, ev);
+    });
+    // Going back to an earlier page slides the other way.
+    addEventListener("pageswap", function (e) {
+      try {
+        var to = e.activation && e.activation.entry && e.activation.entry.index, from = navigation.currentEntry.index;
+        document.documentElement.classList.toggle("krish-back", to != null && to < from);
+      } catch (x) {}
+    });
+    addEventListener("pagereveal", function (e) {
+      try {
+        var nav = window.navigation, act = nav && nav.activation;
+        var back = act && act.from && act.entry && act.entry.index < act.from.index;
+        document.documentElement.classList.toggle("krish-back", !!back);
+        if (e.viewTransition) e.viewTransition.finished.then(function () { document.documentElement.classList.remove("krish-back"); });
+      } catch (x) {}
+    });
+  }
+
+  function start() { transitions(); fonts(); navs(); reveals(); pointer(); counters(); typed(); extras(); scrolly(); scenes(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
   // Pages that draw their content with JavaScript get the menu button and reveals once it is there.
@@ -305,7 +425,7 @@
     new MutationObserver(function () {
       if (queued) return;
       queued = true;
-      setTimeout(function () { queued = false; fonts(); navs(); extras(); reveals(); scrolly(); scenes(); }, 120);
+      setTimeout(function () { queued = false; transitions(); fonts(); navs(); extras(); reveals(); scrolly(); scenes(); }, 120);
     }).observe(document.documentElement, { childList: true, subtree: true });
   }
 })();
