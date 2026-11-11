@@ -46,6 +46,7 @@ import media
 import preview as previewer
 import apps
 import site_images
+import appbackend
 import appcloud
 import decks
 import appdata
@@ -140,6 +141,7 @@ apps.init(db)
 appdata.init(db)
 site_images.init(db)
 appcloud.init(db)
+appbackend.init(db)
 apps.register_tools(tool_registry)
 connector_tools.register_tools(tool_registry)
 plugins.register_tools(tool_registry)
@@ -321,6 +323,7 @@ def public_file(doc: dict) -> dict:
         "status": doc.get("status"),
         "error": doc.get("error"),
         "chunkCount": doc.get("chunk_count", 0),
+        "appPath": doc.get("appPath"),
         "createdAt": doc["createdAt"],
     }
 
@@ -1572,6 +1575,7 @@ async def _file_context(conv_id: str, user_id: str, project_id, question: str, l
 _FILE_TOOLS = ("write_file", "append_file", "edit_file", "delete_file")
 REPAIR_STEPS = 8
 SMOKE_TIMEOUT = 60  # seconds for the browser test of an app
+BACKEND_TEST_TIMEOUT = 90  # seconds for appbackend.backend_problems (each server function runs in a sandbox)
 REPAIR_ROUNDS = 3  # rounds of automatic fixes after a builder turn leaves the app broken or missing a planned feature
 # The first build of a fresh app is written in one streamed reply (fast_build.py). FAST_BUILD=0 turns it off.
 FAST_BUILD = os.environ.get("FAST_BUILD", "1") != "0"
@@ -1584,6 +1588,23 @@ async def _app_problems(app_id: str):
     app and presses its buttons (apps.smoke_test). Yields test-step events; the last event is {"type": "problems"}."""
     files = await apps.snapshot(app_id)
     problems = await apps.check_app(files)
+    if not problems and appbackend.uses_backend(files):
+        step_id = f"backend-{uuid.uuid4().hex[:8]}"
+        yield {"type": "tool_start", "id": step_id, "name": "run_command", "label": "Testing the backend",
+               "args": {"command": "backend.json and api/ tests"}}
+        try:
+            problems, passed = await asyncio.wait_for(appbackend.backend_problems(app_id, files), BACKEND_TEST_TIMEOUT)
+        except Exception as exc:
+            logger.warning("app backend test failed: %s", str(exc)[:300])
+            problems, passed = [], []
+        n = len(problems)
+        yield {"type": "tool_end", "id": step_id, "name": "run_command", "ok": not problems,
+               "output": "\n".join(problems or passed), "media": [],
+               "summary": f"{n} problem{'s' if n != 1 else ''} found" if problems
+               else ("Rules checked, every server function ran its tests" if passed else "Checked")}
+        if problems:
+            yield {"type": "problems", "problems": problems}
+            return
     # Apps on Krish's backend (RADHA.db, .ai, .notify...) aren't pressed: a click could email the owner or change
     # real data, and the browser test has no signed-in user. Their static checks still run.
     if problems or not agent_browser.available() or any("RADHA." in c for c in files.values()):
@@ -3416,6 +3437,7 @@ app.include_router(apps.router)
 app.include_router(appdata.router)
 app.include_router(site_images.router)
 app.include_router(appcloud.router)
+app.include_router(appbackend.router)
 app.include_router(appcloud.owner_router)
 decks.init(db, AI_MODEL)
 app.include_router(decks.router)

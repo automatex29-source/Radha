@@ -53,7 +53,7 @@ MAX_FETCH_BYTES = 1024 * 1024
 FETCH_TIMEOUT = 15
 _TEXT_TYPES = ("json", "text/", "xml", "javascript", "csv")
 # (per visitor per hour, per app per day)
-LIMITS = {"ai": (30, 500), "notify": (5, 50), "upload": (20, 200), "fetch": (60, 1000), "hook": (120, 2000)}
+LIMITS = {"ai": (30, 500), "notify": (5, 50), "upload": (20, 200), "fetch": (60, 1000), "hook": (120, 2000), "api": (300, 5000)}
 _hits: Dict[str, List[float]] = {}
 
 
@@ -384,7 +384,34 @@ async def data_overview(app_id: str, request: Request):
 async def data_users(app_id: str, request: Request):
     await _owner_app(app_id, request)
     users = await db.appdata_users.find({"appId": app_id}).sort("createdAt", -1).to_list(500)
-    return [{**appdata._public_user(u), "createdAt": u.get("createdAt")} for u in users]
+    return [{**appdata._public_user(u, u.get("role") == "admin"), "createdAt": u.get("createdAt")} for u in users]
+
+
+class RoleIn(BaseModel):
+    admin: bool
+
+
+@owner_router.patch("/{app_id}/data/users/{user_id}")
+async def data_set_role(app_id: str, user_id: str, body: RoleIn, request: Request):
+    """The owner makes one of the app's users an admin (or takes it back): admins pass every backend.json rule."""
+    await _owner_app(app_id, request)
+    res = await db.appdata_users.update_one({"appId": app_id, "id": user_id},
+                                            {"$set": {"role": "admin" if body.admin else "user"}})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True}
+
+
+@owner_router.get("/{app_id}/data/backend")
+async def data_backend(app_id: str, request: Request):
+    """backend.json's collections and the server functions, with the latest server-code errors."""
+    import appbackend
+    await _owner_app(app_id, request)
+    files = {f["path"]: f["content"] async for f in db.app_files.find(
+        {"appId": app_id, "path": {"$regex": r"^(backend\.json|api/[^/]+\.m?js)$"}})}
+    rules, problems = appbackend.parse_rules(files[appbackend.RULES_FILE]) if appbackend.RULES_FILE in files else (None, [])
+    errors = await db.appbackend_errors.find({"appId": app_id}, {"_id": 0}).sort("createdAt", -1).to_list(20)
+    return {"rules": rules, "problems": problems, "functions": appbackend.function_names(files), "errors": errors}
 
 
 @owner_router.get("/{app_id}/data/files")

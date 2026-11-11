@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Check, Copy, Database, FileText, Inbox, Loader2, RefreshCw, Trash2, Users } from "lucide-react";
+import { AlertTriangle, Check, Copy, Database, FileText, Inbox, Loader2, RefreshCw, Server, ShieldCheck, Trash2, Users } from "lucide-react";
 import { api, absoluteUrl, formatApiError } from "@/lib/api";
 
 /**
@@ -13,11 +13,13 @@ export default function DataTab({ appId }) {
   const [view, setView] = useState(null); // {kind: "docs"|"users"|"files", name?}
   const [rows, setRows] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [backend, setBackend] = useState(null); // backend.json rules, server functions and their recent errors
 
   const load = useCallback(async () => {
     try {
       const { data } = await api.get(`/apps/${appId}/data`);
       setInfo(data);
+      api.get(`/apps/${appId}/data/backend`).then(({ data: b }) => setBackend(b)).catch(() => {});
       setView((v) => v || (data.collections[0] ? { kind: "docs", name: data.collections[0].name } : data.users ? { kind: "users" } : null));
     } catch (e) {
       toast.error(formatApiError(e));
@@ -27,7 +29,7 @@ export default function DataTab({ appId }) {
 
   const viewKey = view ? `${view.kind}:${view.name || ""}` : "";
   useEffect(() => {
-    if (!view) return;
+    if (!view || view.kind === "backend") return;
     setRows(null);
     const path = view.kind === "docs" ? `docs/${encodeURIComponent(view.name)}` : view.kind;
     api.get(`/apps/${appId}/data/${path}`).then(({ data }) => setRows(data)).catch((e) => toast.error(formatApiError(e)));
@@ -40,6 +42,16 @@ export default function DataTab({ appId }) {
       await api.delete(`/apps/${appId}/data/${path}`);
       setRows((r) => r.filter((x) => x.id !== row.id));
       load();
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  };
+
+  const setAdmin = async (row, admin) => {
+    try {
+      await api.patch(`/apps/${appId}/data/users/${row.id}`, { admin });
+      setRows((r) => r.map((x) => (x.id === row.id ? { ...x, isAdmin: admin } : x)));
+      toast.success(admin ? `${row.email} is now an admin` : `${row.email} is no longer an admin`);
     } catch (e) {
       toast.error(formatApiError(e));
     }
@@ -76,6 +88,8 @@ export default function DataTab({ appId }) {
             c.count, () => setView({ kind: "docs", name: c.name }), view?.kind === "docs" && view.name === c.name))}
           {item("users", Users, "Sign-ups", info.users, () => setView({ kind: "users" }), view?.kind === "users")}
           {item("files", FileText, "Uploaded files", info.files, () => setView({ kind: "files" }), view?.kind === "files")}
+          {backend && (backend.rules || backend.functions.length > 0) && item("backend", Server, "Rules and server code",
+            backend.functions.length, () => setView({ kind: "backend" }), view?.kind === "backend")}
         </div>
         <div className="space-y-1.5 rounded-lg border border-border p-2.5 text-[11px] text-muted-foreground">
           <p className="font-medium text-foreground">Connect other tools</p>
@@ -94,6 +108,8 @@ export default function DataTab({ appId }) {
             <Database className="h-6 w-6" />
             <p>Nothing saved yet. When people use your app (sign up, send a form, add items), it shows up here.</p>
           </div>
+        ) : view.kind === "backend" ? (
+          <BackendView backend={backend} />
         ) : rows === null ? (
           <Loader2 className="mx-auto mt-10 h-5 w-5 animate-spin text-muted-foreground" />
         ) : rows.length === 0 ? (
@@ -110,7 +126,15 @@ export default function DataTab({ appId }) {
                   </button>
                 </div>
                 {view.kind === "docs" && <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">{JSON.stringify(r.data, null, 2)}</pre>}
-                {view.kind === "users" && <p><span className="font-medium">{r.name || "(no name)"}</span> · {r.email}</p>}
+                {view.kind === "users" && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="min-w-0 flex-1"><span className="font-medium">{r.name || "(no name)"}</span> · {r.email}</p>
+                    <button onClick={() => setAdmin(r, !r.isAdmin)} data-testid="data-toggle-admin"
+                      className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${r.isAdmin ? "border-primary/50 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                      <ShieldCheck className="h-3 w-3" /> {r.isAdmin ? "Admin" : "Make admin"}
+                    </button>
+                  </div>
+                )}
                 {view.kind === "files" && (
                   <a href={absoluteUrl(r.url)} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-primary hover:underline">
                     {r.type.startsWith("image/") && <img src={absoluteUrl(r.url)} alt="" className="h-10 w-10 rounded object-cover" />}
@@ -122,6 +146,54 @@ export default function DataTab({ appId }) {
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+const WHO = { anyone: "Anyone", "signed-in": "Signed-in users", owner: "Only who made it", admin: "Admins", nobody: "Server code only" };
+
+/** What the app's backend allows: each collection's rules and fields, the server functions and recent errors. */
+function BackendView({ backend }) {
+  if (!backend) return null;
+  const collections = Object.entries(backend.rules?.collections || {});
+  return (
+    <div className="space-y-3 text-xs" data-testid="data-backend">
+      {backend.problems.length > 0 && (
+        <div className="rounded-lg border border-destructive/40 p-2.5 text-destructive">{backend.problems.join(" · ")}</div>
+      )}
+      {collections.map(([name, rule]) => (
+        <div key={name} className="rounded-lg border border-border bg-card p-2.5">
+          <p className="mb-1.5 font-semibold">{name}</p>
+          <div className="mb-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground sm:grid-cols-4">
+            {["read", "create", "update", "delete"].map((a) => (
+              <span key={a}><span className="capitalize">{a === "read" ? "See" : a === "create" ? "Add" : a === "update" ? "Change" : "Delete"}</span>: <span className="text-foreground">{WHO[rule[a]]}</span></span>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {Object.entries(rule.fields).map(([f, spec]) => (
+              <span key={f} className="rounded bg-surface-strong px-1.5 py-0.5 font-mono text-[10px]">
+                {f}: {spec.type}{spec.required ? " *" : ""}{spec.hidden ? " (hidden)" : ""}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+      {backend.functions.length > 0 && (
+        <div className="rounded-lg border border-border bg-card p-2.5">
+          <p className="mb-1.5 font-semibold">Server functions</p>
+          <div className="flex flex-wrap gap-1">
+            {backend.functions.map((f) => <span key={f} className="rounded bg-surface-strong px-1.5 py-0.5 font-mono text-[10px]">api/{f}</span>)}
+          </div>
+        </div>
+      )}
+      {backend.errors.length > 0 && (
+        <div className="rounded-lg border border-border bg-card p-2.5">
+          <p className="mb-1.5 flex items-center gap-1 font-semibold"><AlertTriangle className="h-3.5 w-3.5 text-amber-500" /> Recent server errors</p>
+          <ul className="space-y-1 font-mono text-[10px] text-muted-foreground">
+            {backend.errors.map((e, i) => <li key={i}>{new Date(e.createdAt).toLocaleString()} · api/{e.name}: {e.error}</li>)}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

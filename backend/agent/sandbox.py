@@ -9,6 +9,7 @@ This is process-level isolation, not a VM. It stops runaway code and casual
 misuse; for hostile multi-tenant workloads run it inside a container/VM too.
 """
 import asyncio
+import json
 import os
 import resource
 import shutil
@@ -209,3 +210,104 @@ async def _run(build_cmd, files: Dict[str, Union[str, bytes]], collect_artifacts
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+# Messages from a run_rpc child start with this marker on their own stdout line; any other output is a log.
+RPC_MARK = "\x1eR"
+
+
+@dataclass
+class RpcResult:
+    done: Optional[dict]  # the child's final {"t": "done", ...} message, None if it never sent one
+    logs: str
+    timed_out: bool
+
+
+async def run_rpc(argv: List[str], files: Dict[str, Union[str, bytes]], start: dict, handle, timeout: float = 10,
+                  max_calls: int = 100) -> RpcResult:
+    """Run `argv` in a sandbox like run_shell, talking JSON lines over stdin/stdout.
+
+    `start` is written first. The child then sends {"t": "call", "id", "op", "args"} lines, each answered with
+    the result of `await handle(op, args)` as {"id", "ok": true, "result"} (or ok false with "error" and
+    "status" when handle raises); and ends with {"t": "done", ...}. The child never reaches the network or the
+    database itself: everything it needs goes through `handle`, where the caller checks it.
+    """
+    workdir = Path(tempfile.mkdtemp(prefix="radha-rpc-"))
+    logs: List[str] = []
+    try:
+        _write_files(workdir, files)
+        cmd = (["unshare", "-rn"] if network_isolation_available() else []) + argv
+        env = {"PATH": _search_path(), "HOME": str(workdir), "TMPDIR": str(workdir), "LANG": "C.UTF-8",
+               "NODE_OPTIONS": "--max-old-space-size=256"}
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, cwd=workdir, env=env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE, preexec_fn=_preexec, limit=4 * 1024 * 1024,
+        )
+
+        async def errors():
+            async for line in proc.stderr:
+                if sum(len(x) for x in logs) < MAX_OUTPUT:
+                    logs.append(line.decode("utf-8", "replace").rstrip("\n"))
+
+        async def talk():
+            calls = 0
+            proc.stdin.write((json.dumps(start) + "\n").encode())
+            await proc.stdin.drain()
+            async for raw in proc.stdout:
+                line = raw.decode("utf-8", "replace").rstrip("\n")
+                if not line.startswith(RPC_MARK):
+                    if sum(len(x) for x in logs) < MAX_OUTPUT:
+                        logs.append(line)
+                    continue
+                try:
+                    msg = json.loads(line[len(RPC_MARK):])
+                except ValueError:
+                    continue
+                if msg.get("t") == "done":
+                    return msg
+                if msg.get("t") != "call":
+                    continue
+                calls += 1
+                try:
+                    if calls > max_calls:
+                        raise RpcError(f"Too many database or service calls in one request (max {max_calls})", 429)
+                    reply = {"id": msg.get("id"), "ok": True, "result": await handle(msg.get("op"), msg.get("args") or [])}
+                except RpcError as exc:
+                    reply = {"id": msg.get("id"), "ok": False, "error": exc.message, "status": exc.status}
+                except Exception as exc:  # a bug on our side: say so without the details
+                    reply = {"id": msg.get("id"), "ok": False, "error": getattr(exc, "detail", None) or "Something went wrong",
+                             "status": getattr(exc, "status_code", 500)}
+                proc.stdin.write((json.dumps(reply, default=str) + "\n").encode())
+                await proc.stdin.drain()
+            return None
+
+        reader = asyncio.ensure_future(errors())
+        timed_out, done = False, None
+        try:
+            done = await asyncio.wait_for(talk(), timeout=timeout)
+        except asyncio.TimeoutError:
+            timed_out = True
+        except (BrokenPipeError, ConnectionResetError):
+            done = None
+        finally:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            await proc.wait()
+            try:
+                await asyncio.wait_for(reader, 2)
+            except Exception:
+                pass
+        return RpcResult(done=done, logs=_truncate("\n".join(logs)), timed_out=timed_out)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+class RpcError(Exception):
+    """Raised by a run_rpc handler: the child's call fails with this message and status."""
+
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status = status

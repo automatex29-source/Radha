@@ -11,16 +11,42 @@ import { Button } from "@/components/ui/button";
 import KrishIntro from "@/components/KrishIntro";
 import LimitBanner from "@/components/LimitBanner";
 import AiLimitCard from "@/components/AiLimitCard";
+import PictureMarkup, { drawPins } from "@/components/PictureMarkup";
 import { setLimit } from "@/lib/limitState";
 import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Send, Square, RefreshCw, ExternalLink, Code2, Eye, SquareTerminal, History, Rocket,
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
-  Paperclip, X, Wand2, ImagePlus, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare, Wrench,
+  Paperclip, X, Wand2, ImagePlus, MapPin, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare, Wrench,
 } from "lucide-react";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit", "start_template"]);
 const SCREENSHOT_ASK = "Build this design as a working app. Match its layout, colours, fonts, spacing and content as closely as you can, and make every button work.";
+
+// What a picture added to the builder chat is for. The person picks one on each picture.
+const PICTURE_USES = [
+  ["design", "Copy design"],
+  ["use", "Use in app"],
+  ["fix", "Fix this"],
+];
+
+// A short guess from the file name: a logo or photo goes in the app, anything else is a design to copy.
+const guessUse = (name) => (/logo|photo|product|team|menu|banner|img_|dsc|pxl_|whatsapp image/i.test(name) ? "use" : "design");
+
+// The message lines that say what each picture is for and what its pins mean.
+function pictureLines(list) {
+  return list.map((img, i) => {
+    const n = list.length > 1 ? `Picture ${i + 1}` : "This picture";
+    let line = img.use === "use"
+      ? `${n} is my own picture${img.appPath ? `, saved in the app as ${img.appPath}` : ""}: use it in the app${img.pins?.length ? " where my pins point" : " where it fits best (the logo, the hero or a product photo)"}.`
+      : img.use === "fix"
+        ? `${n} is a screenshot of my app: fix what it shows${img.pins?.length ? " at the numbered pins" : ""}.`
+        : `${n} is a design to copy: match its layout, colours, fonts, spacing and content as closely as you can, and make every button work.`;
+    const notes = (img.pins || []).map((p, k) => (p.note.trim() ? `${k + 1}) ${p.note.trim()}` : null)).filter(Boolean);
+    if (notes.length) line += ` I put numbered pins on it: ${notes.join("; ")}.`;
+    return line;
+  }).join("\n");
+}
 
 const PANES = [["preview", Eye, "Preview"], ["code", Code2, "Code"], ["terminal", SquareTerminal, "Terminal"], ["history", History, "History"], ["data", Database, "Data"]];
 
@@ -167,7 +193,9 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   const [attached, setAttached] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState(null); // the file being typed right now: {key, path, text}
-  const [images, setImages] = useState([]); // screenshots to build from
+  const [images, setImages] = useState([]); // pictures for the next message: {id, url, name, file, use, pins}
+  const [marking, setMarking] = useState(null); // the picture being marked up with pins
+  const [dragging, setDragging] = useState(false);
   const [boosting, setBoosting] = useState(false);
   const [ideas, setIdeas] = useState([]);
   const [planCard, setPlanCard] = useState(null); // the plan's meter ran out on the last send
@@ -177,24 +205,77 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   const imageRef = useRef(null);
   const askedRef = useRef(null);
 
-  // A screenshot or design to copy: sent with the next message, and Krish builds that design.
-  const attachImage = async (e) => {
-    const picked = Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/"));
-    e.target.value = "";
+  // A picture for the next message (picked, pasted or dropped). Krish sees it; the person says what it's for:
+  // a design to copy, their own picture to put in the app, or a screenshot of something to fix, with pins.
+  const uploadMedia = async (blob, name) => {
+    const fd = new FormData();
+    fd.append("file", blob, name);
+    fd.append("conversationId", app.conversationId);
+    const { data } = await api.post("/media", fd, { headers: { "Content-Type": "multipart/form-data" } });
+    return data.id;
+  };
+  const addPictures = async (picked) => {
+    picked = picked.filter((f) => f.type.startsWith("image/")).slice(0, 6);
     if (!picked.length) return;
     setUploading(true);
     for (const file of picked) {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("conversationId", app.conversationId);
+      const name = file.name && file.name !== "image.png" ? file.name : `pasted-${Date.now()}.png`;
       try {
-        const { data } = await api.post("/media", fd, { headers: { "Content-Type": "multipart/form-data" } });
-        setImages((list) => [...list, { id: data.id, url: URL.createObjectURL(file), name: file.name }]);
+        const id = await uploadMedia(file, name);
+        setImages((list) => [...list, { id, url: URL.createObjectURL(file), name, file, use: guessUse(name), pins: [] }]);
       } catch (err) {
         toast.error(formatApiError(err));
       }
     }
     setUploading(false);
+  };
+  const attachImage = (e) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = "";
+    addPictures(picked);
+  };
+  const onPaste = (e) => {
+    const pics = Array.from(e.clipboardData?.files || []).filter((f) => f.type.startsWith("image/"));
+    if (pics.length) { e.preventDefault(); addPictures(pics); }
+  };
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    const all = Array.from(e.dataTransfer?.files || []);
+    const pics = all.filter((f) => f.type.startsWith("image/"));
+    if (pics.length) addPictures(pics);
+    if (all.length > pics.length) attach({ target: { files: all.filter((f) => !f.type.startsWith("image/")), value: "" } });
+  };
+  const setPicture = (id, change) => setImages((list) => list.map((x) => (x.id === id ? { ...x, ...change } : x)));
+
+  // Before sending: pictures with pins go as a copy with the pins drawn on, and "put it in my app" pictures are
+  // saved into the app's assets/ so the code can show them.
+  const readyPictures = async (list) => {
+    const out = [];
+    for (const img of list) {
+      let ready = { ...img };
+      if (img.use === "use" && img.file && !img.appPath) {
+        try {
+          const fd = new FormData();
+          fd.append("file", img.file, img.name);
+          const { data } = await api.post(`/conversations/${app.conversationId}/files`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+          ready.appPath = data.appPath;
+        } catch (err) {
+          toast.error(formatApiError(err));
+        }
+      }
+      if (img.pins?.length) {
+        try {
+          const blob = await drawPins(img.url, img.pins);
+          if (blob) ready.id = await uploadMedia(blob, img.name.replace(/\.\w+$/, "") + "-pins.jpg");
+        } catch {
+          // the plain picture still goes, with the notes in words
+        }
+      }
+      out.push(ready);
+    }
+    if (list.some((i) => i.use === "use")) onFilesChanged();
+    return out;
   };
 
   // "Improve prompt": a short idea becomes a detailed brief the user can still edit before sending.
@@ -264,9 +345,17 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   };
 
   const send = async (typed, auto = false) => {
-    const sending = typeof typed === "string" ? [] : images;
-    const content = (typeof typed === "string" ? typed : input).trim() || (sending.length ? SCREENSHOT_ASK : "");
-    if (!content || streaming) return;
+    let sending = typeof typed === "string" ? [] : images;
+    const said = (typeof typed === "string" ? typed : input).trim();
+    if ((!said && !sending.length) || streaming) return;
+    if (sending.length) {
+      setUploading(true);
+      sending = await readyPictures(sending);
+      setUploading(false);
+    }
+    const lines = sending.length ? pictureLines(sending) : "";
+    const content = [said, lines].filter(Boolean).join("\n\n") || (sending.length ? SCREENSHOT_ASK : "");
+    if (!content) return;
     setPlanCard(null);
     if (typeof typed !== "string") { setInput(""); setImages([]); }
     setAttached([]);
@@ -348,8 +437,9 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
             )}
             <button onClick={() => imageRef.current?.click()} data-testid="builder-from-screenshot"
               className="mt-3 flex items-center gap-1.5 text-left text-xs text-brand hover:underline">
-              <ImagePlus className="h-3.5 w-3.5" /> Or start from a screenshot of a design you like
+              <ImagePlus className="h-3.5 w-3.5" /> Or start from a picture: a design you like, your logo or photos
             </button>
+            <p className="mt-1 text-[11px]">You can paste or drop pictures here too, and tap one to point at what you mean.</p>
           </div>
         )}
         {messages.map((m) => (
@@ -387,26 +477,54 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
           </div>
         ))}
         {planCard && !streaming && <div className="md:ml-11"><AiLimitCard limit={{ kind: "plan" }} id="plan" /></div>}
+        {marking && (
+          <PictureMarkup image={marking} onClose={() => setMarking(null)}
+            onDone={(pins) => { setPicture(marking.id, { pins }); setMarking(null); }} />
+        )}
         {streaming && <MessageBubble message={{ id: "streaming", role: "assistant", content: text, steps, media: steps.flatMap((s) => s.media || []) }} streaming codeProject={false} compactSteps />}
         {streaming && draft && <LiveCode draft={draft} />}
       </div>
       <div className="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <LimitBanner />
-        <div className="rounded-xl border border-border bg-card p-2 focus-within:border-primary/60">
-          <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={3} data-testid="builder-input"
+        <div onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes("Files")) { e.preventDefault(); setDragging(true); } }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }} onDrop={onDrop}
+          className={`relative rounded-xl border bg-card p-2 focus-within:border-primary/60 ${dragging ? "border-primary ring-2 ring-primary/30" : "border-border"}`}>
+          {dragging && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-card/90 text-sm font-medium text-primary" data-testid="builder-drop-hint">
+              <ImagePlus className="mr-2 h-4 w-4" /> Drop pictures or files here
+            </div>
+          )}
+          <textarea value={input} onChange={(e) => setInput(e.target.value)} onPaste={onPaste} rows={3} data-testid="builder-input"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); send(); } }}
             placeholder="Add a dark mode toggle and save todos in the browser…"
             className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-sm focus:outline-none" />
           {images.length > 0 && (
-            <div className="flex flex-wrap gap-2 px-1 pb-1.5" data-testid="builder-images">
-              {images.map((img) => (
-                <span key={img.id} className="relative">
-                  <img src={img.url} alt={img.name} className="h-14 w-20 rounded-md border border-border object-cover" />
-                  <button onClick={() => setImages((l) => l.filter((x) => x.id !== img.id))} aria-label="Remove picture"
-                    className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background"><X className="h-3 w-3" /></button>
-                </span>
+            <div className="flex flex-wrap gap-2.5 px-1 pb-1.5" data-testid="builder-images">
+              {images.map((img, i) => (
+                <div key={img.id} className="w-[8.5rem] space-y-1" data-testid="builder-picture">
+                  <span className="relative block">
+                    <button onClick={() => setMarking(img)} title="Tap to add pins" aria-label={`Add pins to ${img.name}`} data-testid="builder-picture-open"
+                      className="group relative block w-full overflow-hidden rounded-md border border-border">
+                      <img src={img.url} alt={img.name} className="h-20 w-full object-cover transition-transform group-hover:scale-105" />
+                      {(img.pins || []).map((p, k) => (
+                        <span key={k} style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                          className="absolute flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-violet-500 text-[8px] font-bold text-white">{k + 1}</span>
+                      ))}
+                      <span className="absolute bottom-1 left-1 flex items-center gap-0.5 rounded bg-black/60 px-1 text-[9px] text-white">
+                        <MapPin className="h-2.5 w-2.5" /> {img.pins?.length ? `${img.pins.length} pin${img.pins.length > 1 ? "s" : ""}` : "Add pins"}
+                      </span>
+                      {images.length > 1 && <span className="absolute right-1 top-1 rounded bg-black/60 px-1 text-[9px] text-white">{i + 1}</span>}
+                    </button>
+                    <button onClick={() => setImages((l) => l.filter((x) => x.id !== img.id))} aria-label="Remove picture"
+                      className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background"><X className="h-3 w-3" /></button>
+                  </span>
+                  <select value={img.use} onChange={(e) => setPicture(img.id, { use: e.target.value })} aria-label="What is this picture for?"
+                    data-testid="builder-picture-use"
+                    className="w-full rounded-md border border-border bg-background px-1 py-0.5 text-[11px] text-foreground focus:outline-none">
+                    {PICTURE_USES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                  </select>
+                </div>
               ))}
-              <span className="self-center text-[11px] text-muted-foreground">Krish builds this design</span>
             </div>
           )}
           {attached.length > 0 && (
@@ -439,7 +557,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
               <Button size="icon" onClick={() => abortRef.current?.abort()} title="Stop" aria-label="Stop the reply" data-testid="builder-stop"
                 className="h-10 w-10 rounded-full bg-foreground text-background hover:bg-foreground/90 sm:h-8 sm:w-8"><Square className="h-3 w-3 fill-current" /></Button>
             ) : (
-              <Button size="icon" onClick={send} onMouseDown={(e) => e.preventDefault()} disabled={!input.trim() && !images.length} data-testid="builder-send" className="h-10 w-10 sm:h-8 sm:w-8"><Send className="h-3.5 w-3.5" /></Button>
+              <Button size="icon" onClick={send} onMouseDown={(e) => e.preventDefault()} disabled={(!input.trim() && !images.length) || uploading} data-testid="builder-send" className="h-10 w-10 sm:h-8 sm:w-8"><Send className="h-3.5 w-3.5" /></Button>
             )}
           </div>
         </div>
