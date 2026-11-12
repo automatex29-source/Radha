@@ -1303,6 +1303,18 @@ def _is_hinglish(text: Optional[str]) -> bool:
     return hits * 10 >= len(words) and (hits >= 2 or (hits == 1 and len(words) <= 12))
 
 
+def _hinglish_chat(history_docs: list) -> bool:
+    """True when the reply should be in Hinglish: the latest message is, or it is a short follow-up ("ok",
+    "aur?", "2nd one") in a chat where the person's message before it was."""
+    said = [m.get("content") or "" for m in history_docs if m.get("role") == "user"]
+    if not said:
+        return False
+    if _is_hinglish(said[-1]):
+        return True
+    short = len(re.findall(r"[A-Za-z']+", said[-1])) <= 4 and not re.search(r"[\u0900-\u097F]", said[-1])
+    return short and len(said) > 1 and _is_hinglish(said[-2])
+
+
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
@@ -2133,7 +2145,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if counselling and voice:
         system_parts.append(counsellor.VOICE)
     # Free models often drift to English or formal Hindi; the last line of the prompt is the one they follow.
-    if not counselling and not voice and not app_id and not coding and _is_hinglish(last_user):
+    if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
         system_parts.append(HINGLISH_NOTE)
     system_prompt = "\n\n".join(system_parts)
     # The Counsellor never shows letters from a script the person didn't use (see counsellor.keep_scripts).

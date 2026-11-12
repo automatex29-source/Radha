@@ -473,3 +473,13 @@ def test_hinglish_messages_are_spotted(client):
     for text in ("How do I go to the market to buy a phone?", "Write a function to do this in python",
                  "मुझे बताओ kya hai", "photosynthesis simple hindi me samjhao", "explain karma yoga", ""):
         assert not server._is_hinglish(text), text
+
+
+def test_hinglish_chat_keeps_short_follow_ups(client):
+    import server
+    say = lambda *texts: [{"role": "user", "content": t} for t in texts]
+    assert server._hinglish_chat(say("papa chahte hai engineering karu, mujhe design me interest hai, kaise baat karu"))
+    assert server._hinglish_chat(say("bhai kal physics ka paper hai", "ok aur?"))
+    assert not server._hinglish_chat(say("bhai kal physics ka paper hai", "Please explain Gauss's law in detail for my exam"))
+    assert not server._hinglish_chat(say("What is photosynthesis?", "ok"))
+    assert not server._hinglish_chat([])
