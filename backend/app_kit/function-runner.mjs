@@ -59,6 +59,7 @@ async function start(m) {
       isAdmin: !!(m.user && m.user.isAdmin),
       db,
       ai: (prompt, o) => call("ai", [String(prompt), o || {}]),
+      image: (prompt, o) => call("image", [String(prompt), o || {}]),
       notify: (msg) => call("notify", [msg || {}]),
       fetch: (url, o) => call("fetch", [String(url), o || {}]),
       fail: (message, status) => { throw new AppError(String(message), status || 400); },

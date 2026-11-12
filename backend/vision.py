@@ -11,7 +11,7 @@ import base64
 import io
 import logging
 import os
-from typing import Optional
+from typing import List, Optional
 
 logger = logging.getLogger("radha.vision")
 
@@ -63,6 +63,22 @@ async def _describe_with_groq(data: bytes) -> Optional[str]:
     )
     text = (resp.choices[0].message.content or "").strip()
     return text or None
+
+
+async def ask(images: List[bytes], question: str, system: str = "", json_mode: bool = False) -> Optional[str]:
+    """A free vision model's answer to `question` about the pictures (an app's RADHA.ai with images).
+    None when no vision model is set up here."""
+    if not os.environ.get("GROQ_API_KEY") or not VISION_MODEL or not images:
+        return None
+    import litellm
+    parts: list = [{"type": "text", "text": question}]
+    for data in images[:3]:
+        url = "data:image/jpeg;base64," + base64.b64encode(await asyncio.to_thread(_shrink, data)).decode()
+        parts.append({"type": "image_url", "image_url": {"url": url}})
+    messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": parts}]
+    kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
+    resp = await litellm.acompletion(model=f"groq/{VISION_MODEL}", messages=messages, max_tokens=1500, timeout=60, **kwargs)
+    return (resp.choices[0].message.content or "").strip() or None
 
 
 async def image_to_text(data: bytes) -> str:

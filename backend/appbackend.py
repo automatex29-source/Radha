@@ -461,16 +461,23 @@ class _Services:
             doc.update(data=data, updatedAt=_now())
             await db.appdata_docs.update_one({"_id": doc["_id"]}, {"$set": {"data": data, "updatedAt": doc["updatedAt"]}})
             return appdata._public_doc(doc)
-        if op in ("ai", "notify", "fetch") and self.test:
-            return {"ai": "A sample answer from the AI.", "notify": {"ok": True},
+        if op in ("ai", "notify", "fetch", "image") and self.test:
+            return {"ai": "A sample answer from the AI.", "notify": {"ok": True}, "image": "https://example.com/test.webp",
                     "fetch": {"status": 200, "ok": True, "data": None, "text": ""}}[op]
         import appcloud
         if op == "ai":
             opts = pad[1] if isinstance(pad[1], dict) else {}
+            images = opts.get("images") or ([opts["image"]] if opts.get("image") else [])
             body = appcloud.AiIn(prompt=str(pad[0] or "")[:8000] or "-", system=str(opts.get("system") or "")[:3000],
-                                 json=bool(opts.get("json")))
+                                 json=bool(opts.get("json")), images=[str(i) for i in images][:3])
             out = await appcloud.app_ai(self.app_id, body, self.request)
             return out.get("data") if opts.get("json") else out.get("text")
+        if op == "image":
+            opts = pad[1] if isinstance(pad[1], dict) else {}
+            body = appcloud.ImageIn(prompt=str(pad[0] or "")[:400] or "-", width=int(opts.get("width") or 1024),
+                                    height=int(opts.get("height") or opts.get("width") or 1024),
+                                    variant=int(opts.get("variant") or 0))
+            return (await appcloud.make_image(self.app_id, body, self.request))["url"]
         if op == "notify":
             msg = pad[0] if isinstance(pad[0], dict) else {}
             fields = {k: v for k, v in msg.items() if k not in ("subject", "message", "replyTo")}
