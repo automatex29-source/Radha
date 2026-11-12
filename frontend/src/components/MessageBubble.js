@@ -10,6 +10,7 @@ import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
+import { prepareMath, useMathPlugins } from "@/lib/math";
 import SourceChip from "@/components/SourceChip";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
@@ -258,8 +259,11 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   const shown = useMemo(() => {
     if (isUser) return message.content || "";
     const text = onOpenCode && codeProject ? stripFileBlocks(message.content, streaming) : message.content || "";
-    return linkCitations(streaming ? hideRelatedLine(text) : text, webSources);
+    return prepareMath(linkCitations(streaming ? hideRelatedLine(text) : text, webSources));
   }, [onOpenCode, codeProject, isUser, message.content, streaming, webSources]);
+  // Formulas ($E = mc^2$) are drawn as real maths; the drawing code loads only when an answer has one.
+  const math = useMathPlugins(isUser ? "" : shown);
+  const remarkPlugins = useMemo(() => (math ? [remarkGfm, ...math.remark] : [remarkGfm]), [math]);
 
   // Code the user pasted or attached shows as file chips (Krish shows the page itself in the side panel).
   const userFiles = useMemo(() => {
@@ -376,7 +380,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
         {message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
         <div dir="auto" className="radha-prose krish-answer min-w-0">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable }}>
+          <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={math ? math.rehype : undefined} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable }}>
             {shown}
           </ReactMarkdown>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
