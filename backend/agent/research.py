@@ -106,8 +106,12 @@ async def default_ask(model: str, prompt: str, max_tokens: int) -> str:
 
 
 def planner_model(model: str) -> str:
-    # On Groq, plan with the small model so the writer keeps the big model's per-minute budget.
-    return "openai/gpt-oss-20b" if llm.lean(model) and model.startswith("openai/gpt-oss") else model
+    # On Groq, plan with the small model so the writer keeps the big model's per-minute budget. On a paid model
+    # (Krish Pro), a free model writes the search queries: it's a small job, and only the report needs the
+    # strong model.
+    if llm.lean(model) and model.startswith("openai/gpt-oss"):
+        return "openai/gpt-oss-20b"
+    return llm.helper_model(model)
 
 
 async def plan(question: str, focus: str, model: str, ask: Ask) -> List[str]:
@@ -117,11 +121,16 @@ async def plan(question: str, focus: str, model: str, ask: Ask) -> List[str]:
               "rankings, news), put the current year in at least one query so the newest pages come first. "
               "Reply with only a JSON "
               f"array of strings.\n\nQuestion: {question}" + (f"\nFocus: {focus}" if focus else ""))
-    try:
-        return parse_queries(await ask(planner_model(model), prompt, 400), question)
-    except Exception as exc:
-        logger.warning("research planning failed, searching the question only: %s", exc)
-        return [question.strip()[:200]]
+    planner = planner_model(model)
+    for which in dict.fromkeys([planner, model]):  # the free planner first, then the chat's own model
+        try:
+            queries = parse_queries(await ask(which, prompt, 400), question)
+            if len(queries) > 1 or which == model:
+                return queries
+        except Exception as exc:
+            logger.warning("research planning on %s failed: %s", which, exc)
+    logger.warning("research planning failed, searching the question only")
+    return [question.strip()[:200]]
 
 
 async def gather_sources(queries: List[str], terms: List[str], max_sources: int, max_chars: int,

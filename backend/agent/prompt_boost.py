@@ -57,11 +57,14 @@ SCENES_SYSTEM = (
 
 
 def _model() -> Optional[str]:
-    wanted = os.environ.get("PROMPT_BOOST_MODEL") or os.environ.get("AI_MODEL")
-    for m in ([wanted] if wanted else []) + _MODELS:
-        if m and llm.configured(m):
-            return m
-    return None
+    """PROMPT_BOOST_MODEL, else the default chat model (AI_MODEL) when it's free, else the first free model that
+    is set up; a paid model only when no free one is. Rewriting a prompt is a small job a free model does well."""
+    wanted = os.environ.get("PROMPT_BOOST_MODEL")
+    if wanted and llm.configured(wanted):
+        return wanted
+    default = os.environ.get("AI_MODEL")
+    choices = [m for m in ([default] if default else []) + _MODELS if m and llm.configured(m)]
+    return next((m for m in choices if not llm.paid(m)), choices[0] if choices else None)
 
 
 def enabled() -> bool:

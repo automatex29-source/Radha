@@ -431,10 +431,27 @@ def stt_prompt(hint: Optional[str] = None, context: Optional[str] = None) -> Opt
     return prompt or None
 
 
+async def _openai_whisper(data: bytes, filename: str, extra: dict) -> tuple:
+    resp = await _client().audio.transcriptions.create(model=STT_MODEL, file=(filename, data), **extra)
+    return resp.text, None
+
+
 async def _whisper(data: bytes, filename: str, extra: dict) -> tuple:
-    if openai_configured():
-        resp = await _client().audio.transcriptions.create(model=STT_MODEL, file=(filename, data), **extra)
-        return resp.text, None
+    # Free Whisper large-v3 on Groq hears first when it's set up (it also hears Hindi and Hinglish well); the paid
+    # OpenAI model only takes over when Groq fails. STT_ENGINE=openai puts OpenAI first again.
+    groq = bool(os.environ.get("GROQ_API_KEY"))
+    if openai_configured() and (not groq or os.environ.get("STT_ENGINE", "free").lower() == "openai"):
+        return await _openai_whisper(data, filename, extra)
+    if groq and openai_configured():
+        try:
+            return await _groq_whisper(data, filename, extra)
+        except Exception as exc:
+            logger.info("Groq Whisper failed, OpenAI transcribes instead: %s", str(exc)[:200])
+            return await _openai_whisper(data, filename, extra)
+    return await _groq_whisper(data, filename, extra)
+
+
+async def _groq_whisper(data: bytes, filename: str, extra: dict) -> tuple:
     if not os.environ.get("GROQ_API_KEY"):
         raise MediaUnavailable("Set GROQ_API_KEY (free) or OPENAI_API_KEY on the backend to enable voice input.")
     from openai import AsyncOpenAI
