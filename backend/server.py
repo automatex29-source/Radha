@@ -3474,6 +3474,10 @@ if (FRONTEND_DIST / "index.html").is_file():
                 media_type = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
                 return FileResponse(packed, media_type=media_type, headers={**headers, "Content-Encoding": "gzip"})
             return FileResponse(candidate, headers=headers)
+        # About and FAQ are plain HTML pages, so Google and AI answers can read them without running the app.
+        static_page = _STATIC_PAGES.get(full_path.strip("/"))
+        if static_page and (FRONTEND_DIST / static_page).is_file():
+            return FileResponse(FRONTEND_DIST / static_page, media_type="text/html", headers={"Cache-Control": "no-cache"})
         # Link previews (WhatsApp, X, LinkedIn) need the share picture as a full address.
         page = (FRONTEND_DIST / "index.html").read_text(encoding="utf-8")
         invite = re.fullmatch(r"i/([A-Za-z0-9]{4,20})/?", full_path)
@@ -3488,11 +3492,13 @@ if (FRONTEND_DIST / "index.html").is_file():
 SITE_URL = (os.environ.get("SITE_URL") or "https://krishai.net").rstrip("/")
 # Pages a signed-out visitor (and Google) can read, with the title and summary search results show.
 _PUBLIC_PAGES = {
-    "": ("Krish AI: free AI assistant by EmpireX", None),
+    "": ("Krish AI: talk it out in Hindi, Hinglish or English", None),
     "privacy": ("Privacy Policy · Krish AI", "How Krish AI by EmpireX keeps, uses and deletes your data."),
     "terms": ("Terms of Service · Krish AI", "The terms for using Krish AI by EmpireX."),
     "refunds": ("Refund Policy · Krish AI", "Cancellations and refunds for Krish AI Pro and Max plans."),
 }
+# Public pages written as plain HTML (frontend/public), served at their short address.
+_STATIC_PAGES = {"about": "about.html", "faq": "faq.html"}
 # Signed-out views of the same home page; Google should list just one of them.
 _HOME_ALIASES = {"login"}
 # Pages people view, link or share but that search results shouldn't list on their own.
