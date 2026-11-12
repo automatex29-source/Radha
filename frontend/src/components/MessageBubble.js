@@ -109,7 +109,10 @@ function VideoResults({ items, id }) {
               </span>
             </span>
           </span>
-          <span className="block px-2.5 py-2"><span className="line-clamp-2 text-xs font-medium leading-snug text-foreground">{v.title}</span></span>
+          <span className="block px-2.5 py-2">
+            <span className="line-clamp-2 text-xs font-medium leading-snug text-foreground">{v.title}</span>
+            {v.channel && <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{v.channel}</span>}
+          </span>
         </a>
       ))}
     </div>

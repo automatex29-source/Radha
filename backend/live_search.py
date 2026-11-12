@@ -1,10 +1,11 @@
 """Live web lookups for chat.
 
-Web search runs only when the user turns it on (the Web button) or asks for it in words ("search the web
-for..."). Otherwise only the quick live cards run (exchange rates, weather, stocks), and a question that needs
-fresh facts gets a suggestion to turn web search on (see suggests_web).
+Krish searches on its own when a question needs fresh or checkable facts (see auto_search), so the user doesn't
+have to turn on the Web button or ask for it. The Web button (or asking in words, "search the web for...")
+always searches, with more results and pictures. Quick live cards (exchange rates, weather, stocks) run either way.
 """
 import asyncio
+import datetime
 import logging
 import re
 from typing import List, Optional, Tuple
@@ -12,7 +13,7 @@ from urllib.parse import urlparse
 
 import search_modes
 import widgets
-from agent import llm as agent_llm, web
+from agent import llm as agent_llm, research, web
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,77 @@ def suggests_web(text: str) -> bool:
     if not text or len(text) > MAX_SEARCH_CHARS or "```" in text or _ABOUT_US.search(text) or _SMALL_TALK.match(text):
         return False
     text = tidy(text)
+    if _MAKE.search(text) and not _NEWSY.search(text):  # "write a poem about rain" isn't about the weather
+        return False
     return bool(_FRESH.search(text) or _CURRENCY.search(text))
+
+
+# Asks for something to be made, not looked up: a poem, an email, code, a translation. Searching adds nothing.
+_MAKE = re.compile(
+    r"^\s*(please |pls |can you |could you |kindly )?(write|draft|compose|create|make|generate|design|draw|paint|"
+    r"translate|summari[sz]e|rewrite|rephrase|paraphrase|proofread|correct|improve|fix|debug|convert|calculate|"
+    r"solve|code|build|imagine|pretend|roleplay|act as|tell me a (joke|story)|likh|likho|banao|bana do)\b|"
+    r"\b(poem|poetry|shayari|story|essay|joke|lyrics|cover letter|resume)\b",
+    re.I,
+)
+# A specific thing named in the question (a person, place, product, company, number), which the web knows
+# better than memory: "what is the Vande Bharat top speed", "kya hai iPhone 17 ka price".
+_NAMED = re.compile(r"(?<![.!?]\s)(?<!^)\b[A-Z][a-zA-Z]{2,}|\d")
+# "what/why/how" alone is often timeless ("what is photosynthesis", "why is the sky blue"): search only when it
+# names something specific or asks about something that changes.
+_FACT = re.compile(
+    r"^\s*(who|when|where|which|whose|how (much|many|old|far|long|big|tall|tall|fast)|is there|are there|"
+    r"kaun|kab|kahan|kitna|kitne|kitni)\b|\b(best|top \d+|vs\.?|versus|compare|comparison|review|reviews|"
+    r"near me|cheapest|release date|launch(ed)?|founder|ceo|population|capital of|net worth|salary|"
+    r"how to (buy|apply|get|book|register|download|reach|contact)|fees?|admission|timings?|address|phone number|"
+    r"official (site|website)|last date|eligibility|syllabus|exam date|helpline|customer care)\b",
+    re.I,
+)
+_NEWSY = re.compile(r"\b(latest|today'?s?|news|headlines?|current|this week|recent|trending|best|top \d+|"
+                    r"prices?)\b", re.I)
+_WHAT = re.compile(r"^\s*(what|kya|tell me about|who is|info on|details of|information about)\b", re.I)
+
+
+def auto_search(text: str) -> bool:
+    """Krish's own judgment of whether a question needs the web: news, prices, scores, people, places, products,
+    dates, rules and anything else that changes or is easy to get wrong from memory. Not for greetings, writing
+    tasks, code, maths or timeless explanations, where a search only slows the answer down."""
+    if not text or len(text) > MAX_SEARCH_CHARS or "```" in text or _ABOUT_US.search(text) or _SMALL_TALK.match(text):
+        return False
+    text = tidy(text).strip()
+    if asks_for_search(text):
+        return True
+    if _MAKE.search(text):  # "write a poem about rain" isn't a weather question; "summarise today's news" needs news
+        return bool(_NEWSY.search(text))
+    if suggests_web(text):
+        return True
+    if len(text.split()) < 2:
+        return False
+    if _FACT.search(text):
+        return True
+    return bool(_WHAT.match(text) and _NAMED.search(text[1:]))
+
+
+# Words that help a person read the message but only add noise to a search query.
+_FILLER = re.compile(
+    r"^\s*((hey|hi|hello|ok|okay|so|bro|dear|yaar|krish( ai)?|please|pls|plz|kindly|"
+    r"can you|could you|would you|will you|tell me|let me know|i want to know|i wanna know|do you know|"
+    r"search( the web| online| google)?( for)?|google|look up|find( me)?|show me|give me)[\s,!.:]+)+",
+    re.I,
+)
+_TAIL = re.compile(r"(?:[\s,]+(?:please|pls|plz|bro|yaar|krish|batao|bata do|btao|bolo|na)\b|[\s,]*[?!.])+\s*$", re.I)
+_TIMELY = re.compile(r"\b(latest|current(ly)?|this year|recent(ly)?|new|newest|upcoming|ranking|rankings|"
+                     r"best|top \d+)\b", re.I)
+
+
+def search_query(text: str, today: datetime.date = None) -> str:
+    """The message as a search engine likes it: no greetings or "can you tell me", and with the year added to a
+    question about the latest anything, so engines don't bring back pages from years ago."""
+    q = _TAIL.sub("", _FILLER.sub("", tidy(text or "")).strip()).strip() or (text or "").strip()
+    year = (today or datetime.date.today()).year
+    if _TIMELY.search(q) and not re.search(r"\b(19|20)\d\d\b", q):
+        q = f"{q} {year}"
+    return q[:200]
 
 
 def domain_of(url: str) -> str:
@@ -198,8 +269,61 @@ def _format(results: List[dict], focus: str = "web") -> Optional[Tuple[str, List
     return f"{_HEADINGS.get(focus, _HEADINGS['web'])}:\n" + "\n".join(lines) + "\n" + CITE_NOTE, cards
 
 
-async def _search(text: str, limit: int = 5, focus: str = "web") -> Optional[Tuple[str, List[dict]]]:
-    return _format(await search_modes.search(text[:200], focus, limit), focus)
+# The top results' pages are read for the passages that answer the question: a search snippet is a line or two,
+# often cut mid-sentence, and answers built only on snippets missed the details.
+READ_TIMEOUT = 3.5
+_UNREADABLE = re.compile(r"\.pdf($|\?)|youtube\.com|youtu\.be|reddit\.com|facebook\.com|instagram\.com|x\.com|"
+                         r"twitter\.com", re.I)
+
+
+async def read_top(results: List[dict], question: str, pages: int, chars: int, fetch=None) -> List[dict]:
+    """The results with the best passages from the first few pages added to their snippets. A page that is slow,
+    blocked or off-topic keeps its snippet, so reading never loses a result."""
+    fetch = fetch or web.fetch_page
+    terms = set(research.keywords(question))
+
+    async def one(r: dict) -> dict:
+        if _UNREADABLE.search(r.get("url", "")):
+            return r
+        try:
+            page = await asyncio.wait_for(fetch(r["url"]), READ_TIMEOUT)
+        except Exception:
+            return r
+        passage = research.best_passages(page.get("text") or "", list(terms), chars).strip()
+        if not passage or not terms & set(research.keywords(passage)):
+            return r
+        return {**r, "snippet": f"{(r.get('snippet') or '').strip()}\n   From the page: {' '.join(passage.split())}"}
+
+    readable = [r for r in results if not _UNREADABLE.search(r.get("url", ""))][:pages]
+    done = dict(zip((id(r) for r in readable), await asyncio.gather(*(one(r) for r in readable))))
+    return [done.get(id(r), r) for r in results]
+
+
+async def _search(text: str, limit: int = 5, focus: str = "web", model: str = "",
+                  read: bool = True) -> Optional[Tuple[str, List[dict]]]:
+    query = search_query(text) if focus == "web" else text[:200]
+    results = await search_modes.search(query, focus, limit)
+    if read and focus == "web" and results:
+        # Groq's free tier fits about 8,000 tokens per request, so free models read fewer, shorter passages.
+        pages, chars = (2, 350) if model and agent_llm.lean(model) else (3, 700)
+        results = await read_top(results, text, pages, chars)
+    return _format(results, focus)
+
+
+# Hinglish or Hindi questions get Hindi videos first: "paneer kaise banaye" wants a Hindi recipe video.
+_HINDI = re.compile(r"[\u0900-\u097F]|\b(kaise|kaisa|kya|hai|hain|banaye|banate|banaen|karein|karte|kare|sikhe|"
+                    r"sikho|sikhna|mein|wala|wali|ghar|bina|ke liye)\b", re.I)
+_HOW_FILLER = re.compile(r"^\s*(please |pls |can you |could you |show me |give me |suggest |recommend )*"
+                         r"((a |some |any )?(youtube )?(videos?|tutorials?) (on|for|about|of) )?", re.I)
+
+
+def video_query(text: str) -> str:
+    """What to look for on YouTube: the question without "can you show me a video on", in Hindi when asked that way."""
+    q = _TAIL.sub("", _HOW_FILLER.sub("", _FILLER.sub("", tidy(text or "")))).strip() or text.strip()
+    q = re.sub(r"\b(on |from |in )?youtube\b", "", q, flags=re.I).strip()
+    if _HINDI.search(text or "") and "hindi" not in q.lower():
+        q += " in hindi"
+    return q[:150]
 
 
 async def _pro(text: str, model: str) -> Optional[Tuple[str, List[dict], List[str]]]:
@@ -217,7 +341,7 @@ async def _pro(text: str, model: str) -> Optional[Tuple[str, List[dict], List[st
         return (*formatted, found["queries"])
     query = (found["queries"] or [text])[0][:200]
     try:
-        plain = await asyncio.wait_for(_search(query, 8), LOOKUP_TIMEOUT)
+        plain = await asyncio.wait_for(_search(query, 8, read=False), LOOKUP_TIMEOUT)
     except Exception as exc:
         logger.warning("Plain search after Pro failed: %r", exc)
         plain = None
@@ -225,13 +349,14 @@ async def _pro(text: str, model: str) -> Optional[Tuple[str, List[dict], List[st
 
 
 async def gather(user_messages: List[str], search: bool = True, force: bool = False, focus: str = "web",
-                 pro: bool = False, model: str = "") -> dict:
+                 pro: bool = False, model: str = "", videos: Optional[bool] = None) -> dict:
     """Live context for the latest question: {"context", "sources", "queries"}; context is None when the
     question needs no lookup or every lookup fails.
 
     force=True (the Search button) always searches, with more results and pictures; focus picks Academic,
     Social or Video sources; pro plans several searches and reads the best pages. With search=False only
-    exchange rates are fetched.
+    exchange rates are fetched. videos=True adds a row of YouTube videos (how-tos, recipes, lessons) even when
+    the web isn't searched; by default only the Search button adds them.
     """
     empty = {"context": None, "sources": [], "queries": []}
     focus = focus if focus in search_modes.FOCUSES else "web"
@@ -243,7 +368,9 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
     jobs = {}  # name -> awaitable; each part has its own time limit, so one slow source never costs the rest
     if _CURRENCY.search(text):
         jobs["rates"] = asyncio.wait_for(_rates(text), LOOKUP_TIMEOUT)
-    if widgets.weather_place(text):
+    # "write a poem about rain" is a writing task, not a weather question.
+    writing = bool(_MAKE.search(text) and not _NEWSY.search(text))
+    if widgets.weather_place(text) and not writing:
         jobs["weather"] = asyncio.wait_for(widgets.weather(text), LOOKUP_TIMEOUT)
     if widgets.stock_query(text) or re.search(r"\b(sensex|nifty)\b", text, re.I):
         jobs["stock"] = asyncio.wait_for(widgets.stock(text), LOOKUP_TIMEOUT)
@@ -252,12 +379,13 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
         if pro and focus == "web" and not ("weather" in jobs or "stock" in jobs):
             jobs["search"] = asyncio.wait_for(_pro(text, model), PRO_TIMEOUT)
         else:
-            jobs["search"] = asyncio.wait_for(_search(text, 8 if force else 5, focus), LOOKUP_TIMEOUT)
+            jobs["search"] = asyncio.wait_for(_search(text, 8 if force else 5, focus, model),
+                                              LOOKUP_TIMEOUT + READ_TIMEOUT)
         if force and focus == "web" and search_modes.wants_images(text):
             jobs["images"] = asyncio.wait_for(search_modes.images(text[:150], 6), LOOKUP_TIMEOUT)
-        if force and focus == "web" and search_modes.wants_videos(text):
-            jobs["videos"] = asyncio.wait_for(search_modes.video(text[:150], 4), LOOKUP_TIMEOUT + 4)
-    if not jobs and not widgets.is_weather(text):
+    if focus == "web" and (videos if videos is not None else search and force) and search_modes.wants_videos(text):
+        jobs["videos"] = asyncio.wait_for(search_modes.video(video_query(text), 4), LOOKUP_TIMEOUT + 4)
+    if not jobs and (writing or not widgets.is_weather(text)):
         return empty
     found = dict(zip(jobs, await asyncio.gather(*jobs.values(), return_exceptions=True)))
     parts, cards, pictures, clips, live_cards, queries = [], [], [], [], [], []
@@ -280,8 +408,9 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
         elif name == "videos":
             # Shown as a row of YouTube videos under the sources; not numbered, so citations stay on the web cards.
             clips = [{"type": "clip", "title": v.get("title") or "YouTube video", "url": v["url"],
-                      "thumbnail": v["thumbnail"], "domain": "youtube.com"} for v in item]
-    if widgets.is_weather(text) and not any(c.get("type") == "weather" for c in live_cards):
+                      "thumbnail": v["thumbnail"], "domain": "youtube.com",
+                      **({"channel": v["channel"]} if v.get("channel") else {})} for v in item]
+    if widgets.is_weather(text) and not writing and not any(c.get("type") == "weather" for c in live_cards):
         parts.append(NO_WEATHER_NOTE if widgets.weather_place(text) else ASK_PLACE_NOTE)
     return {"context": "\n\n".join(parts) or None, "sources": live_cards + cards + pictures + clips,
             "queries": queries}

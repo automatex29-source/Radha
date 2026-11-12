@@ -52,6 +52,7 @@ import decks
 import appdata
 import automations
 import live_search
+import search_modes
 import related
 import mailer
 import counsellor
@@ -1210,10 +1211,19 @@ NO_RESULTS_NOTE_PLAIN = (
 STREAM_FAILED_NOTE = ("Sorry, the AI model stopped before writing the answer (it may be busy or out of free "
                       "requests for now). Tap Regenerate, or pick another model from the menu at the top.")
 WEB_OFF_NOTE = (
-    "Web search is off for this answer (the user turns it on with the Web button). Answer from what you know and "
-    "never say you searched. If the answer depends on facts that change (news, prices, who holds a job), add one "
-    "short line that it may be out of date. Live exchange rates, weather or stock data given below are current."
+    "Nothing was searched on the web for this answer: answer from what you know and never say you searched. If "
+    "the answer depends on facts that change (news, prices, who holds a job), add one short line that it may be "
+    "out of date. Live exchange rates, weather or stock data given below are current."
 )
+# Agent turns can still search on their own when Krish's up-front judgment (live_search.auto_search) didn't.
+WEB_AUTO_NOTE = (
+    "Nothing was searched up front for this question. If the answer depends on facts that change or that you "
+    "aren't sure of (news, prices, scores, people, dates, rules, products), call web_search before answering, "
+    "without asking the user. Otherwise answer from what you know and never say you searched."
+)
+# Asking for a report or research offers deep_research even without the Web button.
+_RESEARCH_ASK = re.compile(r"\b(research|report|in[- ]depth|market analysis|competitor analysis|detailed comparison)\b",
+                           re.I)
 MAX_WEB_SEARCHES = 3  # per answer, when nothing was searched before the model started
 
 AGENT_PROMPT = (
@@ -2065,15 +2075,21 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             logger.exception("choosing the app's style failed")
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
-    # Web search runs only when the user turns it on (or asks for a search in words); automations and the app
-    # builder keep it. Otherwise a question that needs fresh facts gets a "Search the web" suggestion.
+    # The Web button (or asking for a search in words) always searches; automations and the app builder keep
+    # it. Otherwise Krish searches on its own when the question needs fresh or checkable facts (auto_search),
+    # and agent turns can still call web_search themselves.
     asked = live_search.asks_for_search(last_user or "")
-    searching = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked \
+    chosen_web = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked \
         or plugin_state.get("auto_search", False)
+    auto = not chosen_web and not counselling and live_search.auto_search(last_user or "")
+    searching = chosen_web or auto
     web = web or asked
     web_hint = not searching and not counselling and not voice and live_search.suggests_web(last_user or "")
     if not searching and not counselling:
-        system_parts.append(WEB_OFF_NOTE)
+        system_parts.append(WEB_AUTO_NOTE if agent else WEB_OFF_NOTE)
+    # How-tos, recipes and lessons get a row of YouTube videos, whether or not the web was searched.
+    videos = not (coding or counselling or voice or app_id or extra_system) and \
+        search_modes.wants_videos(last_user or "")
     # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
     if not app_id and not counselling:
         user_texts = [m["content"] for m in history_docs if m["role"] == "user"]
@@ -2081,7 +2097,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             pro_step = {"id": "pro-search", "name": "pro_search", "label": "Pro search",
                         "args": {"query": (last_user or "")[:200]}, "status": "running"}
             yield f"event: tool\ndata: {_sse_json(pro_step)}\n\n"
-        found = await live_search.gather(user_texts, search=searching, force=web, focus=focus, pro=pro, model=model)
+        found = await live_search.gather(user_texts, search=searching, force=web, focus=focus, pro=pro, model=model,
+                                        videos=videos)
         if found["context"]:
             system_parts.append(found["context"])
             web_hint = web_hint and searching  # a live rates, weather or stock card already answered it
@@ -2171,7 +2188,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             searched = any(s.get("type") in ("web", "video") for s in sources)
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model, sources=None if app_id else sources,
-                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching,
+                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES),
+                              web=not counselling, research=chosen_web or bool(_RESEARCH_ASK.search(last_user or "")),
                               connected=connected,
                               plugins_off=frozenset(k for k, on in plugin_state.items() if not on))
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)

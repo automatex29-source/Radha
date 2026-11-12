@@ -222,8 +222,61 @@ async def _wikipedia(client: httpx.AsyncClient, query: str, limit: int) -> List[
             for h in hits]
 
 
+# Pages that rarely answer a question (logins, pin boards, app stores) go to the back of the list.
+_LOW_VALUE = ("pinterest.", "facebook.com", "instagram.com", "play.google.com", "apps.apple.com", "tiktok.com",
+              "linkedin.com/posts", "x.com/", "twitter.com/")
+
+
+def _key(url: str) -> str:
+    """The same page, whatever its scheme, www, tracking query or trailing slash."""
+    p = urlparse(url)
+    host = p.netloc.lower()
+    host = host[4:] if host.startswith("www.") else host
+    query = "&".join(sorted(part for part in p.query.split("&") if part and not part.startswith("utm_")))
+    return f"{host}{p.path.rstrip('/')}?{query}"
+
+
+def merge(lists: List[List[dict]], limit: int, per_site: int = 2) -> List[dict]:
+    """One ranked list from several engines: a page both engines found ranks above one only one did, each page
+    appears once (with the longer snippet), at most per_site pages per site (0: no cap), and low-value sites go
+    last."""
+    scores, best, order = {}, {}, []
+    for results in lists:
+        for rank, r in enumerate(results):
+            url = r.get("url", "")
+            if not url.startswith("http"):
+                continue
+            k = _key(url)
+            scores[k] = scores.get(k, 0.0) + 1.0 / (rank + 3)
+            if k not in best:
+                best[k] = dict(r)
+                order.append(k)
+            elif len(r.get("snippet") or "") > len(best[k].get("snippet") or ""):
+                best[k]["snippet"] = r["snippet"]
+    ranked = sorted(order, key=lambda k: (any(bad in best[k]["url"] for bad in _LOW_VALUE), -scores[k]))
+    out, seen = [], {}
+    for k in ranked:
+        site = k.split("/", 1)[0].split("?", 1)[0]
+        if per_site and seen.get(site, 0) >= per_site:
+            continue
+        seen[site] = seen.get(site, 0) + 1
+        out.append(best[k])
+        if len(out) >= limit:
+            break
+    return out
+
+
+async def _try(engine, client, query: str, limit: int):
+    try:
+        return await engine(client, query, limit)
+    except Exception as exc:
+        logger.warning("Search via %s failed: %s", engine.__name__, exc)
+        return exc
+
+
 async def search(query: str, limit: int = 6) -> List[dict]:
-    """Web results from the first engine that answers: Tavily (with a key), DuckDuckGo, Bing, then Wikipedia."""
+    """Web results: Tavily with a key; otherwise DuckDuckGo and Bing at the same time, merged (each finds pages
+    the other misses), then DuckDuckGo lite and Wikipedia when both fail."""
     limit = max(1, min(limit, 10))
     tavily_key = os.environ.get("TAVILY_API_KEY")
     async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=5.0), follow_redirects=True,
@@ -236,14 +289,17 @@ async def search(query: str, limit: int = 6) -> List[dict]:
             return [{"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")[:400]}
                     for r in resp.json().get("results", [])]
         last_error = None
-        for engine in (_ddg, _ddg_lite, _bing, _wikipedia):
-            try:
-                results = await engine(client, query, limit)
-            except Exception as exc:
-                logger.warning("Search via %s failed: %s", engine.__name__, exc)
-                last_error = exc
-                continue
-            if results:
+        found = await asyncio.gather(_try(_ddg, client, query, limit + 2), _try(_bing, client, query, limit + 2))
+        lists = [r for r in found if isinstance(r, list) and r]
+        if lists:
+            # A site: search (Reddit, YouTube) wants many pages from that one site.
+            return merge(lists, limit, 0 if "site:" in query else 2)
+        last_error = next((r for r in found if isinstance(r, Exception)), None)
+        for engine in (_ddg_lite, _wikipedia):
+            results = await _try(engine, client, query, limit)
+            if isinstance(results, Exception):
+                last_error = results
+            elif results:
                 return results
         if last_error:
             raise last_error

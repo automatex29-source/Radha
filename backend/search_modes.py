@@ -80,14 +80,64 @@ def youtube_id(url: str) -> str:
     return ""
 
 
+_YT_SUFFIX = re.compile(r"\s*[-|–]\s*YouTube\s*$", re.I)
+OEMBED_TIMEOUT = 3.0
+
+
+async def _oembed(client: httpx.AsyncClient, vid: str) -> Optional[dict]:
+    """{"title", "channel"} for a video; {} when YouTube couldn't be asked; None when the video is gone or private."""
+    try:
+        resp = await asyncio.wait_for(client.get("https://www.youtube.com/oembed", params={
+            "url": f"https://www.youtube.com/watch?v={vid}", "format": "json"}), OEMBED_TIMEOUT)
+    except Exception:
+        return {}
+    if resp.status_code in (400, 401, 403, 404):
+        return None
+    try:
+        data = resp.json() if resp.status_code == 200 else {}
+    except ValueError:
+        return {}
+    return {"title": data.get("title") or "", "channel": data.get("author_name") or ""}
+
+
+def rank_videos(found: List[dict], query: str) -> List[dict]:
+    """Videos about the question first (their titles share its words), full videos before Shorts, and otherwise
+    in the search engine's order."""
+    terms = set(research.keywords(query)) - {"hindi", "video", "videos", "youtube"}
+
+    def score(item):
+        i, v = item
+        hits = len(terms & set(research.keywords(v.get("title", "")))) if terms else 0
+        return (-min(hits, 3), v.get("short", False), i)
+    return [v for _, v in sorted(enumerate(found), key=score)]
+
+
 async def video(query: str, limit: int = 6) -> List[dict]:
-    results = await web.search(f"{query} site:youtube.com", limit + 4)
-    out = []
+    """YouTube videos for the question: one card per video, dead and private videos left out, real titles and
+    channel names from YouTube, and the most relevant first."""
+    results = await web.search(f"{query} site:youtube.com", min(10, limit + 6))
+    found, seen = [], set()
     for r in results:
         vid = youtube_id(r.get("url", ""))
-        if vid:
-            out.append({**r, "url": f"https://www.youtube.com/watch?v={vid}",
-                        "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"})
+        if not vid or vid in seen:
+            continue
+        seen.add(vid)
+        found.append({**r, "id": vid, "title": _YT_SUFFIX.sub("", r.get("title") or "").strip(),
+                      "short": "/shorts/" in r.get("url", ""),
+                      "url": f"https://www.youtube.com/watch?v={vid}",
+                      "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"})
+    found = rank_videos(found, query)[:limit + 2]
+    async with _client() as client:
+        checked = await asyncio.gather(*(_oembed(client, v["id"]) for v in found))
+    out = []
+    for v, meta in zip(found, checked):
+        if meta is None:
+            continue
+        if meta.get("title"):
+            v["title"] = meta["title"]
+        if meta.get("channel"):
+            v["channel"] = meta["channel"]
+        out.append({k: val for k, val in v.items() if k not in ("id", "short")})
     return out[:limit]
 
 
@@ -182,10 +232,25 @@ async def search(query: str, focus: str, limit: int) -> List[dict]:
     return await web.search(query, limit)
 
 
+_VIDEO_ASK = re.compile(r"\b(videos?|youtube|yt|tutorials?|trailer|song|songs|gaana|gaane|lecture|lectures)\b", re.I)
+_VIDEO_TOPIC = re.compile(
+    r"\b(how to|how do i|how can i|recipe|recipes|tutorial|step by step|workout|exercises?|yoga|stretch(es|ing)?|"
+    r"diy|install|fix|repair|learn|learning|guide|course|lesson|lessons|explained|kaise|banaye|banate|sikhe|sikho|"
+    r"sikhna|cook|cooking|bake|baking|draw|drawing|sketch|paint|painting|guitar|piano|dance|makeup|hairstyle|"
+    r"origami|craft|crafts|knit|stitch|tie a)\b", re.I)
+# Questions where a video is no help: words, prices, code.
+_NO_VIDEO = re.compile(
+    r"\b(how to (say|spell|pronounce|write|reply|respond)|price|cost|rate|stock|share|news|"
+    r"code|error|exception|python|javascript|java|react|sql|api|regex|bug|excel formula)\b", re.I)
+
+
 def wants_videos(text: str) -> bool:
-    """How-tos, recipes, workouts and tutorials are easier to follow on video (Perplexity shows a few too)."""
-    return bool(re.search(r"\b(how to|how do i|how can i|recipe|recipes|tutorial|step by step|workout|exercise|"
-                          r"yoga|diy|install|fix|repair|learn|guide|kaise|banaye|banate)\b", text.lower()))
+    """How-tos, recipes, workouts, lessons and tutorials are easier to follow on video, and anyone asking for a
+    video or a song gets one. Not for code, prices or questions about words."""
+    t = text or ""
+    if _VIDEO_ASK.search(t):
+        return True
+    return bool(_VIDEO_TOPIC.search(t)) and not _NO_VIDEO.search(t)
 
 
 def wants_images(text: str) -> bool:
