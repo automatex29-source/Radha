@@ -1303,6 +1303,24 @@ def _is_hinglish(text: Optional[str]) -> bool:
     return hits * 10 >= len(words) and (hits >= 2 or (hits == 1 and len(words) <= 12))
 
 
+# A student asking for help with an exam, a chapter or a sum (English, Hinglish or Hindi).
+_STUDY_ASK = re.compile(
+    r"\b(exam|exams|paper|boards?|test|quiz|syllabus|chapter|revision|revise|time ?table|study plan|homework|"
+    r"assignment|numericals?|derivation|padhu|padhna|padhai|padhun|padh|samjhao|samjha do|samajh nahi|"
+    r"yaad nahi|ratta|jee|neet|upsc|cbse|icse|cuet|ssc|class \d{1,2}|\d{1,2}(?:th|vi) class|solve)\b|"
+    r"\u092a\u0922\u093c|\u092a\u0930\u0940\u0915\u094d\u0937\u093e|\u0938\u092e\u091d\u093e", re.IGNORECASE)  # पढ़ परीक्षा समझा
+STUDY_CLOSE_NOTE = ("This is a study question. After the answer, finish with two short lines in the user's "
+                    "language: first one question that would make your help fit them better (their board or "
+                    "exam, how much they have covered, or theory or numericals), then one offer for the next "
+                    "step they can say yes to (\"5 numericals practice karein?\", a 5-question quiz, or one "
+                    "topic explained simply). Nothing after those two lines.")
+
+
+def _study_ask(text: Optional[str]) -> bool:
+    """True when the message is a student asking for study or exam help (see STUDY_CLOSE_NOTE)."""
+    return bool(_STUDY_ASK.search(text or ""))
+
+
 def _hinglish_chat(history_docs: list) -> bool:
     """True when the reply should be in Hinglish: the latest message is, or it is a short follow-up ("ok",
     "aur?", "2nd one") in a chat where the person's message before it was."""
@@ -2145,6 +2163,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if counselling and voice:
         system_parts.append(counsellor.VOICE)
     # Free models often drift to English or formal Hindi; the last line of the prompt is the one they follow.
+    if base is SYSTEM_PROMPT and not voice and not coding and not study and _study_ask(last_user):
+        system_parts.append(STUDY_CLOSE_NOTE)  # Study mode asks its own check question after each idea
     if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
         system_parts.append(HINGLISH_NOTE)
     system_prompt = "\n\n".join(system_parts)

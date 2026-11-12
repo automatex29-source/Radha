@@ -483,3 +483,14 @@ def test_hinglish_chat_keeps_short_follow_ups(client):
     assert not server._hinglish_chat(say("bhai kal physics ka paper hai", "Please explain Gauss's law in detail for my exam"))
     assert not server._hinglish_chat(say("What is photosynthesis?", "ok"))
     assert not server._hinglish_chat([])
+
+
+def test_study_questions_are_spotted(client):
+    """Study and exam asks get a closing follow-up question; other chats don't."""
+    import server
+    for text in ("bhai kal physics ka paper hai, 1 ghante me kya padhu", "class 10 ke liye photosynthesis samjhao",
+                 "x² - 5x + 6 = 0 solve karo", "Make me a 3 month JEE time table", "मुझे परीक्षा की तैयारी करनी है"):
+        assert server._study_ask(text), text
+    for text in ("50000 salary hai, budget kaise banau", "write a LinkedIn post for my first job",
+                 "yaar mann nahi lag raha", ""):
+        assert not server._study_ask(text), text
