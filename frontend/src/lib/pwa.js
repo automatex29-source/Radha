@@ -10,6 +10,20 @@ export function registerServiceWorker() {
   });
 }
 
+// Inside the Krish AI Android app (android/): its links carry ?source=android and Chrome tells the page the
+// app opened it. Remembered for this browser, since the app keeps its own sign-in and storage.
+export const inAndroidApp = (() => {
+  try {
+    const now = new URLSearchParams(window.location.search).get("source") === "android" ||
+      document.referrer.startsWith("android-app://net.krishai.app");
+    if (now) localStorage.setItem("krish.androidApp", "1");
+    return now || localStorage.getItem("krish.androidApp") === "1";
+  } catch { return false; }
+})();
+
+/** Turns the floating Krish button (on top of every app) on or off; only in the Android app. */
+export const toggleFloatingButton = () => { window.location.href = "krishai://floating-button"; };
+
 export const isStandalone = () =>
   window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true;
 

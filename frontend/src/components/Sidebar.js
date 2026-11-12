@@ -18,10 +18,11 @@ import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
   Plus, Search, Loader2, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users, Gift,
-  LayoutDashboard,
+  LayoutDashboard, CircleDot,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 import NavList from "@/components/NavList";
+import { inAndroidApp, toggleFloatingButton } from "@/lib/pwa";
 
 function groupByDate(convs) {
   const groups = { Today: [], Yesterday: [], "Previous 7 Days": [], Older: [] };
@@ -230,6 +231,11 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             {user?.isOwner && (
               <DropdownMenuItem data-testid="menu-admin-users" onClick={() => navigate("/admin/users")}>
                 <Users className="mr-2 h-4 w-4" /> Users
+              </DropdownMenuItem>
+            )}
+            {inAndroidApp && (
+              <DropdownMenuItem data-testid="menu-floating-button" onClick={toggleFloatingButton}>
+                <CircleDot className="mr-2 h-4 w-4" /> Floating Krish button
               </DropdownMenuItem>
             )}
             <DropdownMenuItem data-testid="menu-settings" onClick={() => openSettings()}>
