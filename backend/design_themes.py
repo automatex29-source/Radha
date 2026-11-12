@@ -222,6 +222,15 @@ def prompt_block(theme: Optional[str]) -> str:
         "filters). Put the same data-morph=\"item-3\" on a card and on its detail view so the card grows into it. "
         "A dark mode button gets data-theme-toggle (a circle reveal from where it was tapped). "
         "<div class=\"page-intro\"></div> right after <body> adds an opening curtain on landing pages.\n"
+        "- Art direction: make it look made for THIS business, not a template. Take the brand colours, one "
+        "decorative motif and the mood from its world (a saree shop: deep jewel colours, a woven border pattern "
+        "drawn in CSS, arch-shaped photo frames; a coffee roaster: roasted browns, a stamp-like badge; a gym: "
+        "black and one loud colour, huge condensed type). Set those colours with :root{--accent;--accent-2} and "
+        "repeat the motif in 2 or 3 places (a border strip, section dividers, a frame).\n"
+        "- Never a flat grey or empty hero, and never a card without its picture: the hero gets a photo, a scene or "
+        "a rich colour field with the motif, and every product, dish or room card gets its own "
+        "https://krish-image.invalid/… photo of exactly that item. Write real names, prices and details, not "
+        "\"Product 1\" or lorem ipsum.\n"
         "- If the user's request is a change to the content or a feature, keep this style exactly as it is.\n"
     )
 
