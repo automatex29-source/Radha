@@ -14,7 +14,10 @@ limited per visitor and per app, only free AI models are used, and fetch refuses
 The app's owner sees the data, sign-ups, files and inbox in the App Builder's Data tab (/api/apps/<id>/data).
 """
 import asyncio
+import base64
 import hashlib
+import logging
+import re
 import hmac
 import html
 import ipaddress
@@ -25,7 +28,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
@@ -34,12 +37,14 @@ from pydantic import BaseModel, Field
 
 import appdata
 import mailer
+import vision
 from agent import llm
 from auth import _secret, get_user_id_from_request
 
 router = APIRouter(prefix="/api/appdata")
 owner_router = APIRouter(prefix="/api/apps")
 db = None
+logger = logging.getLogger("radha.appcloud")
 
 OWNER = "__owner__"  # ownerId of documents only the app's owner may see (inbox, private webhook data)
 INBOX = "inbox"
@@ -53,7 +58,7 @@ MAX_FETCH_BYTES = 1024 * 1024
 FETCH_TIMEOUT = 15
 _TEXT_TYPES = ("json", "text/", "xml", "javascript", "csv")
 # (per visitor per hour, per app per day)
-LIMITS = {"ai": (30, 500), "notify": (5, 50), "upload": (20, 200), "fetch": (60, 1000), "hook": (120, 2000), "api": (300, 5000)}
+LIMITS = {"image": (30, 300), "ai": (30, 500), "notify": (5, 50), "upload": (20, 200), "fetch": (60, 1000), "hook": (120, 2000), "api": (300, 5000)}
 _hits: Dict[str, List[float]] = {}
 
 
@@ -110,6 +115,9 @@ class AiIn(BaseModel):
     system: str = Field(default="", max_length=3000)
     history: List[Turn] = Field(default_factory=list, max_length=20)
     json_mode: bool = Field(default=False, alias="json")
+    # Pictures to look at: data: URLs (the SDK makes them from a File, <img> or canvas) or this app's own
+    # RADHA.files links. Other links are refused (the server never fetches a URL a visitor names).
+    images: List[str] = Field(default_factory=list, max_length=3)
 
 
 def ai_model() -> Optional[str]:
@@ -120,18 +128,73 @@ def ai_model() -> Optional[str]:
     return None
 
 
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_FILE_LINK_RE = re.compile(r"/api/appdata/([^/]+)/files/([0-9a-f]{32})$")
+
+
+async def _image_bytes(app_id: str, ref: str) -> bytes:
+    """One picture for RADHA.ai: a data: URL, or a link to a file this app stored with RADHA.files."""
+    ref = (ref or "").strip()
+    if ref.startswith("data:"):
+        head, _, b64 = ref.partition(",")
+        if not head.startswith("data:image/") or ";base64" not in head:
+            raise HTTPException(status_code=400, detail="Pictures must be images (PNG, JPG, WebP or GIF)")
+        try:
+            data = base64.b64decode(b64, validate=False)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="That picture couldn't be read")
+    else:
+        m = _FILE_LINK_RE.search(urlparse(ref).path if "://" in ref else ref)
+        doc = m and m.group(1) == app_id and await db.appdata_files.find_one({"appId": app_id, "id": m.group(2)})
+        if not doc or not doc["type"].startswith("image/"):
+            raise HTTPException(status_code=400, detail="Send the picture itself (a File, <img> or canvas) or a RADHA.files link")
+        data = bytes(doc["data"])
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="That picture is too large (max 5 MB)")
+    return data
+
+
+async def _see(app_id: str, body: "AiIn") -> dict:
+    """RADHA.ai with pictures: a free vision model answers; without one, the text read from them goes to the
+    text model."""
+    pictures = [await _image_bytes(app_id, ref) for ref in body.images[:3]]
+    system = body.system or "You look at pictures inside a web app and answer clearly and briefly."
+    if body.json_mode:
+        system += "\nReply with only valid JSON, no other text and no code fences."
+    history = "".join(f"{t.role}: {t.content}\n" for t in body.history[-6:])
+    try:
+        text = await asyncio.wait_for(vision.ask(pictures, (history + body.prompt) if history else body.prompt,
+                                                 system, body.json_mode), AI_TIMEOUT)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="The AI took too long. Please try again.")
+    except Exception as exc:
+        logger.warning("app vision failed: %s", str(exc)[:200])
+        text = None
+    if text is None:
+        read = [await asyncio.to_thread(vision.ocr, p) for p in pictures]
+        notes = "\n".join(f"[Picture {i + 1}, text found in it: {t or 'none'}]" for i, t in enumerate(read))
+        return None, notes
+    return text, None
+
+
 @router.post("/{app_id}/ai")
 async def app_ai(app_id: str, body: AiIn, request: Request):
     await _app(app_id)
+    _limit("ai", app_id, request)
+    prompt = body.prompt
+    if body.images:
+        text, notes = await _see(app_id, body)
+        if text is not None:
+            return _ai_out(text, body.json_mode)
+        prompt = f"{prompt}\n\n{notes}"
     model = ai_model()
     if not model:
         raise HTTPException(status_code=503, detail="AI isn't set up on this server yet")
-    _limit("ai", app_id, request)
     system = body.system or "You are a helpful assistant inside a web app. Answer clearly and briefly."
     if body.json_mode:
         system += "\nReply with only valid JSON, no other text and no code fences."
     messages = [{"role": "system", "content": system}] + [t.model_dump() for t in body.history[-20:]] \
-        + [{"role": "user", "content": body.prompt}]
+        + [{"role": "user", "content": prompt}]
     out: List[str] = []
 
     async def run():
@@ -145,14 +208,41 @@ async def app_ai(app_id: str, body: AiIn, request: Request):
         raise HTTPException(status_code=504, detail="The AI took too long. Please try again.")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"The AI is busy right now. Please try again. ({str(exc)[:120]})")
-    text = "".join(out).strip()
-    if body.json_mode:
+    return _ai_out("".join(out).strip(), body.json_mode)
+
+
+def _ai_out(text: str, json_mode: bool) -> dict:
+    if json_mode:
         clean = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
             return {"text": text, "data": json.loads(clean)}
         except ValueError:
             return {"text": text, "data": None}
     return {"text": text}
+
+
+# ------------------------------------------------------------------ pictures the app makes itself
+class ImageIn(BaseModel):
+    prompt: str = Field(min_length=1, max_length=400)
+    width: int = Field(default=1024, ge=64, le=1600)
+    height: int = Field(default=1024, ge=64, le=1600)
+    variant: int = Field(default=0, ge=0, le=1000)
+
+
+@router.post("/{app_id}/image")
+async def make_image(app_id: str, body: ImageIn, request: Request):
+    """RADHA.image(prompt): a link to a new AI picture. It's made (free providers) and kept the first time the
+    link is opened (site_images.py), so the same prompt and variant always shows the same picture."""
+    import site_images
+    await _app(app_id)
+    _limit("image", app_id, request)
+    prompt = site_images.clean_prompt(body.prompt)
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Describe the picture in a few words")
+    w, h = site_images._size(body.width, body.height)
+    origin = str(request.base_url).rstrip("/")
+    query = f"prompt={quote(prompt)}&w={w}&h={h}" + (f"&v={body.variant}" if body.variant else "")
+    return {"url": f"{origin}/api/site-image?{query}", "prompt": prompt, "width": w, "height": h}
 
 
 # ------------------------------------------------------------------ email the owner

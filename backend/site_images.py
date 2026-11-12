@@ -127,10 +127,10 @@ async def _make(prompt: str, w: int, h: int) -> bytes:
 
 @router.get("/site-image")
 async def site_image(request: Request, prompt: str = Query("", max_length=400), w: Optional[int] = None,
-                     h: Optional[int] = None):
+                     h: Optional[int] = None, v: int = Query(0, ge=0, le=1000)):
     prompt = clean_prompt(prompt) or "abstract colorful background"
     w, h = _size(w, h)
-    key = f"{prompt.lower()}|{w}x{h}"
+    key = f"{prompt.lower()}|{w}x{h}" + (f"|v{v}" if v else "")  # v: another picture for the same words
     headers = {"Cache-Control": "public, max-age=2592000, immutable", "Access-Control-Allow-Origin": "*",
                "Cross-Origin-Resource-Policy": "cross-origin"}
     doc = await db.site_images.find_one({"key": key}, {"data": 1})

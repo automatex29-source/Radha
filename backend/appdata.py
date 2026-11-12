@@ -7,7 +7,7 @@ Pages served by RADHA (preview and published sites) get a small `RADHA` client (
   await RADHA.db.list("posts", { mine: true })     await RADHA.db.add("posts", {...}, { private: true })
   await RADHA.db.update("posts", id, {...})        await RADHA.db.remove("posts", id)
   RADHA.db.list("posts", { where: {tag: "news"}, limit: 20 })   RADHA.db.watch("posts", rows => ...)
-  RADHA.ai / RADHA.notify / RADHA.files / RADHA.fetch are served by appcloud.py.
+  RADHA.ai (with {images}) / RADHA.see / RADHA.image / RADHA.notify / RADHA.files / RADHA.fetch are served by appcloud.py.
 
 The data belongs to the app, not to a RADHA user, and published sites are public, so anyone
 who opens the app can call these endpoints. Rules: a document created by a signed-in user can
@@ -64,13 +64,23 @@ add:function(c,d,o){return call("POST",q(c),{data:d,private:!!(o&&o.private)})},
 remove:function(c,id){return call("DELETE",q(c)+"/"+encodeURIComponent(id))}};
 async function form(p,fd){var h={};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]=D;var r=await fetch(B+p,{method:"POST",headers:h,body:fd});var j=null;
 try{j=await r.json()}catch(e){}if(!r.ok)throw new Error((j&&j.detail&&(j.detail.msg||j.detail))||("Upload failed ("+r.status+")"));return j}
-function ai(p,o){o=o||{};return call("POST","/ai",{prompt:String(p),system:o.system||"",history:o.history||[],json:!!o.json}).then(function(r){return o.json?r.data:r.text})}
+function pic(x){return new Promise(function(ok,no){if(typeof x==="string"){if(x.indexOf("data:")===0||x.indexOf("/files/")>0)return ok(x);x=Object.assign(new Image(),{crossOrigin:"anonymous",src:x})}
+function draw(el,w,h){var s=Math.min(1,1280/Math.max(w,h)),c=document.createElement("canvas");c.width=Math.round(w*s);c.height=Math.round(h*s);c.getContext("2d").drawImage(el,0,0,c.width,c.height);ok(c.toDataURL("image/jpeg",.85))}
+if(x&&x.tagName==="CANVAS")return draw(x,x.width,x.height);
+if(x&&x.tagName==="IMG"){var go=function(){try{draw(x,x.naturalWidth,x.naturalHeight)}catch(e){no(new Error("That picture can't be read (it's from another site)"))}};return x.complete&&x.naturalWidth?go():(x.onload=go,x.onerror=function(){no(new Error("That picture didn't load"))})}
+if(x instanceof Blob){var u=URL.createObjectURL(x),im=new Image();im.onload=function(){draw(im,im.naturalWidth,im.naturalHeight);URL.revokeObjectURL(u)};im.onerror=function(){no(new Error("That file isn't a picture"))};im.src=u;return}
+no(new Error("Pass a picture: a File, an <img>, a canvas or a data: URL"))})}
+function ai(p,o){o=o||{};var list=o.images||(o.image?[o.image]:[]);if(!Array.isArray(list))list=[list];
+return Promise.all(list.slice(0,3).map(pic)).then(function(images){return call("POST","/ai",{prompt:String(p),system:o.system||"",history:o.history||[],json:!!o.json,images:images})}).then(function(r){return o.json?r.data:r.text})}
+function see(img,q,o){return ai(q||"What is in this picture? Answer in a few sentences.",Object.assign({},o||{},{images:[img]}))}
+function image(p,o){o=o||{};return call("POST","/image",{prompt:String(p),width:o.width||1024,height:o.height||o.width||1024,variant:o.variant||0}).then(function(r){
+if(o.wait===false)return r.url;return new Promise(function(ok){var im=new Image();im.onload=im.onerror=function(){ok(r.url)};im.src=r.url})})}
 var files={upload:function(f){var fd=new FormData();fd.append("file",f);return form("/files",fd)},remove:function(id){return call("DELETE","/files/"+encodeURIComponent(id))}};
 function notify(m){m=m||{};var x={};for(var k in m)if(["subject","message","replyTo"].indexOf(k)<0)x[k]=m[k];
 return call("POST","/notify",{subject:m.subject||"",message:m.message||JSON.stringify(x,null,1),replyTo:m.replyTo||m.email||"",fields:x})}
 function rfetch(u,o){o=o||{};return call("POST","/fetch",{url:String(u),method:(o.method||"GET").toUpperCase(),headers:o.headers||{},body:o.body===undefined?null:o.body})}
 function api(n,i){return call("POST","/api/"+encodeURIComponent(n),{input:i===undefined?null:i}).then(function(r){return r.result})}
-window.RADHA={appId:A,auth:auth,db:dbApi,ai:ai,files:files,notify:notify,fetch:rfetch,api:api};if(T)auth.refresh();})();</script>"""
+window.RADHA={appId:A,auth:auth,db:dbApi,ai:ai,see:see,image:image,files:files,notify:notify,fetch:rfetch,api:api};if(T)auth.refresh();})();</script>"""
 
 
 def init(database):
