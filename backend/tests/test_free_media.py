@@ -14,7 +14,7 @@ import media  # noqa: E402
 from agent import slideshow, styles, video  # noqa: E402
 
 KEYS = ("FAL_KEY", "IMAGE_PROVIDER", "OPENAI_API_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN", "VIDEO_PROVIDER",
-        "GEMINI_API_KEY", "GOOGLE_API_KEY")
+        "GEMINI_API_KEY", "GOOGLE_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
 
 
 def run(coro):
@@ -472,3 +472,85 @@ class TestFal:
         monkeypatch.setattr(slideshow, "make_slideshow", fake_slideshow)
         out = run(video.generate("waves"))
         assert out["method"] == "slideshow" and "premium" in out["note"]
+
+
+class TestCloudflareImages:
+    """FLUX.2 on Cloudflare Workers AI: a sharper free engine than Pollinations' fast model."""
+
+    @pytest.fixture(autouse=True)
+    def keys(self, monkeypatch):
+        monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "acct")
+        monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cf_token")
+
+    def test_order_puts_flux2_before_the_fast_models(self, monkeypatch):
+        assert media._image_providers() == ["cloudflare", "pollinations_legacy"]
+        monkeypatch.setenv("POLLINATIONS_API_KEY", "p")
+        monkeypatch.setenv("GEMINI_API_KEY", "g")
+        assert media._image_providers() == ["pollinations", "gemini", "cloudflare", "pollinations_fast",
+                                            "pollinations_legacy"]
+
+    def test_flux2_sends_form_fields_and_reads_base64(self, monkeypatch):
+        import base64
+
+        seen = []
+
+        def handler(req):
+            seen.append(req)
+            return httpx.Response(200, json={"result": {"image": base64.b64encode(png(size=(512, 288))).decode()},
+                                             "success": True})
+
+        fake_http(monkeypatch, handler)
+        assert media.image_type(run(media.generate_image("a red fox", "1920x1080"))) == "image/png"
+        req = seen[0]
+        assert req.url.path == "/client/v4/accounts/acct/ai/run/@cf/black-forest-labs/flux-2-klein-4b"
+        assert req.headers["authorization"] == "Bearer cf_token"
+        body = req.content.decode(errors="ignore")
+        assert 'name="prompt"' in body and "a red fox" in body and 'name="width"' in body and "1920" in body
+        assert "1072" in body  # height rounded down to a multiple of 16
+
+    def test_busy_flux2_hands_over_to_schnell(self, monkeypatch):
+        import base64
+        import json
+
+        models = []
+
+        def handler(req):
+            models.append(req.url.path.rsplit("/", 1)[-1])
+            if "flux-2" in req.url.path:
+                return httpx.Response(429, json={"errors": [{"message": "daily free allocation used"}]})
+            assert json.loads(req.content)["prompt"] == "a red fox"
+            return httpx.Response(200, json={"result": {"image": base64.b64encode(png()).decode()}})
+
+        fake_http(monkeypatch, handler)
+        assert media.image_type(run(media.generate_image("a red fox"))) == "image/png"
+        assert models == ["flux-2-klein-4b", "flux-1-schnell"]
+
+    def test_pollinations_fast_model_waits_until_flux2_fails(self, monkeypatch):
+        import base64
+
+        monkeypatch.setenv("POLLINATIONS_API_KEY", "p")
+        calls = []
+
+        def handler(req):
+            if req.url.host == "gen.pollinations.ai":
+                calls.append(req.url.params["model"])
+                return httpx.Response(402, json={"error": "Insufficient pollen balance"})
+            calls.append("cloudflare")
+            return httpx.Response(200, json={"result": {"image": base64.b64encode(png()).decode()}})
+
+        fake_http(monkeypatch, handler)
+        run(media.generate_image("a red fox"))
+        assert calls == ["bytedance/seedream-4.0", "cloudflare"]  # z-image-turbo never drew it
+
+    def test_refused_token_falls_back_to_free_pollinations(self, monkeypatch):
+        hosts = []
+
+        def handler(req):
+            hosts.append(req.url.host)
+            if req.url.host == "api.cloudflare.com":
+                return httpx.Response(403, json={"errors": [{"message": "Authentication error"}]})
+            return httpx.Response(200, content=png(size=(768, 768)), headers={"content-type": "image/png"})
+
+        fake_http(monkeypatch, handler)
+        run(media.generate_image("a red fox"))
+        assert hosts == ["api.cloudflare.com", "image.pollinations.ai"]  # a refused token isn't tried twice

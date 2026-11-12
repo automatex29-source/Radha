@@ -89,6 +89,15 @@ BEST_IMAGE_TIMEOUT = float(os.environ.get("BEST_IMAGE_TIMEOUT_SECONDS", "60"))
 BEST_IMAGE_BUDGET = float(os.environ.get("BEST_IMAGE_BUDGET_SECONDS", "90"))
 LEGACY_POLLINATIONS = "https://image.pollinations.ai/prompt"
 HF_IMAGE_MODEL = os.environ.get("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
+# Cloudflare Workers AI: open image models on Cloudflare's GPUs, free up to 10,000 Neurons a day per account
+# (CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN with Workers AI permission). FLUX.2 [klein] 4B draws far sharper,
+# more detailed pictures than the fast free models (about 100 a day free at 1024x1024); FLUX.1 [schnell] (about
+# 170 a day) answers when it's busy or the day's free Neurons run low. Beyond the free allowance a picture fails
+# over to the next free engine, never to a bill, unless the account is on Workers Paid.
+CLOUDFLARE_IMAGE_MODELS = [m.strip() for m in (os.environ.get("CLOUDFLARE_IMAGE_MODELS")
+                                               or "@cf/black-forest-labs/flux-2-klein-4b,"
+                                                  "@cf/black-forest-labs/flux-1-schnell").split(",") if m.strip()]
+CLOUDFLARE_API = "https://api.cloudflare.com/client/v4/accounts"
 IMAGE_TIMEOUT = float(os.environ.get("IMAGE_TIMEOUT_SECONDS", "150"))
 
 
@@ -101,7 +110,13 @@ def image_available() -> bool:
 
 
 def image_key_configured() -> bool:
-    return any(os.environ.get(k) for k in ("FAL_KEY", "OPENAI_API_KEY", "GEMINI_IMAGE_KEY", "POLLINATIONS_API_KEY", "HF_TOKEN"))
+    return cloudflare_images() or any(os.environ.get(k) for k in ("FAL_KEY", "OPENAI_API_KEY", "GEMINI_IMAGE_KEY",
+                                                                  "POLLINATIONS_API_KEY", "HF_TOKEN"))
+
+
+def cloudflare_images() -> bool:
+    return bool(os.environ.get("CLOUDFLARE_ACCOUNT_ID") and os.environ.get("CLOUDFLARE_API_TOKEN")
+                and CLOUDFLARE_IMAGE_MODELS)
 
 
 GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
@@ -193,7 +208,8 @@ def image_type(data: bytes) -> str:
 def _image_providers() -> list:
     explicit = os.environ.get("IMAGE_PROVIDER", "").lower()
     paid = premium_media()
-    if explicit in ("fal", "openai", "gemini", "pollinations", "huggingface") and (paid or explicit not in ("fal", "openai")):
+    if explicit in ("fal", "openai", "gemini", "pollinations", "huggingface", "cloudflare") and \
+            (paid or explicit not in ("fal", "openai")):
         order = [explicit]
     else:
         order = []
@@ -207,6 +223,10 @@ def _image_providers() -> list:
             order.append("pollinations")
         if gemini_images():  # Nano Banana on the chat key: sharper than the free models when its quota allows
             order.append("gemini")
+        if cloudflare_images():  # FLUX.2 on Cloudflare: much better than Pollinations' fast model, so it goes first
+            order.append("cloudflare")
+            if "pollinations" in order:
+                order.append("pollinations_fast")
         if os.environ.get("HF_TOKEN"):
             order.append("huggingface")
     # gen.pollinations.ai needs a key now, so without one only the old keyless endpoint is worth trying.
@@ -248,7 +268,10 @@ def _check_image(resp, size: Optional[str] = None) -> bytes:
     return resp.content
 
 
-async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Optional[int] = None) -> bytes:
+async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Optional[int] = None,
+                        tier: str = "all") -> bytes:
+    """tier "best" tries only the better models (a better engine than the fast one waits next in line), "fast"
+    only the fast one, "all" both in order."""
     import random
     from urllib.parse import quote
 
@@ -271,6 +294,10 @@ async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Opti
     errors = []
     started = time.monotonic()
     models = list(POLLINATIONS_IMAGE_MODELS)
+    if len(models) > 1 and tier == "best":
+        models = models[:-1]
+    elif tier == "fast":
+        models = models[-1:]
     while models:
         model = models.pop(0)
         last = not models
@@ -287,6 +314,8 @@ async def _pollinations(prompt: str, size: str, legacy: bool = False, seed: Opti
                 raise ImageError("; ".join(errors))
             # Out of free Pollen (402) or out of time: the other better models would fail the same way.
             if "HTTP 402" in str(exc) or time.monotonic() - started >= BEST_IMAGE_BUDGET:
+                if tier == "best":  # the fast one isn't in this list: the next engine answers instead
+                    raise ImageError("; ".join(errors))
                 models = models[-1:]
 
 
@@ -302,11 +331,51 @@ async def _huggingface(prompt: str, size: str) -> bytes:
         return _check_image(resp)
 
 
+async def _cloudflare(prompt: str, size: str, seed: Optional[int] = None) -> bytes:
+    """An open FLUX model on Cloudflare Workers AI. The models are tried in order; each answers base64 JSON."""
+    import base64
+    import random
+
+    import httpx
+
+    url = f"{CLOUDFLARE_API}/{os.environ['CLOUDFLARE_ACCOUNT_ID']}/ai/run"
+    headers = {"Authorization": f"Bearer {os.environ['CLOUDFLARE_API_TOKEN']}"}
+    w, h = (max(256, min(1920, d)) // 16 * 16 for d in _dims(size))
+    errors = []
+    for model in CLOUDFLARE_IMAGE_MODELS:
+        try:
+            async with httpx.AsyncClient(timeout=IMAGE_TIMEOUT) as client:
+                if "flux-1-schnell" in model:  # JSON in, always square out
+                    resp = await client.post(f"{url}/{model}", headers=headers,
+                                             json={"prompt": prompt[:2048], "steps": 8,
+                                                   "seed": seed or random.randint(1, 2_000_000_000)})
+                else:  # FLUX.2 takes multipart form fields, even for a prompt alone
+                    fields = {"prompt": prompt[:2048], "width": str(w), "height": str(h)}
+                    if seed:
+                        fields["seed"] = str(seed)
+                    resp = await client.post(f"{url}/{model}", headers=headers,
+                                             files={k: (None, v) for k, v in fields.items()})
+            if resp.status_code >= 400:
+                raise ImageError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            body = resp.json()
+            data = base64.b64decode(((body.get("result") or body).get("image")) or "")
+            if not image_type(data):
+                raise ImageError("no picture in the answer")
+            return data
+        except Exception as exc:
+            errors.append(f"{model}: {str(exc)[:120] or type(exc).__name__}")
+            logger.info("cloudflare model %s failed: %s", model, str(exc)[:200])
+            if re.match(r"HTTP 40[13]\b", str(exc)):  # the token was refused: no model will answer
+                break
+    raise ImageError("; ".join(errors))
+
+
 async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional[str] = None,
                          seed: Optional[int] = None) -> bytes:
     """Best configured provider first, then the free ones. Returns PNG/JPEG/WebP bytes (see image_type)."""
     errors = []
-    for which in _image_providers():
+    order = _image_providers()
+    for which in order:
         try:
             if which == "fal":
                 return await _fal_image(prompt, size, seed)
@@ -316,7 +385,10 @@ async def generate_image(prompt: str, size: str = "1024x1024", quality: Optional
                 return await _gemini_image(prompt, size, paid=which == "gemini_paid")
             if which == "huggingface":
                 return await _huggingface(prompt, size)
-            return await _pollinations(prompt, size, legacy=which == "pollinations_legacy", seed=seed)
+            if which == "cloudflare":
+                return await _cloudflare(prompt, size, seed)
+            tier = "fast" if which == "pollinations_fast" else "best" if "pollinations_fast" in order else "all"
+            return await _pollinations(prompt, size, legacy=which == "pollinations_legacy", seed=seed, tier=tier)
         except Exception as exc:  # fall through to the next provider
             logger.warning("image provider %s failed: %s", which, exc)
             errors.append(f"{which}: {str(exc)[:160]}")
@@ -431,10 +503,27 @@ def stt_prompt(hint: Optional[str] = None, context: Optional[str] = None) -> Opt
     return prompt or None
 
 
+async def _openai_whisper(data: bytes, filename: str, extra: dict) -> tuple:
+    resp = await _client().audio.transcriptions.create(model=STT_MODEL, file=(filename, data), **extra)
+    return resp.text, None
+
+
 async def _whisper(data: bytes, filename: str, extra: dict) -> tuple:
-    if openai_configured():
-        resp = await _client().audio.transcriptions.create(model=STT_MODEL, file=(filename, data), **extra)
-        return resp.text, None
+    # Free Whisper large-v3 on Groq hears first when it's set up (it also hears Hindi and Hinglish well); the paid
+    # OpenAI model only takes over when Groq fails. STT_ENGINE=openai puts OpenAI first again.
+    groq = bool(os.environ.get("GROQ_API_KEY"))
+    if openai_configured() and (not groq or os.environ.get("STT_ENGINE", "free").lower() == "openai"):
+        return await _openai_whisper(data, filename, extra)
+    if groq and openai_configured():
+        try:
+            return await _groq_whisper(data, filename, extra)
+        except Exception as exc:
+            logger.info("Groq Whisper failed, OpenAI transcribes instead: %s", str(exc)[:200])
+            return await _openai_whisper(data, filename, extra)
+    return await _groq_whisper(data, filename, extra)
+
+
+async def _groq_whisper(data: bytes, filename: str, extra: dict) -> tuple:
     if not os.environ.get("GROQ_API_KEY"):
         raise MediaUnavailable("Set GROQ_API_KEY (free) or OPENAI_API_KEY on the backend to enable voice input.")
     from openai import AsyncOpenAI
