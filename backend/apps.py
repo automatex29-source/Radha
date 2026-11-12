@@ -827,7 +827,25 @@ def _decode_preview(token: str) -> dict:
     return payload
 
 
-def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: Optional[str] = None) -> Response:
+def badge_html() -> str:
+    """The small "Made with Krish AI" link on published sites, so every shared app shows where it was made.
+    It sits in its own shadow root, so the app's styles can't change it and it can't change the app's."""
+    site = (os.environ.get("SITE_URL") or "https://krishai.net").rstrip("/")
+    return ("<script>(function(){if(window.top!==window||document.getElementById('krish-made-with'))return;"
+            "function add(){var h=document.createElement('div');h.id='krish-made-with';"
+            "h.style.cssText='position:fixed;right:12px;bottom:12px;z-index:2147483647';"
+            "var r=h.attachShadow?h.attachShadow({mode:'closed'}):h;"
+            "r.innerHTML='<a href=\"" + site + "/?from=made-with\" target=\"_blank\" rel=\"noopener\" "
+            "style=\"display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;background:rgba(17,17,27,.82);"
+            "color:#fff;font:600 12px/1 system-ui,-apple-system,Segoe UI,sans-serif;text-decoration:none;"
+            "box-shadow:0 4px 14px rgba(0,0,0,.18);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)\">"
+            "<span style=\"color:#FF8A1E\">&#10022;</span> Made with Krish AI</a>';"
+            "document.body.appendChild(h);}"
+            "document.body?add():document.addEventListener('DOMContentLoaded',add);})();</script>")
+
+
+def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: Optional[str] = None,
+           badge: bool = False) -> Response:
     path = unquote(path or "").lstrip("/")
     if not path or path.endswith("/"):
         path += "index.html"
@@ -852,6 +870,8 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
         inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id, draft=bridge) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
+        if badge:
+            content = _before_body_end(content, badge_html())
     return Response(content, media_type=f"{ctype}; charset=utf-8" if ctype.startswith("text/") else ctype, headers=headers)
 
 
@@ -1592,6 +1612,7 @@ def public_app(doc: dict) -> dict:
         "github": doc.get("github"),
         "domain": doc.get("domain"),
         "theme": doc.get("theme"),
+        "badge": not doc.get("hideBadge"),
     }
 
 
@@ -1798,6 +1819,18 @@ async def publish_app(app_id: str, user_id: str = Depends(current_user_id)):
     return public_app(await db.apps.find_one({"id": app_id}))
 
 
+class BadgeIn(BaseModel):
+    show: bool
+
+
+@router.put("/apps/{app_id}/badge")
+async def set_badge(app_id: str, body: BadgeIn, user_id: str = Depends(current_user_id)):
+    """Show or hide the "Made with Krish AI" link on the published site."""
+    await owned_app(app_id, user_id)
+    await db.apps.update_one({"id": app_id}, {"$set": {"hideBadge": not body.show, "updatedAt": _now()}})
+    return public_app(await db.apps.find_one({"id": app_id}))
+
+
 @router.delete("/apps/{app_id}/publish")
 async def unpublish_app(app_id: str, user_id: str = Depends(current_user_id)):
     await owned_app(app_id, user_id)
@@ -1830,7 +1863,8 @@ async def serve_site(slug: str, path: str = ""):
     if not app or not app.get("published"):
         return Response("This site is not published.", status_code=404, media_type="text/plain")
     version = await db.app_commits.find_one({"appId": app["id"], "id": app["published"]["commitId"]})
-    return _serve(await commit_files(version), path, bridge=False, cache="public, max-age=60", app_id=app["id"])
+    return _serve(await commit_files(version), path, bridge=False, cache="public, max-age=60", app_id=app["id"],
+                  badge=not app.get("hideBadge"))
 
 
 # ------------------------------------------------------------------ next ideas and the prompt booster
@@ -2114,4 +2148,5 @@ async def site_for_host(host: str) -> Optional[dict]:
 
 async def serve_domain(app: dict, path: str) -> Response:
     version = await db.app_commits.find_one({"appId": app["id"], "id": app["published"]["commitId"]})
-    return _serve(await commit_files(version), path, bridge=False, cache="public, max-age=60", app_id=app["id"])
+    return _serve(await commit_files(version), path, bridge=False, cache="public, max-age=60", app_id=app["id"],
+                  badge=not app.get("hideBadge"))

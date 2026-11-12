@@ -1067,6 +1067,15 @@ function PublishButton({ app, onChange }) {
     }
   };
 
+  const setBadge = async (show) => {
+    try {
+      const { data } = await api.put(`/apps/${app.id}/badge`, { show });
+      onChange(data);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  };
+
   const unpublish = async () => {
     try {
       const { data } = await api.delete(`/apps/${app.id}/publish`);
@@ -1092,6 +1101,10 @@ function PublishButton({ app, onChange }) {
                 <button onClick={() => { navigator.clipboard.writeText(url); toast.success("Link copied"); }} className="ml-auto text-muted-foreground hover:text-foreground"><Copy className="h-3.5 w-3.5" /></button>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">Visitors see the version published {new Date(app.published.publishedAt).toLocaleString()}. Publish again to ship your latest changes.</p>
+              <label className="mt-2 flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground" data-testid="made-with-toggle">
+                <input type="checkbox" checked={app.badge !== false} onChange={(e) => setBadge(e.target.checked)} className="h-3.5 w-3.5 accent-[#FF8A1E]" />
+                Show a small "Made with Krish AI" link on the site
+              </label>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={publish} disabled={busy} data-testid="publish-button" className="flex-1">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Update site"}</Button>
                 <Button size="sm" variant="outline" onClick={unpublish} className="border-border">Unpublish</Button>
