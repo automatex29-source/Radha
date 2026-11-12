@@ -636,3 +636,57 @@ html.krish-circle::view-transition-new(root) { z-index: 2; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .page-intro { display: none; }
 }
+
+/* ---------- Editorial: a premium product page like a magazine spread ----------
+   Warm paper background, a huge high-contrast serif, tiny spaced-out nav, dark pill buttons and big photos. */
+:where(:root:has(body.theme-editorial)) { --accent: #1c1a17; --accent-2: #8a6a4a; --radius: 22px; --display: "Bodoni Moda", "Didot", Georgia, serif; --font: "Inter", system-ui, sans-serif; }
+body.theme-editorial { --bg: #ece6dd; --surface: #f5f1ea; --soft: #e3dbcf; --text: #1c1a17; --muted: #6d655b; --border: rgba(28, 26, 23, .12);
+  --shadow: 0 30px 60px -30px rgba(40, 30, 20, .35); --gradient: linear-gradient(135deg, #1c1a17, #5a4634); background: var(--bg); color: var(--text); }
+.theme-editorial h1, .theme-editorial h2 { font-family: var(--display), var(--indic); font-weight: 500; letter-spacing: -0.035em; line-height: .92; text-transform: uppercase; }
+.theme-editorial h1 { font-size: clamp(3rem, 9vw, 7.5rem); }
+.theme-editorial h2 { font-size: clamp(2.2rem, 5.5vw, 4.4rem); }
+.theme-editorial .eyebrow { font-family: var(--display), var(--indic); text-transform: none; letter-spacing: 0; font-size: 1.05rem; font-style: italic; color: var(--text); }
+.theme-editorial .nav { background: transparent; box-shadow: none; border: 0; }
+.theme-editorial .nav-links a { font-size: .82rem; letter-spacing: .02em; }
+.theme-editorial .brand { font-weight: 800; letter-spacing: -0.02em; font-size: 1.35rem; }
+body.theme-editorial button:not(.btn-outline):not(.btn-light):not(.btn-ghost):not(.chip):not(.nav-toggle):not(.tile), .theme-editorial .btn:not(.btn-outline):not(.btn-light):not(.btn-ghost):not(.chip):not(.nav-toggle):not(.tile) {
+  background: #1c1a17; color: #f5f1ea; border-radius: 999px; box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .6); font-size: .85rem; padding: .8rem 1.5rem; }
+.theme-editorial .btn-outline { border-color: #1c1a17; color: #1c1a17; border-radius: 999px; }
+.theme-editorial .card { background: var(--surface); border: 1px solid var(--border); box-shadow: none; }
+.theme-editorial img { border-radius: var(--radius); }
+
+/* ---------- Scroll story: a product page that changes as you scroll ----------
+   <section class="story"> with <div class="chapter"> children (each: text, then a .chapter-media picture or
+   .scene). krish-ui.js pins it to the screen and, as the page scrolls, swaps chapter by chapter: the headline
+   letters morph from one word to the next, the picture slowly zooms and the next one rises in, dots show where
+   you are. Without JS or with reduced motion the chapters just stack. */
+.story .chapter { display: grid; grid-template-columns: 1fr 1.15fr; gap: clamp(1.5rem, 4vw, 4rem); align-items: center; padding: 4rem 0; }
+.story .chapter-media, .story .chapter > img { width: 100%; aspect-ratio: 4 / 3.4; object-fit: cover; border-radius: var(--radius); }
+.story.story-ready { position: relative; padding: 0; }
+.story-ready .story-stage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
+.story-ready .chapter { position: absolute; inset: 0; padding: 6rem max(1.25rem, calc((100vw - 1180px) / 2)) 4rem; pointer-events: none; }
+.story-ready .chapter.is-on { pointer-events: auto; }
+.story-ready .chapter > :not(.chapter-media):not(img) { position: relative; z-index: 2; }
+.story-ready .chapter-text > *, .story-ready .chapter > p, .story-ready .chapter > .btn, .story-ready .chapter > .eyebrow {
+  opacity: 0; transform: translateY(14px); transition: opacity .5s ease, transform .6s cubic-bezier(.22, 1, .36, 1); }
+.story-ready .chapter.is-on .chapter-text > *, .story-ready .chapter.is-on > p, .story-ready .chapter.is-on > .btn, .story-ready .chapter.is-on > .eyebrow {
+  opacity: 1; transform: none; transition-delay: .18s; }
+.story-ready .chapter .chapter-text > h1, .story-ready .chapter .chapter-text > h2, .story-ready .chapter > h1, .story-ready .chapter > h2 { opacity: 1; transform: none; }
+.story-ready .kl { display: inline-block; opacity: 0; filter: blur(14px); transform: translateY(.18em) scale(1.08);
+  transition: opacity .55s ease, filter .7s ease, transform .8s cubic-bezier(.22, 1, .36, 1); transition-delay: calc(var(--i) * 22ms); }
+.story-ready .is-on .kl { opacity: 1; filter: blur(0); transform: none; }
+.story-ready .is-leaving .kl { opacity: 0; filter: blur(10px); transform: translateY(-.12em) scale(.96); transition-duration: .35s, .45s, .45s; }
+.story-ready .chapter-media, .story-ready .chapter > img { opacity: 0; clip-path: inset(18% 0 0 0 round var(--radius));
+  transform: scale(calc(1.12 - var(--t, 0) * .12)) translateY(calc(var(--t, 0) * -3%)); transition: opacity .7s ease, clip-path .9s cubic-bezier(.77, 0, .18, 1); will-change: transform; }
+.story-ready .is-on .chapter-media, .story-ready .is-on > img { opacity: 1; clip-path: inset(0 0 0 0 round var(--radius)); }
+.story-dots { position: absolute; left: 50%; bottom: 1.6rem; transform: translateX(-50%); display: flex; gap: .45rem; z-index: 5; }
+.story-dots i { width: .4rem; height: .4rem; border-radius: 999px; background: currentColor; opacity: .25; transition: width .4s ease, opacity .4s ease; }
+.story-dots i.on { width: 1.6rem; opacity: .9; }
+.story-bar { position: absolute; left: 0; bottom: 0; height: 2px; width: calc(var(--p, 0) * 100%); background: var(--accent); z-index: 5; }
+@media (max-width: 760px) {
+  .story .chapter { grid-template-columns: 1fr; }
+  .story-ready .chapter { padding: 5.5rem 1.25rem 4rem; align-content: end; }
+  .story-ready .chapter-media, .story-ready .chapter > img { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; z-index: 0; }
+  .story-ready .chapter::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--bg) 92%, transparent) 78%); }
+}
+@media (prefers-reduced-motion: reduce) { .story-ready .kl { filter: none; transform: none; transition: opacity .2s; } }

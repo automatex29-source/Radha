@@ -7,6 +7,7 @@
    - .scene[data-scene="glass|blob|galaxy|waves|rings"] draws a live 3D scene (Three.js, loaded only when used)
    - .magnetic buttons lean to the pointer, .split headings rise in word by word, [data-speed] parallax,
      .scroll-progress fills as the page scrolls
+   - .story > .chapter: a pinned scroll story (headline letters morph, pictures zoom and swap, dots)
    - transitions: links to the app's other pages, [data-show="#screen"] buttons, [data-theme-toggle] and
      krish.transition(update, {type, from}) animate with View Transitions (see the CSS); data-morph="x" pairs
      grow from one screen into the other */
@@ -299,6 +300,74 @@
     document.head.appendChild(l);
   }
 
+  // ---------- Scroll story (.story > .chapter) ----------
+  function stories() {
+    if (still) return;
+    document.querySelectorAll(".story:not(.story-ready)").forEach(function (story) {
+      var chapters = Array.prototype.filter.call(story.children, function (c) { return c.classList.contains("chapter"); });
+      if (chapters.length < 2) return;
+      story.classList.add("story-ready");
+      var stage = document.createElement("div");
+      stage.className = "story-stage";
+      chapters.forEach(function (c) {
+        stage.appendChild(c);
+        c.querySelectorAll("h1, h2").forEach(function (h) {
+          if (h.querySelector(".kl")) return;
+          var i = 0;
+          (function walk(node) {
+            Array.prototype.slice.call(node.childNodes).forEach(function (n) {
+              if (n.nodeType === 3) {
+                var frag = document.createDocumentFragment();
+                n.textContent.split(/(\s+)/).forEach(function (w) {
+                  if (!w) return;
+                  if (/^\s+$/.test(w)) { frag.appendChild(document.createTextNode(w)); return; }
+                  var word = document.createElement("span");
+                  word.style.whiteSpace = "nowrap";
+                  Array.from(w).forEach(function (ch) {
+                    var l = document.createElement("span"); l.className = "kl"; l.style.setProperty("--i", i++); l.textContent = ch; word.appendChild(l);
+                  });
+                  frag.appendChild(word);
+                });
+                n.parentNode.replaceChild(frag, n);
+              } else if (n.nodeType === 1) walk(n);
+            });
+          })(h);
+          h.setAttribute("aria-label", h.textContent);
+        });
+      });
+      var dots = document.createElement("div");
+      dots.className = "story-dots";
+      dots.setAttribute("aria-hidden", "true");
+      chapters.forEach(function () { dots.appendChild(document.createElement("i")); });
+      var bar = document.createElement("div");
+      bar.className = "story-bar";
+      stage.appendChild(dots);
+      stage.appendChild(bar);
+      story.appendChild(stage);
+      // Each chapter gets about one screen of scrolling.
+      story.style.height = (chapters.length * 100) + "vh";
+      var current = -1;
+      function update() {
+        var r = story.getBoundingClientRect(), span = story.offsetHeight - innerHeight;
+        var p = span > 0 ? Math.min(1, Math.max(0, -r.top / span)) : 0;
+        var pos = p * chapters.length, idx = Math.min(chapters.length - 1, Math.floor(pos));
+        stage.style.setProperty("--p", p.toFixed(4));
+        chapters[idx].style.setProperty("--t", Math.min(1, pos - idx).toFixed(4));
+        if (idx === current) return;
+        chapters.forEach(function (c, i) {
+          var was = c.classList.contains("is-on");
+          c.classList.toggle("is-on", i === idx);
+          if (was && i !== idx) { c.classList.add("is-leaving"); setTimeout(function () { c.classList.remove("is-leaving"); }, 500); }
+        });
+        Array.prototype.forEach.call(dots.children, function (d, i) { d.classList.toggle("on", i === idx); });
+        current = idx;
+      }
+      addEventListener("scroll", function () { requestAnimationFrame(update); }, { passive: true });
+      addEventListener("resize", update);
+      update();
+    });
+  }
+
   // ---------- Transitions ----------
   var canVT = !!document.startViewTransition && !still;
   function pinNav() {
@@ -416,7 +485,7 @@
     });
   }
 
-  function start() { transitions(); fonts(); navs(); reveals(); pointer(); counters(); typed(); extras(); scrolly(); scenes(); }
+  function start() { transitions(); stories(); fonts(); navs(); reveals(); pointer(); counters(); typed(); extras(); scrolly(); scenes(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
   // Pages that draw their content with JavaScript get the menu button and reveals once it is there.
@@ -425,7 +494,7 @@
     new MutationObserver(function () {
       if (queued) return;
       queued = true;
-      setTimeout(function () { queued = false; transitions(); fonts(); navs(); extras(); reveals(); scrolly(); scenes(); }, 120);
+      setTimeout(function () { queued = false; transitions(); stories(); fonts(); navs(); extras(); reveals(); scrolly(); scenes(); }, 120);
     }).observe(document.documentElement, { childList: true, subtree: true });
   }
 })();

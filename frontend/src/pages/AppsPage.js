@@ -33,6 +33,7 @@ const STYLES = [
   { id: "neon", label: "Neon", swatch: "linear-gradient(135deg, #05050a 40%, #00f0ff 70%, #ff2bd6)" },
   { id: "clay", label: "Clay", swatch: "radial-gradient(circle at 35% 30%, #fff, #b9b0ff 50%, #ff9f6b)" },
   { id: "sunset", label: "Sunset", swatch: "linear-gradient(180deg, #4a1640, #c2366d 50%, #ff8f4a)" },
+  { id: "editorial", label: "Editorial", swatch: "linear-gradient(135deg, #ece6dd 55%, #1c1a17 55%)" },
 ];
 
 // "A habit tracker with daily check-ins" -> "Habit tracker"

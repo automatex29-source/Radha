@@ -81,3 +81,13 @@ def test_transitions_are_built_into_the_kit_and_the_prompt():
     block = d.prompt_block("neon")
     assert 'data-transition="wipe"' in block and 'data-show="#menu"' in block and "krish.transition" in block
     assert all("transition" in t for t in d.THEMES.values())
+
+
+def test_editorial_style_and_scroll_story():
+    assert d.choose("a product site with a scroll animation like Apple", None, "a1", True) == "editorial"
+    assert d.choose("Design style: Editorial\nA cake shop", None, "a1", True) == "editorial"
+    block = d.prompt_block("editorial")
+    assert 'class="theme-editorial"' in block and "story" in block and "chapter" in block
+    assert "Bodoni" in apps.THEME_FONTS["editorial"]
+    assert ".story-stage" in apps.KIT_CSS and "prefers-reduced-motion" in apps.KIT_CSS
+    assert "story-stage" in apps.KIT_JS and "aria-label" in apps.KIT_JS
