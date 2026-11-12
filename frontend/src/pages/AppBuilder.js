@@ -8,6 +8,7 @@ import GitHubPushButton from "@/components/GitHubPushButton";
 import DataTab from "@/components/DataTab";
 import DevicePreview from "@/components/DevicePreview";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import KrishIntro from "@/components/KrishIntro";
 import LimitBanner from "@/components/LimitBanner";
 import AiLimitCard from "@/components/AiLimitCard";
@@ -133,11 +134,28 @@ export default function AppBuilder() {
           <Button variant="outline" size="sm" onClick={saveVersion} disabled={!pending} data-testid="save-version-button" className="gap-1.5 border-border bg-card">
             <Save className="h-3.5 w-3.5" /><span className="max-sm:hidden">Save version</span>{pending > 0 && <span className="sm:hidden">{pending}</span>}
           </Button>
-          <a href={`${API}/apps/${id}/export?auth=${encodeURIComponent(getToken() || "")}`} data-testid="download-app"
-            className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:border-primary/50"
-            title="Download the code with its full git history">
-            <Download className="h-3.5 w-3.5" /><span className="max-sm:hidden">Download</span>
-          </a>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button data-testid="download-app" title="Download your app"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:border-primary/50">
+                <Download className="h-3.5 w-3.5" /><span className="max-sm:hidden">Download</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem asChild>
+                <a href={`${API}/apps/${id}/export?format=html&auth=${encodeURIComponent(getToken() || "")}`} data-testid="download-app-html" className="flex flex-col items-start gap-0.5">
+                  <span className="text-sm font-medium">One HTML file</span>
+                  <span className="text-xs text-muted-foreground">Everything in one file. Double-click it to open your app.</span>
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href={`${API}/apps/${id}/export?format=project&auth=${encodeURIComponent(getToken() || "")}`} data-testid="download-app-project" className="flex flex-col items-start gap-0.5">
+                  <span className="text-sm font-medium">Project for developers (ZIP)</span>
+                  <span className="text-xs text-muted-foreground">Source files with the full version history.</span>
+                </a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <GitHubPushButton app={app} onPushed={refresh} />
           <PublishButton app={app} onChange={(a) => { setApp(a); refresh(); }} />
         </div>

@@ -56,9 +56,30 @@ def test_groq_whisper_used_without_openai(fake_openai):
     assert call["language"] == "hi"
 
 
-def test_openai_preferred_when_set(fake_openai):
+def test_free_whisper_first_even_with_openai(fake_openai):
     fake_openai.setenv("GROQ_API_KEY", "gsk_test")
     fake_openai.setenv("OPENAI_API_KEY", "sk_test")
+    asyncio.run(media.transcribe(b"audio", "a.webm"))
+    call = FakeClient.calls[-1]
+    assert call["base_url"] == media.GROQ_BASE_URL and call["model"] == media.GROQ_STT_MODEL
+
+
+def test_openai_takes_over_when_free_whisper_fails(fake_openai, monkeypatch):
+    fake_openai.setenv("GROQ_API_KEY", "gsk_test")
+    fake_openai.setenv("OPENAI_API_KEY", "sk_test")
+
+    async def down(*a, **k):
+        raise RuntimeError("groq is down")
+
+    monkeypatch.setattr(media, "_groq_whisper", down)
+    assert asyncio.run(media.transcribe(b"audio", "a.webm")) == "namaste RADHA"
+    assert FakeClient.calls[-1]["model"] == media.STT_MODEL
+
+
+def test_openai_preferred_when_asked(fake_openai):
+    fake_openai.setenv("GROQ_API_KEY", "gsk_test")
+    fake_openai.setenv("OPENAI_API_KEY", "sk_test")
+    fake_openai.setenv("STT_ENGINE", "openai")
     asyncio.run(media.transcribe(b"audio", "a.webm"))
     call = FakeClient.calls[-1]
     assert call["model"] == media.STT_MODEL and "language" not in call
