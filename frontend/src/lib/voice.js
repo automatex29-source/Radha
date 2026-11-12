@@ -410,6 +410,7 @@ export async function watchForSpeech(onSpeech, { holdMs = 450 } = {}) {
 /** Markdown -> something pleasant to read aloud (drop code, links' URLs, symbols). */
 export function speechText(markdown) {
   return (markdown || "")
+    .replace(/```diagram[\s\S]*?(?:```|$)/g, " ")  // a drawing in the answer is seen, not read out
     .replace(/```[\s\S]*?```/g, " (code omitted) ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")

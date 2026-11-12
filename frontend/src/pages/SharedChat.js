@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { DiagramPre } from "@/components/DiagramBlock";
 import { API, absoluteUrl } from "@/lib/api";
 import { MediaGallery } from "@/components/ToolSteps";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -63,7 +64,7 @@ export default function SharedChat() {
                   <div className="min-w-0 flex-1">
                     <p className="mb-1 text-sm font-semibold tracking-tight">Krish AI</p>
                     <div className="radha-prose krish-answer min-w-0">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{m.content}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable, pre: DiagramPre }}>{m.content}</ReactMarkdown>
                     </div>
                     <MediaGallery items={m.media} />
                   </div>

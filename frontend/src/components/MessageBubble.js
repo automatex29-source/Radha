@@ -11,6 +11,7 @@ import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
 import { prepareMath, useMathPlugins } from "@/lib/math";
+import DiagramBlock, { diagramSource, withoutDiagrams } from "@/components/DiagramBlock";
 import SourceChip from "@/components/SourceChip";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
@@ -173,11 +174,13 @@ function QuickReplies({ items, onAsk, id }) {
 function CodeBlock({ node, children }) {
   const [copied, setCopied] = useState(false);
   const text = (node?.children?.[0]?.children || []).map((c) => c.value || "").join("").replace(/\n$/, "");
+  const diagram = diagramSource(node);
   const copy = () => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+  if (diagram !== null) return <DiagramBlock source={diagram} />;
   return (
     <div className="group/code relative">
       <button onClick={copy} data-testid="copy-code-button"
@@ -276,7 +279,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   const userText = userFiles.length ? (userFiles[0].whole ? "" : stripFileBlocks(message.content)) : message.content;
 
   const copyMsg = () => {
-    navigator.clipboard.writeText(message.content);
+    navigator.clipboard.writeText(withoutDiagrams(message.content));
     setCopied(true);
     toast.success("Copied to clipboard");
     setTimeout(() => setCopied(false), 1500);
