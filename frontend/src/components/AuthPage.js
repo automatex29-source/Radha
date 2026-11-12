@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import ThemeToggle from "@/components/ThemeToggle";
-import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, Database, Cpu, MailCheck, Gift } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, ShieldCheck, Languages, HeartHandshake, MailCheck, Gift } from "lucide-react";
 import { api } from "@/lib/api";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
@@ -85,11 +85,11 @@ export default function AuthPage() {
               Meet <span className="krish-gradient-text">Krish AI</span>, your saarthi for every task.
             </h1>
             <p className="mt-4 text-base text-muted-foreground">
-              Ask anything, write, code, study and plan. All your chats are saved for you.
+              Exam stress, career doubts, a heavy day: talk in Hindi, Hinglish or English and get honest advice, with Gita wisdom when it helps.
             </p>
             <div className="mt-8 space-y-3 text-sm text-foreground/80">
-              <Feature icon={Cpu} tone="bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300" text="Chat, apps, decks and docs in one place" />
-              <Feature icon={Database} tone="bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300" text="Every conversation saved" />
+              <Feature icon={Languages} tone="bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300" text="Replies the way you write: Hinglish, Hindi or English" />
+              <Feature icon={HeartHandshake} tone="bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300" text="Real answers and one clear next step, not just sympathy" />
               <Feature icon={ShieldCheck} tone="bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300" text="Private: your chats are yours alone" />
             </div>
           </div>
@@ -186,6 +186,9 @@ export default function AuthPage() {
           </p>
           <p className="mt-2 text-center text-xs text-muted-foreground" data-testid="auth-help-email">
             Need help? <a href={`mailto:${HELP_EMAIL}`} className="font-medium text-foreground hover:underline">{HELP_EMAIL}</a>
+          </p>
+          <p className="mt-2 text-center text-xs text-muted-foreground" data-testid="auth-about-links">
+            <a href="/about" className="hover:text-foreground hover:underline">About Krish</a> · <a href="/faq" className="hover:text-foreground hover:underline">FAQ</a>
           </p>
           </>)}
         </div>

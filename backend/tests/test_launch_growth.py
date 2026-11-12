@@ -442,3 +442,44 @@ def test_search_meta_public_pages_and_noindex():
         assert 'name="robots" content="noindex"' in out and "canonical" not in out and "og:url" not in out
     shared_page = server._search_meta(page, "page/abc")
     assert "noindex" not in shared_page and "canonical" not in shared_page
+
+
+def test_about_and_faq_pages_say_krish_is_live(client):
+    """About and FAQ are plain HTML Google can read, listed in the sitemap, and say plainly that Krish is live."""
+    import json, re
+    from pathlib import Path
+    import server
+    public = Path(__file__).resolve().parents[2] / "frontend" / "public"
+    assert server._STATIC_PAGES == {"about": "about.html", "faq": "faq.html"}
+    sitemap = (public / "sitemap.xml").read_text()
+    for name, file in server._STATIC_PAGES.items():
+        page = (public / file).read_text()
+        assert f'<link rel="canonical" href="https://krishai.net/{name}"' in page
+        assert "Krish AI is live" in page
+        assert f"<loc>https://krishai.net/{name}</loc>" in sitemap
+        data = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', page, re.S).group(1))
+        assert data["@graph"][0]["url"] == f"https://krishai.net/{name}"
+    faq = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>',
+                               (public / "faq.html").read_text(), re.S).group(1))
+    assert any(x["@type"] == "FAQPage" and len(x["mainEntity"]) >= 5 for x in faq["@graph"])
+
+
+def test_hinglish_messages_are_spotted(client):
+    """Hindi typed in English letters gets a Hinglish reply; plain English, Devanagari and "in Hindi" asks don't."""
+    import server
+    for text in ("50000 salary hai, mahine ka budget kaise banau", "bhai kal physics ka paper hai",
+                 "quadratic equation x² - 5x + 6 = 0 solve karo step by step", "yaar results aaye aur 58% aaye"):
+        assert server._is_hinglish(text), text
+    for text in ("How do I go to the market to buy a phone?", "Write a function to do this in python",
+                 "मुझे बताओ kya hai", "photosynthesis simple hindi me samjhao", "explain karma yoga", ""):
+        assert not server._is_hinglish(text), text
+
+
+def test_hinglish_chat_keeps_short_follow_ups(client):
+    import server
+    say = lambda *texts: [{"role": "user", "content": t} for t in texts]
+    assert server._hinglish_chat(say("papa chahte hai engineering karu, mujhe design me interest hai, kaise baat karu"))
+    assert server._hinglish_chat(say("bhai kal physics ka paper hai", "ok aur?"))
+    assert not server._hinglish_chat(say("bhai kal physics ka paper hai", "Please explain Gauss's law in detail for my exam"))
+    assert not server._hinglish_chat(say("What is photosynthesis?", "ok"))
+    assert not server._hinglish_chat([])

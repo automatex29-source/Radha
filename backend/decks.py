@@ -546,12 +546,23 @@ async def list_decks(user_id: str = Depends(current_user_id)):
 @router.post("/decks/rephrase")
 async def rephrase_prompt(body: RephraseIn, user_id: str = Depends(current_user_id)):
     """Turn a rough request into a clear brief the user can edit."""
-    try:
-        text = (await _complete(body.model or DEFAULT_MODEL, REPHRASE_SYSTEM, body.prompt)).strip()
-    except Exception as exc:
-        logger.exception("rephrase failed")
-        raise HTTPException(status_code=502, detail=_model_error(exc))
-    text = re.sub(r"^```\w*|```$", "", text, flags=re.M).strip()
+    from agent import llm
+
+    model = body.model or DEFAULT_MODEL
+    text, error = "", None
+    # A short rewrite: a free model writes it, and the chosen model only if the free one fails.
+    for which in dict.fromkeys([llm.helper_model(model), model]):
+        try:
+            text = (await _complete(which, REPHRASE_SYSTEM, body.prompt)).strip()
+        except Exception as exc:
+            logger.warning("rephrase on %s failed: %s", which, str(exc)[:200])
+            error = exc
+            continue
+        text = re.sub(r"^```\w*|```$", "", text, flags=re.M).strip()
+        if len(text) >= 10:
+            break
+    if len(text) < 10 and error is not None:
+        raise HTTPException(status_code=502, detail=_model_error(error))
     if len(text) < 10:
         raise HTTPException(status_code=502, detail="The AI could not improve this. Please try again.")
     return {"prompt": text[:3000]}

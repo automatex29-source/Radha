@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { DiagramPre } from "@/components/DiagramBlock";
 import { toast } from "sonner";
 import { API } from "@/lib/api";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -70,7 +71,7 @@ export default function PageView() {
 
             <div className="mt-6"><LiveCards items={live} /></div>
             <div className="radha-prose mt-2 text-[1.02rem]" dir="auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SourceChip, table: ScrollTable }}>{linkCitations(page.content, sources)}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SourceChip, table: ScrollTable, pre: DiagramPre }}>{linkCitations(page.content, sources)}</ReactMarkdown>
             </div>
 
             {sources.length > 0 && (

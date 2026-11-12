@@ -33,6 +33,25 @@ PRO_MODELS = ("claude-haiku-5-5", "claude-sonnet-5-5")
 BASIC_PLUS = "krish-basic-plus"
 
 
+# Small jobs (search queries for research, short rewrites, prompt briefs) don't need a premium model: a free
+# open-weight model (Groq's gpt-oss, Gemini Flash Lite, Cerebras) does them as well, so they go there even when the
+# chat itself is on Krish Pro. Callers fall back to the chat's own model if the free one fails.
+# HELPER_MODEL picks another model for these jobs, or "off" keeps them on the chat's model.
+HELPER_MODELS = ("openai/gpt-oss-20b", "gemini-3.5-flash-lite", "openai/gpt-oss-120b", "cerebras/gpt-oss-120b")
+
+
+def helper_model(model: str = "") -> str:
+    """The model for a small side job of a chat on `model`: free when one is set up, else `model` itself."""
+    wanted = os.environ.get("HELPER_MODEL", "").strip()
+    if wanted.lower() == "off":
+        return model
+    if wanted and configured(wanted):
+        return wanted
+    if (model and not paid(model)) or gateway():
+        return model
+    return next((m for m in HELPER_MODELS if configured(m)), model)
+
+
 def concrete(model: str) -> str:
     """The real model for `model`: Krish AI becomes the first free model that is set up, Krish Pro the first
     premium one."""
