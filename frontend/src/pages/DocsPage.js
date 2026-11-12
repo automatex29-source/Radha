@@ -3,6 +3,7 @@ import PageHero, { accentStyle } from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
+import IndiaDocs from "@/components/IndiaDocs";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -71,6 +72,8 @@ export default function DocsPage() {
               </Button>
             </div>
           </div>
+
+          <IndiaDocs />
 
           <h2 className="mt-8 text-sm font-semibold">Your documents</h2>
           {docs === null ? <Loader2 className="mx-auto mt-8 h-5 w-5 animate-spin text-primary" /> : docs.length === 0 ? (

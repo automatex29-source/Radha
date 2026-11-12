@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from auth import decode_token, get_user_id_from_request
+import india_docs
 
 router = APIRouter(prefix="/api")
 logger = logging.getLogger("radha.writer")
@@ -99,6 +100,9 @@ class DocIn(BaseModel):
     content: Optional[str] = Field(default=None, max_length=MAX_CONTENT)
     prompt: Optional[str] = Field(default=None, max_length=4000)  # "write a ..." makes a first draft
     model: Optional[str] = None
+    template: Optional[str] = Field(default=None, max_length=40)  # a ready-made Indian document (india_docs.py)
+    fields: Optional[dict] = None  # that document's boxes
+    said: Optional[str] = Field(default=None, max_length=4000)  # typed or spoken in the person's own words
 
 
 class DocPatch(BaseModel):
@@ -152,10 +156,28 @@ async def doc_actions(user_id: str = Depends(current_user_id)):
     return {"actions": list(QUICK_ACTIONS)}
 
 
+@router.get("/docs/templates")
+async def doc_templates(user_id: str = Depends(current_user_id)):
+    """The ready-made Indian documents and the boxes each one asks for."""
+    return {"templates": india_docs.public_list()}
+
+
 @router.post("/docs")
 async def create_doc(body: DocIn, user_id: str = Depends(current_user_id)):
     content = body.content or ""
-    if body.prompt and body.prompt.strip():
+    if body.template:
+        if body.template not in india_docs.BY_ID:
+            raise HTTPException(status_code=400, detail="Unknown document type")
+        if body.template == "gst_invoice":  # worked out here: right sums, no AI
+            content = india_docs.gst_invoice(body.fields, datetime.now(timezone.utc).strftime("%d %b %Y"))
+        else:
+            try:
+                content = clean_answer(await _complete(body.model or DEFAULT_MODEL, india_docs.SYSTEM,
+                                                       india_docs.prompt_for(body.template, body.fields, body.said or "")))
+            except Exception as exc:
+                logger.exception("Ready-made document failed")
+                raise HTTPException(status_code=502, detail=f"Krish couldn't write it: {str(exc)[:200]}")
+    elif body.prompt and body.prompt.strip():
         model = body.model or DEFAULT_MODEL
         try:
             content = clean_answer(await _complete(model, SYSTEM, (

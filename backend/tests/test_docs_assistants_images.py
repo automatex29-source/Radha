@@ -140,3 +140,25 @@ def test_ai_image_edit_needs_a_key(monkeypatch):
     monkeypatch.delenv("POLLINATIONS_API_KEY", raising=False)
     with pytest.raises(media.MediaUnavailable):
         asyncio.run(image_edit.ai_edit(_png(), "make it blue"))
+
+
+def test_ready_made_indian_documents(client):
+    import india_docs
+    listed = client.get("/api/docs/templates").json()["templates"]
+    assert {"gst_invoice", "rent_agreement", "leave_application", "rti", "biodata"} <= {t["id"] for t in listed}
+    # The GST invoice is worked out without the model: CGST + SGST inside a state, IGST across states.
+    before = len(PROMPTS)
+    inv = client.post("/api/docs", json={"template": "gst_invoice", "fields": {
+        "seller": "Sharma Traders, Pune", "items": "Rice bag, 4, 1450\nSugar, 20, 46", "gst_rate": "5"}}).json()
+    assert len(PROMPTS) == before
+    assert "₹6,720.00" in inv["content"] and "CGST @ 2.5%" in inv["content"] and "₹168.00" in inv["content"]
+    assert "₹7,056.00" in inv["content"] and "Seven Thousand Fifty Six" in inv["content"]
+    igst = india_docs.gst_invoice({"items": "Laptop, 1, 50000", "gst_rate": "18", "interstate": "yes"}, "x")
+    assert "IGST @ 18%" in igst and "₹9,000.00" in igst and "CGST" not in igst
+    # The others are one model call with the Indian format guide, the boxes and the person's own words.
+    client.post("/api/docs", json={"template": "rti", "fields": {"office": "Pune Municipal Corporation"},
+                                   "said": "mere area ki road repair ka kitna paisa aaya"})
+    assert "Right to Information Act" in PROMPTS[-1] and "Pune Municipal Corporation" in PROMPTS[-1]
+    assert "road repair" in PROMPTS[-1]
+    assert client.post("/api/docs", json={"template": "nope"}).status_code == 400
+    assert india_docs.in_words(123456789.05).startswith("Rupees Twelve Crore Thirty Four Lakh")
