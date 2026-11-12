@@ -68,6 +68,7 @@ import billing
 import languages
 import abuse
 import daily_verse
+import today
 import google_signin
 import monitor
 import owner_dashboard
@@ -3174,6 +3175,14 @@ async def discover_news(topic: str = "top", limit: int = 24, user_id: str = Depe
         logger.warning("Discover feed failed: %s", exc)
         raise HTTPException(status_code=503, detail="News is not available right now. Try again in a minute.")
     return {"topic": topic if topic in discover.TOPICS else "top", "topics": list(discover.TOPICS), "stories": items}
+
+
+@api.get("/today")
+async def today_card(lat: Optional[float] = None, lon: Optional[float] = None,
+                     user_id: str = Depends(current_user_id)):
+    """The home screen's Aaj card: tithi and festival, the Gita line of the day, a headline and the visit streak."""
+    owner = await db.users.find_one({"id": user_id}, {"language": 1})
+    return await today.card(db, user_id, lat, lon, (owner or {}).get("language") or "en")
 
 
 # --------------------------------------------------------------------- pages

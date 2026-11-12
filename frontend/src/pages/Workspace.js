@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Mail, Plane, Dumbbell, ChefHat, GraduationCap, Briefcase, Calculator, Languages, PenLine, TrendingUp, Bug, Database, Globe, ListChecks, Sparkles, PanelLeft, FileText, Braces, Network, Loader2, Download, RefreshCw, SquarePen, ArrowUpRight, ArrowRight, FolderKanban, Link2, Coffee, BookOpen, Zap, Heart, MessageCircle, Lightbulb, Wind, History, Lock, Sun, CloudSun, Moon, CloudRain, Flame } from "lucide-react";
 import Mascot from "@/components/Mascot";
+import TodayCard from "@/components/TodayCard";
 import BrandMark from "@/components/BrandMark";
 import { useAuth } from "@/context/AuthContext";
 import UpgradeButton from "@/components/UpgradeButton";
@@ -1024,6 +1025,8 @@ function EmptyState({ onPick }) {
           </div>
         </div>
       </div>
+
+      <TodayCard onPick={onPick} />
 
       <div role="tablist" aria-label="Ideas" className="krish-no-scrollbar mt-4 flex gap-1.5 overflow-x-auto pb-1 sm:justify-center">
         {TOPICS.map((x) => {
