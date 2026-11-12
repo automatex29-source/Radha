@@ -33,7 +33,7 @@ export function extractFiles(markdown, partial = false) {
     const content = m[4];
     const [langRaw = "", ...rest] = info.split(/[\s:]+/);
     let lang = langRaw.toLowerCase();
-    if (lang === "diagram") continue; // a drawing inside the answer (DiagramBlock), never a project file
+    if (lang === "diagram" || lang === "chart") continue; // a picture inside the answer (DiagramBlock), never a project file
     let name = null;
     const infoName = rest.join(" ").match(FILE_RE) || (FILE_RE.test(langRaw) && langRaw.match(FILE_RE));
     if (infoName) {

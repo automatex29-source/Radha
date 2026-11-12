@@ -462,3 +462,14 @@ def test_about_and_faq_pages_say_krish_is_live(client):
     faq = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>',
                                (public / "faq.html").read_text(), re.S).group(1))
     assert any(x["@type"] == "FAQPage" and len(x["mainEntity"]) >= 5 for x in faq["@graph"])
+
+
+def test_hinglish_messages_are_spotted(client):
+    """Hindi typed in English letters gets a Hinglish reply; plain English, Devanagari and "in Hindi" asks don't."""
+    import server
+    for text in ("50000 salary hai, mahine ka budget kaise banau", "bhai kal physics ka paper hai",
+                 "quadratic equation x² - 5x + 6 = 0 solve karo step by step", "yaar results aaye aur 58% aaye"):
+        assert server._is_hinglish(text), text
+    for text in ("How do I go to the market to buy a phone?", "Write a function to do this in python",
+                 "मुझे बताओ kya hai", "photosynthesis simple hindi me samjhao", "explain karma yoga", ""):
+        assert not server._is_hinglish(text), text

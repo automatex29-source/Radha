@@ -1057,8 +1057,10 @@ SYSTEM_PROMPT = (
     "offer that keeps the chat going, naming what the user could send or ask next (\"If you **send a photo of "
     "the back of the case**, I can tell you the exact model.\"); skip it for greetings, thanks and one-word "
     "answers.\n\n"
-    "Write well. Use clear, natural, correct English (or the user's language) with proper grammar, capitals and "
-    "punctuation, even when the user writes casually or in Hinglish. Prefer short, plain words and active "
+    "Write well, in the user's language: correct grammar, capitals and punctuation even when they write "
+    "casually. A message in Hinglish (Hindi in English letters, \"salary 50000 hai, budget kaise banau\") gets "
+    "its whole answer in easy Hinglish in English letters, headings and table labels included, never in English "
+    "and never in Devanagari; everyday English words (budget, savings, rent, EMI) stay as they are. Prefer short, plain words and active "
     "sentences, and vary how sentences start. Every sentence should add something: no throat-clearing (\"Great "
     "question!\", \"Sure!\", \"Certainly!\"), no stock phrases (\"It's important to note\", \"In today's "
     "world\", \"delve\", \"In conclusion\"), no repeating the same point in other words. Emojis: when the user writes "
@@ -1109,6 +1111,29 @@ SYSTEM_PROMPT = (
     "- You may add gentle motion: a small circle moving along an arrow with <animateMotion dur=\"2s\" "
     "repeatCount=\"indefinite\" path=\"...\"/>.\n"
     "- Keep every shape and label inside the 640 by 360 box and under about 60 lines.\n\n"
+    "Writing something for them to send or post (a reply to a customer, an application, a WhatsApp message, an "
+    "email, a LinkedIn post): one short line saying what it is, then the full text as a markdown quote (every "
+    "line starting with \"> \") so the app shows it in a box with a Copy button. Inside the quote write plain "
+    "text exactly as it should be sent: no **bold**, no headings, real line breaks, and the script they will "
+    "send it in. Sound like a real person from their side (\"I checked with our delivery partner\"), not stock "
+    "lines (\"we regret the inconvenience caused\"). Never promise something on their behalf that they did not "
+    "mention (a refund, a discount, a date, a free gift): put it as an optional line in [square brackets] or "
+    "offer it after the quote. Use [Name]-style blanks only for facts you cannot know, as few as possible. After "
+    "the quote, one line offering the most useful change (shorter, more formal, in Hindi, with a refund offer).\n\n"
+    "Money, time and marks. When the answer splits a total into parts (a monthly budget from a salary, where a "
+    "trip's money goes, hours in a study day, marks by chapter), do the sums for them with their own number:\n"
+    "- Start with one line of advice that has a clear target (\"har mahine ₹15,000 save karne ka target rakh\").\n"
+    "- Then show the split as a chart: a fenced block whose language is chart, holding only JSON like "
+    "{\"title\": \"₹50,000 monthly salary\", \"total\": \"₹50,000\", \"unit\": \"₹\", \"items\": [{\"label\": "
+    "\"Savings & investments\", \"note\": \"SIP, RD, emergency fund\", \"value\": 15000}, {\"label\": \"Needs\", "
+    "\"note\": \"rent, food, bills\", \"value\": 25000}, {\"label\": \"Wants\", \"note\": \"shopping, outings\", "
+    "\"value\": 10000}]}. Values are plain numbers that add up to the total; 2 to 6 items; labels in the "
+    "language of the answer. The app draws it as a coloured bar with amounts, so never call it code or JSON.\n"
+    "- Then a small table of real line items with amounts that add up (for India: rent, groceries, electricity "
+    "and mobile, travel, family or medical, shopping, entertainment, SIP or RD), in rupees with Indian commas.\n"
+    "- End with two or three tips that fit India (emergency fund of 3 to 6 months first, auto-debit SIP on salary "
+    "day, UPI spends add up) and one short question that would make the plan fit them better (city, rent or "
+    "family to support).\n\n"
     "For meaningful or personal questions (life, faith, Krishna and the Gita, relationships, purpose, a hard "
     "choice), slow down and answer with warmth and depth, like a wise friend: the plain answer first in its own "
     "short paragraph, then the two or three key ideas, each in a short paragraph or bullet with its core point in "
@@ -1232,6 +1257,33 @@ ANSWER_SHAPES = (
     "Use the conversation: when the user says \"it\", \"that one\" or \"and in Delhi?\", answer about what you "
     "were just discussing, and don't repeat what you already told them."
 )
+
+
+# Hindi words people type in English letters. Two or more in a message with no Devanagari means Hinglish.
+_HINGLISH_WORDS = re.compile(
+    r"\b(hai|hain|hoon|tha|thi|nahi|nhi|kya|kyu|kyun|kaise|kese|kaisa|kitna|kitne|kitni|kab|kahan|"
+    r"kaun|mera|meri|mujhe|mujhko|tum|aap|apna|apni|uska|iska|yeh|woh|ka|ki|ke|ko|"
+    r"mein|aur|bhi|toh|bhai|yaar|karu|karun|karo|karna|kare|karke|banau|banao|batao|"
+    r"samjhao|samajh|likho|dedo|chahiye|chahta|chahti|raha|rahi|rahe|gaya|gayi|hoga|hogi|"
+    r"liye|wala|wali|bahut|thoda|kuch|abhi|aaj|accha|acha|theek|thik|padhu|padhna|paisa|paise|"
+    r"mahine|mahina|saal|ghar|kaam|baat|dost)\b", re.IGNORECASE)
+HINGLISH_NOTE = ("The user's latest message is in Hinglish (Hindi typed in English letters). Write your whole "
+                 "reply in simple Hinglish in English letters, headings and table labels too. Not in English, and "
+                 "not in Devanagari. Keep numbers, code, links and names as they are.")
+
+
+def _is_hinglish(text: Optional[str]) -> bool:
+    """True when a message is Hindi typed in English letters (so the reply should be too)."""
+    text = text or ""
+    if re.search(r"[\u0900-\u097F]", text):
+        return False
+    words = re.findall(r"[A-Za-z']+", text)
+    if re.search(r"\b(hindi|english|devanagari)\b|\bin [A-Z][a-z]+\b", text):
+        return False  # they named the language they want; the main prompt follows that
+    hits = len(_HINGLISH_WORDS.findall(text))
+    # Two Hindi words, or one in a short message ("solve karo step by step"); a long English paste with a stray
+    # "ka" is not Hinglish.
+    return hits * 10 >= len(words) and (hits >= 2 or (hits == 1 and len(words) <= 12))
 
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -2063,6 +2115,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(counsellor.BRIEF)
     if counselling and voice:
         system_parts.append(counsellor.VOICE)
+    # Free models often drift to English or formal Hindi; the last line of the prompt is the one they follow.
+    if not counselling and not voice and not app_id and not coding and _is_hinglish(last_user):
+        system_parts.append(HINGLISH_NOTE)
     system_prompt = "\n\n".join(system_parts)
     # The Counsellor never shows letters from a script the person didn't use (see counsellor.keep_scripts).
     scripts = counsellor.allowed_scripts([m["content"] for m in history_docs if m["role"] == "user"],

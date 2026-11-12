@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Play, Newspaper, ThumbsUp, ThumbsDown } from "lucide-react";
@@ -11,7 +11,7 @@ import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
 import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
 import { prepareMath, useMathPlugins } from "@/lib/math";
-import DiagramBlock, { diagramSource, withoutDiagrams } from "@/components/DiagramBlock";
+import AnswerVisual, { visualSource, withoutDiagrams, AnswerStreaming } from "@/components/DiagramBlock";
 import SourceChip from "@/components/SourceChip";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
@@ -174,13 +174,13 @@ function QuickReplies({ items, onAsk, id }) {
 function CodeBlock({ node, children }) {
   const [copied, setCopied] = useState(false);
   const text = (node?.children?.[0]?.children || []).map((c) => c.value || "").join("").replace(/\n$/, "");
-  const diagram = diagramSource(node);
+  const visual = visualSource(node);
   const copy = () => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
-  if (diagram !== null) return <DiagramBlock source={diagram} />;
+  if (visual) return <AnswerVisual {...visual} />;
   return (
     <div className="group/code relative">
       <button onClick={copy} data-testid="copy-code-button"
@@ -189,6 +189,28 @@ function CodeBlock({ node, children }) {
         {copied ? "Copied" : "Copy"}
       </button>
       <pre className="max-h-[28rem] overflow-auto">{children}</pre>
+    </div>
+  );
+}
+
+// A message Krish wrote for the person to send (a reply, an application, a post) comes as a quote: a clean box
+// with its own Copy button, which copies just the words, with no ** marks.
+function DraftBlock({ children }) {
+  const box = useRef(null);
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText((box.current?.innerText || "").trim());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className="group/draft relative">
+      <button onClick={copy} data-testid="copy-draft-button" aria-label="Copy this message"
+        className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
+        {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <blockquote ref={box} className="!pr-20">{children}</blockquote>
     </div>
   );
 }
@@ -383,9 +405,11 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
         {message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
         <div dir="auto" className="radha-prose krish-answer min-w-0">
-          <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={math ? math.rehype : undefined} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable }}>
-            {shown}
-          </ReactMarkdown>
+          <AnswerStreaming.Provider value={!!streaming}>
+            <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={math ? math.rehype : undefined} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable, blockquote: DraftBlock }}>
+              {shown}
+            </ReactMarkdown>
+          </AnswerStreaming.Provider>
           {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
         </div>
         )}
