@@ -19,10 +19,9 @@
             android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity"
             android:data="https://krishai.net/apps?source=android" />
     </shortcut>
-    <shortcut android:shortcutId="docs" android:enabled="true" android:icon="@drawable/shortcut_docs"
-        android:shortcutShortLabel="@string/shortcutDocs" android:shortcutLongLabel="@string/shortcutDocs">
+    <shortcut android:shortcutId="bubble" android:enabled="true" android:icon="@drawable/shortcut_bubble"
+        android:shortcutShortLabel="@string/shortcutBubble" android:shortcutLongLabel="@string/shortcutBubble">
         <intent android:action="android.intent.action.VIEW" android:targetPackage="net.krishai.app"
-            android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity"
-            android:data="https://krishai.net/docs?source=android" />
+            android:targetClass="net.krishai.app.BubbleActivity" android:data="krishai://floating-button" />
     </shortcut>
 </shortcuts>

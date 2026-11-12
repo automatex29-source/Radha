@@ -18,4 +18,12 @@
     <string name="shortcutApps">Build an app</string>
     <string name="shortcutDocs">Write a doc</string>
     <string name="assetStatements" translatable="false">[{\"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": {\"namespace\": \"web\", \"site\": \"https://krishai.net\"}}]</string>
+    <string name="shortcutBubble">Floating button</string>
+    <string name="bubbleChannel">Floating Krish button</string>
+    <string name="bubbleNotificationTitle">Krish is on your screen</string>
+    <string name="bubbleNotificationText">Tap the Krish button at the edge of the screen to ask anything</string>
+    <string name="bubbleHide">Hide</string>
+    <string name="bubbleOn">Krish button is on. Drag it anywhere, or to the bottom to hide it.</string>
+    <string name="bubbleOff">Krish button is off</string>
+    <string name="bubblePermission">Turn on \"Allow display over other apps\" for Krish AI, then come back</string>
 </resources>
