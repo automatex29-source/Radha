@@ -311,6 +311,7 @@ THEME_FONTS = {
     "minimal": "family=Inter+Tight:wght@400..800", "playful": "family=Fredoka:wght@400..700",
     "neon": "family=Syne:wght@600..800&family=JetBrains+Mono:wght@500;700", "clay": "family=Nunito:wght@500..900",
     "sunset": "family=Manrope:wght@400..700&family=Instrument+Serif:ital@0;1",
+    "editorial": "family=Inter:wght@400..700&family=Bodoni+Moda:opsz,wght@6..96,400..700",
 }
 _SCRIPTS = [(r"[\u0900-\u097F]", "Noto+Sans+Devanagari"), (r"[\u0980-\u09FF]", "Noto+Sans+Bengali"),
             (r"[\u0A00-\u0A7F]", "Noto+Sans+Gurmukhi"), (r"[\u0A80-\u0AFF]", "Noto+Sans+Gujarati"),

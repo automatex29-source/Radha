@@ -87,13 +87,23 @@ THEMES = {
         "effects": "a live 3D scene as the hero background (scene scene-bg data-scene=\"waves\"), a split "
                    "headline, a marquee strip, parallax photos (data-speed), reveal on sections",
     },
+    "editorial": {
+        "label": "Editorial",
+        "brief": "A premium product page like a magazine spread: warm paper background, a huge high-contrast serif "
+                 "headline in capitals, a tiny nav, dark pill buttons and big, close-up product photos. Calm, "
+                 "expensive, made for one hero product.",
+        "effects": "a scroll story right under the nav (story with 3 to 4 chapters: each a short two-word "
+                   "headline like \"Soft inside\", one line and a close-up photo, so the headline morphs and the "
+                   "photo changes as people scroll), parallax photos (data-speed), reveal on sections, a marquee "
+                   "of ingredients or materials",
+    },
 }
 
 # Words in a request that name a style.
 # The page-to-page move that suits each style (krish-ui.css: html[data-transition]).
 for _name, _move in {"glass": "zoom", "liquid": "blur", "aurora": "blur", "bento": "slide", "bold": "wipe",
                      "luxury": "fade", "minimal": "fade", "playful": "zoom", "neon": "wipe", "clay": "zoom",
-                     "sunset": "slide"}.items():
+                     "sunset": "slide", "editorial": "fade"}.items():
     if _name in THEMES:
         THEMES[_name].setdefault("transition", _move)
 
@@ -105,7 +115,8 @@ _ASKED = [
     ("aurora", r"aurora|northern light|glow(ing)?\b|gradient dark|futuristic|premium dark|space\b|galaxy"),
     ("bento", r"bento|apple|tiles?\b|clean product"),
     ("bold", r"brutal|neo.?brutal|bold|loud|chunky|comic|funky"),
-    ("luxury", r"luxury|luxurious|elegant|premium|classy|royal|gold(en)?\b|serif|editorial|wedding|jewel"),
+    ("editorial", r"editorial|magazine|scroll (story|animation)|product (story|showcase|launch)|apple.?style product|one product"),
+    ("luxury", r"luxury|luxurious|elegant|premium|classy|royal|gold(en)?\b|serif|wedding|jewel"),
     ("minimal", r"minimal|minimalist|simple|swiss|black and white|monochrome|clean\b"),
     ("playful", r"playful|cute|fun\b|kids?\b|pastel|cartoon|colou?rful|bubbly|cheerful"),
     ("neon", r"neon|cyber|hacker|matrix|synthwave|esports|dark mode gaming|tron"),
@@ -125,10 +136,10 @@ _FITS = [
     (r"game|gaming|esports|crypto|nft|hacker|cyber|music|dj|night ?club|tech event|hackathon", ["neon", "aurora", "bold", "sunset"]),
     (r"ai\b|startup|saas|app landing|software|tool for|platform|fintech|analytics|dashboard|admin|crm",
      ["aurora", "liquid", "glass", "bento", "minimal"]),
-    (r"kids|school|toy|candy|ice ?cream|pet|party|birthday|quiz|cake|bakery|dessert", ["playful", "clay", "bold", "glass"]),
+    (r"kids|school|toy|candy|ice ?cream|pet|party|birthday|quiz|cake|bakery|dessert", ["playful", "editorial", "clay", "bold", "glass"]),
     (r"restaurant|cafe|café|coffee|food|pizza|dhaba|kitchen|burger|bar\b", ["bold", "sunset", "luxury", "playful", "glass"]),
     (r"portfolio|resume|cv\b|photograph|designer|agency|studio|freelanc", ["minimal", "bento", "bold", "aurora"]),
-    (r"shop|store|product|sell|e-?commerce|cart", ["bento", "glass", "bold", "minimal"]),
+    (r"shop|store|product|sell|e-?commerce|cart", ["editorial", "bento", "glass", "bold", "minimal"]),
     (r"gym|fitness|sport|yoga|trainer", ["bold", "neon", "aurora"]),
     (r"doctor|clinic|hospital|health|dentist|lawyer|bank|insurance|consult", ["minimal", "glass", "bento"]),
     (r"todo|to-do|notes?|habit|timer|calculator|converter|tracker|planner", ["glass", "liquid", "clay", "bento", "minimal", "playful", "aurora"]),
@@ -192,6 +203,13 @@ def prompt_block(theme: Optional[str]) -> str:
         "core). It takes the brand colours. Put it beside the hero text in a grid-2 (as the visual, instead of a "
         "photo), or add scene-bg to make it the hero's full background behind the text. One scene per page, and "
         "only on sites and landing pages, never on tools, dashboards or forms.\n"
+        "- Scroll story (built in): <section class=\"story\"> with 3 to 4 <div class=\"chapter\"> children, each "
+        "<div class=\"chapter-text\"><p class=\"eyebrow\">…</p><h1>Soft inside</h1><p>one line</p><a class=\"btn\">"
+        "Shop now</a></div> then <img class=\"chapter-media\" src=\"https://krish-image.invalid/…\"> (or a .scene). The "
+        "kit pins it while people scroll: headline letters morph into the next chapter's words, the photo zooms and "
+        "the next one rises in, dots show the place. Use the same subject in every photo, seen closer or from "
+        "another side, and keep headlines to 2 or 3 short words. Best for one hero product (a cake, a phone, a "
+        "perfume, a shoe); not for tools or dashboards.\n"
         "- More motion by class: split on the h1 (words rise in one by one), magnetic on the main button, "
         "data-speed=\"0.2\" on an image or shape for parallax, and <div class=\"scroll-progress\"></div> right after "
         "<body> for a reading bar.\n"
