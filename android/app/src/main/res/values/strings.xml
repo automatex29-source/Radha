@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="appName">Krish AI</string>
+    <string name="launcherName">Krish AI</string>
+    <string name="hostName">krishai.net</string>
+    <string name="launchUrl">https://krishai.net/?source=android</string>
+    <string name="webManifestUrl">https://krishai.net/manifest.json</string>
+    <string name="providerAuthority">net.krishai.app.fileprovider</string>
+    <string name="shareLabel">Ask Krish</string>
+    <string name="askLabel">Ask Krish</string>
+    <string name="tileLabel">Krish</string>
+    <string name="widgetLabel">Ask Krish</string>
+    <string name="widgetDescription">Ask Krish or talk to Krish from your home screen</string>
+    <string name="widgetHint">Ask Krish anything</string>
+    <string name="widgetMic">Talk to Krish</string>
+    <string name="shortcutNewChat">New chat</string>
+    <string name="shortcutTalk">Talk to Krish</string>
+    <string name="shortcutApps">Build an app</string>
+    <string name="shortcutDocs">Write a doc</string>
+    <string name="assetStatements" translatable="false">[{\"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": {\"namespace\": \"web\", \"site\": \"https://krishai.net\"}}]</string>
+</resources>

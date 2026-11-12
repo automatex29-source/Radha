@@ -312,6 +312,32 @@ export default function Workspace({ mode = null }) {
   const panelMessage = panelLive ? (streaming && streamHasCode ? null : latestCode) : messages.find((m) => m.id === codePanel);
   const panelContent = panelLive && streaming && streamHasCode ? streamText : panelMessage?.content;
 
+  // Links from the Android app (widget, share, "Ask Krish", assistant): ?q= starts a new chat with that text
+  // ready to send, ?new=1 opens a new chat, ?voice=1 starts talking to Krish. Each is used once, then removed.
+  const appLink = useRef(null);
+  useEffect(() => {
+    const q = searchParams.get("q");
+    const fresh = searchParams.get("new") === "1";
+    const voice = searchParams.get("voice") === "1";
+    if (q === null && !fresh && !voice && !searchParams.has("source")) return;
+    appLink.current = { q, fresh, voice };
+    setSearchParams((sp) => {
+      const n = new URLSearchParams(sp);
+      ["q", "new", "voice", "source"].forEach((k) => n.delete(k));
+      return n;
+    }, { replace: true });
+    if (q !== null || fresh || voice) {
+      leaveChat(); setActive(null); setMessages([]); setAttachments([]); setPendingImages([]);
+      if (q) setInput(q.slice(0, 4000));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+  useEffect(() => {
+    if (!appLink.current?.voice || !caps) return;
+    appLink.current = null;
+    if (voiceEnabled && !counselling) { unlockSpeech(); setVoiceOpen(true); }
+  }, [caps, voiceEnabled, counselling]);
+
   // React to ?conversation= and ?project= deep links (e.g. from a project view).
   useEffect(() => {
     const convParam = searchParams.get("conversation");

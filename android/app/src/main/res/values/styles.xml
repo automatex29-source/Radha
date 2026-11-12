@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Krish" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/splashBackground</item>
+        <item name="android:statusBarColor">@color/splashBackground</item>
+        <item name="android:navigationBarColor">@color/splashBackground</item>
+    </style>
+    <style name="Theme.Krish.Launcher">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+</resources>

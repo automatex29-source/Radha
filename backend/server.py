@@ -20,7 +20,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Literal, Optional
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File, Form, Header, Query
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -3580,6 +3580,25 @@ help_center.init(db)
 app.include_router(help_center.router)
 daily_verse.init(db)
 app.include_router(daily_verse.routes(current_user_id))
+
+# The Krish AI Android app (android/) shows krishai.net full screen with no address bar only when this file says
+# the app belongs to this site. It lists the SHA-256 fingerprints of the keys the app is signed with: the upload
+# key below, plus Google Play's app signing key, which Play Console shows after the first upload
+# (Setup > App signing). Add that one in ANDROID_CERT_SHA256 (several can be separated by commas).
+ANDROID_PACKAGE = "net.krishai.app"
+ANDROID_UPLOAD_KEY_SHA256 = "41:F8:49:F7:08:B2:94:3C:63:57:87:71:07:EB:C7:BC:86:9A:DB:93:D9:47:57:24:E2:14:89:79:FA:6C:ED:20"
+
+
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+async def android_asset_links():
+    prints = [ANDROID_UPLOAD_KEY_SHA256] + [
+        p.strip().upper() for p in os.environ.get("ANDROID_CERT_SHA256", "").split(",") if p.strip()]
+    return JSONResponse([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {"namespace": "android_app", "package_name": ANDROID_PACKAGE,
+                   "sha256_cert_fingerprints": list(dict.fromkeys(prints))},
+    }], headers={"Cache-Control": "public, max-age=3600"})
+
 
 # Serve the built frontend (frontend/build) from the same origin, so a single
 # process runs all of RADHA. In development the Vite dev server is used instead.

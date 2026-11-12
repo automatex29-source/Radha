@@ -23,6 +23,10 @@ services:
       # Your own sign-in email: only this account sees the Users page (who signed up and when they last signed in).
       - key: OWNER_EMAIL
         sync: false
+      # Android app: Google Play's app signing SHA-256 (Play Console > Setup > App signing), so the app opens
+      # krishai.net with no address bar after Play installs it.
+      - key: ANDROID_CERT_SHA256
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GROQ_API_KEY

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp" android:height="160dp"
+    android:viewportWidth="104" android:viewportHeight="104">
+    <group android:scaleX="1.0" android:scaleY="1.0">
+      <group android:translateX="2.000" android:translateY="2.000">
+        <group android:rotation="0" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="30" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="60" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="90" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="120" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="150" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="180" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="210" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="240" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="270" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="300" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <group android:rotation="330" android:pivotX="50" android:pivotY="50"><path android:fillColor="@color/widgetIcon" android:strokeColor="@color/widgetIcon" android:strokeWidth="1" android:pathData="M45,20C47,11 53,6 61,5C58,9 56.5,14 56,20Z"/></group>
+        <path android:strokeColor="@color/widgetIcon" android:strokeWidth="6" android:pathData="M50,19a31,31 0 1,1 0,62a31,31 0 1,1 0,-62z"/>
+        <path android:strokeColor="#888888" android:strokeAlpha="0.5" android:strokeWidth="2" android:pathData="M50,28a22,22 0 1,1 0,44a22,22 0 1,1 0,-44z"/>
+        <path android:fillColor="#FF8A1E" android:pathData="M50,39a11,11 0 1,1 0,22a11,11 0 1,1 0,-22z"/>
+        <path android:fillColor="#FFFFFF" android:fillAlpha="0.55" android:pathData="M46.5,43.5a3,3 0 1,1 0,6a3,3 0 1,1 0,-6z"/>
+      </group>
+    </group>
+</vector>
