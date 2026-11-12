@@ -1,6 +1,7 @@
 package net.krishai.app.assistant
 
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
@@ -16,7 +17,7 @@ class KrishSession(context: Context) : VoiceInteractionSession(context) {
         super.onShow(args, showFlags)
         val intent = Krish.intent(context, "/?voice=1")
         try {
-            startAssistantActivity(intent)
+            if (Build.VERSION.SDK_INT >= 26) startAssistantActivity(intent) else context.startActivity(intent)
         } catch (e: RuntimeException) {
             try { context.startActivity(intent) } catch (_: RuntimeException) { }
         }
