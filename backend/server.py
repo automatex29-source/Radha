@@ -3492,7 +3492,7 @@ if (FRONTEND_DIST / "index.html").is_file():
 SITE_URL = (os.environ.get("SITE_URL") or "https://krishai.net").rstrip("/")
 # Pages a signed-out visitor (and Google) can read, with the title and summary search results show.
 _PUBLIC_PAGES = {
-    "": ("Krish AI: talk it out in Hindi, Hinglish or English", None),
+    "": ("Krish AI: Free AI Counsellor in Hinglish, with Gita Wisdom", None),
     "privacy": ("Privacy Policy · Krish AI", "How Krish AI by EmpireX keeps, uses and deletes your data."),
     "terms": ("Terms of Service · Krish AI", "The terms for using Krish AI by EmpireX."),
     "refunds": ("Refund Policy · Krish AI", "Cancellations and refunds for Krish AI Pro and Max plans."),
