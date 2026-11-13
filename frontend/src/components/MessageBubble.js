@@ -10,6 +10,7 @@ import CodeProject from "@/components/CodeProject";
 import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
+import RangoliBloom from "@/components/RangoliBloom";
 import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
 import { prepareMath, useMathPlugins } from "@/lib/math";
 import AnswerVisual, { visualSource, withoutDiagrams, AnswerStreaming } from "@/components/DiagramBlock";
@@ -395,9 +396,9 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           {agent ? <AgentAvatar agent={agent} speaking={streaming} className="h-7 w-7 shrink-0 text-sm sm:hidden" />
             : <BrandMark className="h-7 w-7 shrink-0 sm:hidden" thinking={streaming} />}
           {agent ? <span data-testid="agent-name" className="text-[15px] font-bold tracking-tight text-foreground">{agent.name}</span>
-            : <KrishWordmark className="text-[15px]" />}
+            : <KrishWordmark className="krish-wordmark-chat" />}
           {message.model && (
-            <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 text-[10px] font-medium tracking-wide text-brand">
+            <span className="krish-model-badge" data-testid="model-badge">
               {modelLabel(message.model)}
             </span>
           )}
@@ -409,13 +410,17 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
         {message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
-        <div dir="auto" className="radha-prose krish-answer min-w-0">
+        <div dir="auto" className={`radha-prose krish-answer min-w-0 ${streaming && shown ? "is-streaming" : ""}`}>
           <AnswerStreaming.Provider value={!!streaming}>
             <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={math ? math.rehype : undefined} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable, blockquote: DraftBlock }}>
               {shown}
             </ReactMarkdown>
           </AnswerStreaming.Provider>
-          {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
+          {streaming && !shown && (
+            <span className="krish-thinking" role="status" data-testid="streaming-cursor">
+              <RangoliBloom /> Thinking…
+            </span>
+          )}
         </div>
         )}
         {message.stopped && !streaming && (
