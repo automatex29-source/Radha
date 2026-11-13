@@ -1030,6 +1030,17 @@ async def get_conversation(conv_id: str, user_id: str = Depends(current_user_id)
             "live": live_turns.running(conv_id, user_id)}
 
 
+@api.get("/conversations/{conv_id}/state")
+async def conversation_state(conv_id: str, user_id: str = Depends(current_user_id)):
+    """A small check the open chat makes every few seconds, so a question asked on another device shows up
+    (with its answer writing out) without reloading: how many messages, the newest one, and whether a reply
+    is being written now."""
+    await _owned_conversation(conv_id, user_id)
+    last = await db.messages.find_one({"conversationId": conv_id}, {"id": 1, "_id": 0}, sort=[("createdAt", -1)])
+    return {"count": await db.messages.count_documents({"conversationId": conv_id}),
+            "lastId": (last or {}).get("id"), "live": live_turns.running(conv_id, user_id)}
+
+
 @api.patch("/conversations/{conv_id}")
 async def rename_conversation(conv_id: str, body: ConversationPatch, user_id: str = Depends(current_user_id)):
     await _owned_conversation(conv_id, user_id)
@@ -1362,7 +1373,7 @@ def _is_hinglish(text: Optional[str]) -> bool:
 
 # A student asking for help with an exam, a chapter or a sum (English, Hinglish or Hindi).
 _STUDY_ASK = re.compile(
-    r"\b(exam|exams|paper|boards?|test|quiz|syllabus|chapter|revision|revise|time ?table|study plan|homework|"
+    r"\b(exam|exams|paper|boards?|test|quiz|mcqs?|pyqs?|flashcards?|syllabus|ncert|chapter|revision|revise|time ?table|study plan|homework|"
     r"assignment|numericals?|derivation|padhu|padhna|padhai|padhun|padh|samjhao|samjha do|samajh nahi|"
     r"yaad nahi|ratta|jee|neet|upsc|cbse|icse|cuet|ssc|class \d{1,2}|\d{1,2}(?:th|vi) class|solve)\b|"
     r"\u092a\u0922\u093c|\u092a\u0930\u0940\u0915\u094d\u0937\u093e|\u0938\u092e\u091d\u093e", re.IGNORECASE)  # पढ़ परीक्षा समझा
@@ -1693,7 +1704,7 @@ _TOOL_ASK = re.compile(
 _NEEDS_TOOLS = re.compile(
     _TOOL_ASK.pattern + r"|\b(file|files|pdf|excel|xlsx|csv|word|docx|ppt|pptx|powerpoint|presentation|slides?|deck|"
     r"spreadsheet|sheet|zip|image|images|picture|pic|photo|logo|poster|video|animate|edit|crop|resize|research|"
-    r"report|code|run|script|app|website|site|game|page|browser|open|visit|fetch|url|link|flashcards?|quiz|"
+    r"report|code|run|script|app|website|site|game|page|browser|open|visit|fetch|url|link|flashcards?|quiz|mcqs?|"
     r"remind|schedule|email|send|save|translate|time|date|price|rate|weather|news|today|current|latest|"
     r"drive|calendar|gmail|inbox|mails?|github|repo|notion|telegram|whatsapp|slack|discord|meeting|events?|"
     r"panchang|tithi|muhurat|nakshatra|festivals?|ekadashi|cricket|score|match|forecast|rain)\b|https?://|www\."
@@ -2228,7 +2239,15 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(agent_prompt())
     if study and not app_id and not counselling:
         system_parts.append(STUDY_PROMPT)
-    if user_id and not app_id and not counselling and (study or _study_ask(last_user)):
+    studying = not app_id and not counselling and not extra_system and (study or _study_ask(last_user))
+    if studying:
+        system_parts.append(study_mode.RULES)
+    if user_id and studying:
+        # Remember the class, exam or board the student mentions, so Krish never has to ask again.
+        learnt = study_mode.learn(student, last_user)
+        if learnt:
+            student = learnt
+            await db.users.update_one({"id": user_id}, {"$set": {"study": learnt}})
         student_line = study_mode.profile_line(student)
         if student_line:
             system_parts.append(student_line)

@@ -147,3 +147,43 @@ def test_create_quiz_tool_saves_a_page():
         agent_tools._save_file = orig
     assert saved["fmt"] == "html" and b"Dioptre" in saved["data"] and out.media[0]["id"] == "m1"
     assert "1-question quiz" in out.summary
+
+
+@pytest.mark.parametrize("text,found", [
+    ("main class 10 CBSE me hoon, light chapter samjhao", {"level": "class-9-10", "board": "cbse"}),
+    ("I'm in 12th class preparing for JEE", {"level": "jee"}),
+    ("NEET 2027 ke liye biology plan", {"level": "neet"}),
+    ("कक्षा 8 हिंदी माध्यम", {"level": "class-6-8", "lang": "hi"}),
+    ("UP board class 11 physics", {"level": "class-11-12", "board": "state"}),
+    ("SSC CGL maths tricks", {"level": "govt"}),
+    ("explain photosynthesis", {}),
+    ("class 3 maths", {}),
+])
+def test_detect_reads_the_class_from_a_message(text, found):
+    import study
+    assert study.detect(text) == found
+
+
+def test_learn_only_returns_new_facts():
+    import study
+    assert study.learn(None, "what is a cell") is None
+    p = study.learn(None, "class 10 cbse")
+    assert p == {"level": "class-9-10", "board": "cbse", "lang": None}
+    assert study.learn(p, "class 10 ka paper") is None  # nothing new
+    assert study.learn(p, "ab NEET ki tayari") == {"level": "neet", "board": None, "lang": None}
+
+
+def test_krish_learns_the_class_from_chat_and_uses_study_rules_without_study_mode(client):
+    import study
+    client.put("/api/auth/study", json={})
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    call, _ = _send(client, cid, "Main class 9 ICSE me hoon, quiz me on motion")
+    system = call["messages"][0]["content"]
+    assert study.RULES.split("\n")[0] in system and study.PROMPT not in system  # rules, not the hint-first tutor
+    assert "Class 9 or 10" in system and "ICSE" in system
+    assert client.get("/api/auth/me").json()["study"] == {"level": "class-9-10", "board": "icse", "lang": None}
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    call, _ = _send(client, cid, "kal maths ka paper hai")  # a new chat still knows
+    assert "Class 9 or 10" in call["messages"][0]["content"]
+    call, _ = _send(client, cid, "what's a good movie tonight?")  # not a study question: no study rules
+    assert study.RULES.split("\n")[0] not in call["messages"][0]["content"]
