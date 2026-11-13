@@ -212,3 +212,14 @@ def test_a_reply_cut_off_by_a_restart_is_saved_from_its_draft(client):
     msgs = client.get(f"/api/conversations/{cid}").json()["messages"]
     assert msgs[-1]["content"] == "Half of an answer" and msgs[-1]["stopped"] is True
     assert client.portal.call(live_turns.recover, server.db) == 0  # once only
+
+
+def test_state_tells_an_open_chat_on_another_device_about_a_new_answer(client):
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    assert client.get(f"/api/conversations/{cid}/state").json() == {"count": 0, "lastId": None, "live": False}
+    _ask_and_leave(client, cid)
+    state = client.get(f"/api/conversations/{cid}/state").json()
+    assert state["count"] == 1 and state["live"] is True
+    client.portal.call(_release)
+    msgs = _wait_saved(client, cid)["messages"]
+    assert client.get(f"/api/conversations/{cid}/state").json() == {"count": 2, "lastId": msgs[-1]["id"], "live": False}

@@ -1029,6 +1029,17 @@ async def get_conversation(conv_id: str, user_id: str = Depends(current_user_id)
             "live": live_turns.running(conv_id, user_id)}
 
 
+@api.get("/conversations/{conv_id}/state")
+async def conversation_state(conv_id: str, user_id: str = Depends(current_user_id)):
+    """A small check the open chat makes every few seconds, so a question asked on another device shows up
+    (with its answer writing out) without reloading: how many messages, the newest one, and whether a reply
+    is being written now."""
+    await _owned_conversation(conv_id, user_id)
+    last = await db.messages.find_one({"conversationId": conv_id}, {"id": 1, "_id": 0}, sort=[("createdAt", -1)])
+    return {"count": await db.messages.count_documents({"conversationId": conv_id}),
+            "lastId": (last or {}).get("id"), "live": live_turns.running(conv_id, user_id)}
+
+
 @api.patch("/conversations/{conv_id}")
 async def rename_conversation(conv_id: str, body: ConversationPatch, user_id: str = Depends(current_user_id)):
     await _owned_conversation(conv_id, user_id)

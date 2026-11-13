@@ -369,22 +369,52 @@ export default function Workspace({ mode = null }) {
 
   // Back on this page (another tab, the phone woke up, or the same account was used on another device):
   // show the chat as it is now, with any new answer, and follow a reply that is still being written.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const refreshOpenChat = async () => {
+    const id = activeIdRef.current;
+    if (!id || streamsRef.current.has(id)) return;
+    const seq = chatSeq.current;
+    try {
+      const { data } = await api.get(`/conversations/${id}`);
+      if (seq !== chatSeq.current || streamsRef.current.has(id)) return;
+      setMessages(data.messages);
+      if (data.live) followLive(id);
+    } catch { /* keep what is shown */ }
+  };
   useEffect(() => {
-    const onShow = async () => {
-      if (document.visibilityState !== "visible") return;
+    let hiddenAt = 0;
+    const onShow = () => {
+      if (document.visibilityState !== "visible") { hiddenAt = Date.now(); return; }
       loadConversations();
-      const id = activeIdRef.current;
-      if (!id || streamsRef.current.has(id)) return;
-      const seq = chatSeq.current;
-      try {
-        const { data } = await api.get(`/conversations/${id}`);
-        if (seq !== chatSeq.current || streamsRef.current.has(id)) return;
-        setMessages(data.messages);
-        if (data.live) followLive(id);
-      } catch { /* keep what is shown */ }
+      // An answer this page was reading while it was in the background: its connection may have been
+      // frozen (phones do that), so pick it up again from the last piece instead of waiting.
+      if (hiddenAt && Date.now() - hiddenAt > 5000) {
+        streamsRef.current.forEach((st) => st.reader?.cancel().catch(() => {}));
+      }
+      hiddenAt = 0;
+      refreshOpenChat();
     };
     document.addEventListener("visibilitychange", onShow);
-    return () => document.removeEventListener("visibilitychange", onShow);
+    window.addEventListener("online", onShow);
+    // Like Claude on two devices: while this chat is on screen, a question asked in it from another device
+    // (or another tab) shows here with its answer writing out. A small check every few seconds.
+    const poll = setInterval(async () => {
+      const id = activeIdRef.current;
+      if (document.visibilityState !== "visible" || !id || streamsRef.current.has(id)) return;
+      try {
+        const { data } = await api.get(`/conversations/${id}/state`);
+        const shown = messagesRef.current;
+        const last = shown[shown.length - 1];
+        if (id !== activeIdRef.current || streamsRef.current.has(id)) return;
+        if (data.live || data.count !== shown.length || (last && data.lastId && data.lastId !== last.id)) refreshOpenChat();
+      } catch { /* try again next time */ }
+    }, 5000);
+    return () => {
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("online", onShow);
+      clearInterval(poll);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadConversations]);
 
@@ -480,12 +510,15 @@ export default function Workspace({ mode = null }) {
 
     const read = async (res) => {
       const reader = res.body.getReader();
+      st.reader = reader;
+      st.lastByte = Date.now();
       const decoder = new TextDecoder();
       let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        st.lastByte = Date.now();
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split("\n\n");
         buffer = events.pop() || "";
@@ -546,8 +579,14 @@ export default function Workspace({ mode = null }) {
       }
     };
 
+    // A connection can go quiet without failing (a phone that slept, a laptop that woke up): the server sends
+    // something at least every 15 s, so after 35 s of silence the chat reconnects and carries on.
+    const watchdog = setInterval(() => {
+      if (st.reader && Date.now() - st.lastByte > 35000) { st.lastByte = Date.now(); st.reader.cancel().catch(() => {}); }
+    }, 5000);
     try {
       let res = await open(url, body);
+      let seenAtTry = 0;
       for (let tries = 0; ; ) {
         if (res && res.status === 204) break; // nothing being written any more: the chat has the saved reply
         if (res && (!res.ok || !res.body)) {
@@ -561,7 +600,9 @@ export default function Workspace({ mode = null }) {
           if (e.fromServer || e.name === "AbortError") throw e;
           // The connection dropped (phone asleep, network change); the reply goes on on the server.
         }
+        st.reader = null;
         if (st.finished || st.controller.signal.aborted) break;
+        if (st.seen > seenAtTry) { seenAtTry = st.seen; tries = 0; } // it was getting the reply: start counting again
         if (++tries > 20) break;
         await new Promise((r) => setTimeout(r, Math.min(500 * tries, 5000)));
         if (st.controller.signal.aborted) break;
@@ -574,6 +615,7 @@ export default function Workspace({ mode = null }) {
       // When the reply already explains the failure (the server writes a note with Regenerate), no technical toast.
       if (e.name !== "AbortError" && !st.text.trim()) toast.error(e.message || "Something went wrong");
     } finally {
+      clearInterval(watchdog);
       clearTimeout(st.timer);
       const stopped = st.controller.signal.aborted;
       streamsRef.current.delete(convId);
