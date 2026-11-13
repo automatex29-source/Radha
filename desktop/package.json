@@ -78,7 +78,7 @@
       "icon": "build/icon.png",
       "category": "public.app-category.productivity",
       "artifactName": "Krish-AI-Mac.${ext}",
-      "identity": "-",
+      "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "extendInfo": {
@@ -96,6 +96,7 @@
       "icon": "build/icon.png",
       "category": "Utility",
       "artifactName": "Krish-AI-Linux.${ext}"
-    }
+    },
+    "afterPack": "./build/adhoc-sign.js"
   }
 }
