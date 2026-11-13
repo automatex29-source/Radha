@@ -178,6 +178,7 @@ function General() {
   return (
     <>
       <PageTitle title="General" hint="How Krish looks and which language it speaks." />
+      <InstallApp />
       <Block title={t("language")} hint={t("languageHint")} icon={Languages} testid="settings-language">
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3" role="radiogroup" aria-label={t("language")}>
           {LANGUAGES.map((l) => {
@@ -215,7 +216,6 @@ function General() {
           })}
         </div>
       </Block>
-      <InstallApp />
     </>
   );
 }
