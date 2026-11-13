@@ -1,0 +1,106 @@
+# Builds the Krish AI desktop app (desktop/) for Windows, Mac and Linux.
+# Every change to desktop/ on main publishes new installers to the "desktop-latest" release, which is where
+# Settings > Desktop app downloads from and where installed apps look for updates. Pull requests only build,
+# so a broken change shows up before it's merged. Nothing to set up: it uses GitHub's own token.
+name: Desktop app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+      # Each build gets the next version number (1.0.<run>), so installed apps know there's an update.
+      - name: Version
+        working-directory: desktop
+        shell: bash
+        run: |
+          base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          npm version "$base.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+      - name: Check the code
+        working-directory: desktop
+        run: npm run check
+      - name: Build
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.target }} --publish never
+      - name: Check the Mac app's signature
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        run: |
+          app=$(find dist -maxdepth 2 -name "Krish AI.app" | head -1)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E "Signature|Identifier"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.AppImage
+            desktop/dist/*.blockmap
+            desktop/dist/latest*.yml
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish to the desktop-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -la out
+          if ! gh release view desktop-latest > /dev/null 2>&1; then
+            gh release create desktop-latest --title "Krish AI desktop app" --latest=false \
+              --notes "Download Krish AI for your computer. Windows: Krish-AI-Setup.exe. Mac: Krish-AI-Mac.dmg. Linux: Krish-AI-Linux.AppImage. Installed apps update themselves from here."
+          fi
+          # Installers first, the update files (latest*.yml) last, so an app never sees an update whose file isn't up yet.
+          gh release upload desktop-latest out/*.exe out/*.dmg out/*.zip out/*.AppImage out/*.blockmap --clobber
+          gh release upload desktop-latest out/latest*.yml --clobber
+          version=$(grep -m1 '^version:' out/latest.yml | cut -d' ' -f2)
+          gh release edit desktop-latest --title "Krish AI desktop app $version" --latest=false
