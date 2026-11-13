@@ -572,7 +572,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
             </Button>
             <span className="flex-1" />
             {streaming ? (
-              <Button size="icon" onClick={() => abortRef.current?.abort()} title="Stop" aria-label="Stop the reply" data-testid="builder-stop"
+              <Button size="icon" onClick={() => { api.post(`/conversations/${app.conversationId}/stop`).catch(() => {}); abortRef.current?.abort(); }} title="Stop" aria-label="Stop the reply" data-testid="builder-stop"
                 className="h-10 w-10 rounded-full bg-foreground text-background hover:bg-foreground/90 sm:h-8 sm:w-8"><Square className="h-3 w-3 fill-current" /></Button>
             ) : (
               <Button size="icon" onClick={send} onMouseDown={(e) => e.preventDefault()} disabled={(!input.trim() && !images.length) || uploading} data-testid="builder-send" className="h-10 w-10 sm:h-8 sm:w-8"><Send className="h-3.5 w-3.5" /></Button>
