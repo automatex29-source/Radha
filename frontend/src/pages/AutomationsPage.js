@@ -358,7 +358,7 @@ function Approvals({ items, onDone, hideOnWide, inDetail = false }) {
     <div className={`rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 ${inDetail ? "mt-4" : "mt-5"} ${hideOnWide && items.every((ap) => ap.automationId === hideOnWide) ? "md:hidden" : ""}`}
       data-testid={inDetail ? "detail-approvals" : "approvals"}>
       <p className="flex items-center gap-1.5 text-sm font-semibold"><Hand className="h-4 w-4 text-amber-600 dark:text-amber-400" /> {inDetail ? "This job is waiting for your OK" : "Waiting for your OK"} ({items.length})</p>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">Krish asks before it sends anything or changes things in your apps. Read it, then say yes or no.</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">Krish requests sign-off before sending messages or making changes in your connected apps. Review each action, then approve or decline.</p>
       <div className="mt-2 space-y-2">
         {items.map((ap) => (
           <div key={ap.id} className={`rounded-lg border border-border bg-card p-3 ${hideOnWide === ap.automationId ? "md:hidden" : ""}`} data-testid={`approval-${ap.id}`}>
@@ -383,9 +383,9 @@ function Approvals({ items, onDone, hideOnWide, inDetail = false }) {
             ) : <p className="mt-1 text-sm">{ap.summary}</p>}
             <div className="mt-2 flex gap-2">
               <Button size="sm" onClick={() => decide(ap, true)} disabled={!!busy} className="h-8 gap-1.5" data-testid={`approve-${ap.id}`}>
-                {busy === ap.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} {ap.kind === "gmail_send" ? "Send it" : "Do it"}
+                {busy === ap.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} {ap.kind === "gmail_send" ? "Send it" : "Approve"}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => decide(ap, false)} disabled={!!busy} className="h-8 border-border">{ap.kind === "gmail_send" ? "Don't send" : "Don't do it"}</Button>
+              <Button size="sm" variant="outline" onClick={() => decide(ap, false)} disabled={!!busy} className="h-8 border-border">{ap.kind === "gmail_send" ? "Don't send" : "Decline"}</Button>
             </div>
           </div>
         ))}
