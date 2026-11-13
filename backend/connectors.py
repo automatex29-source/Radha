@@ -664,6 +664,16 @@ async def oauth_callback(state: str = "", code: str = "", error: str = ""):
     cid = doc["connector"]
     if error or not code:
         return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote("You cancelled the sign-in."))
+    if doc.get("custom"):  # an app added by link (custom_connectors.py)
+        import custom_connectors
+        try:
+            xid = await custom_connectors.finish_sign_in(doc, code)
+        except (custom_connectors.ConnectError, ConnectError) as exc:
+            return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote(str(exc)))
+        except (httpx.HTTPError, KeyError, ValueError):
+            logger.exception("Sign-in for a custom connector failed")
+            return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote("Sign-in failed. Please try again."))
+        return RedirectResponse(f"{back}/?settings=connectors&connected=custom:{xid}")
     try:
         await _finish_oauth(doc["userId"], cid, code, doc["redirect"])
     except ConnectError as exc:

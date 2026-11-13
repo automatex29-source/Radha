@@ -51,6 +51,7 @@ import appcloud
 import decks
 import appdata
 import automations
+import custom_connectors
 import live_search
 import related
 import mailer
@@ -623,6 +624,7 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     for app in await db.apps.find({"userId": user_id}, {"id": 1}).to_list(None):
         await apps.delete_app(app["id"], user_id)
     await connectors.delete_user(user_id)
+    await custom_connectors.delete_user(user_id)
     for auto in await db.automations.find({"userId": user_id}, {"id": 1}).to_list(None):
         await automations.delete_automation(auto["id"], user_id)
     async for f in db.files.find({"userId": user_id}, {"storage_path": 1}):
@@ -875,6 +877,8 @@ async def export_account(user_id: str = Depends(current_user_id)):
         "projects": await db.projects.find({"userId": user_id}, hide).to_list(None),
         "connectedApps": [{"app": c["connector"], "account": c.get("account"), "since": c.get("createdAt")}
                           async for c in db.connections.find({"userId": user_id})],
+        "appsAddedByLink": [{"name": c["name"], "kind": c["kind"], "website": c.get("host"), "since": c.get("createdAt")}
+                            async for c in db.custom_connectors.find({"userId": user_id})],
         "plugins": await plugins.state(user_id),
         "payments": await db.payments.find({"userId": user_id}, {"_id": 0, "plan": 1, "amount": 1, "status": 1,
                                                                  "createdAt": 1}).to_list(None),
@@ -1628,6 +1632,21 @@ _NEEDS_TOOLS = re.compile(
     re.IGNORECASE)
 
 
+_MY_THINGS = re.compile(r"\bmy\s+(?:\w+\s+)?(?:shop|store|crm|sheets?|calendar|inbox|e?mails?|files?|drive|boards?|"
+                       r"tickets?|issues?|orders?|customers?|leads?|notes?|tasks?|projects?|repos?|channel|account|"
+                       r"payments?|sales|meetings?|events?|docs?|pages?|workspace)\b", re.I)
+
+
+def _mentions_apps(text: Optional[str], app_names: List[str]) -> bool:
+    """True when a message with connected apps asks about one of them (by name, or "my orders", "my inbox"...)."""
+    if not text or not app_names:
+        return False
+    low = text.lower()
+    return bool(_MY_THINGS.search(text)) or any(
+        len(w) >= 3 and re.search(rf"\b{re.escape(w)}\b", low)
+        for name in app_names for w in [name.lower()] + name.lower().split() if w not in ("google", "add", "the", "and", "my", "to"))
+
+
 def _quick_chat(history_docs: list) -> bool:
     """True when the latest message is plain conversation that needs no tools (see _NEEDS_TOOLS)."""
     last_user = [m for m in history_docs if m["role"] == "user"][-2:]
@@ -1987,6 +2006,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if base is SYSTEM_PROMPT and not agent_llm.lean(model):
         system_parts.append(ANSWER_SHAPES)
     connected, plugin_state = frozenset(), {}  # Settings > Connectors and Plugins (see below)
+    own_tools = ()
+    app_names = []  # the names of the user's connected apps, so a short question about one keeps the tools
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
@@ -2006,6 +2027,12 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         plugin_state = await plugins.state(user_id)
         if connected and not counselling:
             system_parts.append(connectors.prompt_line(connected))
+        if not counselling:  # apps the user added by link (Settings > Connectors > Add any app)
+            own_tools = tuple(await custom_connectors.tools_for(user_id))
+            if own_tools:
+                app_names = await custom_connectors.names(user_id)
+                system_parts.append(custom_connectors.prompt_line(app_names))
+            app_names = app_names + [connectors.CONNECTORS[c]["name"] for c in connected]
         lang_line = languages.prompt_line(settings_lang)
         if lang_line and not voice:  # voice replies follow the language spoken (see voice_prompt)
             system_parts.append(lang_line)
@@ -2054,7 +2081,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     ai_limit = None  # set when a free model's usage limit ends the reply (the chat shows a card)
     token_count = agent_llm.start_token_count()  # the tokens this reply really uses, for the usage meter
     if agent and not app_id and not extra_system and not think and not study and agent_llm.lean(model) \
-            and _quick_chat(history_docs) and not await db.files.count_documents(
+            and _quick_chat(history_docs) and not _mentions_apps(last_user, app_names) \
+            and not await db.files.count_documents(
                 {"conversationId": conv_id, "is_deleted": False}):
         agent = False
     if app_id:
@@ -2172,7 +2200,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model, sources=None if app_id else sources,
                               searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching,
-                              connected=connected,
+                              connected=connected, extra=own_tools,
                               plugins_off=frozenset(k for k, on in plugin_state.items() if not on))
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
             if app_id:
@@ -3573,6 +3601,8 @@ app.include_router(writer.router)
 automations.init(db, run_turn, AI_MODEL, _pick_model)
 connectors.init(db, run_turn, AI_MODEL)
 plugins.init(db)
+custom_connectors.init(db)
+app.include_router(custom_connectors.router)
 app.include_router(connectors.router)
 app.include_router(plugins.router)
 app.include_router(automations.router)

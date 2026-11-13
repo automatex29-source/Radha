@@ -38,6 +38,7 @@ class ToolContext:
     limit_hit: Optional[str] = None  # set when a plan limit stopped a tool, so the app can offer an upgrade
     connected: frozenset = frozenset()  # the apps the user connected (connectors.py); their tools need them
     plugins_off: frozenset = frozenset()  # plugins the user switched off (plugins.py); their tools are hidden
+    extra: tuple = ()  # this user's own tools: the apps they added by link (custom_connectors.py)
 
 
 @dataclass
@@ -90,8 +91,12 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         return self
 
+    def _all(self, ctx: Optional[ToolContext]) -> List[Tool]:
+        extra = [t for t in (ctx.extra if ctx else ()) if t.name not in self._tools]
+        return list(self._tools.values()) + extra
+
     def active(self, ctx: Optional[ToolContext] = None) -> List[Tool]:
-        return [t for t in self._tools.values() if t.usable(ctx)]
+        return [t for t in self._all(ctx) if t.usable(ctx)]
 
     def schemas(self, ctx: Optional[ToolContext] = None) -> List[dict]:
         return [t.schema() for t in self.active(ctx)]
@@ -101,7 +106,7 @@ class ToolRegistry:
                 for t in self._tools.values()]
 
     async def run(self, name: str, raw_args: str, ctx: ToolContext) -> ToolOutput:
-        tool = self._tools.get(name)
+        tool = self._tools.get(name) or next((t for t in (ctx.extra if ctx else ()) if t.name == name), None)
         if not tool or not tool.usable(ctx):
             return ToolOutput(content=f"Error: unknown or unavailable tool '{name}'.", summary="Unknown tool", ok=False)
         try:
