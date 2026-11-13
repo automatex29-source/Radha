@@ -348,6 +348,9 @@ export default function Workspace({ mode = null }) {
       if (seq !== chatSeq.current) return;
       setMessages(data.messages);
       showStream(streamsRef.current.get(id)); // a reply still being written here shows live again
+      // A reply being written on the server (asked on another device, or before the page was closed) is
+      // followed here as it is written.
+      if (data.live && !streamsRef.current.has(id)) followLive(id);
       if (data.conversation?.model) setModel(menuModel(data.conversation.model));
       setProjectId(data.conversation?.projectId || null);
       let files = [];
@@ -359,6 +362,31 @@ export default function Workspace({ mode = null }) {
       if (seq === chatSeq.current) setLoadingConv(false);
     }
   };
+
+  const followLive = (id) => {
+    runStream(`${API}/conversations/${id}/live?after=0`, null, id).catch(() => {});
+  };
+
+  // Back on this page (another tab, the phone woke up, or the same account was used on another device):
+  // show the chat as it is now, with any new answer, and follow a reply that is still being written.
+  useEffect(() => {
+    const onShow = async () => {
+      if (document.visibilityState !== "visible") return;
+      loadConversations();
+      const id = activeIdRef.current;
+      if (!id || streamsRef.current.has(id)) return;
+      const seq = chatSeq.current;
+      try {
+        const { data } = await api.get(`/conversations/${id}`);
+        if (seq !== chatSeq.current || streamsRef.current.has(id)) return;
+        setMessages(data.messages);
+        if (data.live) followLive(id);
+      } catch { /* keep what is shown */ }
+    };
+    document.addEventListener("visibilitychange", onShow);
+    return () => document.removeEventListener("visibilitychange", onShow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadConversations]);
 
   const newConversation = () => {
     leaveChat();
@@ -398,8 +426,13 @@ export default function Workspace({ mode = null }) {
     }
   };
 
+  // Stop ends the reply on the server too (leaving the page doesn't); the part already written is saved.
   const stopGeneration = () => {
-    streamsRef.current.get(activeIdRef.current)?.controller.abort();
+    const id = activeIdRef.current;
+    const st = streamsRef.current.get(id);
+    if (!st) return;
+    api.post(`/conversations/${id}/stop`).catch(() => {});
+    st.controller.abort();
   };
 
   const exportConversation = () => {
@@ -423,8 +456,11 @@ export default function Workspace({ mode = null }) {
     toast.success("Conversation exported");
   };
 
+  // Replies are written on the server (like Claude): leaving the page, switching apps or losing the
+  // connection doesn't stop them. `body` null follows a reply already being written (GET .../live). When the
+  // connection drops before the end, the chat picks the reply up again from the last piece it got.
   const runStream = async (url, body, convId, onText) => {
-    const st = { controller: new AbortController(), text: "", sources: [], steps: [], related: [], webHint: false, timer: 0 };
+    const st = { controller: new AbortController(), text: "", sources: [], steps: [], related: [], webHint: false, timer: 0, seen: 0, finished: false };
     streamsRef.current.set(convId, st);
     markStreaming();
     const onScreen = () => activeIdRef.current === convId;
@@ -435,21 +471,14 @@ export default function Workspace({ mode = null }) {
       if (now) { clearTimeout(st.timer); st.timer = 0; showStream(st); return; }
       if (!st.timer) st.timer = setTimeout(() => { st.timer = 0; if (onScreen()) showStream(st); }, 50);
     };
+    const open = (target, payload) => fetch(target, payload ? {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify(payload),
+      signal: st.controller.signal,
+    } : { headers: { Authorization: `Bearer ${getToken()}` }, signal: st.controller.signal });
 
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify(body),
-        signal: st.controller.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({}));
-        if (res.status === 402) { showPlanLimit(err.detail); setPlanCard(Date.now()); }
-        throw new Error(err.detail || "Failed to reach Krish AI");
-      }
-
+    const read = async (res) => {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -464,11 +493,17 @@ export default function Workspace({ mode = null }) {
           const lines = evt.split("\n");
           let eventName = "message";
           let dataStr = "";
+          let real = false; // not a keep-alive comment: counted, so a reconnect continues after it
           for (const line of lines) {
-            if (line.startsWith("event:")) eventName = line.slice(6).trim();
-            else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
+            if (line.startsWith("event:")) { eventName = line.slice(6).trim(); real = true; }
+            else if (line.startsWith("data:")) { dataStr += line.slice(5).trim(); real = true; }
           }
-          if (eventName === "error") throw new Error(JSON.parse(dataStr || '"Stream error"'));
+          if (real) st.seen += 1;
+          if (eventName === "error") {
+            const err = new Error(JSON.parse(dataStr || '"Stream error"'));
+            err.fromServer = true;
+            throw err;
+          }
           if (eventName === "sources") {
             st.sources = JSON.parse(dataStr || "[]");
             paint(true);
@@ -501,13 +536,39 @@ export default function Workspace({ mode = null }) {
             if (doc && onScreen()) setPreviewItem(doc);
             continue;
           }
-          if (eventName === "done") continue;
+          if (eventName === "done") { st.finished = true; continue; }
           if (dataStr) {
             st.text += JSON.parse(dataStr);
             paint();
             if (onScreen()) onText?.(st.text);
           }
         }
+      }
+    };
+
+    try {
+      let res = await open(url, body);
+      for (let tries = 0; ; ) {
+        if (res && res.status === 204) break; // nothing being written any more: the chat has the saved reply
+        if (res && (!res.ok || !res.body)) {
+          const err = await res.json().catch(() => ({}));
+          if (res.status === 402) { showPlanLimit(err.detail); setPlanCard(Date.now()); }
+          throw new Error(err.detail || "Failed to reach Krish AI");
+        }
+        try {
+          if (res) await read(res);
+        } catch (e) {
+          if (e.fromServer || e.name === "AbortError") throw e;
+          // The connection dropped (phone asleep, network change); the reply goes on on the server.
+        }
+        if (st.finished || st.controller.signal.aborted) break;
+        if (++tries > 20) break;
+        await new Promise((r) => setTimeout(r, Math.min(500 * tries, 5000)));
+        if (st.controller.signal.aborted) break;
+        res = await open(`${API}/conversations/${convId}/live?after=${st.seen}`, null).catch((e) => {
+          if (e.name === "AbortError") throw e;
+          return null; // still offline: try again shortly
+        });
       }
     } catch (e) {
       // When the reply already explains the failure (the server writes a note with Regenerate), no technical toast.

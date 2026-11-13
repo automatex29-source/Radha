@@ -69,6 +69,7 @@ import limits
 import billing
 import languages
 import abuse
+import live_turns
 import daily_verse
 import google_signin
 import monitor
@@ -1004,7 +1005,9 @@ async def _owned_conversation(conv_id: str, user_id: str) -> dict:
 async def get_conversation(conv_id: str, user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
     msgs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
-    return {"conversation": public_conversation(conv), "messages": [public_message(m) for m in msgs]}
+    # live: a reply is still being written (maybe asked on another device); the chat follows it with /live.
+    return {"conversation": public_conversation(conv), "messages": [public_message(m) for m in msgs],
+            "live": live_turns.running(conv_id, user_id)}
 
 
 @api.patch("/conversations/{conv_id}")
@@ -2460,23 +2463,6 @@ async def _check_code_reply(model: str, full: list, steps: list):
     yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
 
 
-class _TurnResponse(StreamingResponse):
-    """A reply stream that is always closed, so a stopped turn saves what it wrote.
-
-    When the browser stops reading, Starlette cancels the response; if that lands while the reply is
-    waiting to be sent, the generator is left open and its cleanup would only run whenever it is
-    garbage-collected. Closing it here runs it right away.
-    """
-
-    async def stream_response(self, send) -> None:
-        try:
-            await super().stream_response(send)
-        finally:
-            with anyio.CancelScope(shield=True):
-                await self.body_iterator.aclose()
-
-
-
 async def _with_notice(notice: str, turn):
     """The reply stream with a plan notice first (the upgrade popup), e.g. when the free taste of Krish Pro is used."""
     try:
@@ -2487,16 +2473,44 @@ async def _with_notice(notice: str, turn):
         await turn.aclose()
 
 
-def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False, study: bool = False,
-                     voice: bool = False, voice_lang: Optional[str] = None, web: bool = False, focus: str = "web",
-                     pro: bool = False, notice: str = "") -> StreamingResponse:
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+
+
+async def _live_response(conv_id: str, user_id: str, turn) -> StreamingResponse:
+    """Write the reply as a background job (see live_turns.py) and stream it to this browser.
+
+    The reply goes on if this browser leaves; another device on the same account can follow it with
+    GET /conversations/{id}/live, and Stop is POST /conversations/{id}/stop.
+    """
+    live = await live_turns.start(db, conv_id, user_id, turn)
+    return StreamingResponse(live_turns.follow(live), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+async def _stream_response(conv_id: str, user_id: str, model: str, agent: bool = False, think: bool = False,
+                           study: bool = False, voice: bool = False, voice_lang: Optional[str] = None,
+                           web: bool = False, focus: str = "web", pro: bool = False,
+                           notice: str = "") -> StreamingResponse:
     turn = run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang, web=web,
                     focus=focus, pro=pro)
-    return _TurnResponse(
-        _with_notice(notice, turn) if notice else turn,
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
-    )
+    return await _live_response(conv_id, user_id, _with_notice(notice, turn) if notice else turn)
+
+
+@api.get("/conversations/{conv_id}/live")
+async def follow_reply(conv_id: str, after: int = 0, user_id: str = Depends(current_user_id)):
+    """Follow the reply being written in this chat (from another tab or device, or after the connection
+    dropped), from event number `after` on. 204 when no reply is being written (it is saved in the chat)."""
+    await _owned_conversation(conv_id, user_id)
+    live = live_turns.get(conv_id, user_id)
+    if not live or (live.done and after >= len(live.events)):
+        return Response(status_code=204)
+    return StreamingResponse(live_turns.follow(live, after), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+@api.post("/conversations/{conv_id}/stop")
+async def stop_reply(conv_id: str, user_id: str = Depends(current_user_id)):
+    """The Stop button: end the reply being written; the part already written is saved."""
+    await _owned_conversation(conv_id, user_id)
+    return {"stopped": await live_turns.stop(conv_id, user_id)}
 
 
 @api.post("/conversations/{conv_id}/stream")
@@ -2559,14 +2573,12 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         _background(memory.learn(db, user_id, body.content, model))
 
     if ready_reply:
-        return StreamingResponse(_canned_turn(conv_id, ready_reply, user_code=not conv.get("appId")),
-                                 media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return await _live_response(conv_id, user_id, _canned_turn(conv_id, ready_reply, user_code=not conv.get("appId")))
     if not conv.get("appId") and conv.get("mode") != counsellor.MODE and not body.images:
         edit = await _code_edit_ask(conv_id)
         if edit:
-            return _code_edit_response(conv_id, model, *edit)
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study,
+            return await _code_edit_response(conv_id, user_id, model, *edit)
+    return await _stream_response(conv_id, user_id, model, agent=body.agent, think=body.think, study=body.study,
                             voice=body.voice, voice_lang=body.voiceLang, web=body.web,
                             focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
@@ -2731,9 +2743,8 @@ async def _code_edit_ask(conv_id: str):
     return code_edit.should_edit(recent[::-1])
 
 
-def _code_edit_response(conv_id: str, model: str, files: dict, ask: str):
-    return _TurnResponse(_code_edit_turn(conv_id, model, files, ask), media_type="text/event-stream",
-                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+async def _code_edit_response(conv_id: str, user_id: str, model: str, files: dict, ask: str):
+    return await _live_response(conv_id, user_id, _code_edit_turn(conv_id, model, files, ask))
 
 
 async def _code_edit_turn(conv_id: str, model: str, files: dict, ask: str):
@@ -2811,9 +2822,9 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
     if not conv.get("appId") and conv.get("mode") != counsellor.MODE:
         edit = await _code_edit_ask(conv_id)
         if edit:
-            return _code_edit_response(conv_id, model, *edit)
+            return await _code_edit_response(conv_id, user_id, model, *edit)
 
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
+    return await _stream_response(conv_id, user_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
                             focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
 
@@ -2837,7 +2848,7 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     if later:
         await db.messages.delete_many({"id": {"$in": later}})
     await db.messages.update_one({"id": message_id}, {"$set": {"content": body.content, "editedAt": now_iso()}})
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
+    return await _stream_response(conv_id, user_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
                             focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
 
@@ -3866,6 +3877,14 @@ async def startup():
     await db.password_resets.create_index("tokenHash")
     await db.conversations.create_index([("userId", 1), ("updatedAt", -1)])
     await db.conversations.create_index("shareId", sparse=True)
+    await db.conversations.create_index("liveDraft.startedAt", sparse=True)
+    # Replies that were being written when the server last stopped are saved with the part written.
+    try:
+        recovered = await live_turns.recover(db)
+        if recovered:
+            logger.info("saved %d replies cut off by the last restart", recovered)
+    except Exception:
+        logger.exception("recovering cut-off replies failed")
     await db.pages.create_index("id", unique=True)
     await db.pages.create_index([("messageId", 1), ("userId", 1)])
     await db.messages.create_index([("conversationId", 1), ("createdAt", 1)])
@@ -3921,6 +3940,7 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    await live_turns.stop_all()  # replies being written are saved with the part written so far
     await automations.stop_scheduler()
     await daily_verse.stop_scheduler()
     monitor.stop()
