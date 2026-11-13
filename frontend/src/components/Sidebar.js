@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -17,8 +17,8 @@ import { INVITES_ON } from "@/lib/referral";
 import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
-  Plus, Search, Loader2, ChevronRight, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users, Gift,
-  LayoutDashboard,
+  Plus, Search, Loader2, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users, Gift,
+  LayoutDashboard, Sparkles, ArrowUpRight, Monitor, ChevronsUpDown,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 import NavList from "@/components/NavList";
@@ -46,12 +46,40 @@ const GroupIcon = ({ label }) => {
   return <Icon className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />;
 };
 
+const ITEM = "cursor-pointer gap-3 rounded-lg px-2.5 py-2 text-[13.5px] text-foreground/90 focus:bg-black/[0.045] focus:text-foreground dark:focus:bg-white/[0.07] max-md:py-2.5 max-md:text-[15px]";
+const ICON = "h-[17px] w-[17px] text-muted-foreground";
+const THEMES = ["light", "dark", "system"];
+const PLAN_LABEL = { basic: "Basic", pro: "Pro", max: "Max" };
+const PLAN_BADGE = {
+  basic: "bg-muted text-muted-foreground ring-1 ring-black/5 dark:ring-white/10",
+  pro: "bg-gradient-to-r from-indigo-500 to-sky-400 text-white shadow-sm",
+  max: "bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm",
+};
+const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘" : "Ctrl";
+const MenuDivider = () => <div className="mx-2.5 my-1 h-px bg-gradient-to-r from-transparent via-border to-transparent" role="separator" />;
+const Kbd = ({ children }) => (
+  <kbd className="ml-0.5 hidden min-w-[1.25rem] rounded-[5px] border border-border bg-muted/60 px-1 py-px text-center font-sans text-[10.5px] font-medium leading-4 text-muted-foreground md:inline-block">{children}</kbd>
+);
+
 export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, onRename, onCollapse, newLabel, searchContent = false, busyIds = null }) {
   const { user, logout } = useAuth();
   const t = useT();
   const navigate = useNavigate();
-  const { resolvedTheme, setTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme } = useTheme();
   const dark = resolvedTheme !== "light";
+  const themeNow = THEMES.includes(theme) ? theme : (dark ? "dark" : "light");
+  const plan = PLAN_LABEL[user?.plan] ? user.plan : "basic";
+  const nextPlan = plan === "max" ? null : plan === "pro" ? "Max" : "Pro";
+  const initial = user?.name?.[0]?.toUpperCase() || "U";
+
+  // Ctrl/⌘ + , opens Settings, as the menu shows.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ",") { e.preventDefault(); openSettings(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -196,50 +224,95 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <button data-testid="user-profile-menu-button" aria-label={user?.name || "Account"}
               className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border max-md:w-auto max-md:rounded-full max-md:bg-transparent max-md:p-0 max-md:shadow-none max-md:ring-0 dark:max-md:bg-transparent">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-sm font-bold text-white max-md:h-11 max-md:w-11 max-md:text-base">
-                {user?.name?.[0]?.toUpperCase() || "U"}
+                {initial}
               </div>
               <div className="min-w-0 flex-1 leading-tight max-md:hidden">
                 <p className="truncate text-sm font-semibold">{user?.name}</p>
                 <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
               </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground max-md:hidden" />
+              <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground max-md:hidden" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">{t.parts("signedInAs", { email: <span key="e" className="font-medium text-foreground">{user?.email}</span> })}</div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem data-testid="menu-memory" onClick={() => setMemoryOpen(true)}>
-              <Brain className="mr-2 h-4 w-4" /> {t("memory")}
+          <DropdownMenuContent align="start" side="top" sideOffset={8} data-testid="account-menu"
+            className="w-[min(18.5rem,calc(100vw-2rem))] rounded-2xl border-black/5 bg-popover p-1.5 shadow-[0_18px_50px_-12px_rgba(15,23,42,0.28)] backdrop-blur-xl dark:border-white/10 dark:shadow-[0_18px_50px_-12px_rgba(0,0,0,0.7)]">
+            {/* Header: picture, name, email and plan */}
+            <div className="flex items-center gap-3 px-2.5 pb-2.5 pt-2">
+              <div className="relative shrink-0">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-[15px] font-bold text-white shadow-sm ring-2 ring-white dark:ring-white/10">
+                  {initial}
+                </div>
+              </div>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate text-[14px] font-semibold text-foreground">{user?.name || "Your account"}</p>
+                  <span data-testid="account-plan-badge" className={`shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide ${PLAN_BADGE[plan]}`}>{PLAN_LABEL[plan]}</span>
+                </div>
+                <p className="mt-0.5 truncate text-[12px] text-muted-foreground" title={user?.email}>{user?.email}</p>
+              </div>
+            </div>
+            {nextPlan && (
+              <DropdownMenuItem data-testid="menu-upgrade" onClick={() => navigate("/plans")}
+                className="group mx-0.5 mb-1 cursor-pointer gap-3 rounded-xl border border-indigo-500/15 bg-gradient-to-r from-indigo-500/[0.09] via-sky-400/[0.07] to-transparent px-2.5 py-2 focus:bg-indigo-500/[0.12] dark:border-indigo-400/20 dark:from-indigo-400/[0.14] dark:via-sky-400/[0.08]">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-sky-400 text-white shadow-sm"><Sparkles className="h-3.5 w-3.5" /></span>
+                <span className="min-w-0 flex-1 leading-tight">
+                  <span className="block text-[13px] font-semibold text-foreground">Upgrade to {nextPlan}</span>
+                  <span className="block text-[11px] text-muted-foreground">More of Krish, every day</span>
+                </span>
+                <ArrowUpRight className="h-4 w-4 text-indigo-500 transition-transform group-focus:-translate-y-px group-focus:translate-x-px dark:text-indigo-300" />
+              </DropdownMenuItem>
+            )}
+            <MenuDivider />
+            <DropdownMenuItem data-testid="menu-memory" onClick={() => setMemoryOpen(true)} className={ITEM}>
+              <Brain className={ICON} /> {t("memory")}
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menu-help" onClick={() => navigate("/help")}>
-              <LifeBuoy className="mr-2 h-4 w-4" /> {t("helpFeedback")}
+            <DropdownMenuItem data-testid="menu-plans" onClick={() => navigate("/plans")} className={ITEM}>
+              <Crown className={ICON} /> {t("plans")}
             </DropdownMenuItem>
             {INVITES_ON && (
-              <DropdownMenuItem data-testid="menu-invite" onClick={() => setInviteOpen(true)}>
-                <Gift className="mr-2 h-4 w-4" /> Invite friends
+              <DropdownMenuItem data-testid="menu-invite" onClick={() => setInviteOpen(true)} className={ITEM}>
+                <Gift className={ICON} /> Invite friends
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem data-testid="menu-plans" onClick={() => navigate("/plans")}>
-              <Crown className="mr-2 h-4 w-4" /> {t("plans")}
+            <DropdownMenuItem data-testid="menu-settings" onClick={() => openSettings()} className={ITEM}>
+              <Settings className={ICON} /> <span className="flex-1">{t("settings")}</span>
+              <Kbd>{MOD}</Kbd><Kbd>,</Kbd>
             </DropdownMenuItem>
             {user?.isOwner && (
-              <DropdownMenuItem data-testid="menu-owner-dashboard" onClick={() => navigate("/admin")}>
-                <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
-              </DropdownMenuItem>
+              <>
+                <MenuDivider />
+                <p className="px-2.5 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">Owner</p>
+                <DropdownMenuItem data-testid="menu-owner-dashboard" onClick={() => navigate("/admin")} className={ITEM}>
+                  <LayoutDashboard className={ICON} /> Dashboard
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="menu-admin-users" onClick={() => navigate("/admin/users")} className={ITEM}>
+                  <Users className={ICON} /> Users
+                </DropdownMenuItem>
+              </>
             )}
-            {user?.isOwner && (
-              <DropdownMenuItem data-testid="menu-admin-users" onClick={() => navigate("/admin/users")}>
-                <Users className="mr-2 h-4 w-4" /> Users
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem data-testid="menu-settings" onClick={() => openSettings()}>
-              <Settings className="mr-2 h-4 w-4" /> {t("settings")}
+            <MenuDivider />
+            {/* Theme: pick Light, Dark or System; the row itself cycles them from the keyboard. */}
+            <DropdownMenuItem data-testid="menu-theme-toggle" onSelect={(e) => { e.preventDefault(); setTheme(THEMES[(THEMES.indexOf(themeNow) + 1) % THEMES.length]); }}
+              className={`${ITEM} pr-1.5`}>
+              {dark ? <Moon className={ICON} /> : <Sun className={ICON} />} <span className="flex-1">Theme</span>
+              <span role="radiogroup" aria-label="Theme" className="flex items-center rounded-full bg-muted p-0.5 ring-1 ring-black/5 dark:bg-white/5 dark:ring-white/10">
+                {[["light", Sun, "Light"], ["dark", Moon, "Dark"], ["system", Monitor, "System"]].map(([v, Icon, label]) => (
+                  <button key={v} type="button" role="radio" aria-checked={themeNow === v} aria-label={label} title={label} data-testid={`theme-${v}`}
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); setTheme(v); }}
+                    className={`flex h-6 w-7 items-center justify-center rounded-full transition-all ${themeNow === v
+                      ? "bg-background text-foreground shadow-sm ring-1 ring-black/5 dark:bg-white/15 dark:ring-white/10"
+                      : "text-muted-foreground hover:text-foreground"}`}>
+                    <Icon className="h-3.5 w-3.5" />
+                  </button>
+                ))}
+              </span>
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menu-theme-toggle" onClick={() => setTheme(dark ? "light" : "dark")}>
-              {dark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />} {t(dark ? "lightTheme" : "darkTheme")}
+            <DropdownMenuItem data-testid="menu-help" onClick={() => navigate("/help")} className={ITEM}>
+              <LifeBuoy className={ICON} /> {t("helpFeedback")}
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="user-logout-button" onClick={logout} className="text-destructive focus:text-destructive">
-              <LogOut className="mr-2 h-4 w-4" /> {t("logout")}
+            <MenuDivider />
+            <DropdownMenuItem data-testid="user-logout-button" onClick={logout}
+              className={`${ITEM} text-red-600 focus:bg-red-500/10 focus:text-red-600 dark:text-red-400 dark:focus:bg-red-500/15 dark:focus:text-red-300`}>
+              <LogOut className="h-[17px] w-[17px] opacity-90" /> {t("logout")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
