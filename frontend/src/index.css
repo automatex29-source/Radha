@@ -174,35 +174,35 @@
   background-size: 34px 34px;
 }
 
-/* Answering indicator. Before the first word: a small rangoli that turns while its petals light up
-   one by one, next to "Krish is thinking…" with a saffron-to-green shine moving across it. While the answer types: a tiny turning rangoli at the end of the last line. */
-:root { --rangoli-saffron: #FF8A1E; --rangoli-blue: #1F3A93; --rangoli-green: #138808; --rangoli-tail: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(0 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%231F3A93' transform='rotate(45 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23138808' transform='rotate(90 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(135 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%231F3A93' transform='rotate(180 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23138808' transform='rotate(225 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(270 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%231F3A93' transform='rotate(315 12 12)'/%3E%3Ccircle cx='12' cy='12' r='2.2' fill='%23FF8A1E'/%3E%3C/svg%3E"); }
-.dark { --rangoli-blue: #7F9CFF; --rangoli-green: #2FBF4F; --rangoli-tail: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(0 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%237F9CFF' transform='rotate(45 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%232FBF4F' transform='rotate(90 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(135 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%237F9CFF' transform='rotate(180 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%232FBF4F' transform='rotate(225 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(270 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%237F9CFF' transform='rotate(315 12 12)'/%3E%3Ccircle cx='12' cy='12' r='2.2' fill='%23FF8A1E'/%3E%3C/svg%3E"); }
-.krish-thinking { display: inline-flex; align-items: center; gap: 0.55em; font-family: var(--font-sans); font-size: 0.9em; font-weight: 500; color: hsl(var(--muted-foreground)); }
+/* Answering indicator. Before the first word: "Krish is thinking…" with a saffron-to-green shine
+   moving across it. While the answer types: a small glowing saffron dot at the end of the last line. */
+:root { --thinking-saffron: #FF8A1E; --thinking-green: #138808; }
+.dark { --thinking-green: #2FBF4F; }
+.krish-thinking { display: inline-flex; align-items: center; font-family: var(--font-sans); font-size: 0.9em; font-weight: 500; color: hsl(var(--muted-foreground)); }
 .krish-thinking-words {
-  background: linear-gradient(90deg, hsl(var(--muted-foreground)) 0 35%, var(--rangoli-saffron) 45%, var(--rangoli-green) 55%, hsl(var(--muted-foreground)) 65% 100%);
+  background: linear-gradient(90deg, hsl(var(--muted-foreground)) 0 35%, var(--thinking-saffron) 45%, var(--thinking-green) 55%, hsl(var(--muted-foreground)) 65% 100%);
   background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
   animation: krish-thinking-shine 2s linear infinite;
 }
 @keyframes krish-thinking-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
-.krish-rangoli { width: 1.4em; height: 1.4em; flex-shrink: 0; animation: krish-spin 6s linear infinite; }
-.krish-rangoli ellipse { opacity: 0.35; animation: krish-rangoli-petal 1.6s ease-in-out infinite; }
-@keyframes krish-rangoli-petal { 0%, 100% { opacity: 0.35; } 35% { opacity: 1; } }
 .krish-answer.is-streaming > :is(p, h1, h2, h3, h4):last-child::after,
 .krish-answer.is-streaming > :is(ul, ol):last-child > li:last-child::after {
   content: "";
   display: inline-block;
-  width: 1em;
-  height: 1em;
+  width: 0.55em;
+  height: 0.55em;
   margin-left: 0.4em;
-  vertical-align: -0.12em;
-  background: var(--rangoli-tail) center / contain no-repeat;
-  animation: krish-spin 2.4s linear infinite, krish-rangoli-glow 1.6s ease-in-out infinite;
+  vertical-align: 0.05em;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 35%, #FFD29A, #FF8A1E 55%, #E85A0C);
+  animation: krish-answer-dot 1.1s ease-in-out infinite;
 }
-@keyframes krish-rangoli-glow { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+@keyframes krish-answer-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 138, 30, 0.55); transform: scale(0.85); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 138, 30, 0); transform: scale(1); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .krish-rangoli, .krish-rangoli ellipse, .krish-thinking-words, .krish-answer.is-streaming > *::after, .krish-answer.is-streaming li::after { animation: none; }
-  .krish-rangoli ellipse { opacity: 1; }
+  .krish-thinking-words, .krish-answer.is-streaming > *::after, .krish-answer.is-streaming li::after { animation: none; }
 }
 
 @keyframes radha-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
