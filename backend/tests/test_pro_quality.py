@@ -69,7 +69,7 @@ def test_plans_list_their_quality(client):
     basic, pro = plans["basic"]["quality"], plans["pro"]["quality"]
     assert plans["pro"]["price"] == 499
     assert basic["media"] == "free" and pro["media"] == "premium"
-    assert pro["videoSeconds"] > basic["videoSeconds"] and pro["uploadMb"] > basic["uploadMb"]
+    assert pro["videoSeconds"] > basic["videoSeconds"] and pro["uploadMb"] == basic["uploadMb"] == limits.UPLOAD_MB
     assert "memory" not in pro
     assert plans["max"]["quality"]["videoSeconds"] == 60
 
@@ -100,15 +100,18 @@ def test_premium_messages_use_the_meter_by_length(client, monkeypatch):
     assert pick(30000) == server.AI_MODEL  # a long chat doesn't fit in what's left: Krish Basic answers
     assert pick(10) == "claude-sonnet-5-5"
 
-def test_uploads_follow_the_plan(client):
+def test_uploads_are_the_same_on_every_plan(client):
+    import limits
     import server
     from fastapi import HTTPException
     basic, pro = _user(client, "up-basic@test.com"), _user(client, "up-pro@test.com", "pro")
-    big = b"x" * (30 * 1024 * 1024)
-    with pytest.raises(HTTPException) as err:
-        client.portal.call(server._check_upload_size, basic, big, "File")
-    assert err.value.status_code == 413 and "20MB" in err.value.detail and "Pro" in err.value.detail
-    client.portal.call(server._check_upload_size, pro, big, "File")  # 30MB fits in Pro's 50MB
+    big = b"x" * (60 * 1024 * 1024)
+    client.portal.call(server._check_upload_size, basic, big, "File")  # 60MB fits on Basic too
+    too_big = b"x" * (limits.UPLOAD_MB * 1024 * 1024 + 1)
+    for uid in (basic, pro):
+        with pytest.raises(HTTPException) as err:
+            client.portal.call(server._check_upload_size, uid, too_big, "File")
+        assert err.value.status_code == 413 and f"{limits.UPLOAD_MB}MB" in err.value.detail
 
 
 def test_memory_keeps_learning_when_it_is_long(client, monkeypatch):

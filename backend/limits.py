@@ -41,6 +41,10 @@ def paid_meter(price: int) -> dict:
     return {"session": round(week * 0.75), "week": week}
 
 
+# Every plan takes the same size of upload: one server-wide ceiling, kept so a huge file can't use up the server's
+# memory (the whole file is held in memory while it is read and processed).
+UPLOAD_MB = 100
+
 PLANS = {
     "basic": {
         "name": "Basic", "price": 0,
@@ -51,7 +55,7 @@ PLANS = {
         "automations": {"minInterval": None, "thorough": False, "premiumModels": False, "events": False,
                         "noAsk": False},
         "publish": False, "premium": False,
-        "quality": {"media": "free", "videoSeconds": 8, "uploadMb": 20},
+        "quality": {"media": "free", "videoSeconds": 8, "uploadMb": UPLOAD_MB},
     },
     "pro": {
         "name": "Pro", "price": 499, "listPrice": 999,
@@ -60,7 +64,7 @@ PLANS = {
         "automations": {"minInterval": 60, "thorough": False, "premiumModels": True, "events": True,
                         "noAsk": False},
         "publish": True, "premium": True,
-        "quality": {"media": "premium", "videoSeconds": 12, "uploadMb": 50},
+        "quality": {"media": "premium", "videoSeconds": 12, "uploadMb": UPLOAD_MB},
     },
     "max": {
         "name": "Max", "price": 1299, "listPrice": 1999,
@@ -69,7 +73,7 @@ PLANS = {
         "automations": {"minInterval": 15, "thorough": True, "premiumModels": True, "events": True,
                         "noAsk": True},
         "publish": True, "premium": True,
-        "quality": {"media": "premium", "videoSeconds": 60, "uploadMb": 100},
+        "quality": {"media": "premium", "videoSeconds": 60, "uploadMb": UPLOAD_MB},
     },
 }
 ORDER = ["basic", "pro", "max"]
@@ -291,7 +295,7 @@ async def quality(db, user_id: str) -> dict:
 
 
 async def upload_bytes(db, user_id: str) -> int:
-    return quality_of(await plan_of(db, user_id))["uploadMb"] * 1024 * 1024
+    return min(quality_of(await plan_of(db, user_id))["uploadMb"], UPLOAD_MB) * 1024 * 1024
 
 
 def quality_of(plan: str) -> dict:

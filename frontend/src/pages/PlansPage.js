@@ -31,20 +31,20 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 function highlights(plan, basic, video) {
   const x = times(plan, basic);
   const { automation } = plan.total;
-  const { videoSeconds, uploadMb } = plan.quality;
+  const { videoSeconds, uploadMb } = plan.quality;  // every plan takes the same size of upload
   if (plan.id === "basic") {
     return { label: "Includes", items: ["40 messages every 5 hours, with search", "A few Krish Pro answers a week, free",
-      video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), "Remembers what you tell it, in every chat"] };
+      video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), `Uploads up to ${uploadMb}MB`, "Remembers what you tell it, in every chat"] };
   }
   if (plan.id === "max") {
     return { label: "Everything in Pro, plus", items: [`${x}x the usage of Basic`, ...(video ? [`Videos up to ${videoSeconds} seconds`] : []),
-      plural(automation, "automation"), `Uploads up to ${uploadMb}MB`] };
+      plural(automation, "automation")] };
   }
   return { label: "Everything in Basic, plus", items: ["Unlimited chat on Krish Basic", `${x}x the usage of Basic`,
     ...(plan.premium ? ["Premium AI models and Think mode"] : []),
     ...(plan.quality.media === "premium" ? [video ? "HD pictures and real AI video" : "HD AI pictures"] : []),
     ...(plan.publish ? ["Publish apps to the web"] : []),
-    `${plural(automation, "automation")}, ${uploadMb}MB uploads`,
+    plural(automation, "automation"),
     ...(plan.premium ? ["Counsellor Pro"] : [])] };
 }
 
