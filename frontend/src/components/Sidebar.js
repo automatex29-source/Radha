@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 import NavList from "@/components/NavList";
+import UserAvatar from "@/components/UserAvatar";
 
 function groupByDate(convs) {
   const groups = { Today: [], Yesterday: [], "Previous 7 Days": [], Older: [] };
@@ -70,7 +71,6 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
   const themeNow = THEMES.includes(theme) ? theme : (dark ? "dark" : "light");
   const plan = PLAN_LABEL[user?.plan] ? user.plan : "basic";
   const nextPlan = plan === "max" ? null : plan === "pro" ? "Max" : "Pro";
-  const initial = user?.name?.[0]?.toUpperCase() || "U";
 
   // Ctrl/⌘ + , opens Settings, as the menu shows.
   useEffect(() => {
@@ -223,9 +223,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           <DropdownMenuTrigger asChild>
             <button data-testid="user-profile-menu-button" aria-label={user?.name || "Account"}
               className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border max-md:w-auto max-md:rounded-full max-md:bg-transparent max-md:p-0 max-md:shadow-none max-md:ring-0 dark:max-md:bg-transparent">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-sm font-bold text-white max-md:h-11 max-md:w-11 max-md:text-base">
-                {initial}
-              </div>
+              <UserAvatar user={user} ring className="h-9 w-9 text-[13px] max-md:h-11 max-md:w-11 max-md:text-[15px]" />
               <div className="min-w-0 flex-1 leading-tight max-md:hidden">
                 <p className="truncate text-sm font-semibold">{user?.name}</p>
                 <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
@@ -237,11 +235,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             className="w-[min(18.5rem,calc(100vw-2rem))] rounded-2xl border-black/5 bg-popover p-1.5 shadow-[0_18px_50px_-12px_rgba(15,23,42,0.28)] backdrop-blur-xl dark:border-white/10 dark:shadow-[0_18px_50px_-12px_rgba(0,0,0,0.7)]">
             {/* Header: picture, name, email and plan */}
             <div className="flex items-center gap-3 px-2.5 pb-2.5 pt-2">
-              <div className="relative shrink-0">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-[15px] font-bold text-white shadow-sm ring-2 ring-white dark:ring-white/10">
-                  {initial}
-                </div>
-              </div>
+              <UserAvatar user={user} ring className="h-11 w-11 text-[15px]" />
               <div className="min-w-0 flex-1 leading-tight">
                 <div className="flex items-center gap-1.5">
                   <p className="truncate text-[14px] font-semibold text-foreground">{user?.name || "Your account"}</p>
