@@ -745,17 +745,9 @@ async def whatsapp_webhook(request: Request, x_hub_signature_256: str = Header(d
         body = json.loads(raw or b"{}")
     except ValueError:
         raise HTTPException(status_code=400, detail="Bad body")
-    import social_inbox  # users' own WhatsApp Business numbers can share this webhook (social_inbox.py)
     for entry in body.get("entry") or []:
         for change in entry.get("changes") or []:
-            value = change.get("value") or {}
-            try:
-                if await social_inbox.handle_whatsapp_value(value):
-                    continue
-            except Exception:
-                logger.exception("Business WhatsApp message failed")
-                continue
-            await whatsapp_bot_value(value)
+            await whatsapp_bot_value(change.get("value") or {})
     return {"ok": True}
 
 

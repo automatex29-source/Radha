@@ -544,7 +544,7 @@ async def _deliver(auto: dict, run: dict) -> list:
 
 
 # ---------------------------------------------------------- asking first
-ACTIONS = {"gmail_send": "Send email", "custom_tool": "Use an app", "social_send": "Reply to a customer"}
+ACTIONS = {"gmail_send": "Send email", "custom_tool": "Use an app"}
 
 
 async def gated(user_id: str, conv: dict, kind: str, payload: dict, summary: str):
@@ -575,10 +575,6 @@ async def _do_action(user_id: str, kind: str, payload: dict) -> str:
     if kind == "gmail_send":
         await connector_tools.send_gmail(user_id, payload)
         return f"Email sent to {payload['to']}"
-    if kind == "social_send":  # a reply on the user's Instagram or WhatsApp Business (social_inbox.py)
-        import social_inbox
-        await social_inbox.send_reply(user_id, payload["thread"], payload["text"], by="krish")
-        return f"Replied to {payload.get('to', 'the customer')}"
     if kind == "custom_tool":  # a tool of an app the user added by link (custom_connectors.py)
         import custom_connectors
         text = await custom_connectors.run_tool(user_id, payload["connector"], payload["tool"], payload.get("args") or {})
@@ -593,8 +589,6 @@ def public_approval(doc: dict) -> dict:
             "summary": doc.get("summary"), "status": doc["status"], "result": doc.get("result"),
             "createdAt": doc["createdAt"], "expiresAt": doc.get("expiresAt"),
             "detail": {"to": p.get("to"), "subject": p.get("subject"), "body": p.get("body")} if doc["kind"] == "gmail_send"
-            else {"app": {"instagram": "Instagram", "whatsapp": "WhatsApp Business"}.get(p.get("platform"), "Business inbox"),
-                  "action": f"Reply to {p.get('to', 'customer')}", "body": p.get("text")} if doc["kind"] == "social_send"
             else {"app": p.get("app"), "action": p.get("label") or p.get("tool"),
                   "body": json.dumps(p.get("args") or {}, ensure_ascii=False, indent=1)[:1500]}}
 
