@@ -544,7 +544,7 @@ async def _deliver(auto: dict, run: dict) -> list:
 
 
 # ---------------------------------------------------------- asking first
-ACTIONS = {"gmail_send": "Send email"}
+ACTIONS = {"gmail_send": "Send email", "custom_tool": "Use an app"}
 
 
 async def gated(user_id: str, conv: dict, kind: str, payload: dict, summary: str):
@@ -575,6 +575,10 @@ async def _do_action(user_id: str, kind: str, payload: dict) -> str:
     if kind == "gmail_send":
         await connector_tools.send_gmail(user_id, payload)
         return f"Email sent to {payload['to']}"
+    if kind == "custom_tool":  # a tool of an app the user added by link (custom_connectors.py)
+        import custom_connectors
+        text = await custom_connectors.run_tool(user_id, payload["connector"], payload["tool"], payload.get("args") or {})
+        return f"{payload.get('app', 'App')}: {payload.get('label') or payload['tool']} done. {text[:300]}".strip()
     raise ValueError("Unknown action")
 
 
@@ -584,7 +588,9 @@ def public_approval(doc: dict) -> dict:
             "runId": doc.get("runId"), "kind": doc["kind"], "label": ACTIONS.get(doc["kind"], doc["kind"]),
             "summary": doc.get("summary"), "status": doc["status"], "result": doc.get("result"),
             "createdAt": doc["createdAt"], "expiresAt": doc.get("expiresAt"),
-            "detail": {"to": p.get("to"), "subject": p.get("subject"), "body": p.get("body")}}
+            "detail": {"to": p.get("to"), "subject": p.get("subject"), "body": p.get("body")} if doc["kind"] == "gmail_send"
+            else {"app": p.get("app"), "action": p.get("label") or p.get("tool"),
+                  "body": json.dumps(p.get("args") or {}, ensure_ascii=False, indent=1)[:1500]}}
 
 
 # ------------------------------------------------------------------ inbox
@@ -804,6 +810,8 @@ async def plan_automation(body: PlanIn, user_id: str = Depends(current_user_id))
         except (ZoneInfoNotFoundError, ValueError):
             tz = ZoneInfo("UTC")
         linked = [APPS_HINT[c] for c in APPS_HINT if c in await connectors.active(user_id)]
+        import custom_connectors
+        linked += [f"{n} (added by link; its tools start with app_)" for n in await custom_connectors.names(user_id)]
         context = (f"Now: {datetime.now(tz).strftime('%A %Y-%m-%d %H:%M')} ({body.timezone}). "
                    + (f"The user connected these apps, which the agent can use: {'; '.join(linked)}. " if linked
                       else "The user has not connected Gmail, Calendar, Drive or Notion yet. "))

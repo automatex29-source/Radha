@@ -51,6 +51,7 @@ export function SettingsHost() {
       setSection(ALL.some((s) => s.id === wanted) ? wanted : null);
       setOpen(true);
       if (params.get("connectError")) toast.error(params.get("connectError"));
+      try { if (params.get("connected")) sessionStorage.setItem("krish-connected", params.get("connected")); } catch { /* private mode */ }
       for (const key of ["settings", "connected", "connectError"]) params.delete(key);
       const rest = params.toString();
       window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);

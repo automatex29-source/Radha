@@ -22,6 +22,7 @@ import {
   Workflow, Plus, Loader2, Play, Webhook, Clock, Copy, Trash2, CheckCircle2, XCircle, MessageSquare, Pencil, ArrowLeft,
   Sparkles, Brain, Gauge, Mail, Send, ChevronDown, ChevronUp, Check, Square, PauseCircle, Lock, Hand, Inbox, ShieldCheck,
   CalendarClock, Repeat, MousePointerClick, Timer, Zap, ListChecks,
+  Plug,
 } from "lucide-react";
 import ScrollTable from "@/components/ScrollTable";
 
@@ -345,7 +346,7 @@ function Approvals({ items, onDone, hideOnWide, inDetail = false }) {
     setBusy(ap.id);
     try {
       await api.post(`/automations/approvals/${ap.id}`, { approve });
-      toast.success(approve ? (ap.kind === "gmail_send" ? "Email sent" : "Done") : "Declined. Nothing was sent.");
+      toast.success(approve ? (ap.kind === "gmail_send" ? "Email sent" : "Done") : (ap.kind === "gmail_send" ? "Declined. Nothing was sent." : "Declined. Nothing was done."));
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {
@@ -357,11 +358,11 @@ function Approvals({ items, onDone, hideOnWide, inDetail = false }) {
     <div className={`rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 ${inDetail ? "mt-4" : "mt-5"} ${hideOnWide && items.every((ap) => ap.automationId === hideOnWide) ? "md:hidden" : ""}`}
       data-testid={inDetail ? "detail-approvals" : "approvals"}>
       <p className="flex items-center gap-1.5 text-sm font-semibold"><Hand className="h-4 w-4 text-amber-600 dark:text-amber-400" /> {inDetail ? "This job is waiting for your OK" : "Waiting for your OK"} ({items.length})</p>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">Krish asks before it sends anything for you. Read it, then send it or not.</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">Krish asks before it sends anything or changes things in your apps. Read it, then say yes or no.</p>
       <div className="mt-2 space-y-2">
         {items.map((ap) => (
           <div key={ap.id} className={`rounded-lg border border-border bg-card p-3 ${hideOnWide === ap.automationId ? "md:hidden" : ""}`} data-testid={`approval-${ap.id}`}>
-            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><Mail className="h-3 w-3" /> {ap.automationName} · {when(ap.createdAt)}</p>
+            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">{ap.kind === "gmail_send" ? <Mail className="h-3 w-3" /> : <Plug className="h-3 w-3" />} {ap.automationName} · {when(ap.createdAt)}</p>
             {ap.detail?.to ? (
               <>
                 <p className="mt-1 text-sm"><span className="text-muted-foreground">To</span> <span className="font-medium">{ap.detail.to}</span></p>
@@ -371,12 +372,20 @@ function Approvals({ items, onDone, hideOnWide, inDetail = false }) {
                   <button onClick={() => setOpen(open === ap.id ? null : ap.id)} className="mt-0.5 text-[11px] text-brand hover:underline">{open === ap.id ? "Show less" : "Read all"}</button>
                 )}
               </>
+            ) : ap.detail?.app ? (
+              <>
+                <p className="mt-1 text-sm"><span className="font-medium">{ap.detail.app}</span> <span className="text-muted-foreground">·</span> {ap.detail.action}</p>
+                <pre className={`mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-sunken p-2 font-mono text-[11px] text-muted-foreground ${open === ap.id ? "" : "line-clamp-4"}`}>{ap.detail.body}</pre>
+                {(ap.detail.body || "").length > 160 && (
+                  <button onClick={() => setOpen(open === ap.id ? null : ap.id)} className="mt-0.5 text-[11px] text-brand hover:underline">{open === ap.id ? "Show less" : "Read all"}</button>
+                )}
+              </>
             ) : <p className="mt-1 text-sm">{ap.summary}</p>}
             <div className="mt-2 flex gap-2">
               <Button size="sm" onClick={() => decide(ap, true)} disabled={!!busy} className="h-8 gap-1.5" data-testid={`approve-${ap.id}`}>
-                {busy === ap.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} {ap.kind === "gmail_send" ? "Send it" : "Approve"}
+                {busy === ap.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} {ap.kind === "gmail_send" ? "Send it" : "Do it"}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => decide(ap, false)} disabled={!!busy} className="h-8 border-border">Don't send</Button>
+              <Button size="sm" variant="outline" onClick={() => decide(ap, false)} disabled={!!busy} className="h-8 border-border">{ap.kind === "gmail_send" ? "Don't send" : "Don't do it"}</Button>
             </div>
           </div>
         ))}
