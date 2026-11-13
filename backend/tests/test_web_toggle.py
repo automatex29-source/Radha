@@ -1,4 +1,4 @@
-"""Web search runs only when the user turns it on or asks for it; otherwise Krish suggests it when it would help."""
+"""Krish searches on its own when a question needs fresh facts; the Web button and asking in words always search."""
 import asyncio
 
 import live_search
@@ -56,9 +56,14 @@ def turn(monkeypatch, question, **kw):
     return asyncio.run(go())
 
 
-def test_no_search_by_default_but_a_hint_for_fresh_questions(monkeypatch):
+def test_fresh_questions_search_on_their_own(monkeypatch):
     call, hinted, saved = turn(monkeypatch, "latest news on electric cars")
-    assert call["search"] is False and hinted and saved
+    assert call["search"] is True and call["force"] is False and not hinted and not saved
+
+
+def test_no_search_for_writing_tasks(monkeypatch):
+    call, hinted, _ = turn(monkeypatch, "write a poem about the rain")
+    assert call["search"] is False and not hinted
 
 
 def test_no_hint_for_timeless_questions(monkeypatch):

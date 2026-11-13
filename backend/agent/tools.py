@@ -34,7 +34,8 @@ class ToolContext:
     # so the model's [n] citations point at real cards.
     sources: Optional[List[dict]] = None
     searches_left: Optional[int] = None  # None means no limit
-    web: bool = True  # False when the user hasn't turned web search on: web_search and deep_research are hidden
+    web: bool = True  # False hides web_search and deep_research (a counselling chat)
+    research: bool = True  # False hides deep_research: Krish searches on its own, but a long report needs asking
     limit_hit: Optional[str] = None  # set when a plan limit stopped a tool, so the app can offer an upgrade
     connected: frozenset = frozenset()  # the apps the user connected (connectors.py); their tools need them
     plugins_off: frozenset = frozenset()  # plugins the user switched off (plugins.py); their tools are hidden
@@ -62,6 +63,7 @@ class Tool:
     available: Callable[[], bool] = lambda: True
     scope: str = "general"  # "app" tools are only offered inside an app-builder conversation
     needs_web: bool = False  # searches the web, so only offered when web search is on
+    long_research: bool = False  # a long multi-search report, only when the user turned search on or asked
     connector: str = ""  # uses an app the user connects in Settings, so only offered once it's connected
     plugin: str = ""  # part of a plugin, so hidden when the user switches the plugin off
 
@@ -71,6 +73,8 @@ class Tool:
         if self.scope != "app" and ctx and ctx.app_id and ctx.focused:
             return False
         if self.needs_web and ctx and not ctx.web:
+            return False
+        if self.long_research and ctx and not ctx.research:
             return False
         if self.connector and not (ctx and self.connector in ctx.connected):
             return False
@@ -564,7 +568,7 @@ def default_registry() -> ToolRegistry:
                 "format": {"type": "string", "description": "pdf (default) or docx"},
                 "filename": {"type": "string", "description": "Short file name without extension"},
             }, "required": ["question"]},
-            handler=_deep_research, needs_web=True))
+            handler=_deep_research, needs_web=True, long_research=True))
         .register(Tool(
             name="create_html", label="Create web page",
             description="Create a self-contained HTML page (inline CSS/JS; CDN scripts allowed) that the user can "

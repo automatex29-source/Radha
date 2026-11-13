@@ -130,7 +130,13 @@ def test_search_falls_back_to_next_engine(monkeypatch):
     monkeypatch.setattr(web, "_bing", engine("bing", [{"title": "B", "url": "https://b.test", "snippet": ""}]))
     monkeypatch.setattr(web, "_wikipedia", engine("wiki", []))
     assert asyncio.run(web.search("q"))[0]["url"] == "https://b.test"
-    assert tried == ["ddg", "lite", "bing"]
+    assert tried == ["ddg", "bing"]  # asked together; lite and Wikipedia only when both fail
+
+    monkeypatch.setattr(web, "_bing", engine("bing", []))
+    monkeypatch.setattr(web, "_wikipedia", engine("wiki", [{"title": "W", "url": "https://w.test", "snippet": ""}]))
+    tried.clear()
+    assert asyncio.run(web.search("q"))[0]["url"] == "https://w.test"
+    assert tried == ["ddg", "bing", "lite", "wiki"]
 
 
 def test_rates_fall_back_to_frankfurter(monkeypatch):
