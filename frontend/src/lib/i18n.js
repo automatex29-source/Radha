@@ -21,7 +21,7 @@ export const LANGUAGES = [
 
 const en = {
   chat: "Chat", counsellor: "Counsellor", projects: "Projects", apps: "Apps", docs: "Docs", decks: "Decks",
-  automations: "Automations", automate: "Automate", helpCenter: "Help Center",
+  automations: "Automations", automate: "Automate", helpCenter: "Help Center", inbox: "Inbox",
   newConversation: "New conversation", newSession: "New session", newChat: "New chat",
   searchChats: "Search chats and messages", searchConversations: "Search conversations",
   noMatch: "No chats match your search.", noConversations: "No conversations yet.",

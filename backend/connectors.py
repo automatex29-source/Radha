@@ -664,6 +664,16 @@ async def oauth_callback(state: str = "", code: str = "", error: str = ""):
     cid = doc["connector"]
     if error or not code:
         return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote("You cancelled the sign-in."))
+    if doc.get("custom"):  # an app added by link (custom_connectors.py)
+        import custom_connectors
+        try:
+            xid = await custom_connectors.finish_sign_in(doc, code)
+        except (custom_connectors.ConnectError, ConnectError) as exc:
+            return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote(str(exc)))
+        except (httpx.HTTPError, KeyError, ValueError):
+            logger.exception("Sign-in for a custom connector failed")
+            return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote("Sign-in failed. Please try again."))
+        return RedirectResponse(f"{back}/?settings=connectors&connected=custom:{xid}")
     try:
         await _finish_oauth(doc["userId"], cid, code, doc["redirect"])
     except ConnectError as exc:
@@ -735,16 +745,28 @@ async def whatsapp_webhook(request: Request, x_hub_signature_256: str = Header(d
         body = json.loads(raw or b"{}")
     except ValueError:
         raise HTTPException(status_code=400, detail="Bad body")
+    import social_inbox  # users' own WhatsApp Business numbers can share this webhook (social_inbox.py)
     for entry in body.get("entry") or []:
         for change in entry.get("changes") or []:
             value = change.get("value") or {}
-            names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts") or []}
-            for msg in value.get("messages") or []:
-                if msg.get("type") != "text" or not msg.get("from"):
+            try:
+                if await social_inbox.handle_whatsapp_value(value):
                     continue
-                phone = msg["from"]
-                try:
-                    await on_message("whatsapp", phone, names.get(phone) or f"+{phone}", (msg.get("text") or {}).get("body", ""))
-                except Exception:
-                    logger.exception("WhatsApp message failed")
+            except Exception:
+                logger.exception("Business WhatsApp message failed")
+                continue
+            await whatsapp_bot_value(value)
     return {"ok": True}
+
+
+async def whatsapp_bot_value(value: dict):
+    """Messages to Krish's own WhatsApp number."""
+    names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts") or []}
+    for msg in value.get("messages") or []:
+        if msg.get("type") != "text" or not msg.get("from"):
+            continue
+        phone = msg["from"]
+        try:
+            await on_message("whatsapp", phone, names.get(phone) or f"+{phone}", (msg.get("text") or {}).get("body", ""))
+        except Exception:
+            logger.exception("WhatsApp message failed")

@@ -51,6 +51,8 @@ import appcloud
 import decks
 import appdata
 import automations
+import custom_connectors
+import social_inbox
 import live_search
 import search_modes
 import related
@@ -72,6 +74,7 @@ import daily_verse
 import google_signin
 import monitor
 import owner_dashboard
+import setup_status
 import promos
 import referrals
 import growth_mail
@@ -624,6 +627,8 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     for app in await db.apps.find({"userId": user_id}, {"id": 1}).to_list(None):
         await apps.delete_app(app["id"], user_id)
     await connectors.delete_user(user_id)
+    await custom_connectors.delete_user(user_id)
+    await social_inbox.delete_user(user_id)
     for auto in await db.automations.find({"userId": user_id}, {"id": 1}).to_list(None):
         await automations.delete_automation(auto["id"], user_id)
     async for f in db.files.find({"userId": user_id}, {"storage_path": 1}):
@@ -695,6 +700,13 @@ async def admin_dashboard(range: str = Query("24h", pattern="^(24h|7d|30d|90d|1y
     """Owner only: sign-ins, active people, plans sold, revenue and profit, use per person, what people ask."""
     await _require_owner(user_id)
     return await owner_dashboard.overview(db, range)
+
+
+@api.get("/admin/setup")
+async def admin_setup(user_id: str = Depends(current_user_id)):
+    """Owner only: which connectors and plugins are live, and the keys the rest still need (names, never values)."""
+    await _require_owner(user_id)
+    return setup_status.status()
 
 
 class OwnerCostsIn(BaseModel):
@@ -876,6 +888,8 @@ async def export_account(user_id: str = Depends(current_user_id)):
         "projects": await db.projects.find({"userId": user_id}, hide).to_list(None),
         "connectedApps": [{"app": c["connector"], "account": c.get("account"), "since": c.get("createdAt")}
                           async for c in db.connections.find({"userId": user_id})],
+        "appsAddedByLink": [{"name": c["name"], "kind": c["kind"], "website": c.get("host"), "since": c.get("createdAt")}
+                            async for c in db.custom_connectors.find({"userId": user_id})],
         "plugins": await plugins.state(user_id),
         "payments": await db.payments.find({"userId": user_id}, {"_id": 0, "plan": 1, "amount": 1, "status": 1,
                                                                  "createdAt": 1}).to_list(None),
@@ -1313,6 +1327,24 @@ def _is_hinglish(text: Optional[str]) -> bool:
     return hits * 10 >= len(words) and (hits >= 2 or (hits == 1 and len(words) <= 12))
 
 
+# A student asking for help with an exam, a chapter or a sum (English, Hinglish or Hindi).
+_STUDY_ASK = re.compile(
+    r"\b(exam|exams|paper|boards?|test|quiz|syllabus|chapter|revision|revise|time ?table|study plan|homework|"
+    r"assignment|numericals?|derivation|padhu|padhna|padhai|padhun|padh|samjhao|samjha do|samajh nahi|"
+    r"yaad nahi|ratta|jee|neet|upsc|cbse|icse|cuet|ssc|class \d{1,2}|\d{1,2}(?:th|vi) class|solve)\b|"
+    r"\u092a\u0922\u093c|\u092a\u0930\u0940\u0915\u094d\u0937\u093e|\u0938\u092e\u091d\u093e", re.IGNORECASE)  # पढ़ परीक्षा समझा
+STUDY_CLOSE_NOTE = ("This is a study question. After the answer, finish with two short lines in the user's "
+                    "language: first one question that would make your help fit them better (their board or "
+                    "exam, how much they have covered, or theory or numericals), then one offer for the next "
+                    "step they can say yes to (\"5 numericals practice karein?\", a 5-question quiz, or one "
+                    "topic explained simply). Nothing after those two lines.")
+
+
+def _study_ask(text: Optional[str]) -> bool:
+    """True when the message is a student asking for study or exam help (see STUDY_CLOSE_NOTE)."""
+    return bool(_STUDY_ASK.search(text or ""))
+
+
 def _hinglish_chat(history_docs: list) -> bool:
     """True when the reply should be in Hinglish: the latest message is, or it is a short follow-up ("ok",
     "aur?", "2nd one") in a chat where the person's message before it was."""
@@ -1636,6 +1668,21 @@ _NEEDS_TOOLS = re.compile(
     r"panchang|tithi|muhurat|nakshatra|festivals?|ekadashi|cricket|score|match|forecast|rain)\b|https?://|www\."
     r"|vide?o+s?\b|animat|photos?\b|pictures?\b",  # inside typos too ("avideoo", "kidsphoto")
     re.IGNORECASE)
+
+
+_MY_THINGS = re.compile(r"\bmy\s+(?:\w+\s+)?(?:shop|store|crm|sheets?|calendar|inbox|e?mails?|files?|drive|boards?|"
+                       r"tickets?|issues?|orders?|customers?|leads?|notes?|tasks?|projects?|repos?|channel|account|"
+                       r"payments?|sales|meetings?|events?|docs?|pages?|workspace)\b", re.I)
+
+
+def _mentions_apps(text: Optional[str], app_names: List[str]) -> bool:
+    """True when a message with connected apps asks about one of them (by name, or "my orders", "my inbox"...)."""
+    if not text or not app_names:
+        return False
+    low = text.lower()
+    return bool(_MY_THINGS.search(text)) or any(
+        len(w) >= 3 and re.search(rf"\b{re.escape(w)}\b", low)
+        for name in app_names for w in [name.lower()] + name.lower().split() if w not in ("google", "add", "the", "and", "my", "to"))
 
 
 def _quick_chat(history_docs: list) -> bool:
@@ -1997,6 +2044,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if base is SYSTEM_PROMPT and not agent_llm.lean(model):
         system_parts.append(ANSWER_SHAPES)
     connected, plugin_state = frozenset(), {}  # Settings > Connectors and Plugins (see below)
+    own_tools = ()
+    app_names = []  # the names of the user's connected apps, so a short question about one keeps the tools
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
@@ -2016,6 +2065,16 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         plugin_state = await plugins.state(user_id)
         if connected and not counselling:
             system_parts.append(connectors.prompt_line(connected))
+        if not counselling:  # apps the user added by link (Settings > Connectors > Add any app)
+            own_tools = tuple(await custom_connectors.tools_for(user_id)) + tuple(await social_inbox.tools_for(user_id))
+            app_names = await custom_connectors.names(user_id)
+            if app_names:
+                system_parts.append(custom_connectors.prompt_line(app_names))
+            if any(t.name.startswith("social_") for t in own_tools):
+                app_names = app_names + ["Instagram", "WhatsApp", "customers", "inbox"]
+                system_parts.append("The user connected their business Instagram or WhatsApp to Krish's Business "
+                                    "inbox: read customer chats with social_chats and reply with social_reply.")
+            app_names = app_names + [connectors.CONNECTORS[c]["name"] for c in connected]
         lang_line = languages.prompt_line(settings_lang)
         if lang_line and not voice:  # voice replies follow the language spoken (see voice_prompt)
             system_parts.append(lang_line)
@@ -2064,7 +2123,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     ai_limit = None  # set when a free model's usage limit ends the reply (the chat shows a card)
     token_count = agent_llm.start_token_count()  # the tokens this reply really uses, for the usage meter
     if agent and not app_id and not extra_system and not think and not study and agent_llm.lean(model) \
-            and _quick_chat(history_docs) and not await db.files.count_documents(
+            and _quick_chat(history_docs) and not _mentions_apps(last_user, app_names) \
+            and not await db.files.count_documents(
                 {"conversationId": conv_id, "is_deleted": False}):
         agent = False
     if app_id:
@@ -2162,6 +2222,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if counselling and voice:
         system_parts.append(counsellor.VOICE)
     # Free models often drift to English or formal Hindi; the last line of the prompt is the one they follow.
+    if base is SYSTEM_PROMPT and not voice and not coding and not study and _study_ask(last_user):
+        system_parts.append(STUDY_CLOSE_NOTE)  # Study mode asks its own check question after each idea
     if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
         system_parts.append(HINGLISH_NOTE)
     system_prompt = "\n\n".join(system_parts)
@@ -2190,7 +2252,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                               model=model, sources=None if app_id else sources,
                               searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES),
                               web=not counselling, research=chosen_web or bool(_RESEARCH_ASK.search(last_user or "")),
-                              connected=connected,
+                              connected=connected, extra=own_tools,
                               plugins_off=frozenset(k for k, on in plugin_state.items() if not on))
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
             if app_id:
@@ -3591,6 +3653,10 @@ app.include_router(writer.router)
 automations.init(db, run_turn, AI_MODEL, _pick_model)
 connectors.init(db, run_turn, AI_MODEL)
 plugins.init(db)
+custom_connectors.init(db)
+app.include_router(custom_connectors.router)
+social_inbox.init(db)
+app.include_router(social_inbox.router)
 app.include_router(connectors.router)
 app.include_router(plugins.router)
 app.include_router(automations.router)
@@ -3790,6 +3856,11 @@ async def startup():
     await db.password_resets.create_index("tokenHash")
     await db.conversations.create_index([("userId", 1), ("updatedAt", -1)])
     await db.conversations.create_index("shareId", sparse=True)
+    await db.social_accounts.create_index([("platform", 1), ("externalId", 1)])
+    await db.social_threads.create_index([("accountId", 1), ("contactId", 1)])
+    await db.social_threads.create_index([("userId", 1), ("lastAt", -1)])
+    await db.social_messages.create_index([("threadId", 1), ("createdAt", 1)])
+    await db.social_messages.create_index("externalId", sparse=True)
     await db.pages.create_index("id", unique=True)
     await db.pages.create_index([("messageId", 1), ("userId", 1)])
     await db.messages.create_index([("conversationId", 1), ("createdAt", 1)])

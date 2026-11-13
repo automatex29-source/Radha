@@ -71,6 +71,48 @@ function Panel({ title, subtitle, action, children, className = "", testId, flus
   );
 }
 
+function SetupPanel() {
+  const [d, setD] = useState(null);
+  const [open, setOpen] = useState(null);
+  useEffect(() => { api.get("/admin/setup").then(({ data }) => setD(data)).catch(() => setD(null)); }, []);
+  if (!d) return null;
+  return (
+    <Panel className="mt-3" title="Make connectors and plugins live" testId="owner-dash-setup"
+      subtitle={`${d.live} of ${d.total} are live. Add the missing keys in Render > Environment, then reload this page.`}
+      flush>
+      <ul className="divide-y divide-border/60">
+        {d.items.map((it) => (
+          <li key={it.id} data-testid={`setup-${it.id}`}>
+            <button type="button" onClick={() => setOpen(open === it.id ? null : it.id)}
+              className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-muted/40">
+              {it.live ? <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" /> : <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />}
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2 text-[13px] font-semibold">
+                  {it.name}
+                  <span className={`rounded-full px-2 py-px text-[10.5px] font-semibold ${it.live ? "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/12 text-amber-700 dark:text-amber-400"}`}>
+                    {it.live ? "Live" : "Needs keys"}</span>
+                </span>
+                <span className="mt-0.5 block text-[12px] text-muted-foreground">{it.unlocks}{!it.live && ` · ${it.effort}`}</span>
+                {!it.live && <span className="mt-1 block break-words font-mono text-[11px] text-amber-700 dark:text-amber-400">Missing: {it.missing.join(", ")}</span>}
+              </span>
+              {open === it.id ? <ChevronUp className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
+            </button>
+            {open === it.id && (
+              <div className="px-4 pb-4 pl-11">
+                <ol className="list-decimal space-y-1.5 pl-4 text-[12.5px] leading-snug">
+                  {it.steps.map((s, i) => <li key={i} className="break-words">{s}</li>)}
+                </ol>
+                <a href={it.link} target="_blank" rel="noreferrer" className="mt-3 inline-block text-[12.5px] font-semibold text-primary hover:underline">Open the setup page ↗</a>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="border-t border-border/60 px-4 py-3 text-[12px] text-muted-foreground">Already live with no keys: {d.alwaysLive.join(", ")}.</p>
+    </Panel>
+  );
+}
+
 function Delta({ value, prev, invert, small }) {
   const c = change(value, prev);
   if (c === null) {
@@ -439,6 +481,8 @@ export default function OwnerDashboard() {
                   })}
                 </ul>
               </Panel>
+
+              <SetupPanel />
 
               <SectionTitle id="money" note={`Last ${rangeLabel}`}>Trends and money</SectionTitle>
               <div className="grid gap-3 lg:grid-cols-3">
