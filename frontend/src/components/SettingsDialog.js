@@ -255,7 +255,7 @@ function Account({ onClose }) {
     <>
       <PageTitle title="Account" hint="Who you are on Krish, and how you sign in." />
       <div className="mb-6 flex items-center gap-4 rounded-2xl border border-border bg-card p-4">
-        <UserAvatar user={user} ring className="h-14 w-14 text-xl" />
+        <UserAvatar user={user} className="h-14 w-14 text-xl" />
         <div className="min-w-0 flex-1">
           {editing ? (
             <form onSubmit={save} className="flex gap-2">

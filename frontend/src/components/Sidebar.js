@@ -223,7 +223,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           <DropdownMenuTrigger asChild>
             <button data-testid="user-profile-menu-button" aria-label={user?.name || "Account"}
               className="flex w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2.5 text-left shadow-sm ring-1 ring-white transition-colors hover:bg-white dark:bg-card dark:ring-border max-md:w-auto max-md:rounded-full max-md:bg-transparent max-md:p-0 max-md:shadow-none max-md:ring-0 dark:max-md:bg-transparent">
-              <UserAvatar user={user} ring className="h-9 w-9 text-[13px] max-md:h-11 max-md:w-11 max-md:text-[15px]" />
+              <UserAvatar user={user} className="h-9 w-9 text-[13px] max-md:h-11 max-md:w-11 max-md:text-[15px]" />
               <div className="min-w-0 flex-1 leading-tight max-md:hidden">
                 <p className="truncate text-sm font-semibold">{user?.name}</p>
                 <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
@@ -235,7 +235,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             className="w-[min(18.5rem,calc(100vw-2rem))] rounded-2xl border-black/5 bg-popover p-1.5 shadow-[0_18px_50px_-12px_rgba(15,23,42,0.28)] backdrop-blur-xl dark:border-white/10 dark:shadow-[0_18px_50px_-12px_rgba(0,0,0,0.7)]">
             {/* Header: picture, name, email and plan */}
             <div className="flex items-center gap-3 px-2.5 pb-2.5 pt-2">
-              <UserAvatar user={user} ring className="h-11 w-11 text-[15px]" />
+              <UserAvatar user={user} className="h-11 w-11 text-[15px]" />
               <div className="min-w-0 flex-1 leading-tight">
                 <div className="flex items-center gap-1.5">
                   <p className="truncate text-[14px] font-semibold text-foreground">{user?.name || "Your account"}</p>
