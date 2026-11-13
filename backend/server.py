@@ -53,6 +53,7 @@ import appdata
 import automations
 import custom_connectors
 import live_search
+import study as study_mode
 import search_modes
 import related
 import mailer
@@ -278,6 +279,7 @@ def public_user(doc: dict) -> dict:
         # The welcome questions (counsellor.WORK / USES): asked once; they shape every reply.
         "about": doc.get("about"),
         "needsWelcome": not doc.get("aboutAt"),
+        "study": study_mode.clean(doc.get("study")),  # Study mode: class or exam, board, language (study.py)
     }
 
 
@@ -861,6 +863,23 @@ async def set_about(body: AboutIn, user_id: str = Depends(current_user_id)):
     return public_user(doc)
 
 
+class StudyIn(BaseModel):
+    level: Optional[Literal[tuple(study_mode.LEVELS)]] = None
+    board: Optional[Literal[tuple(study_mode.BOARDS)]] = None
+    lang: Optional[Literal[tuple(study_mode.LANGS)]] = None
+
+
+@api.put("/auth/study")
+async def set_study(body: StudyIn, user_id: str = Depends(current_user_id)):
+    """The Study screen: the student's class or exam, board and the language they learn in."""
+    await db.users.update_one({"id": user_id}, {"$set": {"study": study_mode.clean(body.model_dump()),
+                                                        "updatedAt": now_iso()}})
+    doc = await db.users.find_one({"id": user_id})
+    if not doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    return public_user(doc)
+
+
 class ProfileIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
@@ -1350,6 +1369,11 @@ STUDY_CLOSE_NOTE = ("This is a study question. After the answer, finish with two
                     "topic explained simply). Nothing after those two lines.")
 
 
+STUDY_CLOSE_KNOWN = ("This is a study question. After the answer, finish with one short line in the user's "
+                     "language: an offer for the next step they can say yes to (\"5 numericals practice karein?\", "
+                     "a 5-question quiz, or one topic explained simply). Nothing after that line.")
+
+
 def _study_ask(text: Optional[str]) -> bool:
     """True when the message is a student asking for study or exam help (see STUDY_CLOSE_NOTE)."""
     return bool(_STUDY_ASK.search(text or ""))
@@ -1604,14 +1628,7 @@ def voice_prompt(lang: Optional[str], fallback: Optional[str] = None) -> str:
     )
 
 
-STUDY_PROMPT = (
-    "Study mode is on: act as a patient, encouraging tutor for a student in India. Don't just hand over the final "
-    "answer. First ask what level they are at if it isn't clear (class, exam such as CBSE, JEE, NEET, UPSC, or "
-    "college). Explain one idea at a time in simple words with a small everyday example, then ask one short "
-    "question to check they understood before moving on. For homework, give hints and let them try each step; "
-    "show the full solution only after they try or ask for it. When a topic is done, offer a quick quiz or "
-    "flashcards (use create_flashcards) for revision."
-)
+STUDY_PROMPT = study_mode.PROMPT  # see study.py
 
 MAX_CONTEXT_IMAGES = 6
 
@@ -2062,11 +2079,13 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     # Memory (user-global + project) — real, user-controlled facts.
     settings_lang = None
+    student = None  # Study mode: the student's class or exam (study.py)
     if user_id:
         remembered = await memory.prompt_section(db, user_id, project_id)
         if remembered:
             system_parts.append(remembered)
-        owner = await db.users.find_one({"id": user_id}, {"language": 1, "about": 1})
+        owner = await db.users.find_one({"id": user_id}, {"language": 1, "about": 1, "study": 1})
+        student = (owner or {}).get("study")
         settings_lang = (owner or {}).get("language")
         about = counsellor.about_line((owner or {}).get("about"))
         if about:
@@ -2198,6 +2217,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(agent_prompt())
     if study and not app_id and not counselling:
         system_parts.append(STUDY_PROMPT)
+    if user_id and not app_id and not counselling and (study or _study_ask(last_user)):
+        student_line = study_mode.profile_line(student)
+        if student_line:
+            system_parts.append(student_line)
     # How to answer this kind of question well: code, or ideas (not in the app builder, voice or counselling).
     if not (app_id or counselling or voice or extra_system):
         if coding:
@@ -2229,7 +2252,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(counsellor.VOICE)
     # Free models often drift to English or formal Hindi; the last line of the prompt is the one they follow.
     if base is SYSTEM_PROMPT and not voice and not coding and not study and _study_ask(last_user):
-        system_parts.append(STUDY_CLOSE_NOTE)  # Study mode asks its own check question after each idea
+        # Study mode asks its own check question after each idea; a known class or exam needs no asking.
+        system_parts.append(STUDY_CLOSE_KNOWN if (study_mode.clean(student) or {}).get("level") else STUDY_CLOSE_NOTE)
     if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
         system_parts.append(HINGLISH_NOTE)
     system_prompt = "\n\n".join(system_parts)

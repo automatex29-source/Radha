@@ -8,6 +8,7 @@ import ComposerInput from "@/components/ComposerInput";
 import VoiceMode from "@/components/VoiceMode";
 import { setServerSpeech, browserSpeechAvailable, unlockSpeech, getVoiceLang } from "@/lib/voice";
 import PreviewPanel from "@/components/PreviewPanel";
+import StudyHome from "@/components/StudyHome";
 import CodePanel from "@/components/CodePanel";
 import { extractFiles } from "@/lib/codeFiles";
 import ShareDialog from "@/components/ShareDialog";
@@ -638,6 +639,15 @@ export default function Workspace({ mode = null }) {
     }
   };
 
+  // The Study screen puts the start of a request in the message box for the student to finish.
+  const prefill = (text) => {
+    setInput(text);
+    requestAnimationFrame(() => {
+      const box = document.querySelector('[data-testid="message-composer-textarea"]');
+      if (box) { box.focus(); box.setSelectionRange(text.length, text.length); }
+    });
+  };
+
   const removeAttachment = async (fid) => {
     if (!String(fid).startsWith("code-")) {
       try { await api.delete(`/files/${fid}`); } catch { /* ignore */ }
@@ -802,7 +812,8 @@ export default function Workspace({ mode = null }) {
             </div>
           ) : messages.length === 0 && !streaming ? (
             counselling ? <CounselEmptyState onPick={(p) => sendMessage(p)} onBreathe={() => setBreatheOpen(true)}
-              last={conversations[0]} onResume={openConversation} /> : <EmptyState onPick={(p) => sendMessage(p)} />
+              last={conversations[0]} onResume={openConversation} /> : study ? <StudyHome onAttach={attachFile} onPrefill={prefill} />
+              : <EmptyState onPick={(p) => sendMessage(p)} />
           ) : (
             <div data-testid="message-list-container" className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:py-8">
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
