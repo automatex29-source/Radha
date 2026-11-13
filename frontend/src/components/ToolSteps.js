@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { mediaUrl } from "@/lib/api";
-import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, CheckCircle2, XCircle, ChevronRight, FileDown,
+import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, ChevronRight, FileDown,
   FileSpreadsheet, Presentation, FileText, Clapperboard, MousePointerClick, Eye, FilePen, FileSearch, FileX,
-  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree, CircleStop, ListChecks, ClipboardCheck, Hand } from "lucide-react";
+  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree, ListChecks, ClipboardCheck, Hand } from "lucide-react";
 import { fileKind, KIND_META } from "@/components/PreviewPanel";
 
 const ICONS = {
@@ -20,7 +20,7 @@ function argPreview(step) {
   if (step.name === "pro_search") return (a.queries || []).join(" · ") || a.query;
   if (step.name === "fetch_url") return a.url;
   if (step.name === "generate_image") return a.prompt;
-  if (step.name === "run_python") return (a.code || "").split("\n").find((l) => l.trim()) || "";
+  if (step.name === "run_python") return ""; // its first line ("import heapq") says nothing; the code opens on a tap
   if (step.name === "generate_video") return a.prompt;
   if (step.name.startsWith("create_")) return a.filename;
   if (["write_file", "append_file", "edit_file", "read_file", "delete_file"].includes(step.name)) return a.path;
@@ -38,33 +38,49 @@ function argPreview(step) {
   return first ? first.slice(0, 80) : "";
 }
 
+// What each step is doing, in plain words (like Claude): "Running code" while it runs, "Ran code" after.
+const VERBS = {
+  web_search: ["Searching the web", "Searched the web"], pro_search: ["Searching the web", "Searched the web"],
+  fetch_url: ["Reading a page", "Read a page"], run_python: ["Running code", "Ran code"],
+  generate_image: ["Making a picture", "Made a picture"], generate_video: ["Making a video", "Made a video"],
+  create_spreadsheet: ["Making a spreadsheet", "Made a spreadsheet"], create_presentation: ["Making slides", "Made slides"],
+  create_document: ["Writing a document", "Wrote a document"], create_html: ["Making a page", "Made a page"],
+  browser: ["Using the browser", "Used the browser"], write_file: ["Writing", "Wrote"], append_file: ["Writing", "Wrote"],
+  edit_file: ["Editing", "Edited"], read_file: ["Reading", "Read"], delete_file: ["Deleting", "Deleted"],
+  list_files: ["Looking at the files", "Looked at the files"], search_files: ["Searching the files", "Searched the files"],
+  run_command: ["Running a command", "Ran a command"], check_preview: ["Checking the preview", "Checked the preview"],
+  commit: ["Saving a version", "Saved a version"], plan_app: ["Planning the app", "Planned the app"],
+  check_features: ["Checking the features", "Checked the features"],
+};
+const MONO = new Set(["run_python", "run_command", "write_file", "append_file", "edit_file", "read_file", "delete_file", "fetch_url"]);
+
 function Step({ step }) {
   const [open, setOpen] = useState(false);
   const Icon = ICONS[step.name] || Wrench;
   const running = step.status === "running";
   const failed = step.status === "error";
   const stopped = step.status === "stopped";
+  const [doing, did] = VERBS[step.name] || [step.label || step.name, step.label || step.name];
+  const preview = argPreview(step);
+  const details = (step.name === "run_python" && step.args?.code) || step.output || step.summary;
+  const note = failed ? "didn't work" : stopped ? "stopped" : step.approval ? "waiting for you" : "";
   return (
-    <div className="rounded-lg border border-border bg-sunken" data-testid={`tool-step-${step.name}`}>
-      <button onClick={() => setOpen((o) => !o)} disabled={running}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs">
-        <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />
-        <span className="shrink-0 font-semibold text-foreground">{step.label || step.name}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">{argPreview(step)}</span>
-        {running ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
-          : failed ? <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-          : stopped ? <CircleStop className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    <div data-testid={`tool-step-${step.name}`} data-status={step.status}>
+      <button type="button" onClick={() => setOpen((o) => !o)} disabled={running || !details} aria-expanded={open}
+        className="krish-step group/step">
+        {running ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
           : step.approval ? <Hand className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />}
-        {!running && <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />}
+          : <Icon className="h-3.5 w-3.5 shrink-0" />}
+        <span className={`shrink-0 font-medium ${running ? "krish-thinking-words" : "text-foreground/80"}`}>{running ? doing : did}</span>
+        {preview && <span className={`min-w-0 truncate text-muted-foreground/75 ${MONO.has(step.name) ? "font-mono text-[11.5px]" : ""}`}>{preview}</span>}
+        {note && <span className="shrink-0 text-muted-foreground/75">· {note}</span>}
+        {!running && details && <ChevronRight className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform group-hover/step:opacity-100 ${open ? "rotate-90" : ""}`} />}
       </button>
-      {!running && step.summary && !open && (
-        <p className="truncate px-3 pb-2 pl-8 text-[11px] text-muted-foreground">{step.summary}</p>
-      )}
-      {open && (
-        <div className="space-y-2 border-t border-border px-3 py-2">
+      {open && details && (
+        <div className="mb-1 ml-[1.375rem] mt-1 space-y-2 rounded-lg border border-border bg-sunken p-2 radha-fade-up">
+          {step.summary && <p className="px-1 text-[11.5px] text-muted-foreground">{step.summary}</p>}
           {step.name === "run_python" && step.args?.code && (
-            <pre className="radha-scroll max-h-64 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] text-brand-soft">{step.args.code}</pre>
+            <pre className="radha-scroll max-h-64 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] text-foreground/85">{step.args.code}</pre>
           )}
           {step.output && (
             <pre className="radha-scroll max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-2 font-mono text-[11px] text-muted-foreground">{step.output}</pre>
@@ -113,7 +129,7 @@ export function ToolSteps({ steps, compact = false }) {
     );
   }
   return (
-    <div className="mb-3 space-y-1.5" data-testid="tool-steps">
+    <div className="mb-3 space-y-0.5" data-testid="tool-steps">
       {compact && open && (
         <button onClick={() => setOpen(false)} className="flex items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground">
           {stepsSummary(steps)} <ChevronRight className="h-3.5 w-3.5 rotate-90" />

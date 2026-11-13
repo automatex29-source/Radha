@@ -367,7 +367,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
               {shown}
             </ReactMarkdown>
           </AnswerStreaming.Provider>
-          {streaming && !shown && !(message.searched?.running && !webSources.length) && (
+          {streaming && !shown && !(message.searched?.running && !webSources.length) && !(message.steps || []).some((x) => x.status === "running") && (
             <span className="krish-thinking" role="status" data-testid="streaming-cursor">
               <span className="krish-thinking-words">Krish is thinking…</span>
             </span>
