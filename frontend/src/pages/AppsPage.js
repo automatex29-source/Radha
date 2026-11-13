@@ -6,16 +6,16 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { AppWindow, Loader2, Trash2, Wand2, Github, ArrowUp, ChevronRight } from "lucide-react";
 
-// Tap an idea to fill the box. The builder picks the matching starter itself.
-const IDEAS = [
-  { label: "Habit tracker", prompt: "A habit tracker with daily check-ins, streaks and a weekly chart" },
-  { label: "Restaurant site", prompt: "A restaurant website with a menu, online ordering and table booking" },
-  { label: "Salon booking", prompt: "A booking app for a beauty salon: pick a service, a day and a time slot" },
-  { label: "Portfolio", prompt: "A personal portfolio for a designer with projects, skills and a contact form" },
-  { label: "AI chatbot", prompt: "An AI chatbot assistant with suggested questions and chat history" },
-  { label: "Sales dashboard", prompt: "A sales dashboard with stats, charts and a recent orders table" },
-  { label: "Online shop", prompt: "An online shop for handmade candles with a cart and checkout" },
-  { label: "Snake game", prompt: "A neon snake game with a high score and sound effects" },
+// Tap a starter to fill the box with a full brief: real jobs Indian businesses and people run every day.
+const STARTERS = [
+  { title: "Shop with WhatsApp orders", text: "Customers browse, add to cart and order on WhatsApp",
+    prompt: "An online store for my kirana shop. Customers browse items by category with photos and prices in ₹, add them to a cart and place the order on WhatsApp with one tap. I can log in as the owner to add items, change prices and stock, and see today's orders." },
+  { title: "Clinic appointments", text: "Patients book a slot, the doctor sees the day's list",
+    prompt: "A website for my clinic. Patients see the doctor's timings and fees, pick a free time slot and book with their name and phone number. The doctor logs in to see today's appointments, mark patients as seen and block days off." },
+  { title: "Coaching class manager", text: "Students, batches, attendance and monthly fees",
+    prompt: "An app to run my coaching centre. I add students to batches, mark daily attendance, and track monthly fees as paid or due with reminders. Parents log in to see their child's attendance and fee status." },
+  { title: "GST invoice maker", text: "Bills with GST split, saved customers, PDF download",
+    prompt: "A GST invoice maker for my small business. I save my business details and customers, add items with HSN code, quantity and rate, and it works out CGST, SGST or IGST and the total in ₹. Each invoice gets a number and downloads as a PDF." },
 ];
 
 // "A habit tracker with daily check-ins" -> "Habit tracker"
@@ -94,11 +94,12 @@ function NewAppBox({ busy, onCreate }) {
           </form>
         )}
       </div>
-      <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-        {IDEAS.map((i) => (
-          <button key={i.label} onClick={() => setText(i.prompt)} data-testid={`idea-${i.label}`}
-            className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-            {i.label}
+      <div className="mt-4 grid gap-2 sm:grid-cols-2" data-testid="new-app-starters">
+        {STARTERS.map((i) => (
+          <button key={i.title} onClick={() => setText(i.prompt)} data-testid={`starter-${i.title}`}
+            className="rounded-xl border border-border px-3.5 py-2.5 text-left transition-colors hover:bg-muted/60">
+            <span className="block text-sm font-medium">{i.title}</span>
+            <span className="block text-xs text-muted-foreground">{i.text}</span>
           </button>
         ))}
       </div>
@@ -179,7 +180,7 @@ export default function AppsPage() {
             ) : apps.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center" data-testid="apps-empty">
                 <p className="text-sm font-medium">No apps yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">Describe one above, or pick an idea, and Krish AI builds it in seconds.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Describe one above, or start from one of the ideas, and Krish AI builds it in seconds.</p>
               </div>
             ) : (
               <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
