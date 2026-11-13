@@ -52,6 +52,7 @@ import decks
 import appdata
 import automations
 import custom_connectors
+import social_inbox
 import live_search
 import related
 import mailer
@@ -72,6 +73,7 @@ import daily_verse
 import google_signin
 import monitor
 import owner_dashboard
+import setup_status
 import promos
 import referrals
 import growth_mail
@@ -625,6 +627,7 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
         await apps.delete_app(app["id"], user_id)
     await connectors.delete_user(user_id)
     await custom_connectors.delete_user(user_id)
+    await social_inbox.delete_user(user_id)
     for auto in await db.automations.find({"userId": user_id}, {"id": 1}).to_list(None):
         await automations.delete_automation(auto["id"], user_id)
     async for f in db.files.find({"userId": user_id}, {"storage_path": 1}):
@@ -696,6 +699,13 @@ async def admin_dashboard(range: str = Query("24h", pattern="^(24h|7d|30d|90d|1y
     """Owner only: sign-ins, active people, plans sold, revenue and profit, use per person, what people ask."""
     await _require_owner(user_id)
     return await owner_dashboard.overview(db, range)
+
+
+@api.get("/admin/setup")
+async def admin_setup(user_id: str = Depends(current_user_id)):
+    """Owner only: which connectors and plugins are live, and the keys the rest still need (names, never values)."""
+    await _require_owner(user_id)
+    return setup_status.status()
 
 
 class OwnerCostsIn(BaseModel):
@@ -2028,10 +2038,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         if connected and not counselling:
             system_parts.append(connectors.prompt_line(connected))
         if not counselling:  # apps the user added by link (Settings > Connectors > Add any app)
-            own_tools = tuple(await custom_connectors.tools_for(user_id))
-            if own_tools:
-                app_names = await custom_connectors.names(user_id)
+            own_tools = tuple(await custom_connectors.tools_for(user_id)) + tuple(await social_inbox.tools_for(user_id))
+            app_names = await custom_connectors.names(user_id)
+            if app_names:
                 system_parts.append(custom_connectors.prompt_line(app_names))
+            if any(t.name.startswith("social_") for t in own_tools):
+                app_names = app_names + ["Instagram", "WhatsApp", "customers", "inbox"]
+                system_parts.append("The user connected their business Instagram or WhatsApp to Krish's Business "
+                                    "inbox: read customer chats with social_chats and reply with social_reply.")
             app_names = app_names + [connectors.CONNECTORS[c]["name"] for c in connected]
         lang_line = languages.prompt_line(settings_lang)
         if lang_line and not voice:  # voice replies follow the language spoken (see voice_prompt)
@@ -3603,6 +3617,8 @@ connectors.init(db, run_turn, AI_MODEL)
 plugins.init(db)
 custom_connectors.init(db)
 app.include_router(custom_connectors.router)
+social_inbox.init(db)
+app.include_router(social_inbox.router)
 app.include_router(connectors.router)
 app.include_router(plugins.router)
 app.include_router(automations.router)
@@ -3802,6 +3818,11 @@ async def startup():
     await db.password_resets.create_index("tokenHash")
     await db.conversations.create_index([("userId", 1), ("updatedAt", -1)])
     await db.conversations.create_index("shareId", sparse=True)
+    await db.social_accounts.create_index([("platform", 1), ("externalId", 1)])
+    await db.social_threads.create_index([("accountId", 1), ("contactId", 1)])
+    await db.social_threads.create_index([("userId", 1), ("lastAt", -1)])
+    await db.social_messages.create_index([("threadId", 1), ("createdAt", 1)])
+    await db.social_messages.create_index("externalId", sparse=True)
     await db.pages.create_index("id", unique=True)
     await db.pages.create_index([("messageId", 1), ("userId", 1)])
     await db.messages.create_index([("conversationId", 1), ("createdAt", 1)])
