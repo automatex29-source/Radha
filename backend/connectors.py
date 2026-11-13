@@ -745,16 +745,28 @@ async def whatsapp_webhook(request: Request, x_hub_signature_256: str = Header(d
         body = json.loads(raw or b"{}")
     except ValueError:
         raise HTTPException(status_code=400, detail="Bad body")
+    import social_inbox  # users' own WhatsApp Business numbers can share this webhook (social_inbox.py)
     for entry in body.get("entry") or []:
         for change in entry.get("changes") or []:
             value = change.get("value") or {}
-            names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts") or []}
-            for msg in value.get("messages") or []:
-                if msg.get("type") != "text" or not msg.get("from"):
+            try:
+                if await social_inbox.handle_whatsapp_value(value):
                     continue
-                phone = msg["from"]
-                try:
-                    await on_message("whatsapp", phone, names.get(phone) or f"+{phone}", (msg.get("text") or {}).get("body", ""))
-                except Exception:
-                    logger.exception("WhatsApp message failed")
+            except Exception:
+                logger.exception("Business WhatsApp message failed")
+                continue
+            await whatsapp_bot_value(value)
     return {"ok": True}
+
+
+async def whatsapp_bot_value(value: dict):
+    """Messages to Krish's own WhatsApp number."""
+    names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts") or []}
+    for msg in value.get("messages") or []:
+        if msg.get("type") != "text" or not msg.get("from"):
+            continue
+        phone = msg["from"]
+        try:
+            await on_message("whatsapp", phone, names.get(phone) or f"+{phone}", (msg.get("text") or {}).get("body", ""))
+        except Exception:
+            logger.exception("WhatsApp message failed")

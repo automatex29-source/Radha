@@ -10,6 +10,7 @@ const ProjectView = lazy(() => import("@/pages/ProjectView"));
 const AppsPage = lazy(() => import("@/pages/AppsPage"));
 const AppBuilder = lazy(() => import("@/pages/AppBuilder"));
 const AutomationsPage = lazy(() => import("@/pages/AutomationsPage"));
+const InboxPage = lazy(() => import("@/pages/InboxPage"));
 const DecksPage = lazy(() => import("@/pages/DecksPage"));
 const DeckEditor = lazy(() => import("@/pages/DeckEditor"));
 const HelpPage = lazy(() => import("@/pages/HelpPage"));
@@ -100,6 +101,7 @@ function Gate() {
       <Route path="/decks" element={<DecksPage />} />
       <Route path="/decks/:id" element={<DeckEditor />} />
       <Route path="/automations" element={<AutomationsPage />} />
+      <Route path="/inbox" element={<InboxPage />} />
       <Route path="/help" element={<HelpPage />} />
       <Route path="/admin" element={<OwnerDashboard />} />
       <Route path="/admin/users" element={<AdminUsersPage />} />
