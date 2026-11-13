@@ -12,6 +12,8 @@ import logging
 import os
 import re
 import socket
+import time
+from collections import OrderedDict
 from typing import List
 from urllib.parse import urljoin, urlparse, parse_qs, unquote
 
@@ -89,6 +91,12 @@ def html_to_text(html: str, base_url: str = "") -> dict:
         if label:
             links.append({"text": label[:80], "url": urljoin(base_url, a.get("href"))})
     return {"title": title, "text": text, "links": links}
+
+
+async def read_page(url: str) -> dict:
+    """fetch_page for search answers: a page read in the last few minutes isn't downloaded again. (The agent's
+    own fetch_url always gets a fresh copy, since it checks pages it may have just changed.)"""
+    return dict(await _remembered(("page", url), PAGE_TTL, lambda: fetch_page(url)))
 
 
 async def fetch_page(url: str) -> dict:
@@ -274,12 +282,48 @@ async def _try(engine, client, query: str, limit: int):
         return exc
 
 
-async def search(query: str, limit: int = 6) -> List[dict]:
-    """Web results: Tavily with a key; otherwise DuckDuckGo and Bing at the same time, merged (each finds pages
-    the other misses), then DuckDuckGo lite and Wikipedia when both fail."""
-    limit = max(1, min(limit, 10))
+# Searches and page reads are kept for a few minutes: a follow-up, a retry or Pro search asking the same query
+# again gets the answer at once. Calls that are still running are shared too, so the same query asked twice at
+# the same time goes to the engines once. Small, so it never matters on a 512 MB server.
+SEARCH_TTL = 600.0
+PAGE_TTL = 900.0
+_MEMO_SIZE = 160
+_memo: "OrderedDict[tuple, tuple]" = OrderedDict()
+
+
+def clear_cache() -> None:
+    _memo.clear()
+
+
+async def _remembered(key: tuple, ttl: float, make):
+    now = time.monotonic()
+    hit = _memo.get(key)
+    if hit and hit[0] > now and not (hit[1].done() and (hit[1].cancelled() or hit[1].exception())):
+        _memo.move_to_end(key)
+        return await asyncio.shield(hit[1])
+    task = asyncio.ensure_future(make())
+    _memo[key] = (now + ttl, task)
+    while len(_memo) > _MEMO_SIZE:
+        _memo.popitem(last=False)
+
+    def forget(t):
+        # Failures and empty results are not kept: the next ask tries the engines again.
+        if t.cancelled() or t.exception() or not t.result():
+            if _memo.get(key, (0, None))[1] is t:
+                _memo.pop(key, None)
+    task.add_done_callback(forget)
+    return await asyncio.shield(task)
+
+
+# When one engine has answered, the other gets this much longer to add its pages; waiting for the slower one
+# every time made each search as slow as the slowest engine.
+MERGE_GRACE = 1.2
+SEARCH_TIMEOUT = httpx.Timeout(6.0, connect=4.0)
+
+
+async def _search_engines(query: str, limit: int) -> List[dict]:
     tavily_key = os.environ.get("TAVILY_API_KEY")
-    async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=5.0), follow_redirects=True,
+    async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT, follow_redirects=True,
                                  headers={"User-Agent": BROWSER_UA, "Accept-Language": "en-US,en;q=0.9"}) as client:
         if tavily_key:
             resp = await client.post("https://api.tavily.com/search", json={
@@ -288,15 +332,24 @@ async def search(query: str, limit: int = 6) -> List[dict]:
             resp.raise_for_status()
             return [{"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")[:400]}
                     for r in resp.json().get("results", [])]
-        last_error = None
-        found = await asyncio.gather(_try(_ddg, client, query, limit + 2), _try(_bing, client, query, limit + 2))
+        tasks = [asyncio.ensure_future(_try(engine, client, query, limit + 2)) for engine in (_ddg, _bing)]
+        try:
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            if pending:
+                answered = any(isinstance(t.result(), list) and t.result() for t in done)
+                await asyncio.wait(pending, timeout=MERGE_GRACE if answered else None)
+        finally:
+            for t in tasks:
+                t.cancel()
+        found = [t.result() for t in tasks if t.done() and not t.cancelled()]
         lists = [r for r in found if isinstance(r, list) and r]
         if lists:
             # A site: search (Reddit, YouTube) wants many pages from that one site.
             return merge(lists, limit, 0 if "site:" in query else 2)
         last_error = next((r for r in found if isinstance(r, Exception)), None)
-        for engine in (_ddg_lite, _wikipedia):
-            results = await _try(engine, client, query, limit)
+        # Both main engines failed: DuckDuckGo lite and Wikipedia are asked together, lite's pages first.
+        backups = await asyncio.gather(_try(_ddg_lite, client, query, limit), _try(_wikipedia, client, query, limit))
+        for results in backups:
             if isinstance(results, Exception):
                 last_error = results
             elif results:
@@ -304,6 +357,15 @@ async def search(query: str, limit: int = 6) -> List[dict]:
         if last_error:
             raise last_error
         return []
+
+
+async def search(query: str, limit: int = 6) -> List[dict]:
+    """Web results: Tavily with a key; otherwise DuckDuckGo and Bing at the same time, merged (each finds pages
+    the other misses), then DuckDuckGo lite and Wikipedia when both fail. Results are reused for a few minutes."""
+    limit = max(1, min(limit, 10))
+    query = " ".join((query or "").split())
+    results = await _remembered(("search", query.lower(), limit), SEARCH_TTL, lambda: _search_engines(query, limit))
+    return [dict(r) for r in results]
 
 
 # ------------------------------------------------------------ exchange rates

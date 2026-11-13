@@ -135,6 +135,7 @@ def test_search_falls_back_to_next_engine(monkeypatch):
     monkeypatch.setattr(web, "_bing", engine("bing", []))
     monkeypatch.setattr(web, "_wikipedia", engine("wiki", [{"title": "W", "url": "https://w.test", "snippet": ""}]))
     tried.clear()
+    web.clear_cache()  # the first answer is reused for a few minutes
     assert asyncio.run(web.search("q"))[0]["url"] == "https://w.test"
     assert tried == ["ddg", "bing", "lite", "wiki"]
 

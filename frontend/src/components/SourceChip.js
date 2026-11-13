@@ -10,9 +10,9 @@ export default function SourceChip({ href, title, children, node, ...rest }) {
   const more = title.slice(4).trim();
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" title={domain} data-testid="citation-link"
-      className="krish-cite mx-1 inline-flex max-w-[11rem] items-center gap-1 rounded-full bg-surface-strong py-0.5 pl-1 pr-2 align-[0.1em] text-[11px] font-medium leading-none text-muted-foreground no-underline transition-colors hover:bg-primary hover:text-primary-foreground">
+      className="krish-cite ml-1 mr-0.5 inline-flex max-w-[11rem] items-center gap-1 rounded-full bg-surface-strong py-0.5 pl-1 pr-2 align-[0.1em] text-[11px] font-medium leading-none text-muted-foreground no-underline transition-colors hover:bg-primary hover:text-primary-foreground">
       {domain && <img src={faviconUrl(domain)} alt="" loading="lazy" className="h-3.5 w-3.5 shrink-0 rounded-full bg-white" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
-      <span className="truncate">{domain || children}</span>
+      <span className="truncate">{domain.replace(/^(en|m|amp|mobile)\./, "") || children}</span>
       {more && <span className="shrink-0 opacity-70">{more}</span>}
     </a>
   );

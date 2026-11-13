@@ -185,6 +185,18 @@
   animation: krish-thinking-shine 2s linear infinite;
 }
 @keyframes krish-thinking-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
+/* Web search, like Claude: "Searching the web" (with the thinking shine) while it runs, then one quiet
+   "Searched the web · 6 sources" line that opens the list of pages. */
+.krish-search-status { display: flex; min-width: 0; align-items: center; gap: 0.5rem; font-size: 0.875rem; font-weight: 500; color: hsl(var(--muted-foreground)); }
+.krish-search-row {
+  display: inline-flex; max-width: 100%; min-width: 0; align-items: center; gap: 0.5rem;
+  border-radius: 9999px; border: 1px solid hsl(var(--border)); background: hsl(var(--card));
+  padding: 0.3rem 0.75rem 0.3rem 0.6rem; font-size: 0.8125rem; color: hsl(var(--muted-foreground));
+  transition: color .15s, border-color .15s, background-color .15s;
+}
+.krish-search-row:hover { color: hsl(var(--foreground)); border-color: hsl(var(--border-strong, var(--border))); background: hsl(var(--surface, var(--card))); }
+.krish-search-row:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+.krish-search-list { margin-top: 0.5rem; overflow: hidden; border-radius: 0.875rem; border: 1px solid hsl(var(--border)); background: hsl(var(--card)); }
 .krish-answer.is-streaming > :is(p, h1, h2, h3, h4):last-child::after,
 .krish-answer.is-streaming > :is(ul, ol):last-child > li:last-child::after {
   content: "";
@@ -249,7 +261,7 @@
 .radha-prose ul { list-style: disc; }
 .radha-prose ol { list-style: decimal; }
 .radha-prose a { color: hsl(var(--brand)); text-decoration: underline; text-underline-offset: 2px; }
-.radha-prose a.krish-cite { color: hsl(var(--muted-foreground)); text-decoration: none; }
+.radha-prose a.krish-cite { color: hsl(var(--muted-foreground)); text-decoration: none; font-family: var(--font-sans); }
 .radha-prose a.krish-cite:hover { color: hsl(var(--primary-foreground)); }
 .radha-prose hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.4em 0; }
 .radha-prose blockquote { border-left: 3px solid hsl(var(--primary) / 0.6); background: hsl(var(--primary) / 0.05); border-radius: 0 10px 10px 0; padding: 0.6em 1em; color: hsl(var(--foreground) / 0.82); margin: 1em 0; }

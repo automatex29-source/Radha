@@ -355,6 +355,7 @@ def public_message(doc: dict) -> dict:
         "sources": doc.get("sources"),
         "related": doc.get("related") or [],
         "webHint": bool(doc.get("webHint")),
+        "searched": doc.get("searched"),
         "images": doc.get("images") or [],
         "steps": doc.get("steps") or [],
         "media": doc.get("media") or [],
@@ -2079,6 +2080,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
+    searched = None  # {"queries"} of the web search behind this answer, for the "Searched the web" row
 
     # Memory (user-global + project) — real, user-controlled facts.
     settings_lang = None
@@ -2181,6 +2183,10 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
     if not app_id and not counselling:
         user_texts = [m["content"] for m in history_docs if m["role"] == "user"]
+        # Like Claude: "Searching the web" with the query shows while the search runs (Pro shows its own step).
+        searching_for = "" if pro else live_search.search_label(user_texts, search=searching, force=web, focus=focus)
+        if searching_for:
+            yield f"event: searching\ndata: {_sse_json({'query': searching_for, 'focus': focus})}\n\n"
         if pro:
             pro_step = {"id": "pro-search", "name": "pro_search", "label": "Pro search",
                         "args": {"query": (last_user or "")[:200]}, "status": "running"}
@@ -2193,6 +2199,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         if (web or pro) and not any(c.get("type") in ("web", "video") for c in found["sources"]):
             system_parts.append(NO_RESULTS_NOTE if agent else NO_RESULTS_NOTE_PLAIN)
         sources = sources + found["sources"]
+        if any(c.get("type") in ("web", "video") for c in found["sources"]):
+            searched = {"queries": found["queries"][:4]}
         if not (web or pro or focus != "web"):
             # Automations search on their own; those source cards only show when the answer cites them.
             quiet_cards = [c for c in found["sources"] if c.get("type") in ("web", "video")]
@@ -2394,6 +2402,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                     yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
             else:
                 sources = [s for s in sources if s not in quiet_cards]
+                searched = None
         if content or steps:
             if stopped:
                 for step in steps:
@@ -2408,6 +2417,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 "sources": sources or None,
                 "related": follow_ups or None,
                 "webHint": web_hint or None,
+                "searched": searched,
                 "steps": steps or None,
                 "media": produced or None,
                 "stopped": stopped or None,

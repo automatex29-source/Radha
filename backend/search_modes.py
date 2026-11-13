@@ -210,13 +210,19 @@ def on_topic(sources: List[dict], terms: List[str]) -> List[dict]:
 
 async def pro(question: str, model: str, max_sources: int = 6, max_chars: int = 900) -> dict:
     """Plans a few searches, reads the best pages. Returns {"queries", "results"} (results carry page text)."""
-    queries = await research.plan(question, "", model, research.default_ask)
+    # The question itself is searched while the planner thinks of the other queries (searches are shared, see
+    # web.search), so planning no longer adds its time before the first results.
+    early = asyncio.ensure_future(safe(web.search(question.strip()[:200], research.RESULTS_PER_QUERY), 8, []))
+    try:
+        queries = await research.plan(question, "", model, research.default_ask)
+    finally:
+        early.cancel()  # the shared search keeps going for gather_sources below; only this waiter stops
     # The planner's queries are cleaned up (typos fixed, clearer words), so they lead; the raw question goes last.
     queries = queries[1:] + queries[:1] if len(queries) > 1 else queries
     # Short limits so a slow engine or page can't use up the whole Pro budget; a page that won't load keeps its snippet.
     terms = research.keywords(question)
     sources = await research.gather_sources(queries, terms, max_sources + 2, max_chars,
-                                            search_timeout=12, fetch_timeout=8)
+                                            search_timeout=8, fetch_timeout=5, fetch=web.read_page)
     sources = on_topic(sources, terms)[:max_sources]
     return {"queries": queries,
             "results": [{"title": s["title"], "url": s["url"], "snippet": s["text"]} for s in sources]}

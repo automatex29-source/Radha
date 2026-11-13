@@ -175,7 +175,7 @@ def test_pro_search_leads_with_planned_queries(monkeypatch):
     monkeypatch.setattr(research, "gather_sources", fake_gather)
     asyncio.run(search_modes.pro("who isceo of whasapp", "m"))
     assert seen["queries"] == ["WhatsApp CEO 2026", "head of WhatsApp Meta", "who isceo of whasapp"]
-    assert seen["limits"] == {"search_timeout": 12, "fetch_timeout": 8}
+    assert seen["limits"] == {"search_timeout": 8, "fetch_timeout": 5, "fetch": web.read_page}
 
 
 def test_pro_falls_back_to_plain_search_when_it_finds_nothing(monkeypatch):

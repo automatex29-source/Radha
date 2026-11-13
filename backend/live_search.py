@@ -271,7 +271,7 @@ def _format(results: List[dict], focus: str = "web") -> Optional[Tuple[str, List
 
 # The top results' pages are read for the passages that answer the question: a search snippet is a line or two,
 # often cut mid-sentence, and answers built only on snippets missed the details.
-READ_TIMEOUT = 3.5
+READ_TIMEOUT = 3.0
 _UNREADABLE = re.compile(r"\.pdf($|\?)|youtube\.com|youtu\.be|reddit\.com|facebook\.com|instagram\.com|x\.com|"
                          r"twitter\.com", re.I)
 
@@ -279,7 +279,7 @@ _UNREADABLE = re.compile(r"\.pdf($|\?)|youtube\.com|youtu\.be|reddit\.com|facebo
 async def read_top(results: List[dict], question: str, pages: int, chars: int, fetch=None) -> List[dict]:
     """The results with the best passages from the first few pages added to their snippets. A page that is slow,
     blocked or off-topic keeps its snippet, so reading never loses a result."""
-    fetch = fetch or web.fetch_page
+    fetch = fetch or web.read_page
     terms = set(research.keywords(question))
 
     async def one(r: dict) -> dict:
@@ -346,6 +346,21 @@ async def _pro(text: str, model: str) -> Optional[Tuple[str, List[dict], List[st
         logger.warning("Plain search after Pro failed: %r", exc)
         plain = None
     return (*plain, [query]) if plain else None
+
+
+def search_label(user_messages: List[str], search: bool = True, force: bool = False, focus: str = "web",
+                 pro: bool = False) -> str:
+    """What gather() will look up on the web for this turn ("" when it won't search), so the chat can show
+    "Searching the web" with the query while it runs."""
+    if not search:
+        return ""
+    focus = focus if focus in search_modes.FOCUSES else "web"
+    force = force or pro or focus != "web"
+    text = tidy(_recent_user_text(user_messages))
+    text = _with_weather_place(user_messages, text) if text else text
+    if not text or not (force or needs_lookup(text)):
+        return ""
+    return search_query(text) if focus == "web" else text[:200]
 
 
 async def gather(user_messages: List[str], search: bool = True, force: bool = False, focus: str = "web",
