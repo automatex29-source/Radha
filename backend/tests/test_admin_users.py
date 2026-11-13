@@ -70,3 +70,19 @@ def test_opening_the_app_counts_as_a_visit(client):
 
 def _login_boss(client):
     return client.post("/api/auth/login", json={"email": "boss@test.com", "password": "secret1"}).json()["token"]
+
+
+def test_setup_status_lists_missing_keys_for_owner_only(client, monkeypatch):
+    boss = client.post("/api/auth/login", json={"email": "boss@test.com", "password": "secret1"}).json()
+    other = _register(client, "nosy-setup@test.com")
+    assert client.get("/api/admin/setup", headers=_auth(other["token"])).status_code == 404
+    for k in ("TELEGRAM_BOT_TOKEN", "VIDEO_GENERATION", "OPENAI_API_KEY", "FAL_KEY", "POLLINATIONS_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:secret-value")
+    monkeypatch.setenv("VIDEO_GENERATION", "on")
+    data = client.get("/api/admin/setup", headers=_auth(boss["token"])).json()
+    rows = {i["id"]: i for i in data["items"]}
+    assert rows["telegram"]["live"] and rows["telegram"]["missing"] == []
+    assert not rows["video"]["live"] and rows["video"]["missing"] == ["OPENAI_API_KEY or FAL_KEY or POLLINATIONS_API_KEY"]
+    assert "secret-value" not in str(data)  # names only, never values
+    assert data["live"] == sum(i["live"] for i in data["items"])

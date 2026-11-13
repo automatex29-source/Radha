@@ -73,6 +73,7 @@ import daily_verse
 import google_signin
 import monitor
 import owner_dashboard
+import setup_status
 import promos
 import referrals
 import growth_mail
@@ -698,6 +699,13 @@ async def admin_dashboard(range: str = Query("24h", pattern="^(24h|7d|30d|90d|1y
     """Owner only: sign-ins, active people, plans sold, revenue and profit, use per person, what people ask."""
     await _require_owner(user_id)
     return await owner_dashboard.overview(db, range)
+
+
+@api.get("/admin/setup")
+async def admin_setup(user_id: str = Depends(current_user_id)):
+    """Owner only: which connectors and plugins are live, and the keys the rest still need (names, never values)."""
+    await _require_owner(user_id)
+    return setup_status.status()
 
 
 class OwnerCostsIn(BaseModel):
