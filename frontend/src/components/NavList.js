@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, FileText, Compass, Inbox } from "lucide-react";
+import { MessageSquare, FolderKanban, AppWindow, Workflow, Presentation, HeartHandshake, FileText, Compass } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { accentStyle } from "@/components/PageHero";
 
@@ -12,7 +12,6 @@ export const NAV_ITEMS = [
   { icon: FileText, label: "Docs", key: "docs", to: "/docs", match: (p) => p.startsWith("/docs") },
   { icon: Presentation, label: "Decks", key: "decks", to: "/decks", match: (p) => p.startsWith("/decks") },
   { icon: Workflow, label: "Automations", key: "automations", to: "/automations", match: (p) => p.startsWith("/automations") },
-  { icon: Inbox, label: "Inbox", key: "inbox", to: "/inbox", match: (p) => p.startsWith("/inbox") },
   { icon: Compass, label: "Discover", key: "discover", to: "/discover", match: (p) => p.startsWith("/discover") },
 ];
 

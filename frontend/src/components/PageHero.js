@@ -11,7 +11,6 @@ const ACCENTS = {
   projects: ["#D946EF", "#A855F7"],
   discover: ["#F59E0B", "#F97316"],
   counsellor: ["#14B8A6", "#38BDF8"],
-  inbox: ["#E1306C", "#7C3AED"],
 };
 
 /** Put on a page's outer box so everything inside (the banner, `kb-btn` buttons) gets the page's colours. */
