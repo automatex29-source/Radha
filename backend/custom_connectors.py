@@ -88,6 +88,14 @@ DIRECTORY = [
      "url": "https://mcp.supabase.com/mcp", "blurb": "Look at your databases and projects"},
     {"id": "huggingface", "name": "Hugging Face", "color": "#FFB000", "category": "developer", "signIn": "oauth",
      "url": "https://huggingface.co/mcp", "blurb": "Search AI models, datasets and Spaces"},
+    {"id": "paypal", "name": "PayPal", "color": "#003087", "category": "money", "signIn": "oauth",
+     "url": "https://mcp.paypal.com/mcp", "blurb": "See transactions, make invoices and payment links"},
+    {"id": "netlify", "name": "Netlify", "color": "#00AD9F", "category": "developer", "signIn": "oauth",
+     "url": "https://netlify-mcp.netlify.app/mcp", "blurb": "Deploy sites and check their builds"},
+    {"id": "neon", "name": "Neon", "color": "#00E599", "category": "developer", "signIn": "oauth",
+     "url": "https://mcp.neon.tech/mcp", "blurb": "Work with your Postgres databases"},
+    {"id": "context7", "name": "Context7", "color": "#0F766E", "category": "developer", "signIn": "open",
+     "url": "https://mcp.context7.com/mcp", "blurb": "Up-to-date docs for any coding library"},
     {"id": "deepwiki", "name": "DeepWiki", "color": "#2F80ED", "category": "developer", "signIn": "open",
      "url": "https://mcp.deepwiki.com/mcp", "blurb": "Ask questions about any public GitHub project"},
 ]
@@ -673,11 +681,13 @@ async def add(user_id: str, kind: str, name: str, url: str, key: str = "", does:
 async def remove(user_id: str, xid: str):
     doc = await db.custom_connectors.find_one_and_delete({"id": xid, "userId": user_id})
     await db.connector_states.delete_many({"userId": user_id, "custom": xid})
+    await db.chat_approvals.delete_many({"userId": user_id, "connector": xid})
     return doc
 
 
 async def delete_user(user_id: str):
     await db.custom_connectors.delete_many({"userId": user_id})
+    await db.chat_approvals.delete_many({"userId": user_id})
 
 
 # ---------------------------------------------------------------- webhooks
@@ -733,6 +743,42 @@ async def run_tool(user_id: str, xid: str, tool: str, args: dict) -> str:
     return text
 
 
+# ----------------------------------------------------- asking first in chat
+# An "Ask first" tool in a chat shows the user an Allow once / Always allow / Deny card, like Claude does.
+# Allow once lets the next call with the same arguments run; Always allow sets the tool to Allow.
+def _args_key(args: dict) -> str:
+    return hashlib.sha256(json.dumps(args or {}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:24]
+
+
+async def _allowed_once(ctx: ToolContext, xid: str, tool: str, args: dict) -> bool:
+    doc = await db.chat_approvals.find_one_and_update(
+        {"userId": ctx.user_id, "conversationId": ctx.conversation_id, "connector": xid, "tool": tool,
+         "argsKey": _args_key(args), "status": "allowed"},
+        {"$set": {"status": "used", "usedAt": _now()}})
+    return doc is not None
+
+
+async def _ask_in_chat(ctx: ToolContext, doc: dict, tool: dict, label: str, args: dict,
+                       channel: Optional[str] = None) -> ToolOutput:
+    apid = uuid.uuid4().hex[:12]
+    card = {"id": apid, "app": doc["name"], "label": label, "tool": tool["name"], "args": args,
+            "directoryId": doc.get("directoryId"), "status": "pending",
+            "color": (DIRECTORY_BY_ID.get(doc.get("directoryId") or "") or {}).get("color")}
+    await db.chat_approvals.insert_one({**card, "userId": ctx.user_id, "conversationId": ctx.conversation_id,
+                                        "connector": doc["id"], "argsKey": _args_key(args), "createdAt": _now()})
+    return ToolOutput(
+        content=(f"Not done yet: {doc['name']} \"{label}\" needs the user's OK first. "
+                 + (f"They are chatting on {channel.title()}, so tell them to open this chat in the Krish AI app and "
+                    "tap Allow there. " if channel else "They now see an Allow / Deny card for it under your reply. ")
+                 + "Don't call it again in this reply. In one short line, say what it will do and that you'll go "
+                 "ahead once they allow it."),
+        summary="Waiting for your OK", approval=card)
+
+
+def public_approval(doc: dict) -> dict:
+    return {k: doc.get(k) for k in ("id", "app", "label", "tool", "args", "directoryId", "color", "status")}
+
+
 def _handler(doc: dict, tool: dict, mode: str):
     name = doc["name"]
 
@@ -746,6 +792,8 @@ def _handler(doc: dict, tool: dict, mode: str):
                                                {"connector": doc["id"], "app": name, "tool": tool["name"],
                                                 "label": label, "args": args},
                                                f"{name}: {label}")
+            elif not await _allowed_once(ctx, doc["id"], tool["name"], args):
+                return await _ask_in_chat(ctx, doc, tool, label, args, conv.get("channel"))
         try:
             text = await run_tool(ctx.user_id, doc["id"], tool["name"], args)
         except ConnectError as exc:
@@ -820,6 +868,33 @@ def _fail(exc: Exception):
     if isinstance(exc, ConnectError):
         raise HTTPException(status_code=400, detail=str(exc))
     raise HTTPException(status_code=502, detail="Couldn't reach the app. Check the link and try again.")
+
+
+class DecideIn(BaseModel):
+    decision: str = Field(pattern="^(once|always|deny)$")
+
+
+@router.get("/approvals/{apid}")
+async def approval_route(apid: str, user_id: str = Depends(current_user_id)):
+    doc = await db.chat_approvals.find_one({"id": apid, "userId": user_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Not found")
+    return public_approval(doc)
+
+
+@router.post("/approvals/{apid}")
+async def decide_route(apid: str, body: DecideIn, user_id: str = Depends(current_user_id)):
+    """The user's answer on an Ask-first card in a chat."""
+    doc = await db.chat_approvals.find_one({"id": apid, "userId": user_id, "status": "pending"})
+    if not doc:
+        raise HTTPException(status_code=409, detail="This was already answered.")
+    status = "denied" if body.decision == "deny" else "allowed"
+    await db.chat_approvals.update_one({"_id": doc["_id"]}, {"$set": {"status": status, "decision": body.decision,
+                                                                     "decidedAt": _now()}})
+    if body.decision == "always":
+        await db.custom_connectors.update_one({"id": doc["connector"], "userId": user_id},
+                                              {"$set": {f"toolModes.{doc['tool']}": "on"}})
+    return {**public_approval(doc), "status": status}
 
 
 @router.get("")

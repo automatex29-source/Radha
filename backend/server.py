@@ -2279,6 +2279,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                     if step is not None:
                         step.update(status="done" if ev["ok"] else "error", summary=ev["summary"],
                                     output=ev["output"], media=ev["media"])
+                        if ev.get("approval"):
+                            step["approval"] = ev["approval"]
                         produced.extend(ev["media"])
                         yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
                     if ctx.limit_hit:
@@ -3854,6 +3856,8 @@ async def startup():
     await db.projects.create_index([("userId", 1), ("updatedAt", -1)])
     await db.files.create_index([("projectId", 1), ("is_deleted", 1)])
     await db.chunks.create_index([("userId", 1), ("projectId", 1)])
+    await db.chat_approvals.create_index([("userId", 1), ("conversationId", 1), ("status", 1)])
+    await db.chat_approvals.create_index("id")
     await db.memories.create_index([("userId", 1), ("projectId", 1)])
     await db.media.create_index("id", unique=True)
     await db.media.create_index([("userId", 1), ("conversationId", 1)])

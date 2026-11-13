@@ -48,6 +48,7 @@ class ToolOutput:
     summary: str = ""  # one line for the UI
     media: List[dict] = field(default_factory=list)  # public_media dicts to show in the UI
     ok: bool = True
+    approval: Optional[dict] = None  # an Allow / Deny card the user answers in the chat (custom_connectors.py)
 
 
 Handler = Callable[[ToolContext, dict], Awaitable[ToolOutput]]

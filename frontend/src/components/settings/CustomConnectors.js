@@ -164,7 +164,7 @@ export function AddApp({ full, onBack, onDone }) {
   );
 }
 
-const MODE_LABEL = { on: "Allow", ask: "Approve", off: "Block" };
+const MODE_LABEL = { on: "Allow", ask: "Ask first", off: "Block" };
 
 /** An app the user added: its status, what it can do (each on, ask first or off), sign in again, remove. */
 export function CustomDetail({ item, onBack, onChange }) {
@@ -221,7 +221,7 @@ export function CustomDetail({ item, onBack, onChange }) {
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div>
             <p className="text-[13.5px] font-semibold">Tool permissions <span className="ml-1 font-mono text-[12px] font-normal text-muted-foreground">{item.tools.length}</span></p>
-            <p className="text-[12px] text-muted-foreground">{item.kind === "webhook" ? "Krish posts a message and JSON data to this endpoint." : "Approve: automations wait for your sign-off before running it."}</p>
+            <p className="text-[12px] text-muted-foreground">{item.kind === "webhook" ? "Krish posts a message and JSON data to this endpoint." : "Ask first: Krish asks you before using it, in chat and in automations."}</p>
           </div>
           {item.kind === "mcp" && (
             <Button variant="outline" size="sm" onClick={refresh} disabled={!!busy} className="h-8 shrink-0 gap-1.5" data-testid="custom-refresh">
