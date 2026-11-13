@@ -15,7 +15,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 import image_edit
 import limits
 import media
-from . import browser, documents, flashcards, prompt_boost, research, sandbox, styles, video, web
+from . import browser, documents, flashcards, prompt_boost, quiz, research, sandbox, styles, video, web
 
 logger = logging.getLogger("radha.agent")
 
@@ -365,6 +365,16 @@ async def _create_flashcards(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Made {len(cards)} flashcards", media=[saved])
 
 
+async def _create_quiz(ctx: ToolContext, args: dict) -> ToolOutput:
+    questions = quiz.clean_questions(args.get("questions"))
+    page = quiz.build_page(args.get("title") or "Practice quiz", questions, bool(args.get("exam_marking")))
+    saved = await _save_file(ctx, page.encode("utf-8"), "html", args.get("title") or "quiz")
+    return ToolOutput(content=f"Created a {len(questions)}-question quiz. The user takes it in the preview and sees "
+                              "each answer explained, so don't list the questions or answers again. Say in one line "
+                              "what it covers and that they can tell you their score for a plan on what to revise.",
+                      summary=f"Made a {len(questions)}-question quiz", media=[saved])
+
+
 async def _create_file(ctx: ToolContext, args: dict) -> ToolOutput:
     name, ctype = documents.text_file(_require(args, "filename"))
     content = args.get("content")
@@ -589,6 +599,25 @@ def default_registry() -> ToolRegistry:
                     "back": {"type": "string", "description": "Short answer"}}}},
             }, "required": ["title", "cards"]},
             handler=_create_flashcards))
+        .register(Tool(
+            name="create_quiz", label="Make a quiz",
+            description="Make an interactive multiple-choice practice quiz (instant right/wrong with an explanation, "
+                        "a score at the end and a retry of the wrong ones) on a chapter, topic, notes or a file. Use "
+                        "it whenever a student asks to be quizzed or tested, or for MCQ / PYQ-style practice.",
+            parameters={"type": "object", "properties": {
+                "title": {"type": "string", "description": "Short title, e.g. 'Class 10 Science: Light, 10 MCQs'"},
+                "questions": {"type": "array", "description": "5-20 questions, easy to hard",
+                              "items": {"type": "object", "properties": {
+                                  "question": {"type": "string"},
+                                  "options": {"type": "array", "items": {"type": "string"},
+                                              "description": "4 options, one clearly right"},
+                                  "answer": {"type": "integer", "description": "Index of the right option, from 0"},
+                                  "explain": {"type": "string",
+                                              "description": "1-2 lines: why it is right, or the working"}},
+                                  "required": ["question", "options", "answer"]}},
+                "exam_marking": {"type": "boolean", "description": "true for JEE/NEET practice: +4 right, -1 wrong"},
+            }, "required": ["title", "questions"]},
+            handler=_create_quiz))
         .register(Tool(
             name="generate_video", label="Generate video",
             description="Generate a short video: ads, movie scenes, trailers, 3D animation, anime, cartoons, music "
