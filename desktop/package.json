@@ -1,0 +1,101 @@
+{
+  "name": "krish-desktop",
+  "productName": "Krish AI",
+  "version": "1.0.0",
+  "description": "Krish AI for Windows, Mac and Linux",
+  "author": "EmpireX",
+  "homepage": "https://krishai.net",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/updates.js",
+    "dist": "electron-builder --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.3.9"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "net.krishai.desktop",
+    "productName": "Krish AI",
+    "copyright": "EmpireX",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/tray*.png",
+      "build/icon.png",
+      "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/automatex29-source/Radha/releases/download/desktop-latest"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Krish-AI-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Krish AI",
+      "runAfterFinish": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "artifactName": "Krish-AI-Mac.${ext}",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Krish listens when you use voice mode.",
+        "NSCameraUsageDescription": "Krish uses the camera only when you choose to take a photo."
+      }
+    },
+    "dmg": {
+      "title": "Krish AI"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "artifactName": "Krish-AI-Linux.${ext}"
+    }
+  }
+}

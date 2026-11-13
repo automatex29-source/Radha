@@ -19,6 +19,7 @@ import { canInstall, install, isIos, isStandalone, onInstallChange, pushSupporte
 
 const ConnectorsPanel = lazy(() => import("@/components/settings/ConnectorsPanel"));
 const PluginsPanel = lazy(() => import("@/components/settings/PluginsPanel"));
+const DesktopAppPanel = lazy(() => import("@/components/settings/DesktopAppPanel"));
 
 const SECTIONS = [
   { group: "Settings", items: [
@@ -28,6 +29,7 @@ const SECTIONS = [
     { id: "billing", label: "Billing", icon: CreditCard },
     { id: "usage", label: "Usage", icon: Gauge },
     { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "desktop", label: "Desktop app", icon: Monitor },
   ] },
   { group: "Customize", items: [
     { id: "connectors", label: "Connectors", icon: Blocks },
@@ -119,6 +121,7 @@ export default function SettingsDialog({ open, onOpenChange, section = null }) {
               {active === "notifications" && <Notifications go={go} />}
               {active === "connectors" && <ConnectorsPanel onClose={() => onOpenChange(false)} />}
               {active === "plugins" && <PluginsPanel onClose={() => onOpenChange(false)} />}
+              {active === "desktop" && <DesktopAppPanel />}
             </Suspense>
           </div>
         </section>
