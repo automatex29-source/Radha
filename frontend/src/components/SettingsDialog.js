@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import UserAvatar from "@/components/UserAvatar";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -251,9 +252,7 @@ function Account({ onClose }) {
     <>
       <PageTitle title="Account" hint="Who you are on Krish, and how you sign in." />
       <div className="mb-6 flex items-center gap-4 rounded-2xl border border-border bg-card p-4">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-xl font-bold text-white">
-          {user?.name?.[0]?.toUpperCase() || "U"}
-        </div>
+        <UserAvatar user={user} ring className="h-14 w-14 text-xl" />
         <div className="min-w-0 flex-1">
           {editing ? (
             <form onSubmit={save} className="flex gap-2">

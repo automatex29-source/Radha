@@ -274,6 +274,7 @@ def public_user(doc: dict) -> dict:
         "isOwner": is_owner_email(doc["email"]),
         "hasPassword": bool(doc.get("password_hash")),
         "google": bool(doc.get("googleId")),
+        "picture": doc.get("picture") or None,  # the Google profile photo, when they signed in with Google
         # The welcome questions (counsellor.WORK / USES): asked once; they shape every reply.
         "about": doc.get("about"),
         "needsWelcome": not doc.get("aboutAt"),
@@ -417,6 +418,14 @@ def _welcome_emails(user: dict, referral: Optional[dict]) -> None:
             referral["joined"])))
 
 
+def _google_photo(url) -> Optional[str]:
+    """Google's profile photo URL, kept only when it really is a Google-hosted https picture."""
+    url = (url or "").strip()
+    if not re.match(r"^https://[a-z0-9-]+\.googleusercontent\.com/", url) or len(url) > 1000:
+        return None
+    return url
+
+
 @api.post("/auth/google")
 async def google_sign_in(body: GoogleSignInIn, request: Request):
     """Sign in (or sign up) with the token from Google's button. A matching email account is the same account."""
@@ -430,6 +439,8 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
     referral = None
     if doc:
         changes = {"googleId": info["sub"], "lastLoginAt": ts, "lastSeenAt": ts, "emailVerified": True}
+        if _google_photo(info.get("picture")):
+            changes["picture"] = _google_photo(info.get("picture"))
         if not doc.get("googleId") and doc.get("password_hash") and not doc.get("emailVerified"):
             # Sign-up doesn't check that the email is really yours, so someone could make a password account
             # with another person's email and wait for them to arrive with Google. Google has now proved who
@@ -445,6 +456,7 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
         doc = {
             "id": str(uuid.uuid4()), "email": info["email"], "name": info["name"].strip() or "Friend",
             "password_hash": "", "googleId": info["sub"], "emailVerified": True,
+            "picture": _google_photo(info.get("picture")),
             "createdAt": ts, "updatedAt": ts, "lastLoginAt": ts, "lastSeenAt": ts, "loginCount": 1,
         }
         try:
