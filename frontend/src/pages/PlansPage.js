@@ -26,28 +26,37 @@ function times(plan, basic) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-// What each card lists: Basic in full, then what each bigger plan adds to the one before it. Video lines show only
-// while making videos is switched on (VIDEO_GENERATION on the server).
+// How often a plan's automations may repeat, from automations.minInterval (minutes; null = daily or weekly only).
+function repeatText(minutes) {
+  if (!minutes) return "daily or weekly";
+  if (minutes >= 60) return minutes === 60 ? "as often as every hour" : `as often as every ${minutes / 60} hours`;
+  return `as often as every ${minutes} minutes`;
+}
+
+// What each card lists: everything the plan gives, in full, so no one has to add up "Everything in Basic, plus".
+// Video lines show only while making videos is switched on (VIDEO_GENERATION on the server).
 function highlights(plan, basic, video) {
   const x = times(plan, basic);
   const { automation } = plan.total;
-  const { videoSeconds, uploadMb } = plan.quality;  // every plan takes the same size of upload
-  if (plan.id === "basic") {
-    return { label: "Includes", items: ["40 messages every 5 hours, with search", "A few Krish Pro answers a week, free",
-      video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks", plural(automation, "automation"), `Uploads up to ${uploadMb}MB`, "Remembers what you tell it, in every chat"] };
-  }
-  if (plan.id === "max") {
-    return { label: "Everything in Pro, plus", items: [`${x}x the usage of Basic`, ...(video ? [`Videos up to ${videoSeconds} seconds`] : []),
-      plural(automation, "automation")] };
-  }
-  return { label: "Everything in Basic, plus", items: ["Unlimited chat on Krish Basic", `${x}x the usage of Basic`,
-    ...(plan.premium ? ["Premium AI models and Think mode"] : []),
-    ...(plan.quality.media === "premium" ? [video ? "HD pictures and real AI video" : "HD AI pictures"] : []),
-    ...(plan.publish ? ["Publish apps to the web"] : []),
-    plural(automation, "automation"),
-    ...(plan.premium ? ["Counsellor Pro"] : [])] };
+  const { videoSeconds, uploadMb, media } = plan.quality;
+  const auto = plan.automations || {};
+  const premiumMedia = media === "premium";
+  const create = video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks";
+  const items = plan.id === "basic"
+    ? ["40 messages every 5 hours, with web search", "A few Krish Pro answers a week, free"]
+    : [`${x}x the usage of Basic`, "Unlimited chat on Krish Basic", "Premium AI models and Think mode"];
+  items.push(premiumMedia ? `${create}, in HD` : create);
+  if (video) items.push(`Videos up to ${videoSeconds} seconds`);
+  if (plan.publish) items.push("Publish your apps to the web");
+  items.push(`${plural(automation, "automation")}, repeating ${repeatText(auto.minInterval)}`);
+  if (auto.events) items.push("Automations that start on a new email");
+  if (auto.thorough) items.push("Thorough mode for automations");
+  if (auto.noAsk) items.push("Automations that act without asking first");
+  items.push(`Upload files up to ${uploadMb}MB`);
+  items.push("Remembers what you tell it, in every chat");
+  if (plan.premium) items.push("Counsellor Pro, which remembers your last talk");
+  return { label: "What you get", items };
 }
-
 
 const ORDER = ["basic", "pro", "max"];
 
