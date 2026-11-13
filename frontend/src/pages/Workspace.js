@@ -180,6 +180,7 @@ export default function Workspace({ mode = null }) {
   const [uploading, setUploading] = useState(false);
   const [pendingImages, setPendingImages] = useState([]);
   const [streamSteps, setStreamSteps] = useState([]);
+  const [streamSearched, setStreamSearched] = useState(null); // {queries, running}: "Searching the web" while it runs
   const [planCard, setPlanCard] = useState(null); // the plan's meter ran out on the last send: a limit card in the chat
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -230,6 +231,7 @@ export default function Workspace({ mode = null }) {
     setStreamText(st ? st.text : "");
     setStreamSources(st ? st.sources : []);
     setStreamSteps(st ? st.steps : []);
+    setStreamSearched(st ? st.searched : null);
   };
   // Bumped whenever the screen switches chats, so a load still running for the chat that was left
   // can't write its messages into the one now open. Replies keep writing in the background.
@@ -490,7 +492,7 @@ export default function Workspace({ mode = null }) {
   // connection doesn't stop them. `body` null follows a reply already being written (GET .../live). When the
   // connection drops before the end, the chat picks the reply up again from the last piece it got.
   const runStream = async (url, body, convId, onText) => {
-    const st = { controller: new AbortController(), text: "", sources: [], steps: [], related: [], webHint: false, timer: 0, seen: 0, finished: false };
+    const st = { controller: new AbortController(), text: "", sources: [], steps: [], related: [], webHint: false, searched: null, timer: 0, seen: 0, finished: false };
     streamsRef.current.set(convId, st);
     markStreaming();
     const onScreen = () => activeIdRef.current === convId;
@@ -537,8 +539,15 @@ export default function Workspace({ mode = null }) {
             err.fromServer = true;
             throw err;
           }
+          if (eventName === "searching") {
+            const q = JSON.parse(dataStr || "{}");
+            st.searched = { queries: q.query ? [q.query] : [], running: true };
+            paint(true);
+            continue;
+          }
           if (eventName === "sources") {
             st.sources = JSON.parse(dataStr || "[]");
+            if (st.searched) st.searched = { ...st.searched, running: false };
             paint(true);
             continue;
           }
@@ -629,6 +638,7 @@ export default function Workspace({ mode = null }) {
         if (st.text || steps.length || st.aiLimit) {
           setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: st.text, model, stopped, aiLimit: st.aiLimit,
             sources: st.sources.length ? st.sources : null, related: st.related, webHint: st.webHint,
+            searched: st.searched ? { queries: st.searched.queries } : null,
             steps, media: steps.flatMap((x) => x.media || []) }]);
         }
         // Sync ordering/titles/ids from server. After Stop the server needs a moment to save the
@@ -917,7 +927,7 @@ export default function Workspace({ mode = null }) {
               {planCard && !streaming && <div className="md:ml-11"><AiLimitCard limit={{ kind: "plan" }} id="plan" /></div>}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
-                  steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
+                  searched: streamSearched, steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
                   onOpenCode={() => setCodePanel("live")} codeActive={panelLive} agent={chatAgent} />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (

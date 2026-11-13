@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Play, Newspaper, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, CornerDownRight, Play, Newspaper, ThumbsUp, ThumbsDown } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
@@ -10,67 +10,17 @@ import CodeProject from "@/components/CodeProject";
 import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
-import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
+import { hideRelatedLine, linkCitations } from "@/lib/citations";
 import { prepareMath, useMathPlugins } from "@/lib/math";
 import AnswerVisual, { visualSource, withoutDiagrams, AnswerStreaming } from "@/components/DiagramBlock";
 import SourceChip from "@/components/SourceChip";
+import { SearchedSources, SearchingStatus } from "@/components/WebSearch";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { modelLabel } from "@/lib/models";
 import { AgentAvatar } from "@/lib/counselAgents";
 import ScrollTable from "@/components/ScrollTable";
 import AiLimitCard from "@/components/AiLimitCard";
-
-function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
-  const [failed, setFailed] = useState(false);
-  if (failed || !domain) return <Globe className={`${className} text-muted-foreground`} />;
-  return <img src={faviconUrl(domain)} alt="" loading="lazy" onError={() => setFailed(true)} className={`${className} rounded-sm`} />;
-}
-
-// Like Perplexity: the web pages the answer came from, as cards above it.
-function WebSources({ items, id }) {
-  const [all, setAll] = useState(false);
-  const shown = all || items.length <= 4 ? items : items.slice(0, 3);
-  const more = items.length - shown.length;
-  return (
-    <div className="mb-3" data-testid={`web-sources-${id}`}>
-      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        <Globe className="h-3.5 w-3.5" /> Sources
-      </p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {shown.map((s, i) => (
-          <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" title={s.snippet || s.title}
-            data-testid={`web-source-card-${i + 1}`}
-            className="flex min-w-0 flex-col justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5 transition-colors hover:border-primary/50 hover:bg-surface">
-            {s.thumbnail && (
-              <span className="relative -mx-1 -mt-0.5 block overflow-hidden rounded-lg bg-surface">
-                <img src={s.thumbnail} alt="" loading="lazy" className="aspect-video w-full object-cover" />
-                <span className="absolute inset-0 flex items-center justify-center">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white"><Play className="ml-0.5 h-4 w-4 fill-current" /></span>
-                </span>
-              </span>
-            )}
-            <span className="line-clamp-2 text-[12.5px] font-medium leading-snug text-foreground">{s.title}</span>
-            <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-              <SiteIcon domain={s.domain} />
-              <span className="truncate">{s.domain}</span>
-              <span className="ml-auto shrink-0 tabular-nums">{i + 1}</span>
-            </span>
-          </a>
-        ))}
-        {more > 0 && (
-          <button onClick={() => setAll(true)} data-testid={`web-sources-more-${id}`}
-            className="flex min-w-0 flex-col justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-surface">
-            <span className="flex -space-x-1">
-              {items.slice(3, 7).map((s) => <SiteIcon key={s.url} domain={s.domain} className="h-4 w-4 rounded-full bg-card ring-2 ring-card" />)}
-            </span>
-            <span className="text-[11px] text-muted-foreground">View {more} more</span>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // Pictures found for the question, like Perplexity's image strip. Each opens the page it came from.
 function ImageResults({ items, id }) {
@@ -283,7 +233,8 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   const webSources = useMemo(() => (message.sources || []).filter((s) => (s.type === "web" || s.type === "video") && s.url), [message.sources]);
   const liveCards = useMemo(() => (message.sources || []).filter((s) => s.type === "weather" || s.type === "stock"), [message.sources]);
   const imageResults = useMemo(() => (message.sources || []).filter((s) => s.type === "image" && s.thumbnail), [message.sources]);
-  const videoResults = useMemo(() => (message.sources || []).filter((s) => s.type === "clip" && s.thumbnail && s.url), [message.sources]);
+  // YouTube rows: the how-to videos, and the results of a Video search (those also stay numbered in the sources).
+  const videoResults = useMemo(() => (message.sources || []).filter((s) => (s.type === "clip" || s.type === "video") && s.thumbnail && s.url), [message.sources]);
   const fileSources = useMemo(() => (message.sources || []).filter((s) => s.fileName), [message.sources]);
   const shown = useMemo(() => {
     if (isUser) return message.content || "";
@@ -405,7 +356,8 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         <ToolSteps steps={message.steps} compact={compactSteps} />
         {(message.steps || []).filter((s) => s.approval).map((s) => <ApprovalCard key={s.approval.id} card={s.approval} onAsk={onAsk} />)}
         <LiveCards items={liveCards} />
-        {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
+        {streaming && message.searched?.running && !webSources.length && !shown && <SearchingStatus query={message.searched.queries?.[0]} />}
+        {webSources.length > 0 && <SearchedSources items={webSources} searched={message.searched} id={message.id} />}
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
         {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
         {message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
@@ -415,7 +367,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
               {shown}
             </ReactMarkdown>
           </AnswerStreaming.Provider>
-          {streaming && !shown && (
+          {streaming && !shown && !(message.searched?.running && !webSources.length) && (
             <span className="krish-thinking" role="status" data-testid="streaming-cursor">
               <span className="krish-thinking-words">Krish is thinking…</span>
             </span>
