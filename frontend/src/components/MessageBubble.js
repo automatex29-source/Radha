@@ -5,6 +5,7 @@ import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loade
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
+import ApprovalCard from "@/components/ApprovalCard";
 import CodeProject from "@/components/CodeProject";
 import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
@@ -402,6 +403,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           )}
         </div>
         <ToolSteps steps={message.steps} compact={compactSteps} />
+        {(message.steps || []).filter((s) => s.approval).map((s) => <ApprovalCard key={s.approval.id} card={s.approval} onAsk={onAsk} />)}
         <LiveCards items={liveCards} />
         {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
         {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}

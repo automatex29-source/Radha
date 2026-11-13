@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from fastapi import HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("AUTH_SECRET", "test-secret-for-unit-tests-0123456789")
@@ -216,6 +217,42 @@ def test_automation_asks_first_then_does_it(db, servers):
     # Reading needs no OK.
     out = run(reg.run("app_my_shop__count_orders", json.dumps({"day": "Friday"}), ctx))
     assert "12 orders on Friday" in out.content
+
+
+def test_chat_asks_first_with_an_allow_card(db, servers):
+    item = run(cc.add("u1", "mcp", "My shop", servers["streamed"]))["item"]
+    run(db.conversations.insert_one({"id": "c2", "userId": "u1"}))
+    ctx = ToolContext(db=db, user_id="u1", conversation_id="c2", extra=tuple(run(cc.tools_for("u1"))))
+    reg, args = ToolRegistry(), json.dumps({"name": "Tea", "price": 120})
+    out = run(reg.run("app_my_shop__add_product", args, ctx))
+    assert out.summary == "Waiting for your OK" and "Added" not in out.content
+    card = out.approval
+    assert card["app"] == "My shop" and card["args"] == {"name": "Tea", "price": 120} and card["status"] == "pending"
+    # Reading needs no OK, and other people can't answer the card.
+    assert "12 orders" in run(reg.run("app_my_shop__count_orders", json.dumps({"day": "Monday"}), ctx)).content
+    with pytest.raises(HTTPException):
+        run(cc.decide_route(card["id"], cc.DecideIn(decision="once"), user_id="u2"))
+    # Allow once: the same call goes through once, then it asks again.
+    assert run(cc.decide_route(card["id"], cc.DecideIn(decision="once"), user_id="u1"))["status"] == "allowed"
+    with pytest.raises(HTTPException):  # answered already
+        run(cc.decide_route(card["id"], cc.DecideIn(decision="deny"), user_id="u1"))
+    assert "Different" not in run(reg.run("app_my_shop__add_product", json.dumps({"name": "Different", "price": 1}),
+                                          ctx)).content  # other arguments: a new card
+    assert "Added Tea at 120" in run(reg.run("app_my_shop__add_product", args, ctx)).content
+    again = run(reg.run("app_my_shop__add_product", args, ctx))
+    assert again.approval and again.approval["id"] != card["id"]
+    # Deny keeps it from running; Always allow switches the tool to Allow.
+    assert run(cc.decide_route(again.approval["id"], cc.DecideIn(decision="deny"), user_id="u1"))["status"] == "denied"
+    assert run(reg.run("app_my_shop__add_product", args, ctx)).approval
+    pending = run(db.chat_approvals.find_one({"status": "pending", "args": {"name": "Tea", "price": 120}},
+                                             sort=[("createdAt", -1)]))
+    run(cc.decide_route(pending["id"], cc.DecideIn(decision="always"), user_id="u1"))
+    assert any(t["name"] == "add_product" and t["mode"] == "on" for t in run(cc.listing("u1"))["custom"][0]["tools"])
+    ctx = ToolContext(db=db, user_id="u1", conversation_id="c2", extra=tuple(run(cc.tools_for("u1"))))
+    assert "Added Tea at 120" in run(reg.run("app_my_shop__add_product", args, ctx)).content
+    assert run(cc.approval_route(card["id"], user_id="u1"))["status"] == "used"
+    run(cc.remove("u1", item["id"]))
+    assert run(db.chat_approvals.count_documents({"userId": "u1"})) == 0
 
 
 def test_sign_in_flow(db, servers):

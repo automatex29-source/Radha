@@ -113,7 +113,8 @@ async def run_agent(stream_fn: Callable, registry: ToolRegistry, ctx: ToolContex
                         reported.add(i)
                         out = task.result()
                         yield {"type": "tool_end", "id": call["id"], "name": call["name"], "ok": out.ok,
-                               "summary": out.summary, "output": out.content[:UI_OUTPUT_CHARS], "media": out.media}
+                               "summary": out.summary, "output": out.content[:UI_OUTPUT_CHARS], "media": out.media,
+                               **({"approval": out.approval} if getattr(out, "approval", None) else {})}
                 running = [t for t in tasks if not t.done()]
                 if running:
                     # Slow tools (video, browsing) run for minutes: keep the stream alive meanwhile.
