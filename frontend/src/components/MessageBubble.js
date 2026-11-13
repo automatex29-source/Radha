@@ -10,7 +10,6 @@ import CodeProject from "@/components/CodeProject";
 import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
-import RangoliBloom from "@/components/RangoliBloom";
 import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
 import { prepareMath, useMathPlugins } from "@/lib/math";
 import AnswerVisual, { visualSource, withoutDiagrams, AnswerStreaming } from "@/components/DiagramBlock";
@@ -418,7 +417,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           </AnswerStreaming.Provider>
           {streaming && !shown && (
             <span className="krish-thinking" role="status" data-testid="streaming-cursor">
-              <RangoliBloom /> <span className="krish-thinking-words">Krish is thinking…</span>
+              <span className="krish-thinking-words">Krish is thinking…</span>
             </span>
           )}
         </div>
