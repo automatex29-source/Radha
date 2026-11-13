@@ -175,10 +175,16 @@
 }
 
 /* Answering indicator. Before the first word: a small rangoli that turns while its petals light up
-   one by one, next to "Thinking…". While the answer types: a tiny turning rangoli at the end of the last line. */
+   one by one, next to "Krish is thinking…" with a saffron-to-green shine moving across it. While the answer types: a tiny turning rangoli at the end of the last line. */
 :root { --rangoli-saffron: #FF8A1E; --rangoli-blue: #1F3A93; --rangoli-green: #138808; --rangoli-tail: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(0 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%231F3A93' transform='rotate(45 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23138808' transform='rotate(90 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(135 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%231F3A93' transform='rotate(180 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23138808' transform='rotate(225 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(270 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%231F3A93' transform='rotate(315 12 12)'/%3E%3Ccircle cx='12' cy='12' r='2.2' fill='%23FF8A1E'/%3E%3C/svg%3E"); }
 .dark { --rangoli-blue: #7F9CFF; --rangoli-green: #2FBF4F; --rangoli-tail: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(0 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%237F9CFF' transform='rotate(45 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%232FBF4F' transform='rotate(90 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(135 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%237F9CFF' transform='rotate(180 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%232FBF4F' transform='rotate(225 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%23FF8A1E' transform='rotate(270 12 12)'/%3E%3Cellipse cx='12' cy='5.2' rx='2.3' ry='4.2' fill='%237F9CFF' transform='rotate(315 12 12)'/%3E%3Ccircle cx='12' cy='12' r='2.2' fill='%23FF8A1E'/%3E%3C/svg%3E"); }
 .krish-thinking { display: inline-flex; align-items: center; gap: 0.55em; font-family: var(--font-sans); font-size: 0.9em; font-weight: 500; color: hsl(var(--muted-foreground)); }
+.krish-thinking-words {
+  background: linear-gradient(90deg, hsl(var(--muted-foreground)) 0 35%, var(--rangoli-saffron) 45%, var(--rangoli-green) 55%, hsl(var(--muted-foreground)) 65% 100%);
+  background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: krish-thinking-shine 2s linear infinite;
+}
+@keyframes krish-thinking-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
 .krish-rangoli { width: 1.4em; height: 1.4em; flex-shrink: 0; animation: krish-spin 6s linear infinite; }
 .krish-rangoli ellipse { opacity: 0.35; animation: krish-rangoli-petal 1.6s ease-in-out infinite; }
 @keyframes krish-rangoli-petal { 0%, 100% { opacity: 0.35; } 35% { opacity: 1; } }
@@ -195,7 +201,7 @@
 }
 @keyframes krish-rangoli-glow { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .krish-rangoli, .krish-rangoli ellipse, .krish-answer.is-streaming > *::after, .krish-answer.is-streaming li::after { animation: none; }
+  .krish-rangoli, .krish-rangoli ellipse, .krish-thinking-words, .krish-answer.is-streaming > *::after, .krish-answer.is-streaming li::after { animation: none; }
   .krish-rangoli ellipse { opacity: 1; }
 }
 

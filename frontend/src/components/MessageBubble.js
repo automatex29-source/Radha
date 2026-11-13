@@ -418,7 +418,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           </AnswerStreaming.Provider>
           {streaming && !shown && (
             <span className="krish-thinking" role="status" data-testid="streaming-cursor">
-              <RangoliBloom /> Thinking…
+              <RangoliBloom /> <span className="krish-thinking-words">Krish is thinking…</span>
             </span>
           )}
         </div>
