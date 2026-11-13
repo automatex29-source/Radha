@@ -3083,17 +3083,21 @@ async def _process_file(file_id: str, user_id: str, project_id, data: bytes, ext
 
 
 async def _check_upload_size(user_id: str, data: bytes, what: str) -> None:
-    """Uploads can be as big as the plan allows (20MB on Basic, more on Pro and Max)."""
+    """Every plan takes uploads up to the same server-wide ceiling (limits.UPLOAD_MB)."""
     limit = await limits.upload_bytes(db, user_id)
     if len(data) > limit:
-        more = " Pro and Max take bigger files." if limit < limits.quality_of("max")["uploadMb"] * 1024 * 1024 else ""
-        raise HTTPException(status_code=413, detail=f"{what} too large (max {limit // (1024 * 1024)}MB).{more}")
+        raise HTTPException(status_code=413, detail=f"{what} too large (max {limit // (1024 * 1024)}MB).")
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    """Read at most one byte past the ceiling, so an oversized upload is refused without loading all of it."""
+    return await file.read(limits.UPLOAD_MB * 1024 * 1024 + 1)
 
 
 @api.post("/projects/{pid}/files")
 async def upload_file(pid: str, file: UploadFile = File(...), user_id: str = Depends(current_user_id)):
     await _owned_project(pid, user_id)
-    data = await file.read()
+    data = await _read_upload(file)
     await _check_upload_size(user_id, data, "File")
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
     file_id = str(uuid.uuid4())
@@ -3152,7 +3156,7 @@ async def list_conversation_files(conv_id: str, user_id: str = Depends(current_u
 @api.post("/conversations/{conv_id}/files")
 async def upload_conversation_file(conv_id: str, file: UploadFile = File(...), user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
-    data = await file.read()
+    data = await _read_upload(file)
     await _check_upload_size(user_id, data, "File")
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
     file_id = str(uuid.uuid4())
@@ -3455,7 +3459,7 @@ async def upload_media(file: UploadFile = File(...), conversationId: Optional[st
         raise HTTPException(status_code=415, detail="Only PNG, JPEG, WebP and GIF images are supported")
     if conversationId:
         await _owned_conversation(conversationId, user_id)
-    data = await file.read()
+    data = await _read_upload(file)
     await _check_upload_size(user_id, data, "Image")
     try:
         return await media.save_media(db, user_id, data, content_type, "upload",

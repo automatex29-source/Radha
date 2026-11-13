@@ -3,7 +3,7 @@ import { platformFee } from "@/lib/checkout";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import BrandMark from "@/components/BrandMark";
-import { ArrowRight, Brain, Check, Gauge, ImageIcon, Layers, Loader2, Lock, Rocket, Sparkles, Upload, Zap } from "lucide-react";
+import { ArrowRight, Brain, Check, Gauge, ImageIcon, Layers, Loader2, Lock, Rocket, Sparkles, Zap } from "lucide-react";
 
 const firstName = (name) => (name || "").trim().split(" ")[0];
 
@@ -13,13 +13,12 @@ const rupees = (n) => n.toLocaleString("en-IN", { minimumFractionDigits: Number.
 // What a plan adds, as a few rows: an icon, a short title and one line. No AI company or model names here.
 function benefits(plan, video) {
   const m = plan.monthly;
-  const { uploadMb, videoSeconds } = plan.quality || {};
+  const { videoSeconds } = plan.quality || {};
   if (plan.id === "max") {
     return [
       { icon: Gauge, title: "More than double Pro", text: m ? `About ${m.answers} premium answers or ${m.builds} app builds a month.` : "More than twice the usage of Pro." },
       { icon: ImageIcon, title: "Create every day", text: video ? `More pictures, decks and videos up to ${videoSeconds} seconds.` : "More pictures, decks and builds than Pro." },
       { icon: Zap, title: `${plan.total.automation} automations`, text: "Krish runs your repeat jobs on a schedule." },
-      { icon: Upload, title: "Bigger uploads", text: `Files up to ${uploadMb}MB.` },
       { icon: Layers, title: "Everything in Pro", text: "Our smartest AI, publishing, HD pictures and memory." },
     ];
   }
