@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import PageHero from "@/components/PageHero";
 import { useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { AppWindow, Loader2, Globe, Trash2, Sparkles, Wand2, Github } from "lucide-react";
+import { AppWindow, Loader2, Trash2, Wand2, Github, ArrowUp, ChevronRight } from "lucide-react";
 
 // Tap an idea to fill the box. The builder picks the matching starter itself.
 const IDEAS = [
@@ -19,23 +18,6 @@ const IDEAS = [
   { label: "Snake game", prompt: "A neon snake game with a high score and sound effects" },
 ];
 
-// The kit's design styles (backend/design_themes.py). "Surprise me" lets Krish pick one that suits the app.
-const STYLES = [
-  { id: "", label: "Surprise me", swatch: "conic-gradient(from 0deg, #7c3aed, #06b6d4, #f472b6, #facc15, #7c3aed)" },
-  { id: "glass", label: "Glass", swatch: "linear-gradient(135deg, #c4b5fd, #a5f3fc)" },
-  { id: "liquid", label: "Liquid glass", swatch: "radial-gradient(circle at 30% 25%, #fff, #0a84ff 45%, #ff375f)" },
-  { id: "aurora", label: "Aurora", swatch: "radial-gradient(circle at 30% 30%, #a78bfa, #22d3ee 55%, #07060d)" },
-  { id: "bento", label: "Bento", swatch: "linear-gradient(135deg, #f5f5f7 50%, #0a84ff 50%)" },
-  { id: "bold", label: "Bold", swatch: "linear-gradient(135deg, #ffd400 50%, #ff5c00 50%)" },
-  { id: "luxury", label: "Luxury", swatch: "linear-gradient(135deg, #f7f3ec 50%, #a67c37 50%)" },
-  { id: "minimal", label: "Minimal", swatch: "linear-gradient(135deg, #ffffff 50%, #111111 50%)" },
-  { id: "playful", label: "Playful", swatch: "linear-gradient(135deg, #ff4fa3, #7c5cff)" },
-  { id: "neon", label: "Neon", swatch: "linear-gradient(135deg, #05050a 40%, #00f0ff 70%, #ff2bd6)" },
-  { id: "clay", label: "Clay", swatch: "radial-gradient(circle at 35% 30%, #fff, #b9b0ff 50%, #ff9f6b)" },
-  { id: "sunset", label: "Sunset", swatch: "linear-gradient(180deg, #4a1640, #c2366d 50%, #ff8f4a)" },
-  { id: "editorial", label: "Editorial", swatch: "linear-gradient(135deg, #ece6dd 55%, #1c1a17 55%)" },
-];
-
 // "A habit tracker with daily check-ins" -> "Habit tracker"
 function appName(text) {
   const words = text.replace(/[\r\n]+/g, " ").replace(/^(please\s+)?(make|build|create|design|i want|give me)\s+(me\s+)?(an?\s+|the\s+)?/i, "")
@@ -47,12 +29,9 @@ function appName(text) {
 function NewAppBox({ busy, onCreate }) {
   const navigate = useNavigate();
   const [text, setText] = useState("");
-  const [style, setStyle] = useState("");
   const [boosting, setBoosting] = useState(false);
-  const build = () => {
-    const picked = STYLES.find((s) => s.id === style);
-    onCreate(style ? `${text.trim()}\n\nDesign style: ${picked.label}.` : text);
-  };
+  // Krish picks the design that suits each app (backend/design_themes.py); a style named in the text still wins.
+  const build = () => onCreate(text);
   const [repo, setRepo] = useState(null); // null: closed; a string: the GitHub link being typed
   const [importing, setImporting] = useState(false);
   const importRepo = async (e) => {
@@ -80,56 +59,60 @@ function NewAppBox({ busy, onCreate }) {
       setBoosting(false);
     }
   };
+  const ready = text.trim() && !busy;
   return (
-    <section className="mt-6 rounded-2xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60" data-testid="new-app-box">
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} data-testid="new-app-input" autoFocus
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); build(); } }}
-        placeholder="Describe the app you want, like “a booking app for my salon”…"
-        className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-base focus:outline-none" />
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={boost} disabled={!text.trim() || boosting} data-testid="new-app-boost"
-          title="Turn a short idea into a detailed brief" className="gap-1.5 text-muted-foreground">
-          {boosting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Improve prompt
-        </Button>
-        <Button onClick={build} disabled={!text.trim() || busy} data-testid="create-app-button" className="ml-auto gap-1.5">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Build it
-        </Button>
-      </div>
-      <div className="mt-3 flex items-center gap-1.5 overflow-x-auto border-t border-border px-1 pt-3 radha-scroll" role="radiogroup" aria-label="Design style" data-testid="new-app-styles">
-        <span className="shrink-0 pr-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Style</span>
-        {STYLES.map((s) => (
-          <button key={s.label} type="button" role="radio" aria-checked={style === s.id} onClick={() => setStyle(s.id)} data-testid={`style-${s.id || "auto"}`}
-            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${style === s.id ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"}`}>
-            <span className="h-3.5 w-3.5 rounded-full border border-border" style={{ background: s.swatch }} /> {s.label}
+    <section data-testid="new-app-box">
+      <div className="rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.12)] transition-colors focus-within:border-foreground/25">
+        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} data-testid="new-app-input" autoFocus
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); if (ready) build(); } }}
+          placeholder="Describe the app you want to build…"
+          className="radha-scroll block min-h-[96px] w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-relaxed placeholder:text-muted-foreground/70 focus:outline-none" />
+        <div className="flex items-center gap-1 px-2.5 pb-2.5">
+          <button type="button" onClick={boost} disabled={!text.trim() || boosting} data-testid="new-app-boost"
+            title="Turn a short idea into a detailed brief"
+            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50">
+            {boosting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Improve prompt
           </button>
-        ))}
+          <button type="button" onClick={() => setRepo(repo === null ? "" : null)} data-testid="import-github-open"
+            className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors hover:bg-muted hover:text-foreground ${repo !== null ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
+            <Github className="h-3.5 w-3.5" /> <span className="max-sm:hidden">Open from GitHub</span><span className="sm:hidden">GitHub</span>
+          </button>
+          <button type="button" onClick={build} disabled={!ready} data-testid="create-app-button" aria-label="Build it" title="Build it"
+            className="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-foreground pl-3 pr-2.5 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-30">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <>Build it <ArrowUp className="h-3.5 w-3.5" /></>}
+          </button>
+        </div>
+        {repo !== null && (
+          <form onSubmit={importRepo} className="flex items-center gap-2 border-t border-border px-3 py-2.5" data-testid="import-github">
+            <Github className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <input autoFocus value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/owner/repo"
+              data-testid="import-github-input" className="min-w-0 flex-1 bg-transparent py-1 text-sm focus:outline-none" />
+            <button type="submit" disabled={!repo.trim() || importing} data-testid="import-github-button"
+              className="flex h-7 items-center rounded-md border border-border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-40">
+              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Open"}
+            </button>
+          </form>
+        )}
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5 px-1">
+      <div className="mt-3 flex flex-wrap justify-center gap-1.5">
         {IDEAS.map((i) => (
           <button key={i.label} onClick={() => setText(i.prompt)} data-testid={`idea-${i.label}`}
-            className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+            className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             {i.label}
           </button>
         ))}
       </div>
-      <div className="mt-2 px-1">
-        {repo === null ? (
-          <button onClick={() => setRepo("")} data-testid="import-github-open" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-            <Github className="h-3.5 w-3.5" /> Or open a project from GitHub
-          </button>
-        ) : (
-          <form onSubmit={importRepo} className="flex items-center gap-2" data-testid="import-github">
-            <Github className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <input autoFocus value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/owner/repo"
-              data-testid="import-github-input" className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:border-primary/60" />
-            <Button size="sm" type="submit" disabled={!repo.trim() || importing} data-testid="import-github-button">
-              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open"}
-            </Button>
-          </form>
-        )}
-      </div>
     </section>
   );
+}
+
+function ago(when) {
+  const s = Math.max(0, (Date.now() - new Date(when).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(when).toLocaleDateString();
 }
 
 export default function AppsPage() {
@@ -175,43 +158,54 @@ export default function AppsPage() {
   };
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
+    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
       <IconRail />
       <div className="radha-scroll flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-          <PageHero scene="apps" icon={AppWindow} title="Apps" subtitle="Describe an app and Krish AI builds it, with live preview, tests, version history and one-click publishing." />
+        <div className="mx-auto max-w-3xl px-4 pb-16 pt-12 sm:px-6 sm:pt-[12vh]">
+          <header className="mb-6 text-center">
+            <h1 className="text-[28px] font-semibold tracking-tight sm:text-[32px]" data-testid="apps-title">What do you want to build?</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Krish AI writes the app, tests it and designs it for you. Preview, version history and publishing are built in.</p>
+          </header>
 
           <NewAppBox busy={busy} onCreate={create} />
 
-          {apps === null ? (
-            <div className="mt-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-          ) : apps.length === 0 ? (
-            <div className="mt-16 flex flex-col items-center text-center" data-testid="apps-empty">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-strong"><AppWindow className="h-7 w-7 text-primary" /></div>
-              <p className="mt-4 font-semibold">No apps yet</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">Describe one above, or tap an idea, and Krish AI builds it in seconds.</p>
+          <div className="mt-14">
+            <div className="mb-2 flex items-baseline justify-between px-1">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Your apps</h2>
+              {apps?.length > 0 && <span className="text-xs text-muted-foreground">{apps.length}</span>}
             </div>
-          ) : (
-            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {apps.map((a) => (
-                <div key={a.id} className="radha-lift group relative rounded-xl border border-border bg-card p-5 hover:border-primary/50" data-testid={`app-card-${a.id}`}>
-                  <button onClick={() => navigate(`/apps/${a.id}`)} className="block w-full text-left">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-strong text-primary"><AppWindow className="h-5 w-5" /></div>
-                    <p className="mt-3 font-semibold">{a.name}</p>
-                    <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">{a.description || "No description"}</p>
-                    <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-                      {a.published && <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-400"><Globe className="h-3 w-3" /> Live</span>}
-                      <span>Updated {new Date(a.updatedAt).toLocaleString()}</span>
-                    </div>
-                  </button>
-                  <button onClick={() => remove(a)} title="Delete app" data-testid={`delete-app-${a.id}`}
-                    className="absolute right-2 top-2 rounded-md p-2.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+            {apps === null ? (
+              <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            ) : apps.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center" data-testid="apps-empty">
+                <p className="text-sm font-medium">No apps yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">Describe one above, or pick an idea, and Krish AI builds it in seconds.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+                {apps.map((a) => (
+                  <li key={a.id} className="group relative" data-testid={`app-card-${a.id}`}>
+                    <button onClick={() => navigate(`/apps/${a.id}`)} className="flex w-full items-center gap-3 px-4 py-3 pr-12 text-left transition-colors hover:bg-muted/60">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground"><AppWindow className="h-4 w-4" /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">{a.name}</span>
+                          {a.published && <span className="flex shrink-0 items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Live</span>}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">{a.description || "No description"}</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground max-sm:hidden">{ago(a.updatedAt)}</span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 group-hover:hidden max-sm:hidden" />
+                    </button>
+                    <button onClick={() => remove(a)} title="Delete app" aria-label={`Delete ${a.name}`} data-testid={`delete-app-${a.id}`}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus:opacity-100 group-hover:opacity-100 max-md:opacity-100">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
     </div>
