@@ -537,7 +537,12 @@ def default_registry() -> ToolRegistry:
         .register(Tool(
             name="create_document", label="Create document",
             description="Create a Word (.docx) or PDF document from Markdown: headings, bold/italic, links, nested "
-                        "lists, block quotes, tables and code blocks are all formatted properly.",
+                        "lists, block quotes, tables and code blocks are all formatted properly, with a title, "
+                        "page numbers and styled headings. Start with one '# Title', use '##' for parts and '###' "
+                        "for sections. For tests, worksheets and question papers: put total marks and time on "
+                        "the line under the title, number questions with '1.', write marks as '(2 marks)', put "
+                        "each sub-part on its own indented line ('   - (a) ...'), use '________' for blanks, and "
+                        "end with '## Answer Key' (it starts on a new page) unless the user said no answers.",
             parameters={"type": "object", "properties": {
                 "filename": {"type": "string"},
                 "format": {"type": "string", "enum": ["docx", "pdf"]},

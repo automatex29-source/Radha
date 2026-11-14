@@ -85,10 +85,33 @@ class TestDocuments:
 
         doc = Document(io.BytesIO(documents.build_docx(MD, "Report")))
         styles = [(p.style.name, p.text) for p in doc.paragraphs if p.text]
-        assert ("Heading 1", "Report") in styles and ("Heading 2", "Section") in styles
+        assert ("Title", "Report") in styles and ("Heading 2", "Section") in styles
+        assert [t for _, t in styles].count("Report") == 1  # the title is not repeated
         assert ("List Bullet 2", "nested") in styles and ("List Number", "first") in styles
         assert ("Quote", "quoted") in styles
         assert [[c.text for c in r.cells] for r in doc.tables[0].rows] == [["Region", "Revenue"], ["EMEA", "120"]]
+
+    def test_docx_mock_test_polish(self):
+        from docx import Document
+
+        md = ("# Grammar Test\n\n**Total Marks:** 10\n\n###Section A\n\n1. **Name:**Rohit *(2 marks)*\n"
+              "   - (a) He reads ______ Gita.\n\n### Section B\n\n1. Second list\n\n## Answer Key\n\n1. I")
+        doc = Document(io.BytesIO(documents.build_docx(md, "Grammar Test")))
+        paras = [p for p in doc.paragraphs if p.text]
+        text = "\n".join(p.text for p in paras)
+        assert "#" not in text and "**" not in text  # no raw Markdown symbols
+        assert ("Heading 3", "Section A") in [(p.style.name, p.text) for p in paras]
+        name = next(p for p in paras if p.text.startswith("Name:"))
+        assert name.runs[0].text == "Name:" and name.runs[0].bold
+        assert any(r.text == "(2 marks)" and r.font.color.rgb is not None for r in name.runs)
+        sub = next(p for p in paras if p.text.startswith("(a)"))
+        assert sub.style.name == "Normal"  # labelled sub-part: no extra bullet
+        # Each numbered list restarts at 1 instead of running on from the last one.
+        nums = [p._p.pPr.numPr.numId.val for p in paras if p.style.name == "List Number"]
+        assert len(nums) == 3 and len(set(nums)) == 3
+        key = next(p for p in paras if p.text == "Answer Key")
+        assert key.paragraph_format.page_break_before
+        assert "PAGE" in doc.sections[0].footer._element.xml
 
     def test_pdf_renders_text(self):
         from pypdf import PdfReader
