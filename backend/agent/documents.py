@@ -417,8 +417,11 @@ def _question_layout(segs: list) -> list:
             head, text = text[:take], text[take:]
             keep -= take
             if head:
-                if out and not out[-1][1][-1:].isspace() and not head[:1].isspace():
-                    head = " " + head  # "Pronoun:(2 marks)" -> "Pronoun: (2 marks)"
+                if head.strip() and not any(o[0] == "text" and o[1] == "\t" for o in out):
+                    if out and out[-1][0] == "text":
+                        out[-1] = ("text", out[-1][1].rstrip()) + out[-1][2:]
+                    out.append(("text", "\t") + seg[2:])  # marks sit at the right margin
+                    head = head.lstrip()
                 out.append(("text", head.rstrip() if keep == 0 else head) + seg[2:])
             if keep == 0 and text.strip():
                 out.append(("text", "\n") + seg[2:])
@@ -428,10 +431,32 @@ def _question_layout(segs: list) -> list:
             text = _SUBPART_RE.sub("\n", text)
         if text:
             out.append(("text", text) + seg[2:])
+    if not m:
+        # Marks at the end instead ("... its antonym. (1 mark)"): move them to the right margin too.
+        for k in range(len(out) - 1, -1, -1):
+            if out[k][0] != "text" or not out[k][1].strip():
+                continue
+            tail = re.search(r"\s*(" + _MARKS_RE.pattern + r")\s*$", out[k][1], re.I)
+            if tail and tail.start() > 0 or (tail and k > 0):
+                body = out[k][1][:tail.start()]
+                out[k:k + 1] = ([("text", body) + out[k][2:]] if body else []) + [
+                    ("text", "\t") + out[k][2:], ("text", tail.group(1)) + out[k][2:]]
+            break
     return out
 
 
-def _inline_runs(paragraph, inline_token, question: bool = False):
+def _info_bar(p):
+    """ "Time Allowed: 20 Minutes | Total Marks: 15" as one ruled bar, left part left and right part right."""
+    from docx.shared import Pt
+
+    ppr = p._p.get_or_add_pPr()
+    _para_border(ppr, "top", "1F2937", size=8, space=4)
+    _para_border(ppr, "bottom", "1F2937", size=8, space=4)
+    p.paragraph_format.space_before, p.paragraph_format.space_after = Pt(4), Pt(14)
+    _right_tab(p)
+
+
+def _inline_runs(paragraph, inline_token, question: bool = False, bar: bool = False):
     bold = italic = strike = False
     link = None
     link_text = []
@@ -478,6 +503,8 @@ def _inline_runs(paragraph, inline_token, question: bool = False):
                     segs.append(("text", part, bold, italic, strike, False))
     if question:
         segs = _question_layout(segs)
+    if bar:
+        segs = [(seg[0], re.sub(r"\s*\|\s*", "\t", seg[1])) + seg[2:] if seg[0] == "text" else seg for seg in segs]
     for seg in segs:
         if seg[0] == "link":
             _add_hyperlink(paragraph, seg[1], seg[2])
@@ -643,6 +670,75 @@ def _style_table(table):
                         run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
 
+_PAPER_WORDS = re.compile(r"\b(test|tests|exam|exams|examination|worksheet|question paper|quiz|assessment|"
+                          r"practice paper|sample paper|mock)\b", re.I)
+_TEXT_WIDTH_CM = 17.0  # A4 width minus the two 2 cm margins
+
+
+def _is_paper(title: str, markdown: str) -> bool:
+    """A test, worksheet or question paper: laid out like a printed school paper."""
+    head = title + " " + "\n".join((markdown or "").splitlines()[:3])
+    return bool(_PAPER_WORDS.search(head)) or len(_MARKS_RE.findall(markdown or "")) >= 3
+
+
+def _right_tab(paragraph, leader=None, pos=_TEXT_WIDTH_CM):
+    from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+    from docx.shared import Cm
+
+    paragraph.paragraph_format.tab_stops.add_tab_stop(
+        Cm(pos), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.LINES if leader else WD_TAB_LEADER.SPACES)
+
+
+def _student_box(doc):
+    """Name / Class / Roll No. / Date with ruled write-in lines, in a light box, as on a printed paper."""
+    from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+    from docx.shared import Cm, Pt, RGBColor
+
+    table = doc.add_table(rows=1, cols=1)
+    table.style = "Table Grid"
+    tbl_pr = table._tbl.tblPr
+    borders = _set_xml(tbl_pr, "w:tblBorders")
+    for side in ("top", "left", "bottom", "right"):
+        _set_xml(borders, f"w:{side}", val="single", sz=6, space=0, color="C7CBEF")
+    for side in ("insideH", "insideV"):
+        _set_xml(borders, f"w:{side}", val="nil")
+    margins = _set_xml(tbl_pr, "w:tblCellMar")
+    for side, w in (("top", 60), ("bottom", 120), ("left", 160), ("right", 160)):
+        _set_xml(margins, f"w:{side}", w=w, type="dxa")
+    cell = table.cell(0, 0)
+    _shade(cell._tc.get_or_add_tcPr(), "F8F9FD")
+    cell.width = Cm(_TEXT_WIDTH_CM)
+    inner = _TEXT_WIDTH_CM - 1.6  # inside the cell padding, with room to spare
+    for n, (left, right) in enumerate((("Name", "Class"), ("Roll No.", "Date"))):
+        p = cell.paragraphs[0] if n == 0 else cell.add_paragraph()
+        pf = p.paragraph_format
+        pf.space_before, pf.space_after, pf.line_spacing = Pt(10), Pt(0), 1.0
+        stops = pf.tab_stops
+        stops.add_tab_stop(Cm(inner * 0.58), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.LINES)
+        stops.add_tab_stop(Cm(inner * 0.58 + 0.6), WD_TAB_ALIGNMENT.LEFT)
+        for k, label in enumerate((left, right)):
+            r = p.add_run(f"{label}: ")
+            r.bold = True
+            r.font.size = Pt(11)
+            r.font.color.rgb = RGBColor.from_string("374151")
+            # Left field: a ruled tab leader up to the middle. Right field: a fixed write-in line
+            # (a leader on the last tab of a table cell is not drawn by every viewer).
+            p.add_run("\t\t" if k == 0 else "_" * 24)
+    doc.add_paragraph().paragraph_format.space_after = Pt(2)
+
+
+def _answer_lines(doc, count: int, indent_cm: float = 0.0):
+    """Full-width ruled lines to write an answer on."""
+    from docx.shared import Cm, Pt
+
+    for _ in range(max(1, min(count, 20))):
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.left_indent = Cm(indent_cm)
+        pf.space_before, pf.space_after = Pt(14), Pt(0)
+        _para_border(p._p.get_or_add_pPr(), "bottom", "9CA3AF", size=4, space=1)
+
+
 def build_docx(markdown: str, title: str = "") -> bytes:
     from docx import Document
     from docx.enum.text import WD_BREAK
@@ -655,10 +751,17 @@ def build_docx(markdown: str, title: str = "") -> bytes:
     lead_h1 = first is not None and first.type == "heading_open" and first.tag == "h1"
     if title:
         doc.core_properties.title = title
-    if title and not (lead_h1 and tokens[tokens.index(first) + 1].content.strip().strip("*").lower()
-                      == title.strip().lower()):
-        doc.add_paragraph(title, style="Title")
+    lead_text = tokens[tokens.index(first) + 1].content.strip().strip("*") if lead_h1 else ""
+    paper = _is_paper(title or lead_text, markdown)
+    student_box = paper and not re.search(r"(?im)\bname\s*[:_]", markdown or "")
+    if title and not (lead_h1 and lead_text.lower() == title.strip().lower()):
+        t = doc.add_paragraph(title, style="Title")
+        if paper:
+            t.alignment = 1  # centred, like the top of a printed paper
         lead_h1 = False
+        if student_box:
+            _student_box(doc)
+            student_box = False
     elif lead_h1 and not title:
         doc.core_properties.title = tokens[tokens.index(first) + 1].content.strip().strip("*")
     _page_footer(doc, doc.core_properties.title or "")
@@ -666,19 +769,32 @@ def build_docx(markdown: str, title: str = "") -> bytes:
     lists = []  # stack of [kind, numId or None]
     quote = 0
     seen_block = False
+    seen_h2 = False
     i = 0
     while i < len(tokens):
         tok = tokens[i]
         if tok.type == "heading_open":
             level = int(tok.tag[1])
             text = tokens[i + 1].content
-            if lead_h1 and not seen_block and level == 1:
+            is_title = lead_h1 and not seen_block and level == 1
+            if is_title:
                 h = doc.add_paragraph(style="Title")
+                if paper:
+                    h.alignment = 1
             else:
                 h = doc.add_heading(level=min(level, 4))
                 if _NEW_PAGE_HEADINGS.match(text.strip("*# ")) and seen_block:
                     h.paragraph_format.page_break_before = True
+                elif paper and level == 2:
+                    # Each test or part of a paper starts on a fresh page, centred like a paper heading.
+                    h.alignment = 1
+                    if seen_h2:
+                        h.paragraph_format.page_break_before = True
+                    seen_h2 = True
             _inline_runs(h, tokens[i + 1])
+            if is_title and student_box:
+                _student_box(doc)
+                student_box = False
             seen_block = True
             i += 3
             continue
@@ -695,6 +811,12 @@ def build_docx(markdown: str, title: str = "") -> bytes:
             quote -= 1
         elif tok.type == "paragraph_open":
             inline = tokens[i + 1]
+            blank_lines = [ln for ln in inline.content.split("\n") if ln.strip()]
+            if blank_lines and all(re.fullmatch(r"\\?_[\\_ ]{4,}", ln.strip()) for ln in blank_lines):
+                # A line of nothing but underscores: a proper ruled answer line instead.
+                _answer_lines(doc, len(blank_lines), 0.63 * len(lists))
+                i += 3
+                continue
             if lists and not tokens[i].hidden and tokens[i - 1].type != "list_item_open":
                 # A second paragraph inside a list item: indent it under the item, no new number.
                 p = doc.add_paragraph()
@@ -723,7 +845,15 @@ def build_docx(markdown: str, title: str = "") -> bytes:
                 if tokens[i - 1].type == "heading_close" and len(inline.content) < 160:
                     # A heading's short subline ("Total Marks: 15 | Time: 20 min") stays with what follows.
                     p.paragraph_format.keep_with_next = True
-            _inline_runs(p, inline, question=bool(lists) and lists[-1][0] == "ordered")
+                    if paper and inline.content.count("|") == 1:
+                        _info_bar(p)
+                        _inline_runs(p, inline, bar=True)
+                        i += 3
+                        continue
+            question = bool(lists) and lists[-1][0] == "ordered"
+            if question:
+                _right_tab(p)
+            _inline_runs(p, inline, question=question)
             i += 3
             continue
         elif tok.type in ("fence", "code_block"):

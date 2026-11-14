@@ -119,8 +119,25 @@ class TestDocuments:
         md = ("1. **Choose the Pronoun:**(2 marks) (a) Rohit and ___ went. (b) This book is ___.\n"
               "2. **Name:**______ **Roll No.:**____\n3. **Prefix:** *(1 mark)* Add a prefix to 'happy'.\n")
         texts = [p.text for p in Document(io.BytesIO(documents.build_docx(md))).paragraphs if p.text]
-        assert texts == ["Choose the Pronoun: (2 marks)\n(a) Rohit and ___ went.\n(b) This book is ___.",
-                         "Name:______ Roll No.:____", "Prefix: (1 mark)\nAdd a prefix to 'happy'."]
+        # Marks go to the right margin (a right tab stop), the question on the next line.
+        assert texts == ["Choose the Pronoun:\t(2 marks)\n(a) Rohit and ___ went.\n(b) This book is ___.",
+                         "Name:______ Roll No.:____", "Prefix:\t(1 mark)\nAdd a prefix to 'happy'."]
+
+    def test_docx_paper_layout(self):
+        from docx import Document
+
+        md = ("# Grammar Test\n\n## Test 1\n\nTime: 20 min | Total Marks: 15\n\n1. **Q:** Write a line. (1 mark)\n\n"
+              "   ______\n   ______\n\n## Test 2\n\n1. **Q2:** Again\n")
+        doc = Document(io.BytesIO(documents.build_docx(md)))
+        paras = doc.paragraphs
+        texts = [p.text for p in paras]
+        assert texts[0] == "Grammar Test"
+        assert doc.tables[0].cell(0, 0).text.startswith("Name: ")  # student details box
+        assert "Time: 20 min\tTotal Marks: 15" in texts
+        assert "Q:\nWrite a line.\t(1 mark)" in texts
+        assert not any("____" in t for t in texts)  # ruled lines, not underscores
+        test2 = next(p for p in paras if p.text == "Test 2")
+        assert test2.paragraph_format.page_break_before  # each test on its own page
 
     def test_pdf_renders_text(self):
         from pypdf import PdfReader
