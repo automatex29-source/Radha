@@ -163,7 +163,8 @@ export default function Workspace({ mode = null }) {
   const [breatheOpen, setBreatheOpen] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
+  // Bumped after a message is sent from the chat box, which empties it (the box keeps what is typed).
+  const [composerReset, setComposerReset] = useState(0);
   // Replies being written, by chat id: up to MAX_STREAMS chats can be answering at once, and a reply keeps
   // writing in the background when you open another chat (it shows again when you come back).
   const [streamingIds, setStreamingIds] = useState(() => new Set());
@@ -763,7 +764,7 @@ export default function Workspace({ mode = null }) {
     setPlanCard(null);
     const images = composer ? pendingImages : [];
     const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
-    const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
+    const typed = (text ?? "").trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
     // Tell the model which images are video frames (and when they were taken).
     const videoNotes = groups.map((g) => {
       const times = images.filter((i) => i.videoGroup?.id === g.id).map((i) => `${i.time.toFixed(1)}s`);
@@ -799,7 +800,7 @@ export default function Workspace({ mode = null }) {
     const imageIds = images.map((i) => i.id);
     scrollNext.current = messages.length;
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
-    if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
+    if (composer) { setComposerReset((n) => n + 1); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
     return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
   };
 
@@ -967,7 +968,7 @@ export default function Workspace({ mode = null }) {
           </p>
         )}
         <div className="px-4"><LimitBanner /></div>
-        <ComposerInput value={input} onChange={setInput} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
+        <ComposerInput resetKey={composerReset} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
           streaming={streaming} disabled={loadingConv}
           onAttach={counselling ? undefined : attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
           images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
