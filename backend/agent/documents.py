@@ -388,10 +388,54 @@ def _add_text(paragraph, text: str, bold: bool, italic: bool, strike: bool, code
             run.font.color.rgb = RGBColor.from_string(_DOCX_ACCENT)
 
 
-def _inline_runs(paragraph, inline_token, strip_label: bool = False):
+# Inline sub-parts: " (a) ", " (ii) ". Only split when the item has an "(a)" or "(i)" to start the run.
+_SUBPART_RE = re.compile(r"\s+(?=\((?:[a-h]|i|ii|iii|iv|v|vi)\)\s)")
+
+
+def _question_layout(segs: list) -> list:
+    """Put a question's bold title on its own line, then the question, then each sub-part on its own line:
+    "**Fill in the blanks:** (2 marks) (a) ... (b) ..." reads as three lines instead of one long one."""
+    n = 0
+    while n < len(segs) and segs[n][0] == "text" and segs[n][2]:
+        n += 1  # the leading bold title, if any
+    rest_text = "".join(seg[1] for seg in segs[n:] if seg[0] == "text")
+    # Marks right after the title stay on the title line.
+    m = re.match(r"\s*" + _MARKS_RE.pattern + r"\s*", rest_text, re.I)
+    keep = len(m.group(0)) if m else 0
+    after = rest_text[keep:].strip()
+    out = segs[:n]
+    split_parts = bool(re.search(r"\((?:a|i)\)\s", rest_text))
+    # No title, or "Name: ______" (a blank belongs on the same line): no title line break.
+    broke = n == 0 or not after or after.startswith("_")
+    for seg in segs[n:]:
+        if seg[0] != "text":
+            out.append(seg)
+            continue
+        text = seg[1]
+        if not broke:
+            take = min(keep, len(text))
+            head, text = text[:take], text[take:]
+            keep -= take
+            if head:
+                if out and not out[-1][1][-1:].isspace() and not head[:1].isspace():
+                    head = " " + head  # "Pronoun:(2 marks)" -> "Pronoun: (2 marks)"
+                out.append(("text", head.rstrip() if keep == 0 else head) + seg[2:])
+            if keep == 0 and text.strip():
+                out.append(("text", "\n") + seg[2:])
+                text = text.lstrip()
+                broke = True
+        if split_parts and text:
+            text = _SUBPART_RE.sub("\n", text)
+        if text:
+            out.append(("text", text) + seg[2:])
+    return out
+
+
+def _inline_runs(paragraph, inline_token, question: bool = False):
     bold = italic = strike = False
     link = None
     link_text = []
+    segs = []  # ("text", text, bold, italic, strike, code) | ("link", url, text)
     for tok in inline_token.children or []:
         if tok.type == "strong_open":
             bold = True
@@ -408,7 +452,7 @@ def _inline_runs(paragraph, inline_token, strip_label: bool = False):
         elif tok.type == "link_open":
             link, link_text = tok.attrs.get("href", ""), []
         elif tok.type == "link_close":
-            _add_hyperlink(paragraph, link, "".join(link_text) or link)
+            segs.append(("link", link, "".join(link_text) or link))
             link = None
         elif tok.type in ("text", "code_inline", "softbreak", "hardbreak", "html_inline", "image"):
             if tok.type == "html_inline":
@@ -423,14 +467,22 @@ def _inline_runs(paragraph, inline_token, strip_label: bool = False):
                 link_text.append(text)
                 continue
             if tok.type == "code_inline":
-                _add_text(paragraph, text, bold, italic, strike, code=True)
+                segs.append(("text", text, bold, italic, strike, True))
                 continue
             # Bold that CommonMark left unclosed ("**Name:**Rohit") arrives as literal **: honour it.
             parts = text.split("**") if tok.type == "text" else [text]
             for n, part in enumerate(parts):
                 if n:
                     bold = not bold
-                _add_text(paragraph, part, bold, italic, strike)
+                if part:
+                    segs.append(("text", part, bold, italic, strike, False))
+    if question:
+        segs = _question_layout(segs)
+    for seg in segs:
+        if seg[0] == "link":
+            _add_hyperlink(paragraph, seg[1], seg[2])
+        else:
+            _add_text(paragraph, seg[1], seg[2], seg[3], seg[4], code=seg[5])
 
 
 def _style_docx(doc):
@@ -671,7 +723,7 @@ def build_docx(markdown: str, title: str = "") -> bytes:
                 if tokens[i - 1].type == "heading_close" and len(inline.content) < 160:
                     # A heading's short subline ("Total Marks: 15 | Time: 20 min") stays with what follows.
                     p.paragraph_format.keep_with_next = True
-            _inline_runs(p, inline)
+            _inline_runs(p, inline, question=bool(lists) and lists[-1][0] == "ordered")
             i += 3
             continue
         elif tok.type in ("fence", "code_block"):

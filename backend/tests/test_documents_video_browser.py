@@ -113,6 +113,15 @@ class TestDocuments:
         assert key.paragraph_format.page_break_before
         assert "PAGE" in doc.sections[0].footer._element.xml
 
+    def test_docx_question_title_on_its_own_line(self):
+        from docx import Document
+
+        md = ("1. **Choose the Pronoun:**(2 marks) (a) Rohit and ___ went. (b) This book is ___.\n"
+              "2. **Name:**______ **Roll No.:**____\n3. **Prefix:** *(1 mark)* Add a prefix to 'happy'.\n")
+        texts = [p.text for p in Document(io.BytesIO(documents.build_docx(md))).paragraphs if p.text]
+        assert texts == ["Choose the Pronoun: (2 marks)\n(a) Rohit and ___ went.\n(b) This book is ___.",
+                         "Name:______ Roll No.:____", "Prefix: (1 mark)\nAdd a prefix to 'happy'."]
+
     def test_pdf_renders_text(self):
         from pypdf import PdfReader
 
