@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { FileText, Plus, Loader2, Sparkles, Trash2 } from "lucide-react";
+import ThinkingShape from "@/components/ThinkingShape";
 
 const IDEAS = [
   "A leave application to my manager for 3 days",
@@ -64,7 +65,7 @@ export default function DocsPage() {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button onClick={() => create(true)} disabled={!prompt.trim() || !!busy} data-testid="doc-write-button" className="kb-btn gap-2 font-semibold">
-                {busy === "draft" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Write it
+                {busy === "draft" ? <ThinkingShape size={14} onColor /> : <Sparkles className="h-4 w-4" />} Write it
               </Button>
               <Button variant="outline" onClick={() => create(false)} disabled={!!busy} data-testid="doc-blank-button" className="gap-2 border-border bg-card">
                 {busy === "blank" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Blank document

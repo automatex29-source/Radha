@@ -3,7 +3,7 @@
 // A diagram is shown as an image, which can't run scripts or load anything from the web, so a drawing can never
 // act on the page; a chart is plain numbers and labels.
 import { createContext, useContext, useMemo } from "react";
-import { Loader2 } from "lucide-react";
+import ThinkingShape from "@/components/ThinkingShape";
 
 const BLOCK = /```(?:diagram|chart)[^\n]*\n[\s\S]*?(?:```|$)/g;
 const KINDS = { "language-diagram": "diagram", "language-chart": "chart" };
@@ -39,7 +39,7 @@ function Drawing() {
   if (!streaming) return null; // the answer ended without a complete picture: show the words alone
   return (
     <div data-testid="visual-drawing" className="my-3 flex h-32 max-w-xl items-center justify-center gap-2 rounded-2xl border border-border bg-card text-sm text-muted-foreground">
-      <Loader2 className="h-4 w-4 animate-spin" /> Drawing a picture…
+      <ThinkingShape size={14} /> <span className="krish-thinking-words font-medium">Drawing a picture…</span>
     </div>
   );
 }

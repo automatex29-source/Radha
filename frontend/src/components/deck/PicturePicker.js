@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { toast } from "sonner";
 import { ImageOff, Link2, Loader2, Search, Sparkles, Upload } from "lucide-react";
 import { pictureSrc } from "@/components/deck/Slide";
+import ThinkingShape from "@/components/ThinkingShape";
 
 const TABS = [
   ["ai", Sparkles, "AI picture"],
@@ -104,7 +105,7 @@ export default function PicturePicker({ open, onOpenChange, deckId, index, slide
             <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} data-testid="picker-ai-prompt"
               placeholder="e.g. Indian farmer checking a green wheat field at sunrise, drone in the sky" />
             <Button onClick={makeAi} disabled={!!busy || prompt.trim().length < 3} className="gap-1.5" data-testid="picker-ai-make">
-              {busy === "ai" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {busy === "ai" ? <ThinkingShape size={14} onColor /> : <Sparkles className="h-4 w-4" />}
               {busy === "ai" ? "Drawing… this can take up to a minute" : "Make picture"}
             </Button>
           </div>

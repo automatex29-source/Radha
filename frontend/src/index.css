@@ -250,10 +250,12 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
 .krish-rail .krish-step { margin-left: -0.375rem; }
 /* "Krish is thinking…" leads with a shape shift: a square outline turns and softens into a circle and back,
    with a saffron centre. */
-.krish-shape { position: relative; z-index: 1; width: 13px; height: 13px; flex-shrink: 0; margin: 0.45rem 0.5px 0;
-  border: 1.6px solid hsl(var(--foreground) / 0.85); border-radius: 2px; background: hsl(var(--background));
-  animation: krish-shape 2.4s ease-in-out infinite; }
-.krish-shape::after { content: ""; position: absolute; inset: 0; margin: auto; width: 4px; height: 4px; border-radius: 9999px; background: #FF8A1E; }
+.krish-shape { position: relative; display: inline-block; flex-shrink: 0; vertical-align: middle; border: 1.6px solid hsl(var(--foreground) / 0.85);
+  border-radius: 2px; animation: krish-shape 2.4s ease-in-out infinite; }
+.krish-shape::after { content: ""; position: absolute; inset: 0; margin: auto; width: 32%; height: 32%; border-radius: 9999px; background: #FF8A1E; }
+.krish-shape.is-on-color { border-color: currentColor; }
+.krish-shape.is-on-color::after { background: currentColor; }
+.krish-rail-shape { z-index: 1; margin: 0.45rem 0.5px 0; background: hsl(var(--background)); }
 @keyframes krish-shape { 0%, 100% { border-radius: 2px; transform: rotate(0deg); } 50% { border-radius: 50%; transform: rotate(180deg); } }
 @media (prefers-reduced-motion: reduce) { .krish-shape { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .krish-rail-row, .krish-rail-dot.is-run, .krish-rail-live { animation: none; } }

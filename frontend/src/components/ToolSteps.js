@@ -2,6 +2,7 @@ import { useState } from "react";
 import { mediaUrl } from "@/lib/api";
 import { ChevronRight, FileDown, Eye, Hand, Check, X } from "lucide-react";
 import { fileKind, KIND_META } from "@/components/PreviewPanel";
+import ThinkingShape from "@/components/ThinkingShape";
 
 function argPreview(step) {
   const a = step.args || {};
@@ -111,7 +112,7 @@ function Step({ step }) {
 function ThinkingRow() {
   return (
     <div className="krish-rail-row" role="status" data-testid="streaming-cursor">
-      <span className="krish-shape" aria-hidden="true" />
+      <ThinkingShape className="krish-rail-shape" />
       <span className="krish-step"><span className="krish-thinking-words font-medium">Krish is thinking…</span></span>
     </div>
   );
