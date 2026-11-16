@@ -75,6 +75,7 @@ import daily_verse
 import google_signin
 import monitor
 import owner_dashboard
+import user_activity
 import setup_status
 import promos
 import referrals
@@ -653,7 +654,7 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     await media.delete_media(db, {"userId": user_id})
     for name in ("conversations", "files", "chunks", "memories", "projects", "decks", "docs", "pages",
                  "help_reports", "password_resets", "push_subscriptions", "message_feedback", "activity",
-                 "usage_events", "logins"):
+                 "usage_events", "logins", "token_daily"):
         await db[name].delete_many({"userId": user_id})
     await db.referrals.delete_many({"$or": [{"inviterId": user_id}, {"friendId": user_id}]})
     await db.usage.delete_many({"_id": {"$regex": f"^{re.escape(user_id)}:"}})
@@ -706,6 +707,25 @@ async def admin_stats(days: int = Query(14, ge=1, le=60), user_id: str = Depends
     """Owner only: people and features used each day, 👍 / 👎 on answers, and the latest problems."""
     await _require_owner(user_id)
     return await monitor.stats(db, days)
+
+
+@api.get("/admin/activity")
+async def admin_activity(days: int = Query(30), user_id: str = Depends(current_user_id)):
+    """Owner only: the most used features, people per feature, active people per day and the most active people.
+    Counts only: no one's messages are read."""
+    await _require_owner(user_id)
+    return await user_activity.overview(db, days)
+
+
+@api.get("/admin/users/{target_id}/activity")
+async def admin_user_activity(target_id: str, days: int = Query(30), user_id: str = Depends(current_user_id)):
+    """Owner only: what one person did (features, how often and when, tokens, plan, what they made). Never the
+    text of their chats or prompts."""
+    await _require_owner(user_id)
+    data = await user_activity.person(db, target_id, days)
+    if data is None:
+        raise HTTPException(status_code=404, detail="No such account")
+    return data
 
 
 @api.get("/admin/dashboard")
@@ -2459,6 +2479,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                         await limits.add_fair_use(db, user_id, token_count["tokens"])
                     except Exception:
                         logger.exception("fair-use count failed")
+                    await monitor.tokens(db, user_id, token_count["tokens"], "build" if app_id else "chat")
                 # The meter follows the tokens a reply really took: App Builder turns, premium-model chats, and
                 # on the free plan every chat (a quick question uses little, a long chat or a file more).
                 if user_id and token_count["tokens"]:
@@ -3966,6 +3987,8 @@ async def startup():
     await db.errors.create_index("createdAt")
     await db.activity.create_index("day")
     await db.usage_events.create_index("at")
+    await db.usage_events.create_index([("userId", 1), ("at", -1)])
+    await db.token_daily.create_index([("userId", 1), ("day", 1)])
     await db.logins.create_index("at")
     await db.messages.create_index("createdAt")
     await db.payments.create_index("paidAt", sparse=True)
