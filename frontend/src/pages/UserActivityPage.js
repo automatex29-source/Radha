@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { Bar as RBar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowLeft, CalendarDays, Loader2, LockKeyhole, Mail } from "lucide-react";
+import { ArrowLeft, CalendarDays, Loader2, LockKeyhole, Mail, MessageCircleQuestion } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import IconRail from "@/components/IconRail";
+import AdminLayout from "@/components/AdminLayout";
 import {
   Bar, DayTip, FeatureIcon, PLAN_DOT, Panel, RangePicker, Tile, ago, compact, dayTick, num,
 } from "@/components/ActivityParts";
@@ -56,12 +56,10 @@ export default function UserActivityPage() {
   const rangeLabel = days === 365 ? "year" : `${days} days`;
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
-      <IconRail />
-      <main className="owner-viz min-h-0 flex-1 overflow-y-auto bg-[var(--viz-page)]" data-testid="user-activity-page">
-        <div className="mx-auto w-full max-w-[1180px] px-4 pb-14 pt-6 sm:px-6">
+    <AdminLayout>
+      <div data-testid="user-activity-page">
           <Link to="/admin/users" className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground" data-testid="user-activity-back">
-            <ArrowLeft className="h-3.5 w-3.5" /> All users
+            <ArrowLeft className="h-3.5 w-3.5" /> Users
           </Link>
 
           {error && !data ? <p className="mt-10 text-center text-sm text-destructive">{error}</p> : !data ? (
@@ -82,7 +80,12 @@ export default function UserActivityPage() {
                     </p>
                   </div>
                 </div>
-                <RangePicker days={days} onChange={setDays} />
+                <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                  <Link to={`/admin/questions?user=${u.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold hover:bg-muted" data-testid="user-activity-questions">
+                    <MessageCircleQuestion className="h-3.5 w-3.5" /> Their questions
+                  </Link>
+                  <RangePicker days={days} onChange={setDays} />
+                </div>
               </header>
 
               <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-border/80 bg-card px-4 py-3 text-[12.5px] sm:grid-cols-4" data-testid="user-activity-account">
@@ -184,7 +187,7 @@ export default function UserActivityPage() {
                   )}
                 </Panel>
 
-                <Panel title="Recent activity" subtitle="What happened, without what was said" testId="user-activity-timeline" flush>
+                <Panel title="Recent activity" subtitle="What happened, newest first" testId="user-activity-timeline" flush>
                   {!data.timeline.length ? <p className="px-4 py-10 text-center text-sm text-muted-foreground">No activity in the last {rangeLabel}.</p> : (
                     <ol className="max-h-[420px] overflow-y-auto px-4 py-2">
                       {data.timeline.map((t, i) => (
@@ -219,12 +222,11 @@ export default function UserActivityPage() {
 
               <p className="mt-5 flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground" data-testid="user-activity-privacy">
                 <LockKeyhole className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Chats, prompts and answers are private and are never shown here, and Counsellor use isn't shown per person. Tokens are counted from this update on.
+                Krish's answers aren't shown here, and Counsellor use isn't shown per person. Their questions are on the Questions page. Tokens are counted from the update that added them.
               </p>
             </>
           )}
-        </div>
-      </main>
-    </div>
+      </div>
+    </AdminLayout>
   );
 }

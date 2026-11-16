@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import IconRail from "@/components/IconRail";
+import AdminLayout from "@/components/AdminLayout";
 import { Input } from "@/components/ui/input";
-import { ChevronRight, LayoutDashboard, Loader2, Search, Users } from "lucide-react";
+import { ChevronRight, Loader2, Search } from "lucide-react";
 import ActivityTab from "@/components/ActivityTab";
 import { AnswersTab, OfferCodesTab, ProblemsTab, UsageTab } from "@/components/OwnerInsights";
 
-const TABS = [["users", "Users"], ["activity", "Activity"], ["usage", "Usage"], ["answers", "Answers"], ["problems", "Problems"], ["codes", "Offer codes"]];
+const SECTIONS = {
+  users: ["Users", "Everyone with an account. Tap anyone to see what they did."],
+  activity: ["Activity", "Most used features, active people per day and the most active people"],
+  usage: ["Daily usage", "People and features used each day, India time"],
+  answers: ["Answer ratings", "Answers people marked 👍 or 👎"],
+  problems: ["Problems", "Crashes in the app and errors on the server, last 30 days"],
+  codes: ["Offer codes", "Discount codes for Pro and Max"],
+};
+const PLAN_DOT = { basic: "bg-slate-400 dark:bg-slate-500", pro: "bg-[var(--viz-1)]", max: "bg-[var(--viz-2)]" };
 
 function ago(iso) {
   if (!iso) return "Not yet";
@@ -24,13 +32,12 @@ function when(iso) {
   return iso ? new Date(iso).toLocaleString() : "";
 }
 
-export default function AdminUsersPage() {
+function UsersList() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState("users");
 
   useEffect(() => {
     if (!user?.isOwner) return;
@@ -48,88 +55,71 @@ export default function AdminUsersPage() {
     return (data?.users || []).filter((u) => u.lastSeenAt && new Date(u.lastSeenAt).getTime() > dayAgo).length;
   }, [data]);
 
-  if (!user?.isOwner) return <Navigate to="/" replace />;
-
+  if (error) return <p className="mt-10 text-center text-sm text-destructive">{error}</p>;
+  if (!data) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   return (
-    <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
-      <IconRail />
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-10 sm:px-6">
-          <header className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/70 px-3 py-1 text-xs font-medium text-muted-foreground">
-                <Users className="h-3.5 w-3.5 text-primary" /> Owner only
-              </span>
-              <Link to="/admin" className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline" data-testid="admin-users-dashboard-link">
-                <LayoutDashboard className="h-3.5 w-3.5" /> Dashboard
-              </Link>
-              <h1 className="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">Users</h1>
-              {data && (
-                <p className="mt-1 text-sm text-muted-foreground" data-testid="admin-users-summary">
-                  {data.total} account{data.total === 1 ? "" : "s"} · {today} active in the last 24 hours
-                </p>
-              )}
-            </div>
-            {tab === "users" && <div className="relative w-full sm:w-64">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" className="pl-9" data-testid="admin-users-search" />
-            </div>}
-          </header>
-
-          <div className="mt-6 flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1" role="tablist" data-testid="owner-tabs">
-            {TABS.map(([id, label]) => (
-              <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} data-testid={`owner-tab-${id}`}
-                className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${tab === id ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {tab === "activity" ? <ActivityTab /> : tab === "usage" ? <UsageTab /> : tab === "answers" ? <AnswersTab /> : tab === "problems" ? <ProblemsTab />
-            : tab === "codes" ? <OfferCodesTab /> : error ? (
-            <p className="mt-10 text-center text-sm text-destructive">{error}</p>
-          ) : !data ? (
-            <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-          ) : (
-            <div className="mt-6 overflow-x-auto rounded-2xl border border-border/70 bg-card/80 shadow-sm" data-testid="admin-users-table">
-              <table className="w-full min-w-[640px] text-left text-sm">
-                <thead className="border-b border-border/70 text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-4 py-3 font-medium">Last active</th>
-                    <th className="px-4 py-3 font-medium">Last sign-in</th>
-                    <th className="px-4 py-3 font-medium">Sign-ins</th>
-                    <th className="px-4 py-3 font-medium">Joined</th>
-                    <th className="w-8 px-2 py-3" aria-label="Open" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((u) => (
-                    <tr key={u.id} onClick={() => navigate(`/admin/users/${u.id}`)} data-testid="admin-users-row"
-                      className="cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-muted/50">
-                      <td className="px-4 py-3">
-                        <p className="font-semibold">{u.name}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}{u.plan !== "basic" ? ` · ${u.plan}` : ""}</p>
-                      </td>
-                      <td className="px-4 py-3" title={when(u.lastSeenAt)}>{ago(u.lastSeenAt)}</td>
-                      <td className="px-4 py-3" title={when(u.lastLoginAt)}>{ago(u.lastLoginAt)}</td>
-                      <td className="px-4 py-3">{u.loginCount || "–"}</td>
-                      <td className="px-4 py-3" title={when(u.createdAt)}>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : ""}</td>
-                      <td className="px-2 py-3 text-muted-foreground">
-                        <Link to={`/admin/users/${u.id}`} onClick={(e) => e.stopPropagation()} aria-label={`See what ${u.name || u.email} did`}><ChevronRight className="h-4 w-4" /></Link>
-                      </td>
-                    </tr>
-                  ))}
-                  {!rows.length && (
-                    <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No one matches that search.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {tab === "users" && <p className="mt-4 text-xs text-muted-foreground">Tap anyone to see what they did: features, how often and when, tokens and what they made. Sign-in times are kept from this update on. People who joined earlier show their time once they next open Krish.</p>}
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[12.5px] text-muted-foreground" data-testid="admin-users-summary">
+          <b className="font-semibold text-foreground">{data.total}</b> account{data.total === 1 ? "" : "s"} · <b className="font-semibold text-foreground">{today}</b> active in the last 24 hours
+        </p>
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" className="bg-card pl-9" data-testid="admin-users-search" />
         </div>
-      </main>
-    </div>
+      </div>
+      <div className="mt-3 overflow-x-auto rounded-xl border border-border/80 bg-card shadow-[0_1px_2px_rgba(15,23,42,0.04)]" data-testid="admin-users-table">
+        <table className="w-full min-w-[680px] text-left text-[13px]">
+          <thead className="border-b border-border/70 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2.5 font-semibold">Name</th>
+              <th className="px-4 py-2.5 font-semibold">Plan</th>
+              <th className="px-4 py-2.5 font-semibold">Last active</th>
+              <th className="px-4 py-2.5 font-semibold">Last sign-in</th>
+              <th className="px-4 py-2.5 text-right font-semibold">Sign-ins</th>
+              <th className="px-4 py-2.5 font-semibold">Joined</th>
+              <th className="w-8 px-2 py-2.5" aria-label="Open" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((u) => (
+              <tr key={u.id} onClick={() => navigate(`/admin/users/${u.id}`)} data-testid="admin-users-row"
+                className="cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-muted/50">
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{(u.name || u.email || "?")[0].toUpperCase()}</span>
+                    <div className="min-w-0"><p className="truncate font-semibold">{u.name || "No name"}</p><p className="truncate text-[11.5px] text-muted-foreground">{u.email}</p></div>
+                  </div>
+                </td>
+                <td className="px-4 py-2.5"><span className="inline-flex items-center gap-1.5 text-[12px] font-medium capitalize"><span className={`h-1.5 w-1.5 rounded-full ${PLAN_DOT[u.plan] || PLAN_DOT.basic}`} />{u.plan}</span></td>
+                <td className="px-4 py-2.5" title={when(u.lastSeenAt)}>{ago(u.lastSeenAt)}</td>
+                <td className="px-4 py-2.5 text-muted-foreground" title={when(u.lastLoginAt)}>{ago(u.lastLoginAt)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{u.loginCount || "–"}</td>
+                <td className="px-4 py-2.5 text-muted-foreground" title={when(u.createdAt)}>{u.createdAt ? new Date(u.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : ""}</td>
+                <td className="px-2 py-2.5 text-muted-foreground">
+                  <Link to={`/admin/users/${u.id}`} onClick={(e) => e.stopPropagation()} aria-label={`See what ${u.name || u.email} did`}><ChevronRight className="h-4 w-4" /></Link>
+                </td>
+              </tr>
+            ))}
+            {!rows.length && (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">No one matches that search.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-4 text-xs text-muted-foreground">Sign-in times are kept from the update that added them. People who joined earlier show their time once they next open Krish.</p>
+    </>
+  );
+}
+
+/** One section of the admin panel: the users list, activity, daily usage, answer ratings, problems or codes. */
+export default function AdminUsersPage({ section = "users" }) {
+  const [title, subtitle] = SECTIONS[section] || SECTIONS.users;
+  const body = section === "activity" ? <ActivityTab /> : section === "usage" ? <UsageTab /> : section === "answers" ? <AnswersTab />
+    : section === "problems" ? <ProblemsTab /> : section === "codes" ? <OfferCodesTab /> : <UsersList />;
+  return (
+    <AdminLayout title={title} subtitle={subtitle}>
+      <div data-testid={`admin-section-${section}`}>{body}</div>
+    </AdminLayout>
   );
 }

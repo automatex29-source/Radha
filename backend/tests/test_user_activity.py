@@ -124,3 +124,41 @@ def test_deleting_an_account_forgets_its_token_counts(client):
                        json={"password": "secret1", "confirmEmail": "act-gone@test.com"})
     assert r.status_code == 200, r.text
     assert client.portal.call(db.token_daily.count_documents, {"userId": gone["user"]["id"]}) == 0
+
+
+def test_questions_page_shows_what_people_ask_and_who_asked(client):
+    db = client.server.db
+    boss = client.post("/api/auth/login", json={"email": "act-boss@test.com", "password": "secret1"}).json()
+    meera = _register(client, "act-meera@test.com", "Meera Kapoor")
+    uid = meera["user"]["id"]
+    now = datetime.now(timezone.utc).isoformat()
+
+    async def seed():
+        for cid, extra, text in (("q1", {}, "How do I file GST returns? call me 9876543210"),
+                                 ("q2", {"mode": "counsellor"}, "I feel lonely at night"),
+                                 ("q3", {"automationId": "a1"}, "Send me cricket scores"),
+                                 ("q4", {"appId": "app1"}, "Make the button red")):
+            await db.conversations.insert_one({"id": cid, "userId": uid, "createdAt": now, **extra})
+            await db.messages.insert_one({"id": cid + "m", "conversationId": cid, "role": "user", "content": text,
+                                          "createdAt": now})
+    client.portal.call(seed)
+
+    nosy = _register(client, "act-nosy2@test.com")
+    assert client.get("/api/admin/questions", headers=_h(nosy["token"])).status_code == 404
+    d = client.get("/api/admin/questions?days=7", headers=_h(boss["token"])).json()
+    raw = json.dumps(d)
+    texts = [x["text"] for x in d["questions"]]
+    assert any("GST returns" in t for t in texts) and any("button red" in t for t in texts)
+    assert "lonely" not in raw and "cricket scores" not in raw  # counsellor and automation prompts are left out
+    assert "9876543210" not in raw
+    gst = next(x for x in d["questions"] if "GST" in x["text"])
+    assert gst["name"] == "Meera Kapoor" and gst["email"] == "act-meera@test.com" and gst["userId"] == uid
+    assert {w["name"] for w in d["where"]} >= {"Chat", "App Builder"}
+    only = client.get("/api/admin/questions?days=7&q=gst", headers=_h(boss["token"])).json()
+    assert only["matching"] >= 1 and all("gst" in x["text"].lower() for x in only["questions"])
+    hers = client.get(f"/api/admin/questions?days=7&user={uid}", headers=_h(boss["token"])).json()
+    assert hers["user"]["name"] == "Meera Kapoor" and hers["matching"] == 2
+    assert all(x["userId"] == uid for x in hers["questions"])
+    assert "lonely" not in json.dumps(hers)
+    by_name = client.get("/api/admin/questions?days=7&q=meera", headers=_h(boss["token"])).json()
+    assert by_name["matching"] == 2
