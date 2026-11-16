@@ -227,3 +227,51 @@ def test_asking_for_english_wins_over_hinglish(monkeypatch):
     got = turn(monkeypatch, [user("gst kya h, answer in english")],
                reading(question="What is GST? Answer in English.", lang="hinglish"))
     assert server_hinglish_note() not in got["system"][0]
+
+
+# --- follow-up changes in a chat about code -------------------------------------------------------------------
+
+CODE_REPLY = bot("Here is your calculator:\n```html\n<html><body>calc</body></html>\n```\nOpen it in a browser.")
+
+
+def code_chat(*follow_ups):
+    history = [user("make a calculator in html"), CODE_REPLY]
+    for text in follow_ups[:-1]:
+        history += [user(text), bot("Done, the page now does that.")]
+    return history + [user(follow_ups[-1])]
+
+
+def test_changes_with_fresh_fact_words_stay_coding():
+    server = _server()
+    for text in ["ab isme dark mode aur best colors daal do", "make the buttons bigger and add latest design trends",
+                 "isme login page bhi chahiye jo current user dikhaye", "chnage the colr to blu",
+                 "add a history of calculations, " + "with the date and time of each one " * 12]:
+        assert server._coding_turn(code_chat(text)), text
+
+
+def test_code_chat_survives_a_reply_without_code():
+    # "what does = do?" got an explanation without code; the next change still belongs to the code
+    assert _server()._coding_turn(code_chat("what does the = button do?", "ab usme best looking theme daal do"))
+
+
+def test_new_topics_in_a_code_chat_are_not_coding():
+    server = _server()
+    for text in ["will it rain today in delhi", "gold price aaj kya hai", "latest news today", "thanks"]:
+        assert not server._coding_turn(code_chat(text)), text
+
+
+def test_misspelt_and_hinglish_changes_are_edits():
+    import code_edit
+    for text in ["chnage the colr to blu", "isme login lagao", "dark mode chahiye", "button ka color bdlo"]:
+        assert code_edit.wants_edit(text), text
+    for text in ["what does this do", "make a new gym website", "write an ad for my shop"]:
+        assert not code_edit.wants_edit(text), text
+
+
+def test_code_follow_ups_dont_search_the_web(monkeypatch):
+    got = turn(monkeypatch, code_chat("ab isme dark mode aur best colors daal do"),
+               reading(question="Add a dark mode and the best colours to the calculator.", kind="code", web=True))
+    assert got["gather"][0]["search"] is False
+    # asking for a search in words still searches
+    got = turn(monkeypatch, code_chat("search the web for the best calculator colour palettes and use them"), None)
+    assert got["gather"][0]["search"] is True

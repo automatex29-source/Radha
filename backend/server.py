@@ -1474,7 +1474,9 @@ CODE_PROMPT = (
     "error or the code needed to find it is missing, give the likeliest cause and fix, then ask for the exact error "
     "or file in one line.\n"
     "- For a follow-up (\"still not working\", \"add a login\", \"now in Java\"), work from the latest version of "
-    "the code in this chat and keep everything that already works. If they ask to change a file (\"remove the dropdown "
+    "the code in this chat and keep everything that already works. Keep building that same program: never switch to "
+    "a different program, topic, language or framework they didn't ask for, and don't answer from web results that "
+    "aren't about their code. If they ask to change a file (\"remove the dropdown "
     "from index\") that you can't see in this chat, never write a new one from scratch: ask them in one line to "
     "paste or attach that file.\n"
     "- Before writing new code, settle the approach in a sentence or two (data structures, edge cases, and time "
@@ -1549,8 +1551,21 @@ _THANKS = re.compile(r"^\W*(?:thanks?|thank you|thx|ty|ok(?:ay)?|cool|great|nice
 FOLLOW_UP_CHARS = 400
 
 
+# Words that point back at the code in the chat ("isme login daal do", "the button"). Not "it" or "ye": "will it
+# rain today?" in a chat about code is still a weather question.
+_POINTS_BACK = re.compile(
+    r"\b(isme|isse|isko|iske|ismein|usme|usko|code|page|app|site|website|game|button|buttons|form|function|"
+    r"file|script|program|screen|ui|layout|design|feature|features|error|bug|output|upar)\b", re.IGNORECASE)
+CODE_CHAT_TURNS = 6  # how far back (user and assistant messages) a follow-up still belongs to a chat about code
+
+
 def _coding_turn(history_docs: list) -> bool:
-    """True when the latest user message is a coding question, or a short follow-up in a chat about code."""
+    """True when the latest user message is a coding question, or a follow-up in a chat about code.
+
+    In a chat about code, a change asked with words like "best", "latest" or "current" ("add the best colours",
+    "show the current user") used to count as a fresh-facts question: the turn lost the coding prompt and model,
+    searched the web for the words, and answered about something else. Now a follow-up that asks for a change or
+    points back at the code ("it", "isme", "the button") stays a coding turn, even a long one."""
     turns = [m for m in history_docs if m["role"] in ("user", "assistant")]
     at = next((i for i in range(len(turns) - 1, -1, -1) if turns[i]["role"] == "user"), None)
     if at is None:
@@ -1558,12 +1573,17 @@ def _coding_turn(history_docs: list) -> bool:
     text = turns[at]["content"] or ""
     if _code_ask(text):
         return True
-    if len(text) > FOLLOW_UP_CHARS or _THANKS.match(text) or _ideas_ask(text) or live_search.suggests_web(text):
+    if _THANKS.match(text) or _ideas_ask(text):
         return False
-    before = turns[:at]
-    reply = next((m["content"] or "" for m in reversed(before) if m["role"] == "assistant"), "")
-    asked = next((m["content"] or "" for m in reversed(before) if m["role"] == "user"), "")
-    return "```" in reply or _code_ask(asked)
+    before = turns[max(0, at - CODE_CHAT_TURNS):at]
+    code_chat = any("```" in (m["content"] or "") for m in before if m["role"] == "assistant") or \
+        any(_code_ask(m["content"] or "") for m in before if m["role"] == "user")
+    if not code_chat:
+        return False
+    about_the_code = code_edit.wants_edit(code_edit.without_code(text)) or bool(_POINTS_BACK.search(text))
+    if len(text) > FOLLOW_UP_CHARS:
+        return about_the_code
+    return about_the_code or not live_search.suggests_web(text)
 
 
 # Requests for ideas (brainstorming, names, business or content ideas) get IDEAS_PROMPT.
@@ -2203,13 +2223,16 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     # it. Otherwise Krish searches on its own when the question needs fresh or checkable facts (auto_search),
     # and agent turns can still call web_search themselves.
     asked = live_search.asks_for_search(last_user or "")
+    # A coding turn ("add the best colours", "show the current user") searches only when asked: the words of a
+    # change to the code made a poor search, and the results pulled the answer away from the user's code.
     chosen_web = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked \
-        or plugin_state.get("auto_search", False)
-    auto = not chosen_web and not counselling and (live_search.auto_search(last_user or "") or
+        or (plugin_state.get("auto_search", False) and not coding)
+    auto = not chosen_web and not counselling and not coding and (live_search.auto_search(last_user or "") or
                                                    bool(reading and reading["web"]) or wants_tool == "web_search")
     searching = chosen_web or auto
     web = web or asked
-    web_hint = not searching and not counselling and not voice and live_search.suggests_web(last_user or "")
+    web_hint = not searching and not counselling and not voice and not coding and \
+        live_search.suggests_web(last_user or "")
     if not searching and not counselling:
         system_parts.append(WEB_AUTO_NOTE if agent else WEB_OFF_NOTE)
     # How-tos, recipes and lessons get a row of YouTube videos, whether or not the web was searched.
