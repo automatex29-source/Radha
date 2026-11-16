@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import ThinkingShape from "@/components/ThinkingShape";
 
 /**
- * What the chat shows while Krish makes or edits a picture: a frame in the picture's own shape that keeps changing
- * between ten saffron-and-green animations (dots, tiles, ink, lines, mandala, pixels, contours, sparks, brush,
- * aurora), with "Creating image · setting the scene" above it and a % counter in the corner.
+ * What the chat shows while Krish makes or edits a picture: a frame in the picture's own shape where saffron and
+ * green brush strokes paint in and fade while contour lines ripple out over them ("Painted ripples"), with
+ * "Creating image · setting the scene" above it and a % counter in the corner. The other animations stay here
+ * for LoadingCanvas (the App Builder uses "Gathering light").
  * The finished picture then fades in from a blur in the same spot (see PictureGallery).
  */
 
@@ -84,7 +85,7 @@ export const ANIMATIONS = [
         const rr = r + w * 0.03 * Math.sin(a * 3 + t * 0.8 + r * 0.02) + w * 0.015 * Math.sin(a * 5 - t);
         const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr * 0.9; a ? c.lineTo(x, y) : c.moveTo(x, y);
       }
-      c.strokeStyle = rgba(mix(SAF, GRN, r / max), al); c.lineWidth = w * 0.005; c.stroke();
+      c.closePath(); c.strokeStyle = rgba(mix(SAF, GRN, r / max), al); c.lineWidth = w * 0.005; c.stroke();
     }
   }],
   ["Gathering light", (c, w, h, t, bg) => {
@@ -118,13 +119,38 @@ export const ANIMATIONS = [
     const shine = dark ? 0.12 : 0.65; gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(0.5, `rgba(255,255,255,${shine})`); gr.addColorStop(1, "rgba(255,255,255,0)");
     c.fillStyle = gr; c.fillRect(0, 0, w, h);
   }],
+  ["Painted ripples", (c, w, h, t, bg, dark) => {
+    // Brush strokes keep painting in and softly fading, with contour lines flowing out over them.
+    fill(c, w, h, bg); c.save(); c.lineCap = "round"; c.filter = `blur(${Math.max(1, w * 0.01)}px)`;
+    const BR = [[GOLD, 0.16], [SAF, 0.3], [DEEP, 0.43], [LG, 0.57], [GRN, 0.7], [SAF, 0.83], [GOLD, 0.95]];
+    BR.forEach(([col, y], i) => {
+      const ph = (t / 6.5 + i / BR.length) % 1; const pr = clamp(ph / 0.45);
+      const al = 0.46 * (ph < 0.72 ? 1 : 1 - (ph - 0.72) / 0.28);
+      const x0 = -w * 0.15, x1 = x0 + w * 1.3 * pr, dir = i % 2 ? -1 : 1; c.beginPath();
+      for (let x = x0; x <= x1; x += 6) {
+        const px = dir > 0 ? x : w - x; const yy = h * y + Math.sin((x / w) * 3.6 + i * 1.7 + t * 0.25) * h * 0.05;
+        x === x0 ? c.moveTo(px, yy) : c.lineTo(px, yy);
+      }
+      c.strokeStyle = rgba(col, al); c.lineWidth = Math.min(w, h) * (0.1 + 0.035 * Math.sin(i * 2.3)); c.stroke();
+    });
+    c.restore();
+    const cx = w * 0.5, cy = h * 0.5, max = Math.max(w, h) * 0.78;
+    for (let i = 0; i < 13; i++) {
+      const r = ((i * max) / 13 + t * w * 0.045) % max; const al = Math.sin((r / max) * Math.PI) * (dark ? 0.75 : 0.6); c.beginPath();
+      for (let a = 0; a <= Math.PI * 2 + 0.01; a += 0.05) {
+        const rr = r + w * 0.03 * Math.sin(a * 3 + t * 0.8 + r * 0.02) + w * 0.015 * Math.sin(a * 5 - t);
+        const x = cx + Math.cos(a) * rr * (w / Math.max(w, h)) * 1.1, y = cy + Math.sin(a) * rr * (h / Math.max(w, h)) * 1.05; a ? c.lineTo(x, y) : c.moveTo(x, y);
+      }
+      c.closePath(); c.strokeStyle = dark ? rgba(mix(GOLD, LG, r / max), al) : rgba(mix(DEEP, GRN, r / max), al); c.lineWidth = Math.max(1, w * 0.0035); c.stroke();
+    }
+  }],
 ];
 
 function fill(c, w, h, bg) { if (!bg) { c.clearRect(0, 0, w, h); return; } c.fillStyle = rgba(bg, 1); c.fillRect(0, 0, w, h); }
 function round(c, x, y, w, h, r) { if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); }
 
-const SEGMENT = 3.6; // seconds each animation plays
-const FADE = 0.7;    // crossfade into the next one
+// Pictures use "Painted ripples" (brush strokes with contour lines); the App Builder uses "Gathering light".
+const PICTURE_ANIMATION = ANIMATIONS.find(([n]) => n === "Painted ripples")[1];
 const STAGES = [[0, "reading your idea"], [2.5, "setting the scene"], [7, "adding light and colour"], [14, "final touches"]];
 const EDIT_STAGES = [[0, "looking at your picture"], [3, "making the change"], [12, "final touches"]];
 
@@ -147,37 +173,27 @@ export default function PictureMaking({ step }) {
   const ratio = editing ? 1 : pictureShape(step?.args?.size);
   const canvasRef = useRef(null);
   const [secs, setSecs] = useState(() => (performance.now() - started.get(id)) / 1000);
-  const first = Math.floor(hash(id.length, id.charCodeAt(id.length - 1) || 1) * ANIMATIONS.length);
 
   useEffect(() => {
     const cv = canvasRef.current; if (!cv) return undefined;
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const ctx = cv.getContext("2d");
-    const a = document.createElement("canvas"), b = document.createElement("canvas");
     let raf = 0, lastTick = 0;
     const draw = (now) => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const W = Math.round(cv.clientWidth * dpr), H = Math.round(cv.clientHeight * dpr);
       if (!W || !H) { raf = requestAnimationFrame(draw); return; }
-      for (const x of [cv, a, b]) if (x.width !== W || x.height !== H) { x.width = W; x.height = H; }
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
       const dark = document.documentElement.classList.contains("dark");
       const bg = dark ? [14, 16, 23] : [251, 250, 248];
       const t = (now - started.get(id)) / 1000;
-      const k = Math.floor(t / SEGMENT), local = t - k * SEGMENT;
-      const cur = ANIMATIONS[(first + k) % ANIMATIONS.length][1];
-      cur(a.getContext("2d"), W, H, local + 1.2, bg, dark);
-      ctx.globalAlpha = 1; ctx.drawImage(a, 0, 0);
-      if (!still && local > SEGMENT - FADE) {
-        const next = ANIMATIONS[(first + k + 1) % ANIMATIONS.length][1];
-        next(b.getContext("2d"), W, H, local - SEGMENT + 1.2, bg, dark);
-        ctx.globalAlpha = (local - (SEGMENT - FADE)) / FADE; ctx.drawImage(b, 0, 0); ctx.globalAlpha = 1;
-      }
+      PICTURE_ANIMATION(ctx, W, H, t + 1.2, bg, dark);
       if (now - lastTick > 250) { lastTick = now; setSecs(t); }
       if (!still) raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [id, first]);
+  }, [id]);
 
   const stages = editing ? EDIT_STAGES : STAGES;
   const stage = [...stages].reverse().find(([at]) => secs >= at)[1];
@@ -207,7 +223,7 @@ export function LoadingCanvas({ name = "Gathering light", transparent = false, c
   const ref = useRef(null);
   useEffect(() => {
     const cv = ref.current; if (!cv) return undefined;
-    const draw = (ANIMATIONS.find(([n]) => n === name) || ANIMATIONS[7])[1];
+    const draw = (ANIMATIONS.find(([n]) => n === name) || ANIMATIONS.find(([n]) => n === "Gathering light"))[1];
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const ctx = cv.getContext("2d"); const t0 = performance.now(); let raf = 0;
     const frame = (now) => {
