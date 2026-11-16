@@ -20,7 +20,7 @@ export default function SourceChip({ href, title, children, node, ...rest }) {
     <a href={href} target="_blank" rel="noopener noreferrer" aria-label={src?.title || domain} data-testid="citation-link"
       className="krish-cite group/cite relative ml-1 mr-0.5 inline-flex max-w-[9rem] items-center gap-1 rounded-full bg-surface-strong py-[3px] pl-1 pr-2 align-[0.12em] text-[10.5px] font-medium leading-none text-muted-foreground no-underline transition-colors hover:bg-primary hover:text-primary-foreground">
       {domain && <img src={faviconUrl(domain)} alt="" loading="lazy" className="h-3.5 w-3.5 shrink-0 rounded-full bg-white" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
-      <span className="truncate">{siteName(domain) || children}</span>
+      <span className="krish-cite-name truncate">{siteName(domain) || children}</span>
       {more && <span className="shrink-0 opacity-70">{more}</span>}
       {src && (
         <span className="krish-cite-card" role="tooltip">
