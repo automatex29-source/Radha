@@ -5,6 +5,8 @@ import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loade
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
+import PictureMaking from "@/components/PictureMaking";
+import { PictureGallery, PictureChanges, isMadePicture, markFresh } from "@/components/PictureGallery";
 import ApprovalCard from "@/components/ApprovalCard";
 import CodeProject from "@/components/CodeProject";
 import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
@@ -225,6 +227,8 @@ function RateButtons({ message }) {
   );
 }
 
+const PICTURE_TOOLS = new Set(["generate_image", "edit_image"]);
+
 export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, quickReplies, compactSteps = false, agent = null }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -233,6 +237,11 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   // With the side panel, the files live there (like Claude's artifacts) and the chat keeps just the words.
   const webSources = useMemo(() => (message.sources || []).filter((s) => (s.type === "web" || s.type === "video") && s.url), [message.sources]);
   const liveCards = useMemo(() => (message.sources || []).filter((s) => s.type === "weather" || s.type === "stock"), [message.sources]);
+  // Pictures Krish made show big, right under the steps, where the "Creating image" frame was.
+  const madePictures = useMemo(() => (message.media || []).filter(isMadePicture), [message.media]);
+  const otherMedia = useMemo(() => (message.media || []).filter((m) => !isMadePicture(m)), [message.media]);
+  const makingPicture = streaming ? (message.steps || []).find((s) => s.status === "running" && PICTURE_TOOLS.has(s.name)) : null;
+  if (streaming) markFresh(madePictures);
   const imageResults = useMemo(() => (message.sources || []).filter((s) => s.type === "image" && s.thumbnail), [message.sources]);
   // YouTube rows: the how-to videos, and the results of a Video search (those also stay numbered in the sources).
   const videoResults = useMemo(() => (message.sources || []).filter((s) => (s.type === "clip" || s.type === "video") && s.thumbnail && s.url), [message.sources]);
@@ -356,6 +365,8 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         </div>
         <ToolSteps steps={message.steps} compact={compactSteps}
           thinking={!!(streaming && !shown && !(message.searched?.running && !webSources.length) && !(message.steps || []).some((x) => x.status === "running"))} />
+        {makingPicture && <PictureMaking step={makingPicture} />}
+        <PictureGallery items={madePictures} onAsk={onAsk} />
         {(message.steps || []).filter((s) => s.approval).map((s) => <ApprovalCard key={s.approval.id} card={s.approval} onAsk={onAsk} />)}
         <LiveCards items={liveCards} />
         {streaming && message.searched?.running && !webSources.length && !shown && <SearchingStatus query={message.searched.queries?.[0]} />}
@@ -378,8 +389,9 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             <Square className="h-2.5 w-2.5 fill-current" /> You stopped this reply
           </p>
         )}
+        {!streaming && <PictureChanges items={madePictures} onAsk={onAsk} />}
         {codeProject && <CodeProject content={message.content || ""} streaming={streaming} onOpen={onOpenCode} active={codeActive} />}
-        <MediaGallery items={message.media} onOpen={onOpenMedia} />
+        <MediaGallery items={otherMedia} onOpen={onOpenMedia} />
         {fileSources.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid={`message-sources-${message.id}`}>
             <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Sources</span>

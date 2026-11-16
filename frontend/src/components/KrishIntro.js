@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import KrishWordmark from "@/components/KrishWordmark";
+import { LoadingCanvas } from "@/components/PictureMaking";
 
 const BUILD_LINES = [
   "Reading your idea…",
@@ -46,6 +47,7 @@ export default function KrishIntro({ building }) {
       className="krish-intro relative flex h-full w-full select-none flex-col items-center justify-center overflow-hidden">
       <div className="krish-intro-grid" aria-hidden />
       <div className="krish-intro-glow" aria-hidden />
+      {building && <LoadingCanvas transparent className="pointer-events-none absolute inset-0 h-full w-full opacity-80" />}
       {Array.from({ length: 18 }).map((_, i) => (
         <span key={i} aria-hidden className="krish-intro-spark"
           style={{ left: `${(i * 53) % 100}%`, animationDelay: `${(i * 0.37) % 6}s`, animationDuration: `${6 + (i % 5)}s` }} />

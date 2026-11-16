@@ -32,7 +32,7 @@ function argPreview(step) {
 const VERBS = {
   web_search: ["Searching the web", "Searched the web"], pro_search: ["Searching the web", "Searched the web"],
   fetch_url: ["Reading a page", "Read a page"], run_python: ["Running code", "Ran code"],
-  generate_image: ["Making a picture", "Made a picture"], generate_video: ["Making a video", "Made a video"],
+  generate_image: ["Making a picture", "Made a picture"], edit_image: ["Changing the picture", "Changed the picture"], generate_video: ["Making a video", "Made a video"],
   create_spreadsheet: ["Making a spreadsheet", "Made a spreadsheet"], create_presentation: ["Making slides", "Made slides"],
   create_document: ["Writing a document", "Wrote a document"], create_html: ["Making a page", "Made a page"],
   browser: ["Using the browser", "Used the browser"], write_file: ["Writing", "Wrote"], append_file: ["Writing", "Wrote"],
@@ -80,6 +80,8 @@ function Step({ step }) {
   const note = failed ? "didn't work" : stopped ? "stopped" : step.approval ? "waiting for you" : "";
   const dot = step.approval ? "wait" : running ? "run" : failed ? "error" : stopped ? "stop" : "done";
   const mono = MONO.has(step.name) ? "font-mono text-[11.5px]" : "";
+  // A picture being made shows as its own animated frame (PictureMaking), not as a rail row.
+  if (running && (step.name === "generate_image" || step.name === "edit_image")) return null;
   return (
     <div className="krish-rail-row" data-testid={`tool-step-${step.name}`} data-status={step.status}>
       <RailDot state={dot} />
