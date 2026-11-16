@@ -41,3 +41,16 @@ export function linkCitations(text, web) {
 }
 
 export const faviconUrl = (domain) => `https://icons.duckduckgo.com/ip3/${domain}.ico`;
+
+// A site's short name for chips and cards: "economictimes.indiatimes.com" -> "economictimes",
+// "en.wikipedia.org" -> "wikipedia", "uidai.gov.in" -> "uidai".
+const SECOND_LEVEL = new Set(["co", "com", "gov", "ac", "org", "net", "edu", "nic", "res", "ind"]);
+const UMBRELLA = new Set(["indiatimes", "blogspot", "wordpress", "substack", "medium", "github", "gitbook", "notion", "tumblr"]);
+export const siteName = (domain) => {
+  const parts = (domain || "").replace(/^(www|en|m|amp|mobile)\./, "").split(".").filter(Boolean);
+  if (parts.length < 2) return parts[0] || "";
+  const sld = parts.length > 2 && parts[parts.length - 1].length === 2 && SECOND_LEVEL.has(parts[parts.length - 2]);
+  const at = parts.length - (sld ? 3 : 2);
+  // On umbrella domains the subdomain is the site: economictimes.indiatimes.com, someone.substack.com.
+  return at > 0 && UMBRELLA.has(parts[at]) ? parts[at - 1] : parts[at];
+};
