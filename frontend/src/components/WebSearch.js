@@ -59,9 +59,9 @@ export function SearchedSources({ items, searched, id }) {
               <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
                 <SiteIcon domain={s.domain} className="h-3.5 w-3.5 shrink-0" />
                 <span className="min-w-0 truncate">{siteName(s.domain) || s.domain}</span>
-                <span className="ml-auto shrink-0 tabular-nums opacity-70">{i + 1}</span>
+                <span className="krish-source-num ml-auto shrink-0 tabular-nums opacity-70">{i + 1}</span>
               </span>
-              <span className="line-clamp-2 text-[12.5px] font-medium leading-snug text-foreground">{s.title}</span>
+              <span className="krish-source-title line-clamp-2 text-[12.5px] font-medium leading-snug text-foreground">{s.title}</span>
             </a>
           ))}
           {rest.length > 0 && (
@@ -74,7 +74,7 @@ export function SearchedSources({ items, searched, id }) {
                   </span>
                 ))}
               </span>
-              <span className="text-[12px] text-muted-foreground">+{rest.length} more</span>
+              <span className="text-[12px] text-muted-foreground">+{rest.length}<span className="max-sm:hidden"> more</span></span>
             </button>
           )}
         </div>
