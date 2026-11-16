@@ -6,16 +6,20 @@ and sends messages to the user's own Telegram, WhatsApp, Slack or Discord. Sendi
 in an automation, and waits for the user's OK there unless they let it send on its own (see automations.gated).
 """
 import base64
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Optional
+from urllib.parse import quote
 
 import httpx
 
 import connectors
 import extract
 from agent.tools import Tool, ToolContext, ToolOutput, ToolRegistry
+
+logger = logging.getLogger("radha.connector_tools")
 
 GAPI = "https://www.googleapis.com"
 MAX_READ = 14_000
@@ -40,6 +44,13 @@ async def _post(url: str, token: str, body: dict, headers: Optional[dict] = None
 
 
 def _check(r: httpx.Response):
+    if r.status_code == 403 and re.search(r"has not been used in project|is disabled|accessNotConfigured|SERVICE_DISABLED",
+                                          r.text or ""):
+        # Google answers 403 when the API itself is off in Krish's Google Cloud project: reconnecting can't fix it.
+        logger.error("A Google API is turned off in the Cloud project: %s", (r.text or "")[:300])
+        raise RuntimeError("This Google app is switched off on Krish's side (its API isn't enabled in Krish's "
+                           "Google Cloud project), so reconnecting won't help. Tell the user the Krish team has "
+                           "been told and to try again later.")
     if r.status_code in (401, 403):
         raise RuntimeError("The app refused access. Ask the user to connect it again in Settings > Connectors "
                            f"(it answered {r.status_code}).")
@@ -81,7 +92,8 @@ async def _drive_search(ctx: ToolContext, args: dict) -> ToolOutput:
     if query:
         q += f" and (name contains '{_q(query)}' or fullText contains '{_q(query)}')"
     params = {"q": q, "pageSize": max(1, min(int(args.get("max_results") or 10), 25)),
-              "fields": "files(id,name,mimeType,modifiedTime,webViewLink,size)"}
+              "fields": "files(id,name,mimeType,modifiedTime,webViewLink,size)",
+              "corpora": "allDrives", "includeItemsFromAllDrives": "true", "supportsAllDrives": "true"}
     if not query:
         params["orderBy"] = "modifiedTime desc"
     r = await _get(f"{GAPI}/drive/v3/files", token, params)
@@ -99,7 +111,8 @@ async def _drive_read(ctx: ToolContext, args: dict) -> ToolOutput:
     fid = (args.get("file_id") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{10,200}", fid):
         raise ValueError("Give a file_id from drive_search")
-    meta = (await _get(f"{GAPI}/drive/v3/files/{fid}", token, {"fields": "id,name,mimeType,size"})).json()
+    meta = (await _get(f"{GAPI}/drive/v3/files/{fid}", token, {"fields": "id,name,mimeType,size",
+                                                                 "supportsAllDrives": "true"})).json()
     mime = meta.get("mimeType", "")
     if mime in _EXPORT:
         r = await _get(f"{GAPI}/drive/v3/files/{fid}/export", token, {"mimeType": _EXPORT[mime][0]})
@@ -108,7 +121,7 @@ async def _drive_read(ctx: ToolContext, args: dict) -> ToolOutput:
         if int(meta.get("size") or 0) > 15 * 1024 * 1024:
             raise ValueError("That file is too big to read (over 15MB)")
         ext = _EXT.get(mime) or (meta["name"].rsplit(".", 1)[-1].lower() if "." in meta["name"] else "txt")
-        r = await _get(f"{GAPI}/drive/v3/files/{fid}", token, {"alt": "media"})
+        r = await _get(f"{GAPI}/drive/v3/files/{fid}", token, {"alt": "media", "supportsAllDrives": "true"})
         text = extract.extract_text(r.content, ext, mime)
     if not (text or "").strip():
         return ToolOutput(content=f"{meta['name']} has no text Krish can read.", summary="No text")
@@ -293,6 +306,7 @@ async def new_emails(user_id: str, query: str, after: float, limit: int = 10) ->
 # ------------------------------------------------------------------- Sheets
 _SHEET_ID = re.compile(r"(?:/spreadsheets/d/)?([A-Za-z0-9_-]{25,100})")
 SHEETS = "https://sheets.googleapis.com/v4/spreadsheets"
+_RANGE_SAFE = "!:'"  # a range like 'My Tab'!A1:F9 goes in the URL path; the rest (spaces, /, #, ?) is escaped
 
 
 def _sheet_id(value: str) -> str:
@@ -315,7 +329,7 @@ async def _sheets_read(ctx: ToolContext, args: dict) -> ToolOutput:
     meta = (await _get(f"{SHEETS}/{sid}", token, {"fields": "properties.title,sheets.properties.title"})).json()
     tabs = [t["properties"]["title"] for t in meta.get("sheets", [])]
     rng = _range(args.get("range")) or (f"'{tabs[0]}'" if tabs else "A1:Z200")
-    values = (await _get(f"{SHEETS}/{sid}/values/{rng}", token)).json().get("values", [])
+    values = (await _get(f"{SHEETS}/{sid}/values/{quote(rng, safe=_RANGE_SAFE)}", token)).json().get("values", [])
     rows = "\n".join(" | ".join(str(c) for c in row) for row in values[:300])
     title = meta.get("properties", {}).get("title", "Sheet")
     return ToolOutput(content=f"# {title} (tabs: {', '.join(tabs)})\nRange {rng}, {len(values)} rows:\n{_clip(rows)}",
@@ -332,7 +346,7 @@ async def _sheets_append(ctx: ToolContext, args: dict) -> ToolOutput:
             for r in rows[:500]]
     rng = _range(args.get("range")) or "A1"
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(f"{SHEETS}/{sid}/values/{rng}:append",
+        r = await client.post(f"{SHEETS}/{sid}/values/{quote(rng, safe=_RANGE_SAFE)}:append",
                               params={"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"},
                               json={"values": rows}, headers={"Authorization": f"Bearer {token}"})
     _check(r)
