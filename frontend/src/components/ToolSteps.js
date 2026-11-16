@@ -2,7 +2,6 @@ import { useState } from "react";
 import { mediaUrl } from "@/lib/api";
 import { ChevronRight, FileDown, Eye, Hand, Check, X } from "lucide-react";
 import { fileKind, KIND_META } from "@/components/PreviewPanel";
-import RangoliBloom from "@/components/RangoliBloom";
 
 function argPreview(step) {
   const a = step.args || {};
@@ -108,11 +107,11 @@ function Step({ step }) {
   );
 }
 
-// A turning rangoli, then "Krish is thinking…", as the rail's live row: before the first step, and between steps.
+// A square that turns and softens into a circle (saffron centre), then "Krish is thinking…", as the rail's live row: before the first step, and between steps.
 function ThinkingRow() {
   return (
     <div className="krish-rail-row" role="status" data-testid="streaming-cursor">
-      <RangoliBloom className="krish-rail-rangoli" />
+      <span className="krish-shape" aria-hidden="true" />
       <span className="krish-step"><span className="krish-thinking-words font-medium">Krish is thinking…</span></span>
     </div>
   );
