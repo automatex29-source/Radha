@@ -5,6 +5,7 @@ import IconRail from "@/components/IconRail";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { AppWindow, Loader2, Trash2, Wand2, Github, ArrowUp, ChevronRight } from "lucide-react";
+import ThinkingShape from "@/components/ThinkingShape";
 
 // Tap a starter to fill the box with a full brief: real jobs Indian businesses and people run every day.
 const STARTERS = [
@@ -71,7 +72,7 @@ function NewAppBox({ busy, onCreate }) {
           <button type="button" onClick={boost} disabled={!text.trim() || boosting} data-testid="new-app-boost"
             title="Turn a short idea into a detailed brief"
             className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50">
-            {boosting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Improve prompt
+            {boosting ? <ThinkingShape size={12} /> : <Wand2 className="h-3.5 w-3.5" />} Improve prompt
           </button>
           <button type="button" onClick={() => setRepo(repo === null ? "" : null)} data-testid="import-github-open"
             className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors hover:bg-muted hover:text-foreground ${repo !== null ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
@@ -79,7 +80,7 @@ function NewAppBox({ busy, onCreate }) {
           </button>
           <button type="button" onClick={build} disabled={!ready} data-testid="create-app-button" aria-label="Build it" title="Build it"
             className="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-foreground pl-3 pr-2.5 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-30">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <>Build it <ArrowUp className="h-3.5 w-3.5" /></>}
+            {busy ? <ThinkingShape size={12} onColor /> : <>Build it <ArrowUp className="h-3.5 w-3.5" /></>}
           </button>
         </div>
         {repo !== null && (

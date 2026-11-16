@@ -21,6 +21,7 @@ import { modelLabel } from "@/lib/models";
 import { AgentAvatar } from "@/lib/counselAgents";
 import ScrollTable from "@/components/ScrollTable";
 import AiLimitCard from "@/components/AiLimitCard";
+import ThinkingShape from "@/components/ThinkingShape";
 
 // Pictures found for the question, like Perplexity's image strip. Each opens the page it came from.
 function ImageResults({ items, id }) {
@@ -90,7 +91,7 @@ function MakePageButton({ id }) {
   return (
     <button onClick={make} disabled={busy} data-testid={`make-page-button-${id}`} title="Publish this answer as a page anyone can read"
       className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 max-md:min-h-9 max-md:px-1">
-      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Newspaper className="h-3 w-3" />} Make a page
+      {busy ? <ThinkingShape size={11} /> : <Newspaper className="h-3 w-3" />} Make a page
     </button>
   );
 }

@@ -8,6 +8,7 @@ import {
 import { api, formatApiError } from "@/lib/api";
 import DevicePreview from "@/components/DevicePreview";
 import { buildPreview, extractFiles, makeZip, projectName, withImages, withKit } from "@/lib/codeFiles";
+import ThinkingShape from "@/components/ThinkingShape";
 
 /** Download ZIP and Open in App Builder for a set of code files. */
 export function useProjectActions(replyFiles, content) {
@@ -127,7 +128,7 @@ function CodeCard({ files, content, streaming, onOpen, active }) {
       data-testid="code-project">
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left" data-testid="code-project-open-panel">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          {streaming ? <Loader2 className="h-5 w-5 animate-spin" /> : <FileCode2 className="h-5 w-5" />}
+          {streaming ? <ThinkingShape size={17} /> : <FileCode2 className="h-5 w-5" />}
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold">{name}</span>
@@ -172,7 +173,7 @@ function InlineProject({ files, content, streaming }) {
         <div className="ml-auto flex items-center gap-1.5">
           {streaming ? (
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Building {files.length} file{files.length === 1 ? "" : "s"}…
+              <ThinkingShape size={12} /> Building {files.length} file{files.length === 1 ? "" : "s"}…
             </span>
           ) : (
             <>

@@ -20,6 +20,7 @@ import {
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
   Paperclip, X, Wand2, ImagePlus, MapPin, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare, Wrench,
 } from "lucide-react";
+import ThinkingShape from "@/components/ThinkingShape";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit", "start_template"]);
 const SCREENSHOT_ASK = "Build this design as a working app. Match its layout, colours, fonts, spacing and content as closely as you can, and make every button work.";
@@ -568,7 +569,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
             </Button>
             <Button size="icon" variant="ghost" onClick={boost} disabled={!input.trim() || boosting || streaming}
               title="Improve my prompt" aria-label="Improve my prompt" data-testid="builder-boost" className="h-10 w-10 sm:h-8 sm:w-8">
-              {boosting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+              {boosting ? <ThinkingShape size={12} /> : <Wand2 className="h-3.5 w-3.5" />}
             </Button>
             <span className="flex-1" />
             {streaming ? (
