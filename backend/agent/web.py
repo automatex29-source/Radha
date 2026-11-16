@@ -283,11 +283,21 @@ async def _wikipedia(client: httpx.AsyncClient, query: str, limit: int) -> List[
 # engines above can turn a server away with a robot check. Free tiers: Tavily 1,000 searches a month, Serper
 # (Google results) 2,500 to start, Brave 2,000 a month.
 async def _tavily(client: httpx.AsyncClient, query: str, limit: int) -> List[dict]:
-    resp = await client.post("https://api.tavily.com/search", json={
-        "api_key": os.environ["TAVILY_API_KEY"], "query": query, "max_results": limit, "search_depth": "basic"})
+    key = os.environ["TAVILY_API_KEY"].strip()
+    resp = await client.post("https://api.tavily.com/search", headers={"Authorization": f"Bearer {key}"}, json={
+        "api_key": key, "query": query, "max_results": limit, "search_depth": "basic",
+        "topic": "news" if _NEWS.search(query) else "general"})
+    if resp.status_code in (401, 403):
+        raise RuntimeError(f"Tavily refused the key (HTTP {resp.status_code}): check TAVILY_API_KEY in Render")
+    if resp.status_code in (429, 432, 433):
+        raise RuntimeError(f"Tavily's search limit is used up (HTTP {resp.status_code})")
     resp.raise_for_status()
-    return [{"title": r.get("title", ""), "url": r.get("url", ""), "snippet": (r.get("content") or "")[:400]}
+    # Tavily sends the page's own text, so these results need no second trip to read the pages.
+    return [{"title": r.get("title", ""), "url": r.get("url", ""), "snippet": " ".join((r.get("content") or "").split())[:900]}
             for r in resp.json().get("results", [])]
+
+
+_NEWS = re.compile(r"\b(news|headlines?|today|latest|breaking|this week|yesterday)\b", re.I)
 
 
 async def _serper(client: httpx.AsyncClient, query: str, limit: int) -> List[dict]:

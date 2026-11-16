@@ -153,3 +153,39 @@ def test_keyed_engine_comes_first_and_free_engines_back_it_up(monkeypatch):
     monkeypatch.setattr(web, "KEYED_ENGINES", (("SERPER_API_KEY", out_of_searches),))
     web.clear_cache()
     assert {r["url"] for r in asyncio.run(web.search("q"))} == {"https://a.test", "https://b.test"}
+
+
+def test_tavily_sends_the_key_both_ways_and_explains_failures(monkeypatch):
+    import httpx
+    seen = {}
+
+    def handler(request):
+        seen["auth"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        if seen["body"]["api_key"] == "bad":
+            return httpx.Response(401, json={"detail": "invalid"})
+        return httpx.Response(200, json={"results": [{"title": "T", "url": "https://t.test", "content": "x " * 400}]})
+
+    async def go(key):
+        monkeypatch.setenv("TAVILY_API_KEY", f" {key} ")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await web._try(web._tavily, client, "latest news on isro", 5)
+    found = asyncio.run(go("tvly-1"))
+    assert seen["auth"] == "Bearer tvly-1" and seen["body"]["topic"] == "news"
+    assert len(found[0]["snippet"]) <= 900
+    failed = asyncio.run(go("bad"))
+    assert "check TAVILY_API_KEY" in str(failed)
+    import setup_status
+    assert "tavily: 1 worked, 1 failed" in setup_status._search_health()
+
+
+def test_long_snippets_are_not_read_again():
+    reads = []
+
+    async def fetch(url):
+        reads.append(url)
+        return {"text": "isro launch details"}
+    results = [{"title": "A", "url": "https://a.test", "snippet": "y" * 600},
+               {"title": "B", "url": "https://b.test", "snippet": "short"}]
+    asyncio.run(live_search.read_top(results, "isro launch", 3, 300, fetch=fetch))
+    assert reads == ["https://b.test"]

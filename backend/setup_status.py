@@ -81,6 +81,14 @@ def items() -> list:
     ]
 
 
+def _search_health() -> str:
+    """How each search engine has done since the server started, so a failing key shows here."""
+    from agent import web
+    rows = [f"{name}: {h['ok']} worked, {h['failed']} failed" + (f" (last: {h['lastError']})" if h["failed"] else "")
+            for name, h in sorted(web.engine_health().items())]
+    return ("Since the last restart · " + " · ".join(rows)) if rows else ""
+
+
 def status() -> dict:
     out = []
     for it in items():
@@ -90,7 +98,10 @@ def status() -> dict:
             missing = ["VIDEO_GENERATION"]
         if it.get("any") and not any(_set(k) for k in it["any"]):
             missing.append(" or ".join(it["any"]))
-        out.append({**{k: v for k, v in it.items() if k != "any"}, "live": not missing, "missing": missing})
+        row = {**{k: v for k, v in it.items() if k != "any"}, "live": not missing, "missing": missing}
+        if it["id"] == "search":
+            row["unlocks"] = _search_health() or row["unlocks"]
+        out.append(row)
     always = ["Slack", "Discord", "GitHub (pasted token)", "Notion (pasted secret)", "Add any app (MCP and webhooks)",
               "Weather", "Panchang & festivals", "Cricket scores", "Always search the web", "Daily Gita verse"]
     return {"items": out, "alwaysLive": always, "live": sum(i["live"] for i in out), "total": len(out)}

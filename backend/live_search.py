@@ -297,7 +297,10 @@ async def read_top(results: List[dict], question: str, pages: int, chars: int, f
             return r
         return {**r, "snippet": f"{(r.get('snippet') or '').strip()}\n   From the page: {' '.join(passage.split())}"}
 
-    readable = [r for r in results if not _UNREADABLE.search(r.get("url", ""))][:pages]
+    # A long snippet (search APIs like Tavily send the page's own text) already has the passages: reading the
+    # page again only adds seconds.
+    readable = [r for r in results if not _UNREADABLE.search(r.get("url", ""))
+                and len(r.get("snippet") or "") < 500][:pages]
     done = dict(zip((id(r) for r in readable), await asyncio.gather(*(one(r) for r in readable))))
     return [done.get(id(r), r) for r in results]
 
