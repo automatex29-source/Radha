@@ -1,18 +1,8 @@
 import { useState } from "react";
 import { mediaUrl } from "@/lib/api";
-import { Globe, Search, Code2, ImagePlus, Wrench, Loader2, ChevronRight, FileDown,
-  FileSpreadsheet, Presentation, FileText, Clapperboard, MousePointerClick, Eye, FilePen, FileSearch, FileX,
-  SquareTerminal, MonitorCheck, GitCommitHorizontal, FolderTree, ListChecks, ClipboardCheck, Hand } from "lucide-react";
+import { ChevronRight, FileDown, Eye, Hand, Check, X } from "lucide-react";
 import { fileKind, KIND_META } from "@/components/PreviewPanel";
-
-const ICONS = {
-  web_search: Search, pro_search: Search, fetch_url: Globe, run_python: Code2, generate_image: ImagePlus, generate_video: Clapperboard,
-  create_spreadsheet: FileSpreadsheet, create_presentation: Presentation, create_document: FileText, create_html: Globe,
-  browser: MousePointerClick,
-  write_file: FilePen, edit_file: FilePen, read_file: FileSearch, delete_file: FileX, list_files: FolderTree,
-  run_command: SquareTerminal, check_preview: MonitorCheck, commit: GitCommitHorizontal,
-  plan_app: ListChecks, check_features: ClipboardCheck,
-};
+import RangoliBloom from "@/components/RangoliBloom";
 
 function argPreview(step) {
   const a = step.args || {};
@@ -52,41 +42,78 @@ const VERBS = {
   commit: ["Saving a version", "Saved a version"], plan_app: ["Planning the app", "Planned the app"],
   check_features: ["Checking the features", "Checked the features"],
 };
+// The running step's second line on the rail: exactly what Krish is doing right now.
+function liveDetail(step) {
+  const a = step.args || {};
+  if (step.name === "web_search" || step.name === "pro_search") {
+    const q = (a.queries || []).join(" · ") || a.query;
+    return q ? `“${q}”` : "";
+  }
+  if (step.name === "run_python" && a.code) {
+    const lines = a.code.split("\n").map((l) => l.trim()).filter(Boolean);
+    const main = lines.find((l) => !/^(import|from)\s|^#/.test(l)) || lines[0] || "";
+    return `${lines.length} ${lines.length === 1 ? "line" : "lines"} of Python · ${main}`;
+  }
+  return argPreview(step);
+}
 const MONO = new Set(["run_python", "run_command", "write_file", "append_file", "edit_file", "read_file", "delete_file", "fetch_url"]);
+
+function RailDot({ state }) {
+  return (
+    <span className={`krish-rail-dot is-${state}`} aria-hidden="true">
+      {state === "done" && <Check className="h-2.5 w-2.5" strokeWidth={3.5} />}
+      {state === "error" && <X className="h-2.5 w-2.5" strokeWidth={3.5} />}
+      {state === "wait" && <Hand className="h-2.5 w-2.5" strokeWidth={2.5} />}
+    </span>
+  );
+}
 
 function Step({ step }) {
   const [open, setOpen] = useState(false);
-  const Icon = ICONS[step.name] || Wrench;
   const running = step.status === "running";
   const failed = step.status === "error";
   const stopped = step.status === "stopped";
   const [doing, did] = VERBS[step.name] || [step.label || step.name, step.label || step.name];
   const preview = argPreview(step);
+  const live = running ? liveDetail(step) : "";
   const details = (step.name === "run_python" && step.args?.code) || step.output || step.summary;
   const note = failed ? "didn't work" : stopped ? "stopped" : step.approval ? "waiting for you" : "";
+  const dot = step.approval ? "wait" : running ? "run" : failed ? "error" : stopped ? "stop" : "done";
+  const mono = MONO.has(step.name) ? "font-mono text-[11.5px]" : "";
   return (
-    <div data-testid={`tool-step-${step.name}`} data-status={step.status}>
-      <button type="button" onClick={() => setOpen((o) => !o)} disabled={running || !details} aria-expanded={open}
-        className="krish-step group/step">
-        {running ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-          : step.approval ? <Hand className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          : <Icon className="h-3.5 w-3.5 shrink-0" />}
-        <span className={`shrink-0 font-medium ${running ? "krish-thinking-words" : "text-foreground/80"}`}>{running ? doing : did}</span>
-        {preview && <span className={`min-w-0 truncate text-muted-foreground/75 ${MONO.has(step.name) ? "font-mono text-[11.5px]" : ""}`}>{preview}</span>}
-        {note && <span className="shrink-0 text-muted-foreground/75">· {note}</span>}
-        {!running && details && <ChevronRight className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform group-hover/step:opacity-100 ${open ? "rotate-90" : ""}`} />}
-      </button>
-      {open && details && (
-        <div className="mb-1 ml-[1.375rem] mt-1 space-y-2 rounded-lg border border-border bg-sunken p-2 radha-fade-up">
-          {step.summary && <p className="px-1 text-[11.5px] text-muted-foreground">{step.summary}</p>}
-          {step.name === "run_python" && step.args?.code && (
-            <pre className="radha-scroll max-h-64 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] text-foreground/85">{step.args.code}</pre>
-          )}
-          {step.output && (
-            <pre className="radha-scroll max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-2 font-mono text-[11px] text-muted-foreground">{step.output}</pre>
-          )}
-        </div>
-      )}
+    <div className="krish-rail-row" data-testid={`tool-step-${step.name}`} data-status={step.status}>
+      <RailDot state={dot} />
+      <div className="min-w-0 flex-1">
+        <button type="button" onClick={() => setOpen((o) => !o)} disabled={running || !details} aria-expanded={open}
+          className="krish-step group/step">
+          <span className={`shrink-0 font-medium ${running ? "krish-thinking-words" : "text-foreground/80"}`}>{running ? doing : did}</span>
+          {!running && preview && <span className={`min-w-0 truncate text-muted-foreground/75 ${mono}`}>{preview}</span>}
+          {note && <span className="shrink-0 text-muted-foreground/75">· {note}</span>}
+          {!running && details && <ChevronRight className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform group-hover/step:opacity-100 ${open ? "rotate-90" : ""}`} />}
+        </button>
+        {live && <p className={`krish-rail-live truncate ${mono}`} data-testid="tool-step-live">{live}</p>}
+        {open && details && (
+          <div className="mb-1 mt-1 space-y-2 rounded-lg border border-border bg-sunken p-2 radha-fade-up">
+            {step.summary && <p className="px-1 text-[11.5px] text-muted-foreground">{step.summary}</p>}
+            {step.name === "run_python" && step.args?.code && (
+              <pre className="radha-scroll max-h-64 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] text-foreground/85">{step.args.code}</pre>
+            )}
+            {step.output && (
+              <pre className="radha-scroll max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-2 font-mono text-[11px] text-muted-foreground">{step.output}</pre>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// A turning rangoli, then "Krish is thinking…", as the rail's live row: before the first step, and between steps.
+function ThinkingRow() {
+  return (
+    <div className="krish-rail-row" role="status" data-testid="streaming-cursor">
+      <RangoliBloom className="krish-rail-rangoli" />
+      <span className="krish-step"><span className="krish-thinking-words font-medium">Krish is thinking…</span></span>
     </div>
   );
 }
@@ -115,11 +142,14 @@ export function stepsSummary(steps) {
 }
 
 // `compact` (the App Builder) folds a finished reply's steps into one line that opens the full list.
-export function ToolSteps({ steps, compact = false }) {
+// The steps sit on a rail (a saffron-to-green line): the running step pulses saffron and shows what it is doing
+// right now, finished steps get a green tick. `thinking` adds a live "Krish is thinking…" row at the end.
+export function ToolSteps({ steps = [], compact = false, thinking = false }) {
   const [open, setOpen] = useState(false);
-  if (!steps?.length) return null;
+  if (!steps?.length && !thinking) return null;
+  steps = steps || [];
   const finished = steps.every((s) => s.status !== "running");
-  if (compact && finished && steps.length > 2 && !open) {
+  if (compact && finished && !thinking && steps.length > 2 && !open) {
     return (
       <button onClick={() => setOpen(true)} data-testid="tool-steps-summary"
         className="mb-3 flex max-w-full items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground">
@@ -129,13 +159,14 @@ export function ToolSteps({ steps, compact = false }) {
     );
   }
   return (
-    <div className="mb-3 space-y-0.5" data-testid="tool-steps">
+    <div className="krish-rail mb-3" data-testid="tool-steps">
       {compact && open && (
         <button onClick={() => setOpen(false)} className="flex items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground">
           {stepsSummary(steps)} <ChevronRight className="h-3.5 w-3.5 rotate-90" />
         </button>
       )}
       {steps.map((s) => <Step key={s.id} step={s} />)}
+      {thinking && <ThinkingRow />}
     </div>
   );
 }

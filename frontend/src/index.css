@@ -217,6 +217,30 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
 .krish-step:not(:disabled):hover { color: hsl(var(--foreground)); background: hsl(var(--surface)); }
 .krish-step:disabled { cursor: default; }
 .krish-step:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+/* Step rail: steps on a soft saffron-to-green line. The running step pulses saffron and shows its live detail
+   (search words, page, code); finished steps get a green tick, failed ones a red cross. */
+.krish-rail { display: flex; flex-direction: column; }
+.krish-rail-row { position: relative; display: flex; gap: 0.6rem; padding-bottom: 0.35rem; animation: radha-fade-up .3s ease both; }
+.krish-rail-row:not(:last-child)::before { content: ""; position: absolute; left: 6px; top: 1.45rem; bottom: 0.05rem; width: 2px; border-radius: 2px;
+  background: linear-gradient(#FF8A1E, var(--thinking-green)); opacity: 0.35; }
+.krish-rail-dot { position: relative; z-index: 1; margin-top: 0.42rem; display: flex; height: 14px; width: 14px; flex-shrink: 0; align-items: center;
+  justify-content: center; border-radius: 9999px; }
+.krish-rail-dot.is-run { background: #FF8A1E; animation: krish-rail-pulse 1.2s ease-out infinite; }
+.krish-rail-dot.is-done { background: color-mix(in srgb, var(--thinking-green) 16%, transparent); color: var(--thinking-green); }
+.krish-rail-dot.is-error { background: rgb(220 38 38 / 0.14); color: rgb(220 38 38); }
+.krish-rail-dot.is-wait { background: rgb(217 119 6 / 0.16); color: rgb(217 119 6); }
+.krish-rail-dot.is-stop { background: hsl(var(--surface)); box-shadow: inset 0 0 0 2px hsl(var(--border-strong)); }
+@keyframes krish-rail-pulse { 0% { box-shadow: 0 0 0 0 rgb(255 138 30 / 0.5); } 100% { box-shadow: 0 0 0 7px rgb(255 138 30 / 0); } }
+.krish-rail-live { margin: -0.1rem 0 0.2rem; font-size: 0.75rem; color: hsl(var(--muted-foreground) / 0.8); animation: radha-fade-up .25s ease both; }
+.krish-rail .krish-step { margin-left: -0.375rem; }
+:root { --rangoli-saffron: #FF8A1E; --rangoli-blue: #1F3A93; --rangoli-green: #138808; }
+.dark { --rangoli-blue: #7F9CFF; --rangoli-green: #2FBF4F; }
+.krish-rangoli { flex-shrink: 0; animation: krish-spin 6s linear infinite; }
+.krish-rangoli ellipse { opacity: 0.35; animation: krish-rangoli-petal 1.6s ease-in-out infinite; }
+@keyframes krish-rangoli-petal { 0%, 100% { opacity: 0.35; } 35% { opacity: 1; } }
+.krish-rail-rangoli { position: relative; z-index: 1; width: 18px; height: 18px; margin: 0.28rem -2px 0; }
+@media (prefers-reduced-motion: reduce) { .krish-rangoli, .krish-rangoli ellipse { animation: none; } .krish-rangoli ellipse { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .krish-rail-row, .krish-rail-dot.is-run, .krish-rail-live { animation: none; } }
 /* Hovering a citation chip previews the page (laptops only; on phones a tap opens it). */
 .krish-cite-card {
   position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 30; display: none; width: 18rem; max-width: 80vw;
