@@ -285,3 +285,36 @@ def test_plan_popup_shows_what_a_month_really_buys_on_sonnet():
         assert 0 < got["answers"] * limits.cost("chat", 0, plan, "claude-sonnet-5-5") <= month
         assert 0 < got["builds"] * limits.cost("build", 0, plan, "claude-sonnet-5-5") <= month
     assert plans["max"]["monthly"]["answers"] > plans["pro"]["monthly"]["answers"]
+
+
+def test_free_chat_is_weighed_by_its_tokens_and_shows_where_the_session_went(db):
+    async def scenario():
+        assert limits.chat_credits(0) == 0.1 and limits.chat_credits(3_000) == 0.6
+        assert limits.chat_credits(40_000) == 8 and limits.chat_credits(10**9) == limits.MAX_CHAT_CREDITS
+        assert await limits.charge_reply(db, "u", 3_000, app=False, model_paid=False) == 0.6
+        await limits.use(db, "u", "picture")
+        assert await limits.charge_reply(db, "u", 64_000, app=True, model_paid=False, ask_chars=100) == 11
+        meter = await _used(db, "u")
+        assert meter["kinds"] == {"chat": 0.6, "picture": 2, "build": 11}
+        assert abs(meter["session"]["used"] - 13.6) < 1e-9
+        costs = (await limits.summary(db, "u"))["costs"]
+        assert costs["basicChat"][0] < costs["basicChat"][1] < costs["basicChat"][2]  # heavier chat, more credits
+        await db.users.insert_one({"id": "p", "plan": "pro"})
+        assert await limits.charge_reply(db, "p", 10**6, app=False, model_paid=False) == 0
+        assert (await limits.summary(db, "p"))["costs"]["basicChat"] is None
+
+    run(scenario())
+
+
+def test_limits_off_still_adds_up_use_but_never_refuses(db, monkeypatch):
+    monkeypatch.setenv("FREE_LIMITS", "off")
+
+    async def scenario():
+        for _ in range(30):
+            await limits.use(db, "u", "build", 10**6)  # 20 credits each, far past the session's 40
+        await limits.use_basic_chat(db, "u")
+        meter = await _used(db, "u")
+        assert meter["session"]["used"] == 600 and meter["kinds"] == {"build": 600}
+        assert (await limits.summary(db, "u"))["limitsOn"] is False
+
+    run(scenario())

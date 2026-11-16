@@ -43,7 +43,7 @@ function highlights(plan, basic, video) {
   const premiumMedia = media === "premium";
   const create = video ? "Builds, pictures, decks and videos" : "Builds, pictures and decks";
   const items = plan.id === "basic"
-    ? ["40 messages every 5 hours, with web search", "A few Krish Pro answers a week, free"]
+    ? ["Chat with web search, counted by how heavy it is, not by messages", "A few Krish Pro answers a week, free"]
     : [`${x}x the usage of Basic`, "Unlimited chat on Krish Basic", "Premium AI models and Think mode"];
   items.push(premiumMedia ? `${create}, in HD` : create);
   if (video) items.push(`Videos up to ${videoSeconds} seconds`);
