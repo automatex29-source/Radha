@@ -44,7 +44,7 @@ export function useRecorder() {
     stop();
   }, [stop]);
 
-  const record = useCallback(async ({ autoStop = false } = {}) => {
+  const record = useCallback(async ({ autoStop = false, maxMs = MAX_MS } = {}) => {
     if (stateRef.current) throw new Error("Already recording");
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       throw new Error("This browser can't record audio");
@@ -90,7 +90,7 @@ export function useRecorder() {
           stop();
           return;
         }
-        if (now - started > MAX_MS) { stop(); return; }
+        if (now - started > maxMs) { stop(); return; }
         st.raf = requestAnimationFrame(tick);
       };
       st.raf = requestAnimationFrame(tick);

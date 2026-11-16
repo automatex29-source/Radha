@@ -234,6 +234,9 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1)
     model: Optional[str] = None
     images: List[str] = Field(default_factory=list, max_length=8)
+    files: List[str] = Field(default_factory=list, max_length=20)  # documents attached with this message (shown on it)
+    audio: Optional[str] = Field(default=None, max_length=64)  # a voice note (media id); content is what was said
+    audioSeconds: Optional[float] = Field(default=None, ge=0, le=900)
     agent: bool = False
     think: bool = False  # the Think button: reason longer and check the answer
     study: bool = False  # Study mode: teach step by step and quiz instead of just answering
@@ -359,6 +362,8 @@ def public_message(doc: dict) -> dict:
         "webHint": bool(doc.get("webHint")),
         "searched": doc.get("searched"),
         "images": doc.get("images") or [],
+        "files": doc.get("files") or [],
+        "audio": doc.get("audio"),
         "steps": doc.get("steps") or [],
         "media": doc.get("media") or [],
         "stopped": bool(doc.get("stopped")),
@@ -1768,6 +1773,31 @@ def _quick_chat(history_docs: list) -> bool:
     return not any(_NEEDS_TOOLS.search(m["content"] or "") for m in last_user)
 
 
+def _attached_now(history_docs: list) -> Optional[str]:
+    """What came with the latest message (files, pictures, a voice note), so "this" and "it" point at the right thing."""
+    last = next((m for m in reversed(history_docs) if m["role"] == "user"), None)
+    if not last:
+        return None
+    parts = []
+    names = [f["name"] for f in last.get("files") or [] if f.get("name")]
+    if names:
+        parts.append("these files: " + ", ".join(f"[{n}]" for n in names[:20]))
+    if last.get("images"):
+        n = len(last["images"])
+        parts.append(f"{n} picture{'s' if n > 1 else ''} (you can see {'them' if n > 1 else 'it'} in the message)")
+    if not parts and not last.get("audio"):
+        return None
+    note = "With their latest message the user attached " + " and ".join(parts) + ". " if parts else ""
+    if parts:
+        note += ("\"This\", \"it\" or \"the file\" means what they just attached. Read all of it carefully before you answer: "
+                 "quote exact figures, names and dates, and say which file each point comes from. If they sent no question, "
+                 "say in a line what each one is, then give its key points.")
+    if last.get("audio"):
+        note += (" Their message is a voice note, written out for you; answer what they said naturally, and don't "
+                 "mention the transcript unless a word was clearly misheard.")
+    return note.strip()
+
+
 async def _file_context(conv_id: str, user_id: str, project_id, question: str, limit: int):
     """(system-prompt text, sources) for the files attached to this chat and the project's documents.
 
@@ -2175,7 +2205,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                                 "instructions now: respond with care and give the helplines.")
 
     # Files attached to this chat, plus project documents (RAG).
-    if user_id and last_user and not counselling:
+    if user_id and last_user:  # files attached to the chat, in the Counsellor too
         lean = agent_llm.lean(model)
         if lean and agent and not (conv or {}).get("appId") and not _TOOL_ASK.search(last_user) and \
                 await db.files.count_documents({"conversationId": conv_id, "is_deleted": False}):
@@ -2189,6 +2219,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 system_parts.append(file_ctx)
         except Exception:
             logger.exception("RAG retrieval failed")
+    turn_note = _attached_now(history_docs)
+    if turn_note:
+        system_parts.append(turn_note)
 
     app_id = conv.get("appId") if conv else None
     versions = None  # App Builder: the app before and after this turn, for See changes and Undo
@@ -2612,6 +2645,20 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         if not doc or not (doc.get("contentType") or "").startswith("image/"):
             raise HTTPException(status_code=400, detail="Unknown image attachment")
         image_ids.append(mid)
+    # Documents sent with this message show on it as cards (name, type, size), like ChatGPT and Claude.
+    file_cards = []
+    for fid in dict.fromkeys(body.files):
+        f = await db.files.find_one({"id": fid, "userId": user_id, "conversationId": conv_id, "is_deleted": False},
+                                    {"original_filename": 1, "content_type": 1, "size": 1})
+        if f:
+            file_cards.append({"id": fid, "name": f["original_filename"], "contentType": f.get("content_type"),
+                               "size": f.get("size")})
+    voice_note = None
+    if body.audio:
+        a = await db.media.find_one({"id": body.audio, "userId": user_id}, {"data": 0})
+        if not a or not (a.get("contentType") or "").startswith("audio/"):
+            raise HTTPException(status_code=400, detail="Unknown voice note")
+        voice_note = {"id": body.audio, "seconds": round(body.audioSeconds or 0, 1)}
     if conv.get("appId"):  # an App Builder message uses credits by how much it asks for
         await limits.require(db, user_id, "build", size=len(body.content), model=model)
 
@@ -2624,7 +2671,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
             raise HTTPException(status_code=400, detail=str(exc))
         if pasted:
             content, ready_reply = pasted
-    elif conv.get("mode") != counsellor.MODE and not body.images:
+    elif conv.get("mode") != counsellor.MODE and not body.images and not body.audio:
         # Code pasted or attached in the chat is shown exactly as given: no AI rewrite when the user only
         # wants to see it. With instructions ("make the button red"), the AI works on it as usual.
         ready_reply = show_as_is(body.content)
@@ -2635,6 +2682,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         "role": "user",
         "content": content,
         "images": image_ids or None,
+        "files": file_cards or None,
+        "audio": voice_note,
         "model": None,
         "createdAt": now_iso(),
     }
@@ -3644,13 +3693,45 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
         raise HTTPException(status_code=400, detail="Empty audio")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
+    return await _transcribe(data, file.filename, language, hint, context, user_id)
+
+
+@api.post("/audio/note")
+async def voice_note(file: UploadFile = File(...), conversationId: str = Form(...), language: Optional[str] = Form(None),
+                     user_id: str = Depends(current_user_id)):
+    """A voice note, like WhatsApp: the recording is kept (it plays back on the message) and written out as text,
+    which is what Krish answers."""
+    abuse.require("media", user_id)
+    await _owned_conversation(conversationId, user_id)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio")
+    if len(data) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Voice note too long (max 12MB, about 10 minutes)")
+    content_type = (file.content_type or "audio/webm").split(";")[0].lower()
+    if not content_type.startswith("audio/"):
+        raise HTTPException(status_code=415, detail="That isn't a recording")
+    await _check_upload_size(user_id, data, "Voice note")
+    heard = await _transcribe(data, file.filename, language, None, None, user_id)
+    if not heard["text"]:
+        raise HTTPException(status_code=422, detail="I couldn't hear any words in that voice note. Try again a little closer to the mic.")
+    try:
+        saved = await media.save_media(db, user_id, data, content_type, "voice_note",
+                                       name=file.filename or "voice-note.webm", conversation_id=conversationId)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    return {"media": saved, **heard}
+
+
+async def _transcribe(data: bytes, filename: Optional[str], language: Optional[str], hint: Optional[str],
+                      context: Optional[str], user_id: str) -> dict:
     try:
         lang = language if language in media.VOICE_LANGUAGES else None
         owner = await db.users.find_one({"id": user_id}, {"language": 1}) if not lang else None
         settings_lang = (owner or {}).get("language")
         # The language they spoke last (sent by voice mode), else their Settings language, steers Whisper.
         steer = hint if hint in media.VOICE_LANGUAGES else settings_lang
-        text, heard = await media.transcribe_detect(data, file.filename or "audio.webm", lang,
+        text, heard = await media.transcribe_detect(data, filename or "audio.webm", lang,
                                                     hint=steer, context=(context or "")[:400] or None)
         text = media.clean_transcript(text)
         if heard in ("hi", "ur") and not lang:
