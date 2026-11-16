@@ -74,7 +74,7 @@ CONNECTORS = {
         "blurb": "Summarise your inbox and draft replies",
         "does": ["Find and summarise emails", "Write replies as drafts in your Gmail",
                  "Start an automation when a new email arrives",
-                 "Automations ask you before sending an email (on Max you can let them send without asking)"],
+                 "Automations ask you before sending an email (on Pro and Max you can let them send without asking)"],
     },
     "github": {
         "name": "GitHub", "category": "work", "plan": "basic", "how": "oauth",

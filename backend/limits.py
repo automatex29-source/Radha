@@ -64,7 +64,7 @@ PLANS = {
         "meter": paid_meter(499),
         "total": {"automation": 10},
         "automations": {"minInterval": 60, "thorough": False, "premiumModels": True, "events": True,
-                        "noAsk": False},
+                        "noAsk": True},
         "publish": True, "premium": True,
         "quality": {"media": "premium", "videoSeconds": 12, "uploadMb": UPLOAD_MB},
     },
