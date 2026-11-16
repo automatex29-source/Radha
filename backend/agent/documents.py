@@ -289,6 +289,57 @@ def build_pptx(slides: List[dict], title: str = "", theme: str = "dark") -> byte
 
 
 # ------------------------------------------------------------------- Word
+# Word files are read on phones as often as on laptops, so the body is 12pt on
+# narrow margins and every heading level is clearly bigger, bolder or coloured.
+_DOCX_INK, _DOCX_MUTED, _DOCX_ACCENT = "1F2937", "6B7280", "3730A3"
+_DOCX_TINT, _DOCX_RULE = "EEF0FB", "C7CBEF"
+# "(2 marks)", "[1 mark]", "(½ Mark)": shown in the accent colour so marks stand out from the question.
+_MARKS_RE = re.compile(r"[(\[]\s*(?:\d+(?:\.\d+)?|[½¼¾])\s*marks?\s*[)\]]", re.I)
+# A list item that already carries its own label, "(a) ..." or "ii) ...", needs no bullet in front of it.
+_OWN_LABEL_RE = re.compile(r"^\s*\(?(?:[a-hA-H]|[ivxIVX]{1,4})\)\s")
+# Sections that read best on their own page.
+_NEW_PAGE_HEADINGS = re.compile(r"^\s*(answer key|answers|answer sheet|solutions|marking scheme)\b", re.I)
+
+
+def normalize_markdown(markdown: str) -> str:
+    """Repair the Markdown slips models make that would otherwise print raw symbols:
+    "##Heading" without a space, and "**Name:**Rohit" (bold that CommonMark won't close)."""
+    text = (markdown or "").replace("\r\n", "\n")
+    text = re.sub(r"(?m)^( {0,3})(#{1,6})(?=[^#\s])", r"\1\2 ", text)
+    return text
+
+
+def _set_xml(parent, tag: str, **attrs):
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    el = parent.find(qn(tag))
+    if el is None:
+        el = OxmlElement(tag)
+        parent.append(el)
+    for k, v in attrs.items():
+        el.set(qn(f"w:{k}"), str(v))
+    return el
+
+
+def _para_border(p_pr, side: str, color: str, size: int = 8, space: int = 4):
+    from docx.oxml.ns import qn
+
+    borders = p_pr.find(qn("w:pBdr"))
+    if borders is None:
+        from docx.oxml import OxmlElement
+        borders = OxmlElement("w:pBdr")
+        # pBdr must come before shd/spacing/ind in CT_PPr; inserting early keeps Word happy.
+        anchor = next((p_pr.find(qn(t)) for t in ("w:shd", "w:tabs", "w:spacing", "w:ind", "w:jc", "w:rPr")
+                       if p_pr.find(qn(t)) is not None), None)
+        anchor.addprevious(borders) if anchor is not None else p_pr.append(borders)
+    _set_xml(borders, f"w:{side}", val="single", sz=size, space=space, color=color)
+
+
+def _shade(p_pr_or_tc_pr, fill: str):
+    _set_xml(p_pr_or_tc_pr, "w:shd", val="clear", color="auto", fill=fill)
+
+
 def _add_hyperlink(paragraph, url: str, text: str):
     from docx.opc.constants import RELATIONSHIP_TYPE as RT
     from docx.oxml import OxmlElement
@@ -312,12 +363,104 @@ def _add_hyperlink(paragraph, url: str, text: str):
     paragraph._p.append(link)
 
 
-def _inline_runs(paragraph, inline_token):
+def _add_text(paragraph, text: str, bold: bool, italic: bool, strike: bool, code: bool = False):
+    """Add text as runs, colouring marks like "(2 marks)" so they stand apart from the question."""
+    from docx.shared import Pt, RGBColor
+
+    pos = 0
+    pieces = []
+    for m in ([] if code else _MARKS_RE.finditer(text)):
+        pieces += [(text[pos:m.start()], False), (m.group(0), True)]
+        pos = m.end()
+    pieces.append((text[pos:], False))
+    for piece, is_marks in pieces:
+        if not piece:
+            continue
+        run = paragraph.add_run(piece)
+        # None (not False) leaves the paragraph style in charge, so headings stay bold.
+        run.bold, run.italic, run.font.strike = bold or None, italic or None, strike or None
+        if is_marks:
+            run.italic = True
+            run.font.color.rgb = RGBColor.from_string(_DOCX_ACCENT)
+        if code:
+            run.font.name = "Consolas"
+            run.font.size = Pt(10.5)
+            run.font.color.rgb = RGBColor.from_string(_DOCX_ACCENT)
+
+
+# Inline sub-parts: " (a) ", " (ii) ". Only split when the item has an "(a)" or "(i)" to start the run.
+_SUBPART_RE = re.compile(r"\s+(?=\((?:[a-h]|i|ii|iii|iv|v|vi)\)\s)")
+
+
+def _question_layout(segs: list) -> list:
+    """Put a question's bold title on its own line, then the question, then each sub-part on its own line:
+    "**Fill in the blanks:** (2 marks) (a) ... (b) ..." reads as three lines instead of one long one."""
+    n = 0
+    while n < len(segs) and segs[n][0] == "text" and segs[n][2]:
+        n += 1  # the leading bold title, if any
+    rest_text = "".join(seg[1] for seg in segs[n:] if seg[0] == "text")
+    # Marks right after the title stay on the title line.
+    m = re.match(r"\s*" + _MARKS_RE.pattern + r"\s*", rest_text, re.I)
+    keep = len(m.group(0)) if m else 0
+    after = rest_text[keep:].strip()
+    out = segs[:n]
+    split_parts = bool(re.search(r"\((?:a|i)\)\s", rest_text))
+    # No title, or "Name: ______" (a blank belongs on the same line): no title line break.
+    broke = n == 0 or not after or after.startswith("_")
+    for seg in segs[n:]:
+        if seg[0] != "text":
+            out.append(seg)
+            continue
+        text = seg[1]
+        if not broke:
+            take = min(keep, len(text))
+            head, text = text[:take], text[take:]
+            keep -= take
+            if head:
+                if head.strip() and not any(o[0] == "text" and o[1] == "\t" for o in out):
+                    if out and out[-1][0] == "text":
+                        out[-1] = ("text", out[-1][1].rstrip()) + out[-1][2:]
+                    out.append(("text", "\t") + seg[2:])  # marks sit at the right margin
+                    head = head.lstrip()
+                out.append(("text", head.rstrip() if keep == 0 else head) + seg[2:])
+            if keep == 0 and text.strip():
+                out.append(("text", "\n") + seg[2:])
+                text = text.lstrip()
+                broke = True
+        if split_parts and text:
+            text = _SUBPART_RE.sub("\n", text)
+        if text:
+            out.append(("text", text) + seg[2:])
+    if not m:
+        # Marks at the end instead ("... its antonym. (1 mark)"): move them to the right margin too.
+        for k in range(len(out) - 1, -1, -1):
+            if out[k][0] != "text" or not out[k][1].strip():
+                continue
+            tail = re.search(r"\s*(" + _MARKS_RE.pattern + r")\s*$", out[k][1], re.I)
+            if tail and tail.start() > 0 or (tail and k > 0):
+                body = out[k][1][:tail.start()]
+                out[k:k + 1] = ([("text", body) + out[k][2:]] if body else []) + [
+                    ("text", "\t") + out[k][2:], ("text", tail.group(1)) + out[k][2:]]
+            break
+    return out
+
+
+def _info_bar(p):
+    """ "Time Allowed: 20 Minutes | Total Marks: 15" as one ruled bar, left part left and right part right."""
     from docx.shared import Pt
 
+    ppr = p._p.get_or_add_pPr()
+    _para_border(ppr, "top", "1F2937", size=8, space=4)
+    _para_border(ppr, "bottom", "1F2937", size=8, space=4)
+    p.paragraph_format.space_before, p.paragraph_format.space_after = Pt(4), Pt(14)
+    _right_tab(p)
+
+
+def _inline_runs(paragraph, inline_token, question: bool = False, bar: bool = False):
     bold = italic = strike = False
     link = None
     link_text = []
+    segs = []  # ("text", text, bold, italic, strike, code) | ("link", url, text)
     for tok in inline_token.children or []:
         if tok.type == "strong_open":
             bold = True
@@ -334,43 +477,332 @@ def _inline_runs(paragraph, inline_token):
         elif tok.type == "link_open":
             link, link_text = tok.attrs.get("href", ""), []
         elif tok.type == "link_close":
-            _add_hyperlink(paragraph, link, "".join(link_text) or link)
+            segs.append(("link", link, "".join(link_text) or link))
             link = None
-        elif tok.type in ("text", "code_inline", "softbreak", "hardbreak"):
-            text = "\n" if tok.type == "hardbreak" else " " if tok.type == "softbreak" else tok.content
+        elif tok.type in ("text", "code_inline", "softbreak", "hardbreak", "html_inline", "image"):
+            if tok.type == "html_inline":
+                if not re.fullmatch(r"<br\s*/?>", tok.content.strip(), re.I):
+                    continue  # <u>, <span> and friends: keep the words, drop the tag
+                text = "\n"
+            elif tok.type == "image":
+                text = tok.content or ""
+            else:
+                text = "\n" if tok.type == "hardbreak" else " " if tok.type == "softbreak" else tok.content
             if link is not None:
                 link_text.append(text)
                 continue
-            run = paragraph.add_run(text)
-            run.bold, run.italic, run.font.strike = bold, italic, strike
             if tok.type == "code_inline":
-                run.font.name = "Consolas"
-                run.font.size = Pt(10)
+                segs.append(("text", text, bold, italic, strike, True))
+                continue
+            # Bold that CommonMark left unclosed ("**Name:**Rohit") arrives as literal **: honour it.
+            parts = text.split("**") if tok.type == "text" else [text]
+            for n, part in enumerate(parts):
+                if n:
+                    bold = not bold
+                if part:
+                    segs.append(("text", part, bold, italic, strike, False))
+    if question:
+        segs = _question_layout(segs)
+    if bar:
+        segs = [(seg[0], re.sub(r"\s*\|\s*", "\t", seg[1])) + seg[2:] if seg[0] == "text" else seg for seg in segs]
+    for seg in segs:
+        if seg[0] == "link":
+            _add_hyperlink(paragraph, seg[1], seg[2])
+        else:
+            _add_text(paragraph, seg[1], seg[2], seg[3], seg[4], code=seg[5])
+
+
+def _style_docx(doc):
+    """Page setup and named styles: a readable, consistent house style."""
+    from docx.enum.text import WD_LINE_SPACING
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt, RGBColor
+
+    for section in doc.sections:
+        section.page_width, section.page_height = Cm(21), Cm(29.7)  # A4
+        section.left_margin = section.right_margin = Cm(2)
+        section.top_margin, section.bottom_margin = Cm(1.8), Cm(1.8)
+        section.header_distance = section.footer_distance = Cm(0.9)
+
+    def font(style, size, bold=None, color=_DOCX_INK, name="Calibri", italic=None):
+        f = style.font
+        f.name, f.size = name, Pt(size)
+        rpr = style.element.get_or_add_rPr()
+        _set_xml(rpr, "w:rFonts", ascii=name, hAnsi=name, eastAsia=name, cs=name)
+        for attr in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
+            rpr.find(qn("w:rFonts")).attrib.pop(qn(f"w:{attr}"), None)
+        if bold is not None:
+            f.bold = bold
+        if italic is not None:
+            f.italic = italic
+        f.color.rgb = RGBColor.from_string(color)
+
+    def spacing(style, before, after, line=1.2):
+        pf = style.paragraph_format
+        pf.space_before, pf.space_after = Pt(before), Pt(after)
+        pf.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+        pf.line_spacing = line
+
+    normal = doc.styles["Normal"]
+    font(normal, 12)
+    spacing(normal, 0, 6, 1.25)
+
+    title = doc.styles["Title"]
+    font(title, 26, bold=True)
+    spacing(title, 0, 4, 1.0)
+    t_ppr = title.element.get_or_add_pPr()
+    for b in t_ppr.findall(qn("w:pBdr")):
+        t_ppr.remove(b)
+    _para_border(t_ppr, "bottom", _DOCX_ACCENT, size=18, space=8)
+    title.paragraph_format.space_after = Pt(14)
+
+    heads = {1: (19, _DOCX_ACCENT, 20, 8), 2: (15.5, _DOCX_INK, 16, 6),
+             3: (13.5, _DOCX_ACCENT, 12, 5), 4: (12.5, _DOCX_INK, 10, 4)}
+    for level, (size, color, before, after) in heads.items():
+        st = doc.styles[f"Heading {level}"]
+        font(st, size, bold=True, color=color, italic=False)
+        spacing(st, before, after, 1.1)
+        st.paragraph_format.keep_with_next = True
+    _para_border(doc.styles["Heading 1"].element.get_or_add_pPr(), "bottom", _DOCX_RULE, size=8, space=4)
+    # Heading 3 is usually a section of a test or report: a tinted band makes it easy to find.
+    h3 = doc.styles["Heading 3"].element.get_or_add_pPr()
+    _para_border(h3, "left", _DOCX_ACCENT, size=24, space=6)
+    _shade(h3, _DOCX_TINT)
+
+    for name in ("List Bullet", "List Bullet 2", "List Bullet 3", "List Number", "List Number 2", "List Number 3"):
+        st = doc.styles[name]
+        font(st, 12)
+        spacing(st, 2, 4, 1.25)
+
+    quote = doc.styles["Quote"]
+    font(quote, 12, italic=True, color="374151")
+    spacing(quote, 6, 8, 1.25)
+    q_ppr = quote.element.get_or_add_pPr()
+    _para_border(q_ppr, "left", _DOCX_ACCENT, size=18, space=10)
+    quote.paragraph_format.left_indent = Cm(0.5)
+
+
+def _page_footer(doc, title: str):
+    """Footer with the title and "Page N of M", in small grey type."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
+
+    p = doc.sections[0].footer.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _para_border(p._p.get_or_add_pPr(), "top", "E5E7EB", size=4, space=6)
+
+    def run(text=""):
+        r = p.add_run(text)
+        r.font.size = Pt(9)
+        r.font.color.rgb = RGBColor.from_string(_DOCX_MUTED)
+        return r
+
+    def field(code):
+        for kind, text in (("begin", None), (None, code), ("separate", None), (None, "1"), ("end", None)):
+            r = run()
+            if kind:
+                el = OxmlElement("w:fldChar")
+                el.set(qn("w:fldCharType"), kind)
+            elif text == code:
+                el = OxmlElement("w:instrText")
+                el.set(qn("xml:space"), "preserve")
+                el.text = code
+            else:
+                el = OxmlElement("w:t")
+                el.text = text
+            r._r.append(el)
+
+    if title:
+        run(f"{title}   ·   ")
+    run("Page ")
+    field(" PAGE ")
+    run(" of ")
+    field(" NUMPAGES ")
+
+
+def _restart_numbering(doc, paragraph, start: int):
+    """Give an ordered list its own numbering so a new list starts at 1 (or its own start)."""
+    from docx.oxml.ns import qn
+
+    style_ppr = paragraph.style.element.pPr
+    if style_ppr is None or style_ppr.numPr is None or style_ppr.numPr.numId is None:
+        return None
+    numbering = doc.part.numbering_part.element
+    base = next((n for n in numbering.findall(qn("w:num")) if n.numId == style_ppr.numPr.numId.val), None)
+    if base is None:
+        return None
+    num = numbering.add_num(base.abstractNumId.val)
+    num.add_lvlOverride(ilvl=0).add_startOverride(start)
+    return num.numId
+
+
+def _style_table(table):
+    """Header row in the accent colour, light rules, zebra rows, header repeats on each page."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
+
+    table.style = "Table Grid"
+    tbl_pr = table._tbl.tblPr
+    borders = _set_xml(tbl_pr, "w:tblBorders")
+    for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        _set_xml(borders, f"w:{side}", val="single", sz=4, space=0, color="D1D5DB")
+    margins = _set_xml(tbl_pr, "w:tblCellMar")
+    for side, w in (("top", 70), ("bottom", 70), ("left", 110), ("right", 110)):
+        _set_xml(margins, f"w:{side}", w=w, type="dxa")
+    for r, row in enumerate(table.rows):
+        if r == 0:
+            tr_pr = row._tr.get_or_add_trPr()
+            tr_pr.append(OxmlElement("w:tblHeader"))
+        for cell in row.cells:
+            if r == 0:
+                _shade(cell._tc.get_or_add_tcPr(), _DOCX_ACCENT)
+            elif r % 2 == 0:
+                _shade(cell._tc.get_or_add_tcPr(), "F7F7FB")
+            for p in cell.paragraphs:
+                p.paragraph_format.space_after = Pt(0)
+                for run in p.runs:
+                    run.font.size = Pt(11)
+                    if r == 0:
+                        run.bold = True
+                        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+
+_PAPER_WORDS = re.compile(r"\b(test|tests|exam|exams|examination|worksheet|question paper|quiz|assessment|"
+                          r"practice paper|sample paper|mock)\b", re.I)
+_TEXT_WIDTH_CM = 17.0  # A4 width minus the two 2 cm margins
+
+
+def _is_paper(title: str, markdown: str) -> bool:
+    """A test, worksheet or question paper: laid out like a printed school paper."""
+    head = title + " " + "\n".join((markdown or "").splitlines()[:3])
+    return bool(_PAPER_WORDS.search(head)) or len(_MARKS_RE.findall(markdown or "")) >= 3
+
+
+def _right_tab(paragraph, leader=None, pos=_TEXT_WIDTH_CM):
+    from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+    from docx.shared import Cm
+
+    paragraph.paragraph_format.tab_stops.add_tab_stop(
+        Cm(pos), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.LINES if leader else WD_TAB_LEADER.SPACES)
+
+
+def _student_box(doc):
+    """Name / Class / Roll No. / Date with ruled write-in lines, in a light box, as on a printed paper."""
+    from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+    from docx.shared import Cm, Pt, RGBColor
+
+    table = doc.add_table(rows=1, cols=1)
+    table.style = "Table Grid"
+    tbl_pr = table._tbl.tblPr
+    borders = _set_xml(tbl_pr, "w:tblBorders")
+    for side in ("top", "left", "bottom", "right"):
+        _set_xml(borders, f"w:{side}", val="single", sz=6, space=0, color="C7CBEF")
+    for side in ("insideH", "insideV"):
+        _set_xml(borders, f"w:{side}", val="nil")
+    margins = _set_xml(tbl_pr, "w:tblCellMar")
+    for side, w in (("top", 60), ("bottom", 120), ("left", 160), ("right", 160)):
+        _set_xml(margins, f"w:{side}", w=w, type="dxa")
+    cell = table.cell(0, 0)
+    _shade(cell._tc.get_or_add_tcPr(), "F8F9FD")
+    cell.width = Cm(_TEXT_WIDTH_CM)
+    inner = _TEXT_WIDTH_CM - 1.6  # inside the cell padding, with room to spare
+    for n, (left, right) in enumerate((("Name", "Class"), ("Roll No.", "Date"))):
+        p = cell.paragraphs[0] if n == 0 else cell.add_paragraph()
+        pf = p.paragraph_format
+        pf.space_before, pf.space_after, pf.line_spacing = Pt(10), Pt(0), 1.0
+        stops = pf.tab_stops
+        stops.add_tab_stop(Cm(inner * 0.58), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.LINES)
+        stops.add_tab_stop(Cm(inner * 0.58 + 0.6), WD_TAB_ALIGNMENT.LEFT)
+        for k, label in enumerate((left, right)):
+            r = p.add_run(f"{label}: ")
+            r.bold = True
+            r.font.size = Pt(11)
+            r.font.color.rgb = RGBColor.from_string("374151")
+            # Left field: a ruled tab leader up to the middle. Right field: a fixed write-in line
+            # (a leader on the last tab of a table cell is not drawn by every viewer).
+            p.add_run("\t\t" if k == 0 else "_" * 24)
+    doc.add_paragraph().paragraph_format.space_after = Pt(2)
+
+
+def _answer_lines(doc, count: int, indent_cm: float = 0.0):
+    """Full-width ruled lines to write an answer on."""
+    from docx.shared import Cm, Pt
+
+    for _ in range(max(1, min(count, 20))):
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.left_indent = Cm(indent_cm)
+        pf.space_before, pf.space_after = Pt(14), Pt(0)
+        _para_border(p._p.get_or_add_pPr(), "bottom", "9CA3AF", size=4, space=1)
 
 
 def build_docx(markdown: str, title: str = "") -> bytes:
     from docx import Document
-    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_BREAK
+    from docx.shared import Cm, Pt
 
     doc = Document()
-    doc.styles["Normal"].font.name = "Calibri"
-    doc.styles["Normal"].font.size = Pt(11)
+    _style_docx(doc)
+    tokens = _md().parse(normalize_markdown(markdown))
+    first = next((t for t in tokens if t.type != "hr"), None)
+    lead_h1 = first is not None and first.type == "heading_open" and first.tag == "h1"
     if title:
         doc.core_properties.title = title
-    tokens = _md().parse(markdown or "")
-    lists = []  # stack of "bullet" | "ordered"
+    lead_text = tokens[tokens.index(first) + 1].content.strip().strip("*") if lead_h1 else ""
+    paper = _is_paper(title or lead_text, markdown)
+    student_box = paper and not re.search(r"(?im)\bname\s*[:_]", markdown or "")
+    if title and not (lead_h1 and lead_text.lower() == title.strip().lower()):
+        t = doc.add_paragraph(title, style="Title")
+        if paper:
+            t.alignment = 1  # centred, like the top of a printed paper
+        lead_h1 = False
+        if student_box:
+            _student_box(doc)
+            student_box = False
+    elif lead_h1 and not title:
+        doc.core_properties.title = tokens[tokens.index(first) + 1].content.strip().strip("*")
+    _page_footer(doc, doc.core_properties.title or "")
+
+    lists = []  # stack of [kind, numId or None]
     quote = 0
+    seen_block = False
+    seen_h2 = False
     i = 0
     while i < len(tokens):
         tok = tokens[i]
         if tok.type == "heading_open":
             level = int(tok.tag[1])
-            h = doc.add_heading(level=min(level, 4) if not (level == 1 and i == 0 and title == "") else 0)
+            text = tokens[i + 1].content
+            is_title = lead_h1 and not seen_block and level == 1
+            if is_title:
+                h = doc.add_paragraph(style="Title")
+                if paper:
+                    h.alignment = 1
+            else:
+                h = doc.add_heading(level=min(level, 4))
+                if _NEW_PAGE_HEADINGS.match(text.strip("*# ")) and seen_block:
+                    h.paragraph_format.page_break_before = True
+                elif paper and level == 2:
+                    # Each test or part of a paper starts on a fresh page, centred like a paper heading.
+                    h.alignment = 1
+                    if seen_h2:
+                        h.paragraph_format.page_break_before = True
+                    seen_h2 = True
             _inline_runs(h, tokens[i + 1])
+            if is_title and student_box:
+                _student_box(doc)
+                student_box = False
+            seen_block = True
             i += 3
             continue
+        seen_block = seen_block or tok.type.endswith("_open") or tok.type in ("fence", "code_block", "hr")
         if tok.type in ("bullet_list_open", "ordered_list_open"):
-            lists.append("bullet" if tok.type == "bullet_list_open" else "ordered")
+            kind = "bullet" if tok.type == "bullet_list_open" else "ordered"
+            start = int(tok.attrs.get("start", 1) or 1) if kind == "ordered" else 1
+            lists.append([kind, None, start])
         elif tok.type in ("bullet_list_close", "ordered_list_close"):
             lists.pop()
         elif tok.type == "blockquote_open":
@@ -378,24 +810,70 @@ def build_docx(markdown: str, title: str = "") -> bytes:
         elif tok.type == "blockquote_close":
             quote -= 1
         elif tok.type == "paragraph_open":
-            if lists:
-                base = "List Bullet" if lists[-1] == "bullet" else "List Number"
+            inline = tokens[i + 1]
+            blank_lines = [ln for ln in inline.content.split("\n") if ln.strip()]
+            if blank_lines and all(re.fullmatch(r"\\?_[\\_ ]{4,}", ln.strip()) for ln in blank_lines):
+                # A line of nothing but underscores: a proper ruled answer line instead.
+                _answer_lines(doc, len(blank_lines), 0.63 * len(lists))
+                i += 3
+                continue
+            if lists and not tokens[i].hidden and tokens[i - 1].type != "list_item_open":
+                # A second paragraph inside a list item: indent it under the item, no new number.
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(0.63 * len(lists))
+            elif lists:
+                kind, num_id, start = lists[-1]
+                base = "List Bullet" if kind == "bullet" else "List Number"
                 depth = min(len(lists), 3)
                 style = base if depth == 1 else f"{base} {depth}"
+                if kind == "bullet" and _OWN_LABEL_RE.match(inline.content):
+                    # "(a) ..." already has a label; a bullet in front of it is noise.
+                    p = doc.add_paragraph()
+                    p.paragraph_format.left_indent = Cm(0.63 * max(depth - 1, 1) + 0.1)
+                    p.paragraph_format.space_after = Pt(4)
+                else:
+                    p = doc.add_paragraph(style=style)
+                    if kind == "ordered":
+                        if num_id is None:
+                            num_id = lists[-1][1] = _restart_numbering(doc, p, start)
+                        if num_id is not None:
+                            num_pr = p._p.get_or_add_pPr().get_or_add_numPr()
+                            num_pr.get_or_add_ilvl().val = 0
+                            num_pr.get_or_add_numId().val = num_id
             else:
-                style = "Quote" if quote else None
-            p = doc.add_paragraph(style=style)
-            _inline_runs(p, tokens[i + 1])
+                p = doc.add_paragraph(style="Quote" if quote else None)
+                if tokens[i - 1].type == "heading_close" and len(inline.content) < 160:
+                    # A heading's short subline ("Total Marks: 15 | Time: 20 min") stays with what follows.
+                    p.paragraph_format.keep_with_next = True
+                    if paper and inline.content.count("|") == 1:
+                        _info_bar(p)
+                        _inline_runs(p, inline, bar=True)
+                        i += 3
+                        continue
+            question = bool(lists) and lists[-1][0] == "ordered"
+            if question:
+                _right_tab(p)
+            _inline_runs(p, inline, question=question)
             i += 3
             continue
         elif tok.type in ("fence", "code_block"):
             p = doc.add_paragraph()
-            run = p.add_run(tok.content.rstrip("\n"))
-            run.font.name = "Consolas"
-            run.font.size = Pt(9.5)
-            run.font.color.rgb = RGBColor(0x1F, 0x29, 0x37)
+            ppr = p._p.get_or_add_pPr()
+            _shade(ppr, "F3F4F6")
+            p.paragraph_format.left_indent = Cm(0.2)
+            p.paragraph_format.line_spacing = 1.0
+            lines = tok.content.rstrip("\n").split("\n")
+            for n, line in enumerate(lines):
+                run = p.add_run(line)
+                run.font.name = "Consolas"
+                run.font.size = Pt(10)
+                if n < len(lines) - 1:
+                    run.add_break(WD_BREAK.LINE)
         elif tok.type == "hr":
-            doc.add_paragraph("─" * 40)
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(4)
+            p.paragraph_format.space_after = Pt(10)
+            _para_border(p._p.get_or_add_pPr(), "bottom", "D1D5DB", size=6, space=1)
         elif tok.type == "table_open":
             rows, j = [], i + 1
             while tokens[j].type != "table_close":
@@ -406,12 +884,12 @@ def build_docx(markdown: str, title: str = "") -> bytes:
                 j += 1
             n_cols = max(len(r) for r in rows)
             table = doc.add_table(rows=len(rows), cols=n_cols)
-            table.style = "Light Grid Accent 1"
             for r, row in enumerate(rows):
                 for c, cell_tok in enumerate(row):
                     cell_p = table.cell(r, c).paragraphs[0]
                     _inline_runs(cell_p, cell_tok)
-            doc.add_paragraph()
+            _style_table(table)
+            doc.add_paragraph().paragraph_format.space_after = Pt(2)
             i = j
         i += 1
     buf = io.BytesIO()
@@ -622,5 +1100,5 @@ def build_pdf(markdown: str, title: str = "") -> bytes:
     pdf.set_creator("Krish AI by EmpireX")
     pdf.add_page()
     renderer = _PdfRenderer(pdf, family, mono)
-    renderer.render(_md().parse(markdown or ""))
+    renderer.render(_md().parse(normalize_markdown(markdown)))
     return bytes(pdf.output())
