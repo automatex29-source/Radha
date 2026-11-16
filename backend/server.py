@@ -2459,12 +2459,12 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                         await limits.add_fair_use(db, user_id, token_count["tokens"])
                     except Exception:
                         logger.exception("fair-use count failed")
-                # App builds and premium-model chats use the meter by the tokens they really took.
-                if user_id and (app_id or agent_llm.paid(model)) and token_count["tokens"]:
+                # The meter follows the tokens a reply really took: App Builder turns, premium-model chats, and
+                # on the free plan every chat (a quick question uses little, a long chat or a file more).
+                if user_id and token_count["tokens"]:
                     try:
-                        plan = await limits.plan_of(db, user_id)
-                        prepaid = limits.cost("build" if app_id else "chat", len(last_user or ""), plan)
-                        await limits.charge_tokens(db, user_id, token_count["tokens"], prepaid)
+                        await limits.charge_reply(db, user_id, token_count["tokens"], app=bool(app_id),
+                                                  model_paid=agent_llm.paid(model), ask_chars=len(last_user or ""))
                     except Exception:
                         logger.exception("token metering failed")
             if not stopped:
@@ -2653,8 +2653,8 @@ PRO_LONG_ASK_CHARS = 1500
 
 
 async def _count_basic_chat(user_id: str, conv: dict) -> None:
-    """A chat message on the free plan counts toward its session's messages (a 402 once they're used). App Builder
-    messages use the usage meter instead."""
+    """A chat message on the free plan needs room on the usage meter (a 402 once the session or week is used up);
+    its reply's tokens are counted once it's written. App Builder messages are checked as builds instead."""
     if conv.get("appId"):
         return
     try:
