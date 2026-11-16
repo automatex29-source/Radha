@@ -15,7 +15,7 @@ and automations beyond the plan's count are paused. Runs send a heartbeat while 
 An automation can also start when a new email arrives (schedule type "email", Pro and Max): the scheduler checks
 the user's Gmail every EMAIL_CHECK_MINUTES for mail matching its search and runs once with the new emails. Actions
 that reach other people (sending an email) wait for the user's OK in `automation_approvals` unless the automation
-has askFirst off, which only Max allows.
+has askFirst off, which Pro and Max allow.
 """
 import asyncio
 import ipaddress
@@ -269,7 +269,7 @@ async def check_plan_rules(user_id: str, schedule: dict, model: Optional[str], t
     if thorough and not rules["thorough"]:
         problems.append(("Thorough mode is part of the Max plan.", lambda r: r["thorough"]))
     if not ask_first and not rules["noAsk"]:
-        problems.append(("Letting an automation send emails without asking you is part of the Max plan.",
+        problems.append(("Letting an automation send emails without asking you is part of the Pro and Max plans.",
                          lambda r: r["noAsk"]))
     if model and _premium(model) and not rules["premiumModels"]:
         problems.append(("The premium AI models are part of the Pro and Max plans.", lambda r: r["premiumModels"]))
@@ -691,7 +691,7 @@ class AutomationIn(BaseModel):
     emailResult: bool = False
     notifyUrl: Optional[str] = Field(default=None, max_length=500)  # Discord/Slack/any webhook
     sendTo: List[str] = Field(default_factory=list, max_length=4)  # connected apps: telegram, whatsapp, slack, discord
-    askFirst: bool = True  # emails it sends wait for the user's OK (Max can turn this off)
+    askFirst: bool = True  # emails it sends wait for the user's OK (Pro and Max can turn this off)
 
 
 class AutomationPatch(BaseModel):
