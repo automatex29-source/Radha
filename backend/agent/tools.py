@@ -255,6 +255,21 @@ async def _allowance(ctx: ToolContext, kind: str = "picture", size: Optional[int
 
 
 
+# What Krish says with a picture. The chat already shows it big, with Download, Copy, Edit, "More like this" and
+# one-tap changes (night, title, story size...), so the words stay short and warm, like a designer handing it over.
+PICTURE_REPLY = (
+    "The picture is made and shown to the user, large, with download, edit and quick-change buttons under it. "
+    "Do not embed it, link it, or list its settings or the prompt. Reply in the user's own language and tone "
+    "(Hinglish if they wrote Hinglish) with one or two warm, specific lines: what you made and one detail you chose "
+    "for it (light, colour, mood or composition). No headings, no bullet lists, no long questions; at most one short "
+    "offer such as trying another mood."
+)
+PICTURE_EDIT_REPLY = (
+    "The changed picture is shown to the user with download and edit buttons. Do not embed or link it. In the user's "
+    "own language and tone, say in one short line exactly what you changed and that the rest was kept."
+)
+
+
 async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
     async with _allowance(ctx):
@@ -265,8 +280,7 @@ async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "image", ext)
     saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated",
                                    name=name, conversation_id=ctx.conversation_id)
-    return ToolOutput(content="Image generated and shown to the user with a download button. Do not embed it or "
-                              "paste a link; just describe it in one short sentence.",
+    return ToolOutput(content=PICTURE_REPLY,
                       summary=f"Generated “{prompt[:80]}”", media=[saved])
 
 
@@ -289,8 +303,7 @@ async def _edit_image(ctx: ToolContext, args: dict) -> ToolOutput:
     base = (src.get("name") or "picture").rsplit(".", 1)[0]
     saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated",
                                    name=documents.safe_filename(f"{base}-edited", ext), conversation_id=ctx.conversation_id)
-    return ToolOutput(content="Edited picture shown to the user with a download button. Describe the change in one "
-                              "short sentence.", summary=f"Edited {src.get('name') or 'the picture'}", media=[saved])
+    return ToolOutput(content=PICTURE_EDIT_REPLY, summary=f"Edited {src.get('name') or 'the picture'}", media=[saved])
 
 
 async def _save_file(ctx: ToolContext, data: bytes, ext: str, filename: str) -> dict:
