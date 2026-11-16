@@ -180,13 +180,12 @@ export default function PictureMaking({ step }) {
     const cv = canvasRef.current; if (!cv) return undefined;
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const ctx = cv.getContext("2d");
-    const a = document.createElement("canvas"), b = document.createElement("canvas");
     let raf = 0, lastTick = 0;
     const draw = (now) => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const W = Math.round(cv.clientWidth * dpr), H = Math.round(cv.clientHeight * dpr);
       if (!W || !H) { raf = requestAnimationFrame(draw); return; }
-      for (const x of [cv, a, b]) if (x.width !== W || x.height !== H) { x.width = W; x.height = H; }
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
       const dark = document.documentElement.classList.contains("dark");
       const bg = dark ? [14, 16, 23] : [251, 250, 248];
       const t = (now - started.get(id)) / 1000;
