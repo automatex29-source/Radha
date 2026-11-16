@@ -353,7 +353,8 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             </span>
           )}
         </div>
-        <ToolSteps steps={message.steps} compact={compactSteps} />
+        <ToolSteps steps={message.steps} compact={compactSteps}
+          thinking={!!(streaming && !shown && !(message.searched?.running && !webSources.length) && !(message.steps || []).some((x) => x.status === "running"))} />
         {(message.steps || []).filter((s) => s.approval).map((s) => <ApprovalCard key={s.approval.id} card={s.approval} onAsk={onAsk} />)}
         <LiveCards items={liveCards} />
         {streaming && message.searched?.running && !webSources.length && !shown && <SearchingStatus query={message.searched.queries?.[0]} />}
@@ -369,11 +370,6 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             </ReactMarkdown>
             </SourcesContext.Provider>
           </AnswerStreaming.Provider>
-          {streaming && !shown && !(message.searched?.running && !webSources.length) && !(message.steps || []).some((x) => x.status === "running") && (
-            <span className="krish-thinking" role="status" data-testid="streaming-cursor">
-              <span className="krish-thinking-words">Krish is thinking…</span>
-            </span>
-          )}
         </div>
         )}
         {message.stopped && !streaming && (
