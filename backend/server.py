@@ -76,6 +76,7 @@ import google_signin
 import monitor
 import owner_dashboard
 import user_activity
+import questions as owner_questions
 import setup_status
 import promos
 import referrals
@@ -715,6 +716,16 @@ async def admin_activity(days: int = Query(30), user_id: str = Depends(current_u
     Counts only: no one's messages are read."""
     await _require_owner(user_id)
     return await user_activity.overview(db, days)
+
+
+@api.get("/admin/questions")
+async def admin_questions(days: int = Query(7), topic: str = Query("", max_length=60), q: str = Query("", max_length=200),
+                          page: int = Query(0, ge=0, le=1000), user: str = Query("", max_length=64),
+                          user_id: str = Depends(current_user_id)):
+    """Owner only: what people ask, by topic, with each question and who asked it (optionally one person's).
+    Counsellor chats are never included."""
+    await _require_owner(user_id)
+    return await owner_questions.overview(db, days, topic, q, page, user)
 
 
 @api.get("/admin/users/{target_id}/activity")

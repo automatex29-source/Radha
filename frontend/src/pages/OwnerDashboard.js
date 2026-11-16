@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import IconRail from "@/components/IconRail";
+import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -412,38 +412,26 @@ export default function OwnerDashboard() {
   const topicMax = data?.asks.topics[0]?.count || 0;
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
-      <IconRail />
-      <main className="owner-viz min-h-0 flex-1 overflow-y-auto bg-[var(--viz-page)]">
-        <div className="mx-auto w-full max-w-[1280px] px-4 pb-14 pt-6 sm:px-6">
-          <header className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <ShieldCheck className="h-3.5 w-3.5" /> Owner analytics
-              </p>
-              <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">Business overview</h1>
-              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" data-testid="owner-dash-updated">
-                <span className="inline-flex items-center gap-1.5"><span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span>Live</span>
-                <span>Updated {data ? ago(data.generatedAt).toLowerCase() : "…"}</span>
-                <span>·</span><span>Last {rangeLabel} vs {PREV[range]}</span>
-              </p>
-            </div>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-              <div className="flex flex-1 rounded-lg border border-border bg-card p-0.5 sm:flex-none" role="tablist" data-testid="owner-dash-range">
-                {RANGES.map(([id, label, short]) => (
-                  <button key={id} type="button" role="tab" aria-selected={range === id} onClick={() => setRange(id)}
-                    className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors sm:flex-none ${range === id ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
-                    <span className="lg:hidden">{short}</span><span className="max-lg:hidden">{label}</span>
-                  </button>
-                ))}
-              </div>
-              <Button variant="outline" size="sm" className="h-8" onClick={() => navigate("/admin/users")} data-testid="owner-dash-all-users">
-                <Users className="mr-1.5 h-3.5 w-3.5" /> Users & problems
-              </Button>
-            </div>
-          </header>
-
-          <nav className="sticky top-0 z-10 -mx-4 mt-4 flex gap-1 overflow-x-auto border-b border-border/70 bg-[var(--viz-page)]/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6" data-testid="owner-dash-sections">
+    <AdminLayout
+      title="Overview"
+      subtitle={
+        <p className="flex flex-wrap items-center gap-x-2" data-testid="owner-dash-updated">
+          <span className="inline-flex items-center gap-1.5"><span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span>Live</span>
+          <span>Updated {data ? ago(data.generatedAt).toLowerCase() : "…"}</span>
+          <span>·</span><span>Last {rangeLabel} vs {PREV[range]}</span>
+        </p>
+      }
+      actions={
+        <div className="flex flex-1 rounded-lg border border-border bg-card p-0.5 sm:flex-none" role="tablist" data-testid="owner-dash-range">
+          {RANGES.map(([id, label, short]) => (
+            <button key={id} type="button" role="tab" aria-selected={range === id} onClick={() => setRange(id)}
+              className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors sm:flex-none ${range === id ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
+              <span className="lg:hidden">{short}</span><span className="max-lg:hidden">{label}</span>
+            </button>
+          ))}
+        </div>
+      }>
+          <nav className="sticky top-0 z-10 -mx-4 flex gap-1 overflow-x-auto border-b border-border/70 bg-[var(--viz-page)]/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6" data-testid="owner-dash-sections">
             {SECTIONS.map(([id, label]) => (
               <a key={id} href={`#${id}`} onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); }}
                 className="shrink-0 rounded-md px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">{label}</a>
@@ -670,9 +658,9 @@ export default function OwnerDashboard() {
                 </Panel>
 
                 <Panel title="What people ask about" subtitle={`${num(data.asks.total)} questions by topic. Counsellor chats are private and never included.`} testId="owner-dash-asks" flush
-                  action={<Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setShowAsks((v) => !v)} data-testid="owner-dash-show-asks">
+                  action={<div className="flex gap-1.5"><Button asChild variant="outline" size="sm" className="h-7 px-2 text-xs"><Link to="/admin/questions" data-testid="owner-dash-all-questions">All questions</Link></Button><Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setShowAsks((v) => !v)} data-testid="owner-dash-show-asks">
                     {showAsks ? <EyeOff className="mr-1 h-3.5 w-3.5" /> : <Eye className="mr-1 h-3.5 w-3.5" />}{showAsks ? "Hide questions" : "Latest questions"}
-                  </Button>}>
+                  </Button></div>}>
                   {!data.asks.total ? <p className="py-10 text-center text-sm text-muted-foreground">No questions in this period yet.</p> : (
                     <>
                       <table className="w-full text-[13px] tabular-nums">
@@ -701,7 +689,7 @@ export default function OwnerDashboard() {
                     <ul className="max-h-80 divide-y divide-border/50 overflow-y-auto border-t border-border/60" data-testid="owner-dash-recent-asks">
                       {data.asks.recent.map((a, i) => (
                         <li key={i} className="px-4 py-2.5 text-[13px]">
-                          <p className="flex flex-wrap gap-x-2 text-[11px] text-muted-foreground"><span className="font-semibold text-foreground">{a.name}</span>{a.topic} · {a.where} · {ago(a.at)}</p>
+                          <p className="flex flex-wrap gap-x-2 text-[11px] text-muted-foreground"><Link to={`/admin/users/${a.userId}`} className="font-semibold text-foreground hover:underline">{a.name}</Link>{a.topic} · {a.where} · {ago(a.at)}</p>
                           <p className="mt-0.5 break-words">{a.text}</p>
                         </li>
                       ))}
@@ -876,8 +864,6 @@ export default function OwnerDashboard() {
               <p className="mt-4 flex items-start gap-1.5 text-[11.5px] text-muted-foreground"><Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />Hour-by-hour use, the sign-in log, the usage heatmap and use per person count from this update on. Revenue, sign-ups and daily numbers include everything before it.</p>
             </>
           )}
-        </div>
-      </main>
-    </div>
+    </AdminLayout>
   );
 }

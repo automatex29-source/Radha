@@ -13,7 +13,7 @@ const PRIVACY = {
     ["What we collect", [
       "Your account: name, email address and a scrambled (hashed) copy of your password. We never see or store your actual password.",
       "What you put into Krish AI: your chats, uploaded files, projects, memory notes, apps, decks, docs and automations.",
-      "Usage records: which features you use, when and how often, how many AI tokens your replies take, and the names of things you make (apps, decks, docs, automations, files). These are counts and names only, never the text of your chats.",
+      "Usage records: which features you use, when and how often, how many AI tokens your replies take, and the names of things you make (apps, decks, docs, automations, files). These are counts and names.",
       "Bug reports and feedback you send from the Help Center.",
       "If you sign in with Google: your Google account's name, email and account id (never your Google password).",
       "When you mark an answer 👎: that question and the start of the answer, so we can see where Krish needs to get better.",
@@ -25,7 +25,7 @@ const PRIVACY = {
       "To answer you and run the features you use, and to keep your work saved between visits.",
       "To send emails you ask for, such as password reset links.",
       "To fix problems and keep the service safe, for example stopping password guessing.",
-      "To run plan limits, help you when you contact us, and understand how Krish AI is used so we can improve it. The Krish AI team can see each account's usage records described above. Counsellor use is never shown per person.",
+      "To run plan limits, help you when you contact us, and understand how Krish AI is used so we can improve it. The Krish AI team can see each account's usage records described above. To see where Krish needs to get better and to help with problems, the team can also read the questions you ask Krish, together with your name and email (emails and phone numbers inside a question are hidden). Counsellor chats are never read this way, and Counsellor use is never shown per person.",
       "We do not sell your data and we do not show ads.",
       "Connected apps are used only when you ask Krish to (or an automation you made asks it to): for example reading a Drive file, listing calendar events, or writing a Gmail draft. Krish never sends an email for you, and reads only what the task needs.",
       "Krish AI's use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements. Google data is not used to train AI models, is not sold, and is not shown to people except to keep the service safe or when the law requires it.",
