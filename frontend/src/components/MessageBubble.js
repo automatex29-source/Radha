@@ -13,7 +13,7 @@ import BrandMark from "@/components/BrandMark";
 import { hideRelatedLine, linkCitations } from "@/lib/citations";
 import { prepareMath, useMathPlugins } from "@/lib/math";
 import AnswerVisual, { visualSource, withoutDiagrams, AnswerStreaming } from "@/components/DiagramBlock";
-import SourceChip from "@/components/SourceChip";
+import SourceChip, { SourcesContext } from "@/components/SourceChip";
 import { SearchedSources, SearchingStatus } from "@/components/WebSearch";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
@@ -363,9 +363,11 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
         <div dir="auto" className={`radha-prose krish-answer min-w-0 ${streaming && shown ? "is-streaming" : ""}`}>
           <AnswerStreaming.Provider value={!!streaming}>
+            <SourcesContext.Provider value={webSources}>
             <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={math ? math.rehype : undefined} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable, blockquote: DraftBlock }}>
               {shown}
             </ReactMarkdown>
+            </SourcesContext.Provider>
           </AnswerStreaming.Provider>
           {streaming && !shown && !(message.searched?.running && !webSources.length) && !(message.steps || []).some((x) => x.status === "running") && (
             <span className="krish-thinking" role="status" data-testid="streaming-cursor">

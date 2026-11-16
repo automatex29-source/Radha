@@ -217,6 +217,19 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
 .krish-step:not(:disabled):hover { color: hsl(var(--foreground)); background: hsl(var(--surface)); }
 .krish-step:disabled { cursor: default; }
 .krish-step:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+/* Hovering a citation chip previews the page (laptops only; on phones a tap opens it). */
+.krish-cite-card {
+  position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 30; display: none; width: 18rem; max-width: 80vw;
+  transform: translateX(-50%); flex-direction: column; border-radius: 0.75rem; border: 1px solid hsl(var(--border));
+  background: hsl(var(--card)); padding: 0.65rem 0.75rem 0.7rem; text-align: left; white-space: normal;
+  box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.28); font-family: var(--font-sans); pointer-events: none;
+}
+@media (hover: hover) { .krish-cite:hover .krish-cite-card { display: flex; animation: radha-fade-up .18s ease both; } }
+/* Source cards ease in one after another when the search finishes. */
+.krish-source-row > .krish-source-card:not(.krish-source-skeleton) { animation: radha-fade-up .35s ease both; }
+.krish-source-row > .krish-source-card:nth-child(2) { animation-delay: 60ms; }
+.krish-source-row > .krish-source-card:nth-child(3) { animation-delay: 120ms; }
+.krish-source-row > .krish-source-card:nth-child(4) { animation-delay: 180ms; }
 .krish-search-list { margin-top: 0.5rem; overflow: hidden; border-radius: 0.875rem; border: 1px solid hsl(var(--border)); background: hsl(var(--card)); }
 .krish-answer.is-streaming > :is(p, h1, h2, h3, h4):last-child::after,
 .krish-answer.is-streaming > :is(ul, ol):last-child > li:last-child::after {
