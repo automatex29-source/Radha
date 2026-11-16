@@ -99,6 +99,36 @@ def _evaluate_formulas(rows: list) -> dict:
     return results
 
 
+def _group(n: float, decimals: int, indian: bool) -> str:
+    whole, _, frac = f"{abs(n):.{decimals}f}".partition(".")
+    if indian and len(whole) > 3:
+        head, tail = whole[:-3], whole[-3:]
+        head = ",".join([head[max(0, i - 2):i] for i in range(len(head), 0, -2)][::-1])
+        whole = f"{head},{tail}"
+    elif not indian:
+        whole = f"{int(whole):,}"
+    return ("-" if n < 0 else "") + whole + (f".{frac}" if frac else "")
+
+
+def _display(value, fmt: str) -> str:
+    """A cell the way Excel shows it for the number formats our builder writes: money, lakhs, % and dates."""
+    fmt = fmt or "General"
+    if hasattr(value, "strftime"):
+        return value.strftime("%d %b %Y") if "mmm" in fmt or fmt == "General" else value.strftime("%d-%m-%Y")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or fmt == "General":
+        return _fmt(value)
+    first = fmt.split(";")[0]
+    decimals = len(re.search(r"0\.(0+)", first).group(1)) if re.search(r"0\.(0+)", first) else 0
+    if "%" in first:
+        sign = "+" if first.startswith("+") and value > 0 else ""
+        return f"{sign}{value * 100:.{decimals}f}%"
+    if "#" not in fmt and "0" not in fmt:
+        return _fmt(value)
+    symbol = next((c for c in ("₹", "$", "€", "£") if c in fmt), "")
+    text = _group(float(value), decimals, indian="##\\,##" in fmt)
+    return (("-" + symbol + text[1:]) if text.startswith("-") else symbol + text) if symbol else text
+
+
 def _xlsx(data: bytes) -> dict:
     from openpyxl import load_workbook
 
@@ -108,16 +138,27 @@ def _xlsx(data: bytes) -> dict:
     sheets = []
     for ws in values.worksheets:
         fws = formulas[ws.title]
-        rows = []
-        for vrow, frow in zip(ws.iter_rows(max_row=MAX_PREVIEW_ROWS, max_col=MAX_PREVIEW_COLS, values_only=True),
+        rows, formats = [], []
+        for vrow, frow in zip(ws.iter_rows(max_row=MAX_PREVIEW_ROWS, max_col=MAX_PREVIEW_COLS),
                               fws.iter_rows(max_row=MAX_PREVIEW_ROWS, max_col=MAX_PREVIEW_COLS, values_only=True)):
-            rows.append([_fmt(v if v is not None else f) for v, f in zip(vrow, frow)])
+            rows.append([_fmt(v.value if v.value is not None else f) for v, f in zip(vrow, frow)])
+            formats.append([(v.value, getattr(v, "number_format", "General")) for v in vrow])
         while rows and not any(rows[-1]):
             rows.pop()
         width = max((max((i + 1 for i, v in enumerate(r) if v), default=0) for r in rows), default=0)
         rows = [r[:width] for r in rows]
-        for (r, c), value in _evaluate_formulas(rows).items():
-            rows[r][c] = value
+        computed = _evaluate_formulas(rows)
+        for r, row in enumerate(rows):
+            for c in range(len(row)):
+                value, fmt = formats[r][c] if c < len(formats[r]) else (None, "General")
+                if (r, c) in computed:
+                    try:
+                        num = float(computed[(r, c)].replace(",", ""))
+                        row[c] = _display(int(num) if num.is_integer() else num, fmt)
+                    except ValueError:
+                        row[c] = computed[(r, c)]
+                elif isinstance(value, (int, float)) or hasattr(value, "strftime"):
+                    row[c] = _display(value, fmt)
         sheets.append({"name": ws.title, "rows": rows, "truncated": (ws.max_row or 0) > MAX_PREVIEW_ROWS})
     return {"type": "table", "sheets": sheets}
 
@@ -132,7 +173,11 @@ def _pptx(data: bytes) -> dict:
         title = ""
         for shape in slide.shapes:
             if shape.has_text_frame and shape.text_frame.text.strip():
-                lines = [p.text for p in shape.text_frame.paragraphs if p.text.strip()]
+                # Skip slide numbers ("3 / 8", "05") and the big decorative quote mark of designed decks.
+                lines = [p.text.replace("●  ", "•  ", 1) for p in shape.text_frame.paragraphs
+                         if p.text.strip() and not re.fullmatch(r"\s*(\d{1,3}(\s*/\s*\d{1,3})?|[“”\"]+)\s*", p.text)]
+                if not lines:
+                    continue
                 if not title:
                     title = lines[0]
                     lines = lines[1:]

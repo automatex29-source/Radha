@@ -370,6 +370,36 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
         </div>
       </>
     );
+  } else if (L === "table") {
+    const tb = s.table;
+    const rows = tb ? [...(tb.columns?.length ? [tb.columns] : []), ...(tb.rows || [])] : [];
+    const head = !!tb?.columns?.length;
+    const top = s.body ? 280 : 210;
+    const rowH = rows.length ? Math.min(52, (SLIDE_H - top - 70) / rows.length) : 52;
+    const fs = rowH >= 46 && (rows[0]?.length || 0) <= 4 ? 20 : rowH >= 38 ? 17 : 15;
+    const isNum = (v) => /^[-+₹$€£]?\s?[\d.,]+\s?(%|x|Cr|L|K|M|B)?$/.test(v || "");
+    const numCol = (ci) => ci > 0 && (tb?.rows || []).filter((r) => isNum(r[ci])).length * 2 > (tb?.rows || []).length;
+    content = (
+      <>
+        <Heading />
+        {s.body && <p style={{ ...muted, position: "absolute", left: PAD, top: 200, width: SLIDE_W - 2 * PAD, fontSize: 22, margin: 0 }}>{s.body}</p>}
+        {tb ? (
+          <table style={{ position: "absolute", left: PAD, top, width: SLIDE_W - 2 * PAD, borderCollapse: "collapse", fontSize: fs }}>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} style={{ height: rowH, background: c(ri === 0 && head ? t.accent : ri % 2 ? t.surface : t.bg2) }}>
+                  {row.map((v, ci) => (
+                    <td key={ci} style={{ padding: "4px 18px", textAlign: numCol(ci) ? "center" : "left",
+                      fontWeight: (ri === 0 && head) || ci === 0 ? 700 : 400,
+                      color: c(ri === 0 && head ? (t.dark ? t.bg : "FFFFFF") : ci === 0 ? t.title : t.text) }}>{v}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <Bullets items={s.bullets} style={{ position: "absolute", left: PAD, top: 220, width: SLIDE_W - 2 * PAD }} />}
+      </>
+    );
   }
 
   const showNumber = total > 1 && !["cover", "closing", "image_right", "image_left"].includes(L);

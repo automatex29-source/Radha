@@ -5,6 +5,7 @@ handler. The registry exposes OpenAI-style function schemas to the model and
 runs calls safely (bad arguments or handler errors come back to the model as
 tool errors instead of crashing the turn). Adding a tool = one `register()`.
 """
+import asyncio
 import contextlib
 import json
 import logging
@@ -309,12 +310,57 @@ async def _create_spreadsheet(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Created {saved['name']}", media=[saved])
 
 
+async def _slide_pictures(ctx: ToolContext, slides: list, topic: str) -> dict:
+    """Photos for picture slides (stock photos found from each slide's image_query), fetched in parallel
+    with a time limit. A slide without one keeps its designed colour panel."""
+    import deck_images
+
+    if not deck_images.enabled():
+        return {}
+    want = [s for s in slides if isinstance(s, dict) and s.get("image_query")
+            and str(s.get("layout") or "") in ("title", "cover", "image_right", "image_left", "image")]
+    if not want:
+        return {}
+    used: set = set()
+    loop = asyncio.get_running_loop()
+
+    async def one(slide):
+        img = await deck_images.find_stock({"image_query": slide["image_query"], "title": slide.get("title")}, used, topic)
+        if not img:
+            return None
+        data = await loop.run_in_executor(None, deck_images.download, img["url"])
+        if data:
+            slide["image"] = img
+            return img["url"], data
+        return None
+
+    try:
+        found = await asyncio.wait_for(asyncio.gather(*(one(s) for s in want[:8]), return_exceptions=True), 20)
+    except asyncio.TimeoutError:
+        return {}
+    pictures = dict(r for r in found if isinstance(r, tuple))
+    for s in want:  # a photo that never arrived must not leave a broken picture slot
+        if s.get("image") and s["image"]["url"] not in pictures:
+            s.pop("image", None)
+    return pictures
+
+
 async def _create_presentation(ctx: ToolContext, args: dict) -> ToolOutput:
     slides = args.get("slides")
     if not isinstance(slides, list) or not slides:
         raise ValueError("'slides' must be a non-empty list")
-    data = documents.build_pptx(slides, title=args.get("title") or "", theme=args.get("theme") or "dark")
-    saved = await _save_file(ctx, data, "pptx", args.get("filename") or args.get("title") or "presentation")
+    slides = [dict(s) if isinstance(s, dict) else s for s in slides]
+    for s in slides:
+        if isinstance(s, dict):
+            s.pop("image", None)  # pictures only come from image_query below
+    title = args.get("title") or ""
+    pictures = {}
+    try:
+        pictures = await _slide_pictures(ctx, slides, title)
+    except Exception:  # photos are a nice extra; never fail the deck over them
+        pictures = {}
+    data = documents.build_pptx(slides, title=title, theme=args.get("theme") or "aurora", pictures=pictures)
+    saved = await _save_file(ctx, data, "pptx", args.get("filename") or title or "presentation")
     return ToolOutput(content=f"Created {saved['name']} with {len(slides)} slides. It is shown to the user with a "
                               "preview and download button.", summary=f"Created {saved['name']}", media=[saved])
 
@@ -431,7 +477,10 @@ async def _browser(ctx: ToolContext, args: dict) -> ToolOutput:
     return ToolOutput(content=browser.describe(snap), summary=f"{snap['title'] or snap['url']}"[:160], media=[shot])
 
 
-_CELL_NOTE = "Cell values as strings; numeric strings become numbers and strings starting with '=' become Excel formulas."
+_CELL_NOTE = ("Cell values as strings. Numbers, money ('₹25,000', '$1,200'), percentages ('12.5%') and dates "
+              "('2026-01-31') become real typed cells with the right format; strings starting with '=' become Excel "
+              "formulas (the header is row 1, data starts at row 2). End with a 'Total' row using =SUM() when "
+              "the data adds up; it is styled as a total and left out of the chart.")
 
 
 def default_registry() -> ToolRegistry:
@@ -511,17 +560,25 @@ def default_registry() -> ToolRegistry:
             handler=_create_spreadsheet))
         .register(Tool(
             name="create_presentation", label="Create PowerPoint",
-            description="Create a designed 16:9 PowerPoint .pptx deck. Layouts: title, section, bullets, two_column, "
-                        "table, quote. Keep bullets short (max ~6 per slide); indent a bullet with two leading spaces "
-                        "to nest it. Put detail in speaker notes.",
+            description="Create a designed 16:9 PowerPoint .pptx deck (same look as the Decks page). Mix layouts so "
+                        "it doesn't read as a wall of bullets: start with 'title', end with 'closing'; use 'stats' "
+                        "for 2-4 big numbers, 'chart' for numbers over time or by category, 'cards' for 3-4 ideas, "
+                        "'steps' for a process or timeline, 'table' for a small grid (max 6 columns, 10 rows), "
+                        "'two_column' to compare, 'quote', 'section' to open a part, 'image_right'/'image_left' for bullets beside a photo (give image_query; the title slide can have one too). Max 6 short bullets a slide; "
+                        "put detail in speaker notes. Themes: aurora (default, dark indigo), midnight, ocean, "
+                        "sunset, forest, paper (warm light), snow (clean light), candy, mono; 'dark'/'light' also work.",
             parameters={"type": "object", "properties": {
                 "filename": {"type": "string"},
                 "title": {"type": "string"},
-                "theme": {"type": "string", "enum": ["dark", "light"]},
+                "theme": {"type": "string", "enum": ["aurora", "midnight", "ocean", "sunset", "forest", "paper", "snow",
+                                                     "candy", "mono", "dark", "light"]},
                 "slides": {"type": "array", "items": {"type": "object", "properties": {
-                    "layout": {"type": "string", "enum": ["title", "section", "bullets", "two_column", "table", "quote"]},
+                    "layout": {"type": "string", "enum": ["title", "section", "bullets", "image_right", "image_left",
+                                                          "two_column", "table", "quote", "stats", "chart", "cards",
+                                                          "steps", "closing"]},
                     "title": {"type": "string"},
-                    "subtitle": {"type": "string", "description": "title/section/quote slides (quote: attribution)"},
+                    "subtitle": {"type": "string", "description": "title/section/closing slides; quote: who said it"},
+                    "body": {"type": "string", "description": "One short line of context (bullets, chart, stats, table)"},
                     "bullets": {"type": "array", "items": {"type": "string"}},
                     "left_title": {"type": "string"}, "left": {"type": "array", "items": {"type": "string"}},
                     "right_title": {"type": "string"}, "right": {"type": "array", "items": {"type": "string"}},
@@ -529,7 +586,21 @@ def default_registry() -> ToolRegistry:
                         "columns": {"type": "array", "items": {"type": "string"}},
                         "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
                     }},
+                    "stats": {"type": "array", "items": {"type": "object", "properties": {
+                        "value": {"type": "string", "description": "Short, e.g. '₹18 Cr', '61%'"},
+                        "label": {"type": "string"}}}},
+                    "chart": {"type": "object", "properties": {
+                        "type": {"type": "string", "enum": ["bar", "line", "pie", "doughnut"]},
+                        "labels": {"type": "array", "items": {"type": "string"}},
+                        "series": {"type": "array", "items": {"type": "object", "properties": {
+                            "name": {"type": "string"}, "values": {"type": "array", "items": {"type": "number"}}}}},
+                    }},
+                    "items": {"type": "array", "description": "cards/steps: 3-5 of {icon (one emoji), title, text}",
+                              "items": {"type": "object", "properties": {
+                                  "icon": {"type": "string"}, "title": {"type": "string"}, "text": {"type": "string"}}}},
                     "quote": {"type": "string"},
+                    "image_query": {"type": "string", "description": "title/image_right/image_left: 2-4 English words "
+                                    "for a stock photo, e.g. 'tea stall india'"},
                     "notes": {"type": "string", "description": "Speaker notes"},
                 }, "required": ["layout", "title"]}},
             }, "required": ["filename", "slides"]},

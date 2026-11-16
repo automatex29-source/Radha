@@ -10,7 +10,7 @@ import uuid
 from typing import Callable, Dict, List, Optional
 
 LAYOUTS = ("cover", "section", "bullets", "image_right", "image_left", "cards", "stats", "chart", "steps", "quote",
-           "comparison", "closing")
+           "comparison", "table", "closing")
 CHART_TYPES = ("bar", "line", "pie", "doughnut")
 IMAGE_LAYOUTS = ("cover", "image_right", "image_left")
 MAX_SLIDES = 30
@@ -129,6 +129,18 @@ def _chart(v) -> Optional[dict]:
     return {"type": kind, "labels": labels, "series": series, "unit": _s(v.get("unit"), 12)}
 
 
+def _table(v) -> Optional[dict]:
+    """{columns, rows} of short strings, at most 6 columns and 10 rows; None when empty."""
+    if not isinstance(v, dict):
+        return None
+    cols = [_s(c, 40) for c in (v.get("columns") or [])][:6]
+    rows = [[_s(c, 60) for c in r][:6] for r in (v.get("rows") or []) if isinstance(r, list)][:10]
+    if not rows:
+        return None
+    n = max(len(cols), max(len(r) for r in rows))
+    return {"columns": cols + [""] * (n - len(cols)) if cols else [], "rows": [r + [""] * (n - len(r)) for r in rows]}
+
+
 def normalize_slide(raw: dict, keep_id: bool = True) -> dict:
     """Clamp a model- or user-written slide to the fields and lengths the layouts can draw."""
     raw = raw if isinstance(raw, dict) else {}
@@ -151,6 +163,7 @@ def normalize_slide(raw: dict, keep_id: bool = True) -> dict:
         "left": _column(raw.get("left")),
         "right": _column(raw.get("right")),
         "chart": _chart(raw.get("chart")),
+        "table": _table(raw.get("table")),
         "image_query": _s(raw.get("image_query"), 60),
         "image_prompt": _s(raw.get("image_prompt"), 400),
         "image": _image(raw.get("image")),
@@ -247,10 +260,20 @@ def build_deck_pptx(title: str, slides: List[dict], theme_id: str,
         if not items:
             return
         size = min(size, 26 if len(items) <= 4 else 22)
+
+        def height(sz):  # rough height of the list at this size: ~0.5em per character, 1.15 line height
+            per_line = max(8, int((w - sz) / (sz * 0.5)))
+            lines = sum(-(-len(it) // per_line) for it in items)
+            return lines * sz * 1.15 * 1.2 + len(items) * sz * 0.7
+
+        while size > 14 and height(size) > h:
+            size -= 1
         box = s.shapes.add_textbox(px(x), px(y), px(w), px(h))
         tf = box.text_frame
         tf.word_wrap = True
-        tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        # The size is worked out above: viewers that "shrink text on overflow" (LibreOffice, Google Slides)
+        # otherwise shrink lists to a tiny size.
+        tf.auto_size = MSO_AUTO_SIZE.NONE
         tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
         for i, item in enumerate(items):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
@@ -489,6 +512,53 @@ def build_deck_pptx(title: str, slides: List[dict], theme_id: str,
                 text(s, cx + 36, 256, cw - 72, 50, col["title"], 28, t["accent"] if i == 0 else t["accent2"],
                      bold=True, heading=True)
                 bullet_list(s, cx + 36, 330, cw - 72, 290, col["bullets"], 20)
+
+        elif lay == "table":
+            heading(s, sl["title"])
+            tb = sl["table"]
+            if tb:
+                all_rows = ([tb["columns"]] if tb["columns"] else []) + tb["rows"]
+                n_rows, n_cols = len(all_rows), len(all_rows[0])
+                top = 210 if not sl["body"] else 280
+                if sl["body"]:
+                    text(s, PAD, 200, W - 2 * PAD, 60, sl["body"], _fit(22, sl["body"], 150), t["muted"])
+                row_h = min(52, (H - top - 70) / n_rows)
+                size = 20 if row_h >= 46 and n_cols <= 4 else 17 if row_h >= 38 else 15
+                shape = s.shapes.add_table(n_rows, n_cols, px(PAD), px(top), px(W - 2 * PAD), px(row_h * n_rows))
+                table = shape.table
+                tbl_pr = shape._element.graphic.graphicData.tbl.tblPr
+                tbl_pr.set("bandRow", "0")
+                tbl_pr.set("firstRow", "0")
+                style_id = tbl_pr.find("{http://schemas.openxmlformats.org/drawingml/2006/main}tableStyleId")
+                if style_id is not None:
+                    style_id.text = "{2D5ABB26-0587-4C30-8999-92F81FD0307C}"  # "No Style, No Grid"
+                stripe = _mix(t["surface"], t["bg"], 0.35)
+                num_re = r"[-+₹$€£]?\s?[\d.,]+\s?(%|x|Cr|L|K|M|B|Cr\.?)?"
+                numeric_col = [c > 0 and sum(bool(re.fullmatch(num_re, r[c] or "")) for r in tb["rows"]) * 2 > len(tb["rows"])
+                               for c in range(n_cols)]
+                for r, row in enumerate(all_rows):
+                    table.rows[r].height = px(row_h)
+                    head = r == 0 and bool(tb["columns"])
+                    for c, value in enumerate(row):
+                        cell = table.cell(r, c)
+                        cell.fill.solid()
+                        cell.fill.fore_color.rgb = rgb(t["accent"] if head else (t["surface"] if r % 2 else stripe))
+                        cell.margin_left = cell.margin_right = px(18)
+                        cell.margin_top = cell.margin_bottom = px(4)
+                        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+                        tf = cell.text_frame
+                        tf.word_wrap = True
+                        p = tf.paragraphs[0]
+                        p.alignment = PP_ALIGN.CENTER if numeric_col[c] else PP_ALIGN.LEFT
+                        run = p.add_run()
+                        run.text = value
+                        run.font.size = Pt(size * 0.75)
+                        run.font.bold = head or c == 0
+                        run.font.name = t["pptx_heading"] if head else t["pptx_body"]
+                        run.font.color.rgb = rgb((t["bg"] if t["dark"] else "FFFFFF") if head else
+                                                 (t["title"] if c == 0 else t["text"]))
+            else:
+                bullet_list(s, PAD, 220, W - 2 * PAD, H - 290, sl["bullets"])
 
         if lay not in ("cover", "closing", "image_right", "image_left") and total > 1:
             text(s, W - PAD - 100, H - 48, 100, 24, f"{n} / {total}", 14, t["muted"], align="right")
