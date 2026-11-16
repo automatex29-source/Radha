@@ -3742,7 +3742,8 @@ def _sse_json(payload) -> str:
     return _json.dumps(payload)
 
 
-@api.get("/")
+# HEAD too: free uptime monitors (UptimeRobot and others) check with HEAD and would report a 405 as "down".
+@api.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {"service": "Krish AI", "company": "EmpireX", "status": "ok"}
 
@@ -3777,7 +3778,7 @@ FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST") or ROOT_DIR.parent / "front
 if (FRONTEND_DIST / "index.html").is_file():
     from fastapi.responses import FileResponse
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def frontend(full_path: str, request: Request):
         if full_path.startswith("api/") or full_path == "api":
             raise HTTPException(status_code=404, detail="Not found")
