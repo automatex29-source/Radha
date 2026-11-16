@@ -16,7 +16,7 @@ import { hideRelatedLine, linkCitations } from "@/lib/citations";
 import { prepareMath, useMathPlugins } from "@/lib/math";
 import AnswerVisual, { visualSource, withoutDiagrams, AnswerStreaming } from "@/components/DiagramBlock";
 import SourceChip, { SourcesContext } from "@/components/SourceChip";
-import { SearchedSources, SearchingStatus } from "@/components/WebSearch";
+import { SearchTabs, SearchingStatus } from "@/components/WebSearch";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { modelLabel } from "@/lib/models";
@@ -27,15 +27,15 @@ import ThinkingShape from "@/components/ThinkingShape";
 import { FileCard, VoiceNotePlayer } from "@/components/Attachments";
 
 // Pictures found for the question, like Perplexity's image strip. Each opens the page it came from.
-function ImageResults({ items, id }) {
+function ImageResults({ items, id, all = false }) {
   const [hidden, setHidden] = useState({});
-  const shown = items.filter((im) => !hidden[im.thumbnail]).slice(0, 6);
+  const shown = items.filter((im) => !hidden[im.thumbnail]).slice(0, all ? 12 : 6);
   if (!shown.length) return null;
   return (
     <div className="mb-3 grid grid-cols-3 gap-1.5 sm:grid-cols-6" data-testid={`image-results-${id}`}>
       {shown.map((im, i) => (
         <a key={im.thumbnail} href={im.url} target="_blank" rel="noopener noreferrer" title={im.title}
-          className={`group/img block overflow-hidden rounded-lg border border-border bg-surface ${i >= 3 ? "max-sm:hidden" : ""}`}>
+          className={`group/img block overflow-hidden rounded-lg border border-border bg-surface ${i >= 3 && !all ? "max-sm:hidden" : ""}`}>
           <img src={im.thumbnail} alt={im.title || ""} loading="lazy"
             onError={() => setHidden((h) => ({ ...h, [im.thumbnail]: true }))}
             className="aspect-square h-full w-full object-cover transition-transform duration-300 group-hover/img:scale-105" />
@@ -46,15 +46,15 @@ function ImageResults({ items, id }) {
 }
 
 // YouTube videos for how-tos and recipes, like Perplexity's video row.
-function VideoResults({ items, id }) {
+function VideoResults({ items, id, all = false }) {
   const [hidden, setHidden] = useState({});
-  const shown = items.filter((v) => !hidden[v.thumbnail]).slice(0, 4);
+  const shown = items.filter((v) => !hidden[v.thumbnail]).slice(0, all ? 8 : 4);
   if (!shown.length) return null;
   return (
     <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid={`video-results-${id}`}>
       {shown.map((v, i) => (
         <a key={v.url} href={v.url} target="_blank" rel="noopener noreferrer" title={v.title}
-          className={`group/vid block overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 ${i >= 2 ? "max-sm:hidden" : ""}`}>
+          className={`group/vid block overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 ${i >= 2 && !all ? "max-sm:hidden" : ""}`}>
           <span className="relative block aspect-video overflow-hidden bg-surface">
             <img src={v.thumbnail} alt="" loading="lazy" onError={() => setHidden((h) => ({ ...h, [v.thumbnail]: true }))}
               className="h-full w-full object-cover transition-transform duration-300 group-hover/vid:scale-105" />
@@ -390,10 +390,9 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {(message.steps || []).filter((s) => s.approval).map((s) => <ApprovalCard key={s.approval.id} card={s.approval} onAsk={onAsk} />)}
         <LiveCards items={liveCards} />
         {streaming && message.searched?.running && !webSources.length && !shown && <SearchingStatus query={message.searched.queries?.[0]} />}
-        {webSources.length > 0 && <SearchedSources items={webSources} searched={message.searched} id={message.id} />}
-        {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
-        {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
-        {message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
+        {(() => {
+          const answerBody = (
+            message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
         <div dir="auto" className={`radha-prose krish-answer min-w-0 ${streaming && shown ? "is-streaming" : ""}`}>
           <AnswerStreaming.Provider value={!!streaming}>
             <SourcesContext.Provider value={webSources}>
@@ -403,7 +402,21 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             </SourcesContext.Provider>
           </AnswerStreaming.Provider>
         </div>
-        )}
+        )
+          );
+          // A web answer gets Answer / Sources / Images / Videos tabs (WebSearch.js); other answers stay plain.
+          if (!webSources.length) {
+            return <>{imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
+              {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}{answerBody}</>;
+          }
+          return (
+            <SearchTabs sources={webSources} images={imageResults} searched={message.searched} id={message.id}
+              renderImages={() => <ImageResults items={imageResults} id={message.id} all />}>
+              {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
+              {answerBody}
+            </SearchTabs>
+          );
+        })()}
         {message.stopped && !streaming && (
           <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="reply-stopped-note">
             <Square className="h-2.5 w-2.5 fill-current" /> You stopped this reply

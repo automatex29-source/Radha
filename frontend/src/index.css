@@ -272,6 +272,35 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
 .krish-source-row > .krish-source-card:nth-child(2) { animation-delay: 60ms; }
 .krish-source-row > .krish-source-card:nth-child(3) { animation-delay: 120ms; }
 .krish-source-row > .krish-source-card:nth-child(4) { animation-delay: 180ms; }
+/* Web answers: Answer / Sources / Images tabs (WebSearch.js), with the thinking indicator's saffron-to-green
+   underline on the open tab. */
+.krish-tabs { display: flex; gap: 1.25rem; margin-bottom: 0.875rem; border-bottom: 1px solid hsl(var(--border));
+  overflow-x: auto; scrollbar-width: none; }
+.krish-tabs::-webkit-scrollbar { display: none; }
+.krish-tab { position: relative; display: inline-flex; flex-shrink: 0; align-items: center; gap: 0.4rem; padding: 0.15rem 0 0.6rem;
+  font-size: 0.84rem; font-weight: 600; color: hsl(var(--muted-foreground)); transition: color .15s; }
+.krish-tab:hover { color: hsl(var(--foreground)); }
+.krish-tab[aria-selected="true"] { color: hsl(var(--foreground)); }
+.krish-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  border-radius: 9999px; background: linear-gradient(90deg, var(--thinking-saffron), var(--thinking-green)); }
+.krish-tab:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: 0.375rem; }
+.krish-tab-count { border-radius: 9999px; background: hsl(var(--surface-strong)); padding: 0 0.4rem; font-size: 0.68rem;
+  font-variant-numeric: tabular-nums; line-height: 1.15rem; }
+.krish-read-line { display: flex; max-width: 100%; min-width: 0; align-items: center; gap: 0.6rem; margin: 0 0 0.9rem -0.375rem;
+  border-radius: 0.6rem; padding: 0.3rem 0.45rem; text-align: left; font-size: 0.8rem; color: hsl(var(--muted-foreground));
+  transition: background-color .15s; }
+.krish-read-line:hover { background: hsl(var(--surface)); }
+.krish-read-icon { display: flex; height: 1.5rem; width: 1.5rem; align-items: center; justify-content: center; border-radius: 9999px;
+  background: hsl(var(--card)); box-shadow: 0 0 0 2px hsl(var(--background)); }
+.krish-skeleton-dot { background: hsl(var(--surface-strong)); animation: krish-skeleton 1.4s ease-in-out infinite; }
+.krish-skeleton-bar { height: 0.7rem; width: 11rem; max-width: 50%; border-radius: 9999px; background: hsl(var(--surface-strong));
+  animation: krish-skeleton 1.4s ease-in-out infinite; }
+.krish-source-item { display: flex; gap: 0.75rem; border-radius: 0.875rem; border: 1px solid hsl(var(--border)); background: hsl(var(--card));
+  padding: 0.75rem 0.85rem; transition: border-color .15s, background-color .15s; }
+.krish-source-item:hover { border-color: hsl(var(--primary) / 0.45); background: hsl(var(--surface)); }
+.krish-source-badge { display: flex; height: 1.5rem; width: 1.5rem; flex-shrink: 0; align-items: center; justify-content: center;
+  border-radius: 9999px; background: hsl(var(--surface-strong)); font-size: 0.7rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: hsl(var(--muted-foreground)); margin-top: 0.05rem; }
 .krish-search-list { margin-top: 0.5rem; overflow: hidden; border-radius: 0.875rem; border: 1px solid hsl(var(--border)); background: hsl(var(--card)); }
 .krish-answer.is-streaming > :is(p, h1, h2, h3, h4):last-child::after,
 .krish-answer.is-streaming > :is(ul, ol):last-child > li:last-child::after {
