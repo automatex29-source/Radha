@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import {
@@ -835,7 +835,7 @@ export default function OwnerDashboard() {
                       {people.slice(0, 50).map((p) => (
                         <tr key={p.userId} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
                           <td className="px-4 py-2">
-                            <p className="flex items-center gap-2 font-medium">{p.name}{p.online && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Online now" />}</p>
+                            <p className="flex items-center gap-2 font-medium"><Link to={`/admin/users/${p.userId}`} className="hover:underline" data-testid="owner-dash-person-link">{p.name}</Link>{p.online && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Online now" />}</p>
                             <p className="flex items-center gap-2 text-[11px] text-muted-foreground">{p.email}<PlanTag plan={p.plan} /></p>
                           </td>
                           <td className="px-4 py-2 text-right">{num(p.messages)}</td>

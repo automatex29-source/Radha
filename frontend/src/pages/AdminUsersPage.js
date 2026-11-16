@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import IconRail from "@/components/IconRail";
 import { Input } from "@/components/ui/input";
-import { LayoutDashboard, Loader2, Search, Users } from "lucide-react";
+import { ChevronRight, LayoutDashboard, Loader2, Search, Users } from "lucide-react";
+import ActivityTab from "@/components/ActivityTab";
 import { AnswersTab, OfferCodesTab, ProblemsTab, UsageTab } from "@/components/OwnerInsights";
 
-const TABS = [["users", "Users"], ["usage", "Usage"], ["answers", "Answers"], ["problems", "Problems"], ["codes", "Offer codes"]];
+const TABS = [["users", "Users"], ["activity", "Activity"], ["usage", "Usage"], ["answers", "Answers"], ["problems", "Problems"], ["codes", "Offer codes"]];
 
 function ago(iso) {
   if (!iso) return "Not yet";
@@ -25,6 +26,7 @@ function when(iso) {
 
 export default function AdminUsersPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
@@ -83,7 +85,7 @@ export default function AdminUsersPage() {
             ))}
           </div>
 
-          {tab === "usage" ? <UsageTab /> : tab === "answers" ? <AnswersTab /> : tab === "problems" ? <ProblemsTab />
+          {tab === "activity" ? <ActivityTab /> : tab === "usage" ? <UsageTab /> : tab === "answers" ? <AnswersTab /> : tab === "problems" ? <ProblemsTab />
             : tab === "codes" ? <OfferCodesTab /> : error ? (
             <p className="mt-10 text-center text-sm text-destructive">{error}</p>
           ) : !data ? (
@@ -98,11 +100,13 @@ export default function AdminUsersPage() {
                     <th className="px-4 py-3 font-medium">Last sign-in</th>
                     <th className="px-4 py-3 font-medium">Sign-ins</th>
                     <th className="px-4 py-3 font-medium">Joined</th>
+                    <th className="w-8 px-2 py-3" aria-label="Open" />
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((u) => (
-                    <tr key={u.id} className="border-b border-border/50 last:border-0">
+                    <tr key={u.id} onClick={() => navigate(`/admin/users/${u.id}`)} data-testid="admin-users-row"
+                      className="cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-muted/50">
                       <td className="px-4 py-3">
                         <p className="font-semibold">{u.name}</p>
                         <p className="text-xs text-muted-foreground">{u.email}{u.plan !== "basic" ? ` · ${u.plan}` : ""}</p>
@@ -111,16 +115,19 @@ export default function AdminUsersPage() {
                       <td className="px-4 py-3" title={when(u.lastLoginAt)}>{ago(u.lastLoginAt)}</td>
                       <td className="px-4 py-3">{u.loginCount || "–"}</td>
                       <td className="px-4 py-3" title={when(u.createdAt)}>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : ""}</td>
+                      <td className="px-2 py-3 text-muted-foreground">
+                        <Link to={`/admin/users/${u.id}`} onClick={(e) => e.stopPropagation()} aria-label={`See what ${u.name || u.email} did`}><ChevronRight className="h-4 w-4" /></Link>
+                      </td>
                     </tr>
                   ))}
                   {!rows.length && (
-                    <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">No one matches that search.</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No one matches that search.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           )}
-          {tab === "users" && <p className="mt-4 text-xs text-muted-foreground">Sign-in times are kept from this update on. People who joined earlier show their time once they next open Krish.</p>}
+          {tab === "users" && <p className="mt-4 text-xs text-muted-foreground">Tap anyone to see what they did: features, how often and when, tokens and what they made. Sign-in times are kept from this update on. People who joined earlier show their time once they next open Krish.</p>}
         </div>
       </main>
     </div>
