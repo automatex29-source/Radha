@@ -408,3 +408,101 @@ class TestChunkedMedia:
             assert await db.media_chunks.count_documents({}) == 0 and await db.media.count_documents({}) == 0
 
         run(scenario())
+
+
+# ------------------------------------------------- launch polish: Excel, PowerPoint, PDF
+def test_xlsx_turns_money_percent_and_dates_into_real_numbers():
+    from openpyxl import load_workbook
+
+    data = documents.build_xlsx([{
+        "name": "Budget", "columns": ["Item", "Month", "Planned (₹)", "Actual (₹)", "Difference", "% Used"],
+        "rows": [["Rent", "2026-01-01", "₹25,000", "₹25,000", "=D2-C2", "=D2/C2"],
+                 ["Power", "2026-01-01", "₹2,500", "₹2,180", "=D3-C3", "=D3/C3"],
+                 ["Total", "", "=SUM(C2:C3)", "=SUM(D2:D3)", "=D4-C4", "=D4/C4"]],
+        "chart": {"type": "bar", "category_column": "Item", "value_columns": ["Planned (₹)", "Actual (₹)"]}}])
+    ws = load_workbook(io.BytesIO(data))["Budget"]
+    assert ws["C2"].value == 25000 and "₹" in ws["C2"].number_format
+    assert ws["B2"].value.year == 2026
+    assert ws["F2"].number_format == "0.0%"
+    assert "-" in ws["E2"].number_format.split(";")[1]  # a difference keeps its minus sign
+    assert ws["A4"].font.bold  # the total row stands out
+    chart = ws._charts[0]
+    assert chart.x_axis.delete is False and chart.y_axis.delete is False
+    assert chart.series[0].val.numRef.f.endswith("$3")  # the total row is left out of the chart
+    rows = preview.build_preview(preview.XLSX, data, "b.xlsx")["sheets"][0]["rows"]
+    assert rows[1][2] == "₹25,000" and rows[2][4] == "-₹320" and rows[1][5] == "100.0%"
+    assert rows[1][1] == "01 Jan 2026"
+
+
+def test_xlsx_keeps_ids_and_lists_as_text():
+    assert documents._parse_cell("0123")[0] == "0123"
+    assert documents._parse_cell("1,2,3")[0] == "1,2,3"
+    assert documents._parse_cell("1,20,000") == (120000, documents._lakh())
+    assert documents._parse_cell("26.7%")[0] == pytest.approx(0.267)
+
+
+def test_pptx_uses_the_designed_deck_renderer():
+    from pptx import Presentation
+
+    slides = [{"layout": "title", "title": "Plan", "subtitle": "2027"},
+              {"layout": "bullets", "title": "Today", "bullets": ["one", "  nested", "two"]},
+              {"layout": "two_column", "title": "Pros and cons", "left_title": "Pros", "left": ["a"],
+               "right_title": "Cons", "right": ["b"]},
+              {"layout": "table", "title": "Cities", "table": {"columns": ["City", "Sales"], "rows": [["Pune", "12"]]}},
+              {"layout": "stats", "title": "Numbers", "stats": [{"value": "42", "label": "kiosks"}]},
+              {"layout": "bullets", "title": "Thank you", "bullets": ["Questions?"]}]
+    prs = Presentation(io.BytesIO(documents.build_pptx(slides, title="Plan", theme="light")))
+    assert len(prs.slides) == len(slides)
+    texts = [" ".join(sh.text_frame.text for sh in s.shapes if sh.has_text_frame) for s in prs.slides]
+    assert "one — nested" in texts[1]
+    assert any(getattr(sh, "has_table", False) and sh.has_table for sh in prs.slides[3].shapes)
+    previewed = preview.build_preview(preview.PPTX, documents.build_pptx(slides), "d.pptx")["slides"]
+    assert previewed[0]["title"] == "Plan" and previewed[3]["table"][1] == ["Pune", "12"]
+
+
+def test_pdf_embeds_fonts_for_indian_scripts():
+    data = documents.build_pdf("# रिपोर्ट\n\nयह हिंदी में है। தமிழ் ₹25,000", title="Hindi")
+    assert b"NotoSansDevanagari" in data and b"NotoSansTamil" in data
+    assert data.count(b"/Type /Page") >= 1
+
+
+def test_pdf_paper_layout_matches_word():
+    md = ("# Science Mock Test\n\n## Test 1\nTime Allowed: 30 Minutes | Total Marks: 10\n\n"
+          "1. **Fill in the blanks:** (2 marks)\n(a) Light ____.\n(b) Sound ____.\n\n"
+          "2. **Explain:** (3 marks)\nWhy?\n______________\n\n## Answer Key\n1. (a) travels")
+    data = documents.build_pdf(md, title="Science Mock Test")
+    from pypdf import PdfReader
+    text = "\n".join(p.extract_text() for p in PdfReader(io.BytesIO(data)).pages)
+    assert "Name:" in text and "Roll No.:" in text
+    assert "Page 1 of" in text
+    assert len(PdfReader(io.BytesIO(data)).pages) == 2  # the answer key starts a new page
+
+
+def test_same_title_is_not_printed_twice():
+    assert documents._same_title("Solar Energy in India", "Solar Energy in India: A Short Report")
+    assert not documents._same_title("Budget", "Travel plan")
+
+
+def test_chat_deck_gets_stock_photos(monkeypatch):
+    import deck_images
+    from agent import tools as agent_tools
+    from PIL import Image
+    from pptx import Presentation
+
+    buf = io.BytesIO()
+    Image.new("RGB", (800, 500), (200, 120, 40)).save(buf, "JPEG")
+
+    async def fake_stock(slide, used, topic=""):
+        return {"url": "https://img.example/" + slide["image_query"].replace(" ", "-"), "thumb": "", "credit": "x",
+                "link": ""}
+
+    monkeypatch.setenv("DECK_IMAGES", "1")
+    monkeypatch.setattr(deck_images, "find_stock", fake_stock)
+    monkeypatch.setattr(deck_images, "download", lambda url: buf.getvalue())
+    slides = [{"layout": "title", "title": "Chai", "image_query": "masala chai"},
+              {"layout": "image_right", "title": "Kiosks", "bullets": ["42"], "image_query": "tea stall"},
+              {"layout": "bullets", "title": "No photo", "bullets": ["x"], "image_query": "ignored"}]
+    pictures = asyncio.run(agent_tools._slide_pictures(None, slides, "chai"))
+    assert len(pictures) == 2
+    prs = Presentation(io.BytesIO(documents.build_pptx(slides, pictures=pictures)))
+    assert sum(sh.shape_type == 13 for s in prs.slides for sh in s.shapes) == 2  # 13 = picture

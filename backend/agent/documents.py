@@ -95,70 +95,273 @@ def _md():
 
 
 # ------------------------------------------------------------------ Excel
+# Number formats a sheet gets when the model writes "₹25,000", "26.7%" or "2026-01-01" as text.
+# Rupees use Indian grouping (1,20,000 / 12,50,000) like people in India write them.
+def _lakh(prefix: str = "", dec: str = "") -> str:
+    """Indian grouping (1,20,000 / 1,20,00,000) as an Excel number format."""
+    return (f'[>=10000000]{prefix}##\\,##\\,##\\,##0{dec};[>=100000]{prefix}##\\,##\\,##0{dec};'
+            f'{prefix}##,##0{dec}')
+
+
+_CURRENCY = {"$": '"$"', "€": '"€"', "£": '"£"'}
+
+
+def _signed(fmt: str) -> str:
+    """The lakh formats use Excel conditions, and a conditional format drops the minus sign of negative
+    numbers. Columns that can go negative get a plain format with an explicit minus instead."""
+    if not fmt or not fmt.startswith("[>="):
+        return fmt
+    last = fmt.split(";")[-1]
+    return f"{last.replace('##,##0', '#,##0')};-{last.replace('##,##0', '#,##0')}"
+_NUM_RE = re.compile(r"^(?P<neg>[-−(])?\s*(?P<cur>₹|Rs\.?|INR|\$|€|£)?\s*(?P<sign>[-+−])?\s*"
+                     r"(?P<num>\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)\s*(?P<pct>%)?\s*\)?$")
+_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+_TOTAL_RE = re.compile(r"^\s*(grand\s+)?(total|totals|sum|net total|overall)\b", re.I)
+_HEADER_FILL, _ZEBRA, _GRID, _TOTAL_FILL = ACCENT, "F5F6FE", "E2E4F0", "E8EAFC"
+
+
+def _parse_cell(v: Any):
+    """(value, number format or None). Text that looks like money, a percentage, a number with thousands
+    separators or an ISO date becomes a real number or date, so formulas, sorting and charts work."""
+    if isinstance(v, bool) or v is None:
+        return v, None
+    if isinstance(v, (int, float)):
+        return v, None
+    s = str(v).strip()
+    if not s or s.startswith("="):
+        return (s or None), None  # strings beginning with "=" are written as formulas by openpyxl
+    if re.fullmatch(r"0\d+", s):
+        return s, None  # phone numbers, PIN codes and IDs keep their leading zero
+    m = _NUM_RE.match(s)
+    if m and not (m.group("neg") == "(" and not s.endswith(")")):
+        raw = m.group("num")
+        groups = raw.split(".")[0].split(",")
+        if len(groups) > 1 and not (all(len(g) == 3 for g in groups[1:]) or
+                                    (len(groups[-1]) == 3 and all(len(g) == 2 for g in groups[1:-1]))):
+            return s, None  # "1,2,3" is a list, not a number
+        num = float(raw.replace(",", ""))
+        if m.group("neg") or m.group("sign") in ("-", "−"):
+            num = -num
+        decimals = len(raw.split(".")[1]) if "." in raw else 0
+        if m.group("pct"):
+            fmt = "0%" if decimals == 0 else "0." + "0" * min(decimals, 2) + "%"
+            return num / 100, ("+" + fmt + ";-" + fmt) if m.group("sign") == "+" else fmt
+        value = int(num) if decimals == 0 and abs(num) < 1e15 else num
+        cur = m.group("cur")
+        dec = ".00" if decimals else ""
+        indian = len(groups) > 2 and all(len(g) == 2 for g in groups[1:-1])
+        if cur in ("₹", "Rs", "Rs.", "INR"):
+            return value, _lakh('"₹"', dec)
+        if cur:
+            return value, _CURRENCY[cur] + "#,##0" + dec
+        if len(groups) > 1:
+            return value, _lakh("", dec) if indian else "#,##0" + dec
+        return value, None
+    d = _DATE_RE.match(s)
+    if d:
+        import datetime
+        try:
+            return datetime.date(int(d.group(1)), int(d.group(2)), int(d.group(3))), "dd mmm yyyy"
+        except ValueError:
+            return s, None
+    return s, None
+
+
 def _cell_value(v: Any):
-    if isinstance(v, (int, float, bool)) or v is None:
-        return v
-    s = str(v)
-    if re.fullmatch(r"-?\d+", s):
-        return int(s)
-    if re.fullmatch(r"-?\d*\.\d+", s):
-        return float(s)
-    return s  # strings beginning with "=" are written as formulas by openpyxl
+    return _parse_cell(v)[0]
+
+
+def _formula_refs(formula: str) -> List[str]:
+    return re.findall(r"(?<![A-Z])\$?([A-Z]{1,3})\$?\d+", formula.upper())
 
 
 def build_xlsx(sheets: List[dict]) -> bytes:
     from openpyxl import Workbook
     from openpyxl.chart import BarChart, LineChart, PieChart, Reference
-    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.chart.label import DataLabelList
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     if not sheets:
         raise ValueError("at least one sheet is required")
     wb = Workbook()
     wb.remove(wb.active)
+    wb.properties.creator = "Krish AI"
+    thin = Side(style="thin", color=_GRID)
+    grid = Border(left=thin, right=thin, top=thin, bottom=thin)
+    total_border = Border(left=thin, right=thin, top=Side(style="medium", color="1F2937"),
+                          bottom=Side(style="double", color="1F2937"))
+    used_names = set()
     for i, spec in enumerate(sheets):
-        name = re.sub(r"[\[\]\*\?/\\:]", "", str(spec.get("name") or f"Sheet{i + 1}"))[:31] or f"Sheet{i + 1}"
+        name = re.sub(r"[\[\]\*\?/\\:]", "", str(spec.get("name") or f"Sheet{i + 1}"))[:31].strip() or f"Sheet{i + 1}"
+        while name.lower() in used_names:
+            name = f"{name[:28]} {i + 1}"
+        used_names.add(name.lower())
         ws = wb.create_sheet(name)
+        ws.sheet_view.showGridLines = False
+        ws.sheet_view.zoomScale = 110
         columns = [str(c) for c in spec.get("columns") or []]
-        rows = spec.get("rows") or []
+        rows = [r if isinstance(r, list) else [r] for r in spec.get("rows") or []]
         if len(rows) > MAX_ROWS:
             raise ValueError(f"too many rows (max {MAX_ROWS})")
+        width = max(len(columns), max((len(r) for r in rows), default=0)) or 1
+        first_data = 2 if columns else 1
         if columns:
             ws.append(columns)
+            ws.row_dimensions[1].height = 26
             for cell in ws[1]:
-                cell.font = Font(bold=True, color="FFFFFF")
-                cell.fill = PatternFill("solid", fgColor=ACCENT)
-                cell.alignment = Alignment(vertical="center")
+                cell.font = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
+                cell.fill = PatternFill("solid", fgColor=_HEADER_FILL)
+                cell.alignment = Alignment(vertical="center", horizontal="left", wrap_text=True, indent=1)
+                cell.border = grid
             ws.freeze_panes = "A2"
-        for row in rows:
-            ws.append([_cell_value(v) for v in (row if isinstance(row, list) else [row])])
 
-        width = max(len(columns), max((len(r) for r in rows if isinstance(r, list)), default=0))
-        first_data = 2 if columns else 1
-        for col in range(1, width + 1):
-            letter = get_column_letter(col)
-            longest = max((len(str(c.value)) for c in ws[letter] if c.value is not None), default=8)
-            ws.column_dimensions[letter].width = min(max(10, longest + 2), 60)
+        # Parse every value once; remember the format each column's typed values asked for.
+        parsed, col_fmts = [], [dict() for _ in range(width)]
+        for row in rows:
+            out = []
+            for c, v in enumerate(row):
+                value, fmt = _parse_cell(v)
+                if isinstance(value, (int, float)) and value < 0:
+                    fmt = _signed(fmt)
+                out.append((value, fmt))
+                if fmt and c < width:
+                    col_fmts[c][fmt] = col_fmts[c].get(fmt, 0) + 1
+            parsed.append(out)
+        col_fmt = [max(f, key=f.get) if f else None for f in col_fmts]
+        for c in range(width):
+            if any(c < len(row) and isinstance(row[c][0], (int, float)) and row[c][0] < 0 for row in parsed):
+                col_fmt[c] = _signed(col_fmt[c])
+        letter_fmt = {get_column_letter(c + 1): f for c, f in enumerate(col_fmt) if f}
+
+        total_rows = set()
+        for r, row in enumerate(parsed):
+            ws.append([v for v, _ in row])
+            excel_row = first_data + r
+            first_text = next((v for v, _ in row if v not in (None, "")), "")
+            if isinstance(first_text, str) and _TOTAL_RE.match(first_text):
+                total_rows.add(excel_row)
+            for c, (value, fmt) in enumerate(row):
+                cell = ws.cell(row=excel_row, column=c + 1)
+                fmt = fmt or col_fmt[c] if c < width else fmt
+                if isinstance(value, str) and value.startswith("=") and not (c < width and col_fmt[c]):
+                    refs = {letter_fmt.get(L) for L in _formula_refs(value)}
+                    up = value.upper()
+                    header = columns[c].lower() if c < len(columns) else ""
+                    if "/" in up and ("%" in header or "percent" in header or "share" in header or "used" in header
+                                      or "margin" in header or "growth" in header or "rate" in header):
+                        fmt = "0.0%"
+                    elif len(refs) == 1 and None not in refs and "/" not in up and "*" not in up.split("(")[0]:
+                        fmt = refs.pop()
+                        if "-" in up.lstrip("=-"):
+                            fmt = _signed(fmt)  # a difference can be negative
+                if fmt:
+                    cell.number_format = fmt
         for col_name, fmt in (spec.get("column_formats") or {}).items():
             if col_name in columns:
                 letter = get_column_letter(columns.index(col_name) + 1)
                 for cell in ws[letter][first_data - 1:]:
                     cell.number_format = fmt
+
+        # Table look: light grid, zebra rows, numbers on the right, a bold total row.
+        last_row = ws.max_row
+        for r in range(first_data, last_row + 1):
+            total = r in total_rows
+            for c in range(1, width + 1):
+                cell = ws.cell(row=r, column=c)
+                cell.border = total_border if total else grid
+                numeric = isinstance(cell.value, (int, float)) or (isinstance(cell.value, str) and cell.value.startswith("="))
+                long_text = isinstance(cell.value, str) and not numeric and len(cell.value) > 50
+                cell.alignment = Alignment(vertical="center", horizontal="right" if numeric else "left",
+                                           wrap_text=long_text, indent=0 if numeric else 1)
+                if total:
+                    cell.font = Font(name="Calibri", bold=True)
+                    cell.fill = PatternFill("solid", fgColor=_TOTAL_FILL)
+                elif (r - first_data) % 2 == 1:
+                    cell.fill = PatternFill("solid", fgColor=_ZEBRA)
+            ws.row_dimensions[r].height = None if any(
+                isinstance(ws.cell(row=r, column=c).value, str) and len(ws.cell(row=r, column=c).value) > 50
+                for c in range(1, width + 1)) else 20
+
+        for col in range(1, width + 1):
+            letter = get_column_letter(col)
+            lengths = []
+            for cell in ws[letter]:
+                v = cell.value
+                if v is None:
+                    continue
+                if isinstance(v, str) and v.startswith("="):
+                    lengths.append(12)
+                elif isinstance(v, (int, float)) and not isinstance(v, bool):
+                    lengths.append(len(f"{v:,.2f}") + 2)
+                elif hasattr(v, "year"):
+                    lengths.append(12)
+                else:
+                    lengths.append(min(len(str(v)), 50))
+            header_len = len(columns[col - 1]) + 3 if col <= len(columns) else 0
+            ws.column_dimensions[letter].width = min(max(10, header_len, max(lengths, default=8) + 3), 52)
         if columns and rows:
-            ws.auto_filter.ref = f"A1:{get_column_letter(width)}{ws.max_row}"
+            ws.auto_filter.ref = f"A1:{get_column_letter(width)}{last_row}"
+        ws.page_setup.orientation = "landscape" if width > 5 else "portrait"
+        ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.print_title_rows = "1:1" if columns else None
+        ws.oddFooter.center.text = "&A  ·  Page &P of &N"
 
         chart_spec = spec.get("chart")
         if chart_spec and columns and rows:
             kind = chart_spec.get("type", "bar")
             chart = {"line": LineChart, "pie": PieChart}.get(kind, BarChart)()
             chart.title = chart_spec.get("title")
-            chart.height, chart.width = 9, 18
+            chart.height, chart.width = 9.5, 18
+            chart.style = 10
             cat_col = columns.index(chart_spec["category_column"]) + 1 if chart_spec.get("category_column") in columns else 1
             value_cols = [columns.index(c) + 1 for c in chart_spec.get("value_columns") or [] if c in columns] or \
+                         [c for c in range(2, width + 1) if c != cat_col and
+                          isinstance(ws.cell(row=first_data, column=c).value, (int, float))][:3] or \
                          [c for c in range(1, width + 1) if c != cat_col][:1]
+            if kind == "pie":
+                value_cols = value_cols[:1]
+            # A total row would dwarf every other bar: chart the data rows only.
+            data_last = last_row
+            while data_last in total_rows and data_last > first_data:
+                data_last -= 1
             for vc in value_cols:
-                chart.add_data(Reference(ws, min_col=vc, min_row=1, max_row=ws.max_row), titles_from_data=True)
-            chart.set_categories(Reference(ws, min_col=cat_col, min_row=2, max_row=ws.max_row))
+                chart.add_data(Reference(ws, min_col=vc, min_row=1, max_row=data_last), titles_from_data=True)
+            chart.set_categories(Reference(ws, min_col=cat_col, min_row=2, max_row=data_last))
+            colors = [ACCENT, "22C55E", "F59E0B", "0EA5E9", "EC4899", "14B8A6"]
+            if kind == "pie":
+                from openpyxl.chart.series import DataPoint
+                for k in range(data_last - 1):
+                    pt = DataPoint(idx=k)
+                    pt.graphicalProperties.solidFill = colors[k % len(colors)]
+                    chart.series[0].dPt.append(pt)
+                chart.dataLabels = DataLabelList()
+                chart.dataLabels.showPercent = True
+            else:
+                for k, series in enumerate(chart.series):
+                    color = colors[k % len(colors)]
+                    if kind == "line":
+                        series.graphicalProperties.line.solidFill = color
+                        series.graphicalProperties.line.width = 28575
+                        series.smooth = False
+                    else:
+                        series.graphicalProperties.solidFill = color
+                        series.graphicalProperties.line.solidFill = color
+                if kind != "line":
+                    chart.gap_width = 60
+                # openpyxl hides both axes by default, which leaves Excel charts with no labels.
+                chart.x_axis.delete = False
+                chart.y_axis.delete = False
+                from openpyxl.chart.shapes import GraphicalProperties
+                from openpyxl.drawing.line import LineProperties
+                chart.y_axis.majorGridlines.spPr = GraphicalProperties(ln=LineProperties(solidFill="E5E7EB"))
+                fmt = ws.cell(row=first_data, column=value_cols[0]).number_format
+                if fmt and fmt != "General":
+                    chart.y_axis.number_format = fmt
+                chart.legend.position = "b" if len(value_cols) > 1 else chart.legend.position
+                if len(value_cols) == 1:
+                    chart.legend = None
             ws.add_chart(chart, f"{get_column_letter(width + 2)}2")
     buf = io.BytesIO()
     wb.save(buf)
@@ -166,10 +369,10 @@ def build_xlsx(sheets: List[dict]) -> bytes:
 
 
 # ------------------------------------------------------------- PowerPoint
-THEMES = {
-    "dark": {"bg": "0B0D14", "title": "FFFFFF", "text": "D1D5DB", "accent": ACCENT, "muted": "9CA3AF"},
-    "light": {"bg": "FFFFFF", "title": "111827", "text": "374151", "accent": ACCENT, "muted": "6B7280"},
-}
+# Chat decks use the same designed renderer as the Decks page (deck_render), so a deck made in chat
+# looks as good as one made there. "dark"/"light" are the old theme names.
+THEME_ALIASES = {"dark": "aurora", "light": "snow"}
+_CLOSING_RE = re.compile(r"^\s*(thank\s*you|thanks|questions\??|q\s*&\s*a|dhanyavaad|shukriya)\b", re.I)
 
 
 def _bullet_items(items) -> List[tuple]:
@@ -184,108 +387,61 @@ def _bullet_items(items) -> List[tuple]:
     return out
 
 
-def build_pptx(slides: List[dict], title: str = "", theme: str = "dark") -> bytes:
-    from pptx import Presentation
-    from pptx.dml.color import RGBColor
-    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-    from pptx.util import Inches, Pt
+def _flat_bullets(items) -> List[str]:
+    """Nested bullets become "Parent: child" so nothing is lost on a one-level slide."""
+    out = []
+    for text, level in _bullet_items(items):
+        if not text:
+            continue
+        if level and out and len(out[-1]) + len(text) < 120:
+            out[-1] = f"{out[-1]} — {text}"
+        else:
+            out.append(text)
+    return out
+
+
+def _to_deck_slide(spec: dict, index: int, total: int) -> dict:
+    spec = spec if isinstance(spec, dict) else {"title": str(spec)}
+    layout = str(spec.get("layout") or "bullets").strip().lower().replace("-", "_").replace(" ", "_")
+    slide = dict(spec)
+    slide["bullets"] = _flat_bullets(spec.get("bullets"))
+    if layout == "image":
+        layout = "image_right"
+    if layout in ("title", "cover") or (index == 0 and layout == "bullets" and not slide["bullets"]):
+        slide["layout"] = "cover"
+    elif layout in ("two_column", "comparison"):
+        slide["layout"] = "comparison"
+        for side in ("left", "right"):
+            col = spec.get(side)
+            if not isinstance(col, dict):
+                slide[side] = {"title": spec.get(f"{side}_title") or "", "bullets": _flat_bullets(col)}
+    elif layout == "quote":
+        slide["quote"] = spec.get("quote") or spec.get("title")
+        slide["author"] = spec.get("author") or spec.get("subtitle") or ""
+        slide["subtitle"] = ""
+    elif layout == "bullets" and index == total - 1 and total > 2 and _CLOSING_RE.match(str(spec.get("title") or "")) \
+            and len(slide["bullets"]) <= 1:
+        slide["layout"] = "closing"
+        slide["subtitle"] = spec.get("subtitle") or (slide["bullets"][0] if slide["bullets"] else "")
+    else:
+        slide["layout"] = layout
+    return slide
+
+
+def build_pptx(slides: List[dict], title: str = "", theme: str = "dark", pictures: dict = None) -> bytes:
+    import deck_render
 
     if not slides:
         raise ValueError("at least one slide is required")
     if len(slides) > MAX_SLIDES:
         raise ValueError(f"too many slides (max {MAX_SLIDES})")
-    t = THEMES.get(theme, THEMES["dark"])
-    rgb = lambda h: RGBColor.from_string(h)  # noqa: E731
-
-    prs = Presentation()
-    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
-    W, H = prs.slide_width, prs.slide_height
-    blank = prs.slide_layouts[6]
-    if title:
-        prs.core_properties.title = title
-
-    def text_box(slide, x, y, w, h, lines, size, color, bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
-        tf = slide.shapes.add_textbox(x, y, w, h).text_frame
-        tf.word_wrap = True
-        tf.vertical_anchor = anchor
-        for i, (txt, level) in enumerate(lines):
-            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.alignment = align
-            p.space_after = Pt(size * 0.45)
-            run = p.add_run()
-            run.text = txt
-            run.font.size = Pt(size - 2 * level)
-            run.font.bold = bold
-            run.font.color.rgb = rgb(color)
-        return tf
-
-    def bullets(slide, x, y, w, h, items, size=22):
-        lines = [(("    " * lvl) + ("•  " if lvl == 0 else "–  ") + txt, lvl) for txt, lvl in _bullet_items(items)]
-        if lines:
-            text_box(slide, x, y, w, h, lines, size, t["text"])
-
-    for spec in slides:
-        s = prs.slides.add_slide(blank)
-        bg = s.background.fill
-        bg.solid()
-        bg.fore_color.rgb = rgb(t["bg"])
-        layout = spec.get("layout", "bullets")
-        heading = str(spec.get("title") or "")
-
-        if layout in ("title", "section"):
-            text_box(s, Inches(1), Inches(2.3), W - Inches(2), Inches(1.6), [(heading, 0)], 48 if layout == "title" else 40,
-                     t["title"], bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.BOTTOM)
-            bar = s.shapes.add_shape(1, (W - Inches(1.2)) // 2, Inches(4.1), Inches(1.2), Inches(0.08))
-            bar.fill.solid(); bar.fill.fore_color.rgb = rgb(t["accent"]); bar.line.fill.background()
-            if spec.get("subtitle"):
-                text_box(s, Inches(1.5), Inches(4.4), W - Inches(3), Inches(1.2), [(str(spec["subtitle"]), 0)], 22,
-                         t["muted"], align=PP_ALIGN.CENTER)
-        elif layout == "quote":
-            text_box(s, Inches(1.5), Inches(1.8), W - Inches(3), Inches(3), [(f"“{spec.get('quote') or heading}”", 0)], 34,
-                     t["title"], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-            if spec.get("subtitle"):
-                text_box(s, Inches(1.5), Inches(5), W - Inches(3), Inches(0.8), [(f"— {spec['subtitle']}", 0)], 20,
-                         t["muted"], align=PP_ALIGN.CENTER)
-        else:
-            text_box(s, Inches(0.7), Inches(0.5), W - Inches(1.4), Inches(1), [(heading, 0)], 34, t["title"], bold=True)
-            bar = s.shapes.add_shape(1, Inches(0.7), Inches(1.45), Inches(0.9), Inches(0.06))
-            bar.fill.solid(); bar.fill.fore_color.rgb = rgb(t["accent"]); bar.line.fill.background()
-            top, body_h = Inches(1.8), H - Inches(2.4)
-            if layout == "two_column":
-                col_w = (W - Inches(1.4) - Inches(0.6)) // 2
-                for j, side in enumerate(("left", "right")):
-                    x = Inches(0.7) + j * (col_w + Inches(0.6))
-                    y = top
-                    if spec.get(f"{side}_title"):
-                        text_box(s, x, top, col_w, Inches(0.6), [(str(spec[f"{side}_title"]), 0)], 24, t["accent"], bold=True)
-                        y = top + Inches(0.7)
-                    bullets(s, x, y, col_w, body_h, spec.get(side), 20)
-            elif layout == "table" and spec.get("table"):
-                tbl = spec["table"]
-                cols, rows = tbl.get("columns") or [], (tbl.get("rows") or [])[:18]
-                n_cols = max(len(cols), max((len(r) for r in rows), default=0)) or 1
-                shape = s.shapes.add_table(len(rows) + (1 if cols else 0), n_cols, Inches(0.7), top,
-                                           W - Inches(1.4), Inches(0.45) * (len(rows) + 1))
-                table = shape.table
-                all_rows = ([cols] if cols else []) + rows
-                for r, row in enumerate(all_rows):
-                    for c in range(n_cols):
-                        cell = table.cell(r, c)
-                        cell.text = str(row[c]) if c < len(row) and row[c] is not None else ""
-                        para = cell.text_frame.paragraphs[0]
-                        para.runs[0].font.size = Pt(14) if para.runs else None
-                        if r == 0 and cols:
-                            cell.fill.solid(); cell.fill.fore_color.rgb = rgb(t["accent"])
-                            if para.runs:
-                                para.runs[0].font.bold = True
-                                para.runs[0].font.color.rgb = rgb("FFFFFF")
-            else:
-                bullets(s, Inches(0.7), top, W - Inches(1.4), body_h, spec.get("bullets"))
-        if spec.get("notes"):
-            s.notes_slide.notes_text_frame.text = str(spec["notes"])
-    buf = io.BytesIO()
-    prs.save(buf)
-    return buf.getvalue()
+    theme_id = THEME_ALIASES.get((theme or "dark").lower(), (theme or "").lower())
+    if theme_id not in deck_render.THEME_IDS:
+        theme_id = deck_render.DEFAULT_THEME
+    deck = [_to_deck_slide(s, i, len(slides)) for i, s in enumerate(slides)]
+    if not title:
+        title = next((str(s.get("title")) for s in deck if s.get("layout") == "cover" and s.get("title")), "")
+    return deck_render.build_deck_pptx(title, deck, theme_id, (pictures or {}).get if pictures else None)
 
 
 # ------------------------------------------------------------------- Word
@@ -307,6 +463,13 @@ def normalize_markdown(markdown: str) -> str:
     text = (markdown or "").replace("\r\n", "\n")
     text = re.sub(r"(?m)^( {0,3})(#{1,6})(?=[^#\s])", r"\1\2 ", text)
     return text
+
+
+def _same_title(a: str, b: str) -> bool:
+    """ "Solar Energy in India" and "Solar Energy in India: A Short Report" name the same document."""
+    norm = lambda x: re.sub(r"[^\w]+", " ", (x or "").lower()).strip()  # noqa: E731
+    a, b = norm(a), norm(b)
+    return bool(a and b) and (a == b or b.startswith(a) or a.startswith(b))
 
 
 def _set_xml(parent, tag: str, **attrs):
@@ -456,7 +619,10 @@ def _info_bar(p):
     _right_tab(p)
 
 
-def _inline_runs(paragraph, inline_token, question: bool = False, bar: bool = False):
+def _inline_segments(inline_token, question: bool = False, bar: bool = False) -> list:
+    """Inline Markdown as segments shared by the Word and PDF builders:
+    ("text", text, bold, italic, strike, code) | ("link", url, text). "\n" breaks a line, "\t" jumps to the
+    right margin (marks in a question, the right half of a Time | Marks bar)."""
     bold = italic = strike = False
     link = None
     link_text = []
@@ -501,11 +667,22 @@ def _inline_runs(paragraph, inline_token, question: bool = False, bar: bool = Fa
                     bold = not bold
                 if part:
                     segs.append(("text", part, bold, italic, strike, False))
+    merged = []
+    for seg in segs:
+        if merged and seg[0] == "text" and merged[-1][0] == "text" and merged[-1][2:] == seg[2:]:
+            merged[-1] = ("text", merged[-1][1] + seg[1]) + seg[2:]
+        else:
+            merged.append(seg)
+    segs = merged
     if question:
         segs = _question_layout(segs)
     if bar:
         segs = [(seg[0], re.sub(r"\s*\|\s*", "\t", seg[1])) + seg[2:] if seg[0] == "text" else seg for seg in segs]
-    for seg in segs:
+    return segs
+
+
+def _inline_runs(paragraph, inline_token, question: bool = False, bar: bool = False):
+    for seg in _inline_segments(inline_token, question, bar):
         if seg[0] == "link":
             _add_hyperlink(paragraph, seg[1], seg[2])
         else:
@@ -754,7 +931,7 @@ def build_docx(markdown: str, title: str = "") -> bytes:
     lead_text = tokens[tokens.index(first) + 1].content.strip().strip("*") if lead_h1 else ""
     paper = _is_paper(title or lead_text, markdown)
     student_box = paper and not re.search(r"(?im)\bname\s*[:_]", markdown or "")
-    if title and not (lead_h1 and lead_text.lower() == title.strip().lower()):
+    if title and not (lead_h1 and _same_title(title, lead_text)):
         t = doc.add_paragraph(title, style="Title")
         if paper:
             t.alignment = 1  # centred, like the top of a printed paper
@@ -869,6 +1046,8 @@ def build_docx(markdown: str, title: str = "") -> bytes:
                 run.font.size = Pt(10)
                 if n < len(lines) - 1:
                     run.add_break(WD_BREAK.LINE)
+        elif tok.type == "hr" and paper and "_" in (tok.markup or ""):
+            _answer_lines(doc, 1, 0.63 * len(lists))
         elif tok.type == "hr":
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(4)
@@ -898,8 +1077,12 @@ def build_docx(markdown: str, title: str = "") -> bytes:
 
 
 # -------------------------------------------------------------------- PDF
+# Noto Sans ships with the app (assets/fonts/noto) so PDFs look the same everywhere and Indian scripts
+# render: Hindi, Marathi, Bengali, Tamil, Telugu, Gujarati, Kannada, Malayalam, Punjabi and Urdu.
+_NOTO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "fonts", "noto")
+_NOTO_SCRIPTS = ["Devanagari", "Bengali", "Tamil", "Telugu", "Gujarati", "Kannada", "Malayalam", "Gurmukhi"]
 _FONT_DIRS = ["/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/dejavu", "/usr/share/fonts/TTF"]
-# Wide-coverage fonts used for glyphs DejaVu lacks (CJK). Extend with PDF_FALLBACK_FONTS=path1:path2.
+# Wide-coverage fonts used for glyphs the bundled fonts lack (CJK). Extend with PDF_FALLBACK_FONTS=path1:path2.
 _FALLBACK_FONTS = [
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf",
@@ -916,107 +1099,383 @@ def _find_font():
     return None
 
 
+def _setup_pdf_fonts(pdf) -> tuple:
+    """Register fonts on the FPDF object. Returns (body family, mono family, unicode ok)."""
+    noto = os.path.join(_NOTO_DIR, "NotoSans-Regular.ttf")
+    dejavu = _find_font()
+    fallbacks = []
+    if os.path.exists(noto):
+        for style, name in (("", "Regular"), ("B", "Bold"), ("I", "Italic"), ("BI", "BoldItalic")):
+            path = os.path.join(_NOTO_DIR, f"NotoSans-{name}.ttf")
+            pdf.add_font("Noto", style, path if os.path.exists(path) else noto)
+        family = "Noto"
+        for script in _NOTO_SCRIPTS + ["Arabic"]:
+            base = f"NotoNaskh{script}" if script == "Arabic" else f"NotoSans{script}"
+            regular = os.path.join(_NOTO_DIR, f"{base}-Regular.ttf")
+            if not os.path.exists(regular):
+                continue
+            pdf.add_font(script, "", regular)
+            bold = os.path.join(_NOTO_DIR, f"{base}-Bold.ttf")
+            pdf.add_font(script, "B", bold if os.path.exists(bold) else regular)
+            fallbacks.append(script)
+    elif dejavu:
+        regular = os.path.join(dejavu, "DejaVuSans.ttf")
+        pdf.add_font("DejaVu", "", regular)
+        for style, fname in (("B", "DejaVuSans-Bold.ttf"), ("I", "DejaVuSans-Oblique.ttf"),
+                             ("BI", "DejaVuSans-BoldOblique.ttf")):
+            path = os.path.join(dejavu, fname)
+            pdf.add_font("DejaVu", style, path if os.path.exists(path) else regular)
+        family = "DejaVu"
+    else:
+        return "Helvetica", "Courier", False
+    mono = "Courier"
+    if dejavu:
+        mono_path = os.path.join(dejavu, "DejaVuSansMono.ttf")
+        if os.path.exists(mono_path):
+            pdf.add_font("DejaVuMono", "", mono_path)
+            mono = "DejaVuMono"
+        if family != "DejaVu":
+            # Symbols and arrows Noto Sans lacks (✓ ★ → ∑ ...).
+            pdf.add_font("DejaVuFallback", "", os.path.join(dejavu, "DejaVuSans.ttf"))
+            fallbacks.append("DejaVuFallback")
+    extra = [p for p in os.environ.get("PDF_FALLBACK_FONTS", "").split(":") if p]
+    for i, path in enumerate(extra + _FALLBACK_FONTS):
+        if os.path.exists(path) and path.lower().endswith((".ttf", ".otf")):
+            try:
+                pdf.add_font(f"Fallback{i}", "", path)
+                fallbacks.append(f"Fallback{i}")
+            except Exception:
+                pass
+    if fallbacks:
+        pdf.set_fallback_fonts(fallbacks, exact_match=False)
+    try:
+        # Shaping joins Indian-script letters and matras correctly (needs uharfbuzz).
+        pdf.set_text_shaping(True)
+    except Exception:
+        pass
+    return family, mono, True
+
+
 class _PdfRenderer:
-    """Renders markdown-it tokens with fpdf2 primitives (full control over layout)."""
+    """Renders markdown-it tokens with fpdf2 primitives in the same house style as the Word builder."""
 
-    INK, ACCENT, MUTED = (17, 24, 39), (79, 70, 229), (75, 85, 99)
-    HEADINGS = {1: (22, INK), 2: (16, ACCENT), 3: (13.5, INK), 4: (12, INK), 5: (11, MUTED), 6: (10.5, MUTED)}
+    INK, ACCENT, MUTED, SOFT = (17, 24, 39), (79, 70, 229), (75, 85, 99), (107, 114, 128)
+    TINT, RULE = (238, 240, 251), (199, 203, 239)
+    HEADINGS = {1: (19, INK), 2: (15, ACCENT), 3: (12.5, INK), 4: (11.5, INK), 5: (11, MUTED), 6: (10.5, MUTED)}
+    BODY = 11
 
-    def __init__(self, pdf, family: str, mono: str):
-        self.pdf, self.family, self.mono = pdf, family, mono
+    def __init__(self, pdf, family: str, mono: str, paper: bool = False):
+        self.pdf, self.family, self.mono, self.paper = pdf, family, mono, paper
         self.base_margin = pdf.l_margin
 
     def _font(self, style="", size=11, mono=False):
         self.pdf.set_font(self.mono if mono else self.family, style=style if not mono else "", size=size)
 
-    def inline(self, tok, size=11, color=INK, base_style=""):
+    def _right(self):
+        return self.pdf.w - self.pdf.r_margin
+
+    def _room(self, mm: float):
+        """Start a new page when less than `mm` is left, so a heading never sits alone at the bottom."""
         pdf = self.pdf
+        if pdf.get_y() + mm > pdf.h - pdf.b_margin:
+            pdf.add_page()
+
+    def write_segs(self, segs, size=None, color=None, base_style="", align_center=False):
+        pdf = self.pdf
+        size = size or self.BODY
+        color = color or self.INK
         h = size * 0.52
-        bold = italic = False
-        link = None
-        for child in tok.children or []:
-            t = child.type
-            if t == "strong_open": bold = True
-            elif t == "strong_close": bold = False
-            elif t == "em_open": italic = True
-            elif t == "em_close": italic = False
-            elif t == "link_open": link = child.attrs.get("href")
-            elif t == "link_close": link = None
-            elif t in ("softbreak",): pdf.write(h, " ")
-            elif t == "hardbreak": pdf.ln(h)
-            elif t in ("text", "code_inline", "image"):
-                text = child.content if t != "image" else f"[image: {child.content}]"
-                style = base_style + ("B" if bold else "") + ("I" if italic else "")
-                style = "".join(sorted(set(style), key="BIU".index))
-                if t == "code_inline":
-                    self._font(size=size * 0.88, mono=True)
-                    pdf.set_text_color(55, 48, 163)
-                elif link:
-                    self._font("U" + style.replace("U", ""), size)
-                    pdf.set_text_color(*self.ACCENT)
-                else:
-                    self._font(style, size)
-                    pdf.set_text_color(*color)
-                pdf.write(h, text, link=link or "")
+        if align_center:
+            text = "".join(seg[1] if seg[0] == "text" else seg[2] for seg in segs).replace("\t", "  ")
+            bold = all(seg[2] for seg in segs if seg[0] == "text" and seg[1].strip()) or "B" in base_style
+            self._font("B" if bold else base_style.replace("B", ""), size)
+            pdf.set_text_color(*color)
+            pdf.multi_cell(0, h * 1.05, text.strip(), align="C", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(*self.INK)
+            return
+        # Split into lines at "\n"; within a line, pieces after a "\t" sit against the right margin.
+        lines = [[[], []]]
+        for seg in segs:
+            if seg[0] == "link":
+                lines[-1][1 if lines[-1][1] else 0].append(seg)
+                continue
+            for part in re.split(r"(\n|\t)", seg[1]):
+                if part == "\n":
+                    lines.append([[], []])
+                elif part == "\t":
+                    lines[-1][1].append(("text", "") + seg[2:])  # marks the jump even if nothing follows yet
+                elif part:
+                    lines[-1][1 if lines[-1][1] else 0].append(("text", part) + seg[2:])
+        for n, (left, right) in enumerate(lines):
+            if n:
+                pdf.ln(h + 0.6)
+                pdf.set_x(pdf.l_margin)
+            for seg in left:
+                self._piece(seg, size, color, base_style, h)
+            right = [seg for seg in right if seg[0] == "link" or seg[1]]
+            if right:
+                width = 0
+                for seg in right:
+                    self._piece(seg, size, color, base_style, h, measure=True)
+                    width += pdf.get_string_width(seg[2] if seg[0] == "link" else seg[1])
+                x = self._right() - width
+                if x < pdf.get_x() + 3:
+                    pdf.ln(h)
+                pdf.set_x(max(pdf.l_margin, x))
+                for seg in right:
+                    self._piece(seg, size, color, base_style, h, cell=True)
         pdf.set_text_color(*self.INK)
 
-    def render(self, tokens):
+    def _piece(self, seg, size, color, base_style, h, measure=False, cell=False):
+        """Write one segment (or only set its font, to measure it)."""
+        pdf = self.pdf
+        if seg[0] == "link":
+            self._font("U" + ("B" if "B" in base_style else ""), size)
+            if not measure:
+                pdf.set_text_color(*self.ACCENT)
+                first_word = (seg[2] or "").split(" ")[0]
+                if pdf.get_x() > pdf.l_margin + 1 and pdf.get_x() + pdf.get_string_width(first_word) > self._right():
+                    pdf.ln(h)
+                    pdf.set_x(pdf.l_margin)
+                pdf.write(h, seg[2], link=seg[1] if re.match(r"https?://|mailto:", seg[1] or "") else "")
+                pdf.set_text_color(*self.INK)
+            return
+        text, bold, italic, _strike, code = seg[1:6]
+        style = base_style + ("B" if bold else "") + ("I" if italic else "")
+        style = "".join(sorted(set(style), key="BIU".index))
+        if code:
+            self._font(size=size * 0.88, mono=True)
+            pdf.set_text_color(55, 48, 163)
+        else:
+            self._font(style, size)
+            pdf.set_text_color(*(self.ACCENT if _MARKS_RE.fullmatch(text.strip()) else color))
+        if measure:
+            return
+        if cell:  # right-margin pieces never wrap
+            pdf.cell(pdf.get_string_width(text) + 0.4, h, text)
+            return
+        first = re.match(r"\S+", text)
+        if first and pdf.get_x() > pdf.l_margin + 1 and \
+                pdf.get_x() + pdf.get_string_width(first.group()) > self._right() and len(first.group()) < 30:
+            pdf.ln(h)  # a word that doesn't fit moves to the next line instead of being cut in two
+            pdf.set_x(pdf.l_margin)
+        pdf.write(h, text)
+
+    def title_block(self, text: str):
+        pdf = self.pdf
+        self._font("B", 23)
+        pdf.set_text_color(*self.INK)
+        pdf.multi_cell(0, 10, text, align="C" if self.paper else "L", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1.5)
+        pdf.set_draw_color(*self.ACCENT)
+        pdf.set_line_width(0.8)
+        y = pdf.get_y()
+        if self.paper:
+            mid = pdf.w / 2
+            pdf.line(mid - 12, y, mid + 12, y)
+        else:
+            pdf.line(pdf.l_margin, y, pdf.l_margin + 22, y)
+        pdf.ln(7)
+
+    def student_box(self):
+        pdf = self.pdf
+        x, y, w = pdf.l_margin, pdf.get_y(), pdf.w - pdf.l_margin - pdf.r_margin
+        pdf.set_fill_color(248, 249, 253)
+        pdf.set_draw_color(*self.RULE)
+        pdf.set_line_width(0.3)
+        pdf.rect(x, y, w, 22, style="DF")
+        self._font("B", 10.5)
+        pdf.set_text_color(55, 65, 81)
+        pdf.set_draw_color(156, 163, 175)
+        pdf.set_line_width(0.25)
+        for row, (left, right) in enumerate((("Name", "Class"), ("Roll No.", "Date"))):
+            ty = y + 8 + row * 9
+            for col, label in enumerate((left, right)):
+                lx = x + 5 + col * w * 0.58
+                end = x + w * (0.54 if col == 0 else 1) - 5
+                pdf.set_xy(lx, ty - 3.2)
+                pdf.cell(pdf.get_string_width(label + ": ") + 1, 5, label + ":")
+                pdf.line(pdf.get_x() + 1, ty + 1.2, end, ty + 1.2)
+        pdf.set_text_color(*self.INK)
+        pdf.set_xy(pdf.l_margin, y + 28)
+
+    def info_bar(self, segs):
+        pdf = self.pdf
+        pdf.set_draw_color(31, 41, 55)
+        pdf.set_line_width(0.35)
+        y = pdf.get_y() + 1
+        pdf.line(pdf.l_margin, y, self._right(), y)
+        pdf.set_xy(pdf.l_margin, y + 2)
+        self.write_segs(segs, 10.5, base_style="B")
+        pdf.ln(6.5)
+        pdf.line(pdf.l_margin, pdf.get_y(), self._right(), pdf.get_y())
+        pdf.ln(5)
+
+    def answer_lines(self, count: int):
+        pdf = self.pdf
+        pdf.set_draw_color(156, 163, 175)
+        pdf.set_line_width(0.25)
+        for _ in range(max(1, min(count, 20))):
+            self._room(9)
+            pdf.ln(8)
+            pdf.line(pdf.l_margin, pdf.get_y(), self._right(), pdf.get_y())
+        pdf.ln(4)
+
+    def heading(self, level: int, segs, new_page: bool = False, centre: bool = False):
+        pdf = self.pdf
+        size, color = self.HEADINGS[level]
+        if self.paper and level == 2:
+            color = self.INK
+        if new_page and pdf.get_y() > pdf.t_margin + 1:
+            pdf.add_page()
+        else:
+            self._room(28)
+            pdf.ln(5 if level <= 2 else 3)
+        pdf.set_x(pdf.l_margin)
+        if level == 3:
+            # A tinted band with an accent edge, like the Word file's section headings.
+            y, hh = pdf.get_y(), size * 0.52 + 3.2
+            pdf.set_fill_color(*self.TINT)
+            pdf.rect(pdf.l_margin, y, pdf.w - pdf.l_margin - pdf.r_margin, hh, style="F")
+            pdf.set_fill_color(*self.ACCENT)
+            pdf.rect(pdf.l_margin, y, 1.1, hh, style="F")
+            pdf.set_xy(pdf.l_margin + 3.5, y + 1.6)
+            self.write_segs(segs, size, color, "B")
+            pdf.set_y(y + hh)
+            pdf.ln(2.5)
+            return
+        self.write_segs(segs, size, color, "B", align_center=centre)
+        if not centre:
+            pdf.ln(size * 0.52)
+        if level == 1 or (level == 2 and not self.paper):
+            pdf.set_draw_color(*(self.ACCENT if level == 1 else self.RULE))
+            pdf.set_line_width(0.6 if level == 1 else 0.3)
+            y = pdf.get_y() + 0.8
+            pdf.line(pdf.l_margin, y, pdf.l_margin + 18 if level == 1 else self._right(), y)
+            pdf.ln(3.5)
+        else:
+            pdf.ln(2)
+
+    def table(self, rows):
+        pdf = self.pdf
+        from fpdf.fonts import FontFace
+
+        n = max(len(r) for r in rows)
+        rows = [r + [""] * (n - len(r)) for r in rows]
+        body = rows[1:] or rows
+        numeric = [c > 0 and sum(bool(re.fullmatch(r"[-+(]?[₹$€£]?\s?[\d,.]+%?\)?", v.strip())) for v in
+                                 (r[c] for r in body) if v.strip()) * 2 > len(body) for c in range(n)]
+        longest = [max(min(len(r[c]), 40) for r in rows) + 4 for c in range(n)]
+        pdf.ln(1.5)
+        self._font(size=9.5 if n > 4 else 10)
+        pdf.set_draw_color(209, 213, 219)
+        pdf.set_line_width(0.2)
+        with pdf.table(headings_style=FontFace(emphasis="B", color=(255, 255, 255), fill_color=(79, 70, 229)),
+                       line_height=5.4, padding=(1.8, 2.4, 1.8, 2.4), col_widths=tuple(longest),
+                       text_align=tuple("RIGHT" if num else "LEFT" for num in numeric),
+                       cell_fill_color=(246, 247, 254), cell_fill_mode="ROWS", repeat_headings=1) as table:
+            for r in rows:
+                row = table.row()
+                for c in range(n):
+                    row.cell(r[c])
+        pdf.ln(4)
+
+    @staticmethod
+    def _plain(inline_tok) -> str:
+        return "".join(seg[1] if seg[0] == "text" else seg[2] for seg in _inline_segments(inline_tok)).replace("\t", " ")
+
+    def render(self, tokens, title: str = "", student_box: bool = False):
         pdf = self.pdf
         lists = []  # [kind, counter]
         quote = 0
+        seen_block = bool(title)
+        seen_h2 = False
+        item_started = False
         i = 0
         while i < len(tokens):
             tok = tokens[i]
             t = tok.type
             if t == "heading_open":
                 level = int(tok.tag[1])
-                size, color = self.HEADINGS[level]
-                pdf.ln(4 if level <= 2 else 2.5)
-                pdf.set_x(pdf.l_margin)
-                self.inline(tokens[i + 1], size, color, "B")
-                pdf.ln(size * 0.52 + (2.5 if level <= 2 else 1.5))
-                if level == 1:
-                    pdf.set_draw_color(*self.ACCENT)
-                    pdf.set_line_width(0.6)
-                    pdf.line(pdf.l_margin, pdf.get_y() - 1, pdf.l_margin + 18, pdf.get_y() - 1)
-                    pdf.ln(3)
+                inline = tokens[i + 1]
+                text = inline.content.strip("*# ")
+                if level == 1 and not seen_block:
+                    self.title_block(self._plain(inline))
+                    if student_box:
+                        self.student_box()
+                        student_box = False
+                else:
+                    new_page = bool(_NEW_PAGE_HEADINGS.match(text)) and seen_block
+                    centre = self.paper and level == 2
+                    if centre:
+                        new_page = new_page or seen_h2
+                        seen_h2 = True
+                    self.heading(level, _inline_segments(inline), new_page=new_page, centre=centre)
+                seen_block = True
                 i += 3
                 continue
+            seen_block = seen_block or t.endswith("_open") or t in ("fence", "code_block", "hr")
             if t in ("bullet_list_open", "ordered_list_open"):
                 lists.append(["ul" if t == "bullet_list_open" else "ol", int(tok.attrs.get("start", 1) or 1) - 1])
-                pdf.set_left_margin(self.base_margin + 6 * len(lists) + 2 * quote)
+                pdf.set_left_margin(self.base_margin + 6.5 * len(lists) + 6 * quote)
             elif t in ("bullet_list_close", "ordered_list_close"):
                 lists.pop()
-                pdf.set_left_margin(self.base_margin + 6 * len(lists) + (6 if quote else 0))
+                pdf.set_left_margin(self.base_margin + 6.5 * len(lists) + 6 * quote)
                 if not lists:
                     pdf.ln(1.5)
             elif t == "list_item_open":
                 kind = lists[-1]
                 kind[1] += 1
-                marker = f"{kind[1]}." if kind[0] == "ol" else ("•" if len(lists) % 2 else "◦")
-                self._font("B" if kind[0] == "ol" else "", 11)
-                pdf.set_text_color(*self.ACCENT)
-                pdf.set_x(pdf.l_margin - 5.5)
-                pdf.cell(5.5, 5.7, marker)
-                pdf.set_text_color(*self.INK)
-                self._list_item_started = True
+                nxt = tokens[i + 2] if i + 2 < len(tokens) else None
+                own_label = kind[0] == "ul" and nxt is not None and nxt.type == "inline" and \
+                    bool(_OWN_LABEL_RE.match(nxt.content))
+                if kind[0] == "ol":
+                    self._room(14)
+                pdf.set_x(pdf.l_margin)
+                if not own_label:
+                    marker = f"{kind[1]}." if kind[0] == "ol" else ("•" if len(lists) % 2 else "◦")
+                    self._font("B" if kind[0] == "ol" else "", self.BODY)
+                    pdf.set_text_color(*self.ACCENT)
+                    pdf.set_x(pdf.l_margin - 6)
+                    pdf.cell(6, self.BODY * 0.52, marker)
+                    pdf.set_text_color(*self.INK)
+                item_started = True
+            elif t == "list_item_close":
+                if lists and lists[-1][0] == "ol":
+                    pdf.ln(1.2)
             elif t == "blockquote_open":
                 quote += 1
                 pdf.set_left_margin(pdf.l_margin + 6)
                 self._quote_top = pdf.get_y()
             elif t == "blockquote_close":
                 quote -= 1
-                pdf.set_draw_color(199, 210, 254)
+                pdf.set_draw_color(*self.RULE)
                 pdf.set_line_width(1)
                 pdf.line(pdf.l_margin - 3.5, self._quote_top, pdf.l_margin - 3.5, pdf.get_y() - 1.5)
                 pdf.set_left_margin(pdf.l_margin - 6)
+                pdf.ln(1)
             elif t == "paragraph_open":
-                in_item = getattr(self, "_list_item_started", False)
-                if not in_item:
+                inline = tokens[i + 1]
+                lines = [ln for ln in inline.content.split("\n") if ln.strip()]
+                if lines and all(re.fullmatch(r"\\?_[\\_ ]{4,}", ln.strip()) for ln in lines):
+                    self.answer_lines(len(lines))
+                    item_started = False
+                    i += 3
+                    continue
+                if self.paper and not lists and tokens[i - 1].type == "heading_close" and \
+                        inline.content.count("|") == 1 and len(inline.content) < 160:
+                    self.info_bar(_inline_segments(inline, bar=True))
+                    i += 3
+                    continue
+                if not item_started:
                     pdf.set_x(pdf.l_margin)
-                self._list_item_started = False
-                self.inline(tokens[i + 1], 11, self.MUTED if quote else self.INK, "I" if quote else "")
-                pdf.ln(5.7 + (0.6 if lists else 2.2))
+                    if lists:
+                        pdf.ln(0.5)
+                item_started = False
+                question = bool(lists) and lists[-1][0] == "ol"
+                self.write_segs(_inline_segments(inline, question=question), self.BODY,
+                                self.MUTED if quote else self.INK, "I" if quote else "")
+                pdf.ln(self.BODY * 0.52 + (0.9 if lists else 2.6))
                 i += 3
                 continue
             elif t in ("fence", "code_block"):
@@ -1027,12 +1486,14 @@ class _PdfRenderer:
                 pdf.multi_cell(0, 4.6, tok.content.rstrip("\n"), fill=True, padding=(2.5, 3, 2.5, 3),
                                new_x="LMARGIN", new_y="NEXT")
                 pdf.set_text_color(*self.INK)
-                pdf.ln(2.5)
+                pdf.ln(3)
+            elif t == "hr" and self.paper and "_" in (tok.markup or ""):
+                self.answer_lines(1)  # "______" under a question is a line to write on, not a divider
             elif t == "hr":
                 pdf.ln(2)
                 pdf.set_draw_color(209, 213, 219)
                 pdf.set_line_width(0.3)
-                pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+                pdf.line(pdf.l_margin, pdf.get_y(), self._right(), pdf.get_y())
                 pdf.ln(4)
             elif t == "table_open":
                 rows, j = [], i + 1
@@ -1040,22 +1501,10 @@ class _PdfRenderer:
                     if tokens[j].type == "tr_open":
                         rows.append([])
                     elif tokens[j].type == "inline":
-                        rows[-1].append(tokens[j].content)
+                        rows[-1].append(self._plain(tokens[j]))
                     j += 1
-                n = max(len(r) for r in rows)
-                pdf.ln(1)
-                self._font(size=10)
-                pdf.set_draw_color(209, 213, 219)
-                pdf.set_line_width(0.2)
-                from fpdf.fonts import FontFace
-                with pdf.table(headings_style=FontFace(emphasis="B", color=(255, 255, 255), fill_color=(99, 102, 241)),
-                               line_height=5.6, padding=1.6, text_align="LEFT",
-                               cell_fill_color=(248, 250, 252), cell_fill_mode="ROWS") as table:
-                    for r in rows:
-                        row = table.row()
-                        for c in range(n):
-                            row.cell((r[c] if c < len(r) else "").replace("**", "").replace("`", ""))
-                pdf.ln(3)
+                if rows:
+                    self.table(rows)
                 i = j
             i += 1
 
@@ -1063,42 +1512,51 @@ class _PdfRenderer:
 def build_pdf(markdown: str, title: str = "") -> bytes:
     from fpdf import FPDF
 
-    pdf = FPDF(format="A4")
-    pdf.set_margins(20, 20, 20)
-    pdf.set_auto_page_break(True, margin=18)
-    font_dir = _find_font()
-    mono = "Courier"
-    if font_dir:
-        # Unicode font so non-Latin text and symbols render.
-        regular = os.path.join(font_dir, "DejaVuSans.ttf")
-        pdf.add_font("DejaVu", "", regular)
-        for style, fname in (("B", "DejaVuSans-Bold.ttf"), ("I", "DejaVuSans-Oblique.ttf"), ("BI", "DejaVuSans-BoldOblique.ttf")):
-            path = os.path.join(font_dir, fname)
-            pdf.add_font("DejaVu", style, path if os.path.exists(path) else regular)
-        mono_path = os.path.join(font_dir, "DejaVuSansMono.ttf")
-        if os.path.exists(mono_path):
-            pdf.add_font("DejaVuMono", "", mono_path)
-            mono = "DejaVuMono"
-        family = "DejaVu"
-        fallbacks = []
-        extra = [p for p in os.environ.get("PDF_FALLBACK_FONTS", "").split(":") if p]
-        for i, path in enumerate(extra + _FALLBACK_FONTS):
-            if os.path.exists(path) and path.lower().endswith((".ttf", ".otf")):
-                try:
-                    pdf.add_font(f"Fallback{i}", "", path)
-                    fallbacks.append(f"Fallback{i}")
-                except Exception:
-                    pass
-        if fallbacks:
-            pdf.set_fallback_fonts(fallbacks)
-    else:
-        family = "Helvetica"
+    class _Doc(FPDF):
+        doc_title = ""
+        footer_family = "Helvetica"
+
+        def footer(self):
+            self.set_y(-13)
+            self.set_draw_color(229, 231, 235)
+            self.set_line_width(0.2)
+            self.line(self.l_margin_base, self.get_y() - 1.5, self.w - self.r_margin, self.get_y() - 1.5)
+            self.set_font(self.footer_family, "", 8.5)
+            self.set_text_color(107, 114, 128)
+            self.set_x(self.l_margin_base)
+            self.cell(120, 5, self.doc_title[:90])
+            self.set_x(self.w - self.r_margin - 40)
+            self.cell(40, 5, f"Page {self.page_no()} of {{nb}}", align="R")
+
+    pdf = _Doc(format="A4")
+    pdf.set_margins(20, 18, 20)
+    pdf.l_margin_base = 20
+    pdf.set_auto_page_break(True, margin=20)
+    family, mono, unicode_ok = _setup_pdf_fonts(pdf)
+    markdown = normalize_markdown(markdown)
+    if not unicode_ok:
         # Core fonts are Latin-1 only.
-        markdown = (markdown or "").replace("•", "-").encode("latin-1", "replace").decode("latin-1")
-    if title:
-        pdf.set_title(title)
+        markdown = markdown.replace("•", "-").replace("₹", "Rs.").encode("latin-1", "replace").decode("latin-1")
+        title = (title or "").encode("latin-1", "replace").decode("latin-1")
+    pdf.footer_family = family
+    tokens = _md().parse(markdown)
+    first = next((t for t in tokens if t.type != "hr"), None)
+    lead_h1 = first is not None and first.type == "heading_open" and first.tag == "h1"
+    lead_text = tokens[tokens.index(first) + 1].content.strip().strip("*") if lead_h1 else ""
+    paper = _is_paper(title or lead_text, markdown)
+    student_box = paper and not re.search(r"(?im)\bname\s*[:_]", markdown or "")
+    show_title = bool(title) and not (lead_h1 and _same_title(title, lead_text))
+    pdf.doc_title = lead_text if lead_h1 and not show_title else (title or lead_text)
+    if pdf.doc_title:
+        pdf.set_title(pdf.doc_title)
     pdf.set_creator("Krish AI by EmpireX")
+    pdf.set_author("Krish AI")
     pdf.add_page()
-    renderer = _PdfRenderer(pdf, family, mono)
-    renderer.render(_md().parse(normalize_markdown(markdown)))
+    renderer = _PdfRenderer(pdf, family, mono, paper=paper)
+    if show_title:
+        renderer.title_block(title)
+        if student_box:
+            renderer.student_box()
+            student_box = False
+    renderer.render(tokens, title=title if show_title else "", student_box=student_box)
     return bytes(pdf.output())
