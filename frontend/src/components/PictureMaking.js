@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import ThinkingShape from "@/components/ThinkingShape";
 
 /**
- * What the chat shows while Krish makes or edits a picture: a frame in the picture's own shape where saffron and
- * green brush strokes paint in and fade while contour lines ripple out over them ("Painted ripples"), with
+ * What the chat shows while Krish makes or edits a picture: a frame in the picture's own shape that takes turns
+ * between contour lines rippling out and saffron and green brush strokes painting in, with
  * "Creating image · setting the scene" above it and a % counter in the corner. The other animations stay here
  * for LoadingCanvas (the App Builder uses "Gathering light").
  * The finished picture then fades in from a blur in the same spot (see PictureGallery).
@@ -93,7 +93,7 @@ export const ANIMATIONS = [
     for (let i = 0; i < 340; i++) {
       const ph = (t * 0.35 + hash(i, 1)) % 1, r = u * 0.62 * (1 - ph), a = hash(i, 2) * Math.PI * 2 + ph * 3.2;
       c.fillStyle = rgba(i % 4 === 0 ? GRN : i % 3 === 0 ? GOLD : SAF, clamp(ph * 1.6) * 0.85 * (1 - ph * 0.6));
-      c.beginPath(); c.arc(cx + Math.cos(a) * r, cy + Math.sin(a) * r, u * (0.003 + 0.007 * hash(i, 3)) * (1.2 - ph * 0.6), 0, 7); c.fill();
+      c.beginPath(); c.arc(cx + Math.cos(a) * r, cy + Math.sin(a) * r, Math.min(u * (0.003 + 0.007 * hash(i, 3)), 3 + 6 * hash(i, 3)) * (1.2 - ph * 0.6), 0, 7); c.fill();
     }
     const gr = c.createRadialGradient(cx, cy, 0, cx, cy, u * 0.16); gr.addColorStop(0, rgba(GOLD, 0.55 + 0.2 * Math.sin(t * 3))); gr.addColorStop(1, rgba(SAF, 0));
     c.fillStyle = gr; c.fillRect(0, 0, w, h);
@@ -149,8 +149,10 @@ export const ANIMATIONS = [
 function fill(c, w, h, bg) { if (!bg) { c.clearRect(0, 0, w, h); return; } c.fillStyle = rgba(bg, 1); c.fillRect(0, 0, w, h); }
 function round(c, x, y, w, h, r) { if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); }
 
-// Pictures use "Painted ripples" (brush strokes with contour lines); the App Builder uses "Gathering light".
-const PICTURE_ANIMATION = ANIMATIONS.find(([n]) => n === "Painted ripples")[1];
+// Pictures take turns: contour ripples, then brush strokes, crossfading. The App Builder uses "Gathering light".
+const PICTURE_ANIMATIONS = ["Contour ripples", "Brush strokes"].map((name) => ANIMATIONS.find(([n]) => n === name)[1]);
+const SEGMENT = 4.2; // seconds each plays: one full painting of the brush strokes
+const FADE = 0.8;
 const STAGES = [[0, "reading your idea"], [2.5, "setting the scene"], [7, "adding light and colour"], [14, "final touches"]];
 const EDIT_STAGES = [[0, "looking at your picture"], [3, "making the change"], [12, "final touches"]];
 
@@ -187,7 +189,13 @@ export default function PictureMaking({ step }) {
       const dark = document.documentElement.classList.contains("dark");
       const bg = dark ? [14, 16, 23] : [251, 250, 248];
       const t = (now - started.get(id)) / 1000;
-      PICTURE_ANIMATION(ctx, W, H, t + 1.2, bg, dark);
+      const k = Math.floor(t / SEGMENT), local = t - k * SEGMENT, n = PICTURE_ANIMATIONS.length;
+      PICTURE_ANIMATIONS[k % n](a.getContext("2d"), W, H, local, bg, dark);
+      ctx.globalAlpha = 1; ctx.drawImage(a, 0, 0);
+      if (!still && local > SEGMENT - FADE) {
+        PICTURE_ANIMATIONS[(k + 1) % n](b.getContext("2d"), W, H, local - SEGMENT, bg, dark);
+        ctx.globalAlpha = (local - (SEGMENT - FADE)) / FADE; ctx.drawImage(b, 0, 0); ctx.globalAlpha = 1;
+      }
       if (now - lastTick > 250) { lastTick = now; setSecs(t); }
       if (!still) raf = requestAnimationFrame(draw);
     };
