@@ -177,7 +177,7 @@ export default function Workspace({ mode = null }) {
   const [model, setModel] = useState(null);
   const [streamSources, setStreamSources] = useState([]);
   const [attachments, setAttachments] = useState([]);
-  const [uploading, setUploading] = useState(false);
+  const [, setUploading] = useState(false);
   const [pendingImages, setPendingImages] = useState([]);
   const [streamSteps, setStreamSteps] = useState([]);
   const [streamSearched, setStreamSearched] = useState(null); // {queries, running}: "Searching the web" while it runs
@@ -355,9 +355,8 @@ export default function Workspace({ mode = null }) {
       if (data.live && !streamsRef.current.has(id)) followLive(id);
       if (data.conversation?.model) setModel(menuModel(data.conversation.model));
       setProjectId(data.conversation?.projectId || null);
-      let files = [];
-      try { files = (await api.get(`/conversations/${id}/files`)).data; } catch { /* none */ }
-      if (seq === chatSeq.current) setAttachments(files);
+      // The box starts empty, like ChatGPT: files sent earlier show on their messages and Krish still reads them.
+      setAttachments([]);
     } catch (e) {
       if (seq === chatSeq.current) toast.error(formatApiError(e));
     } finally {
@@ -668,8 +667,18 @@ export default function Workspace({ mode = null }) {
     return true;
   };
 
+  // Several files added at once run from one render, so the chat the first one creates is kept in a ref:
+  // without it every file made a new, empty "New conversation".
+  const newChatRef = useRef(null); // { forId, promise }
   const ensureConversation = async () => {
     if (activeId) return activeId;
+    if (newChatRef.current?.forId === chatSeq.current) return newChatRef.current.promise;
+    const promise = createConversation();
+    newChatRef.current = { forId: chatSeq.current, promise };
+    promise.catch(() => { newChatRef.current = null; });
+    return promise;
+  };
+  const createConversation = async () => {
     const { data } = await api.post("/conversations",
       counselling ? { mode, agent: KRISH_ROBO.id } : projectId ? { projectId } : {});
     setActive(data.id);
@@ -731,7 +740,6 @@ export default function Workspace({ mode = null }) {
     if (CODE_FILE_RE.test(file.name || "") && file.size < 400000) {
       const code = await file.text();
       setAttachments((a) => [...a.filter((x) => x.filename !== file.name), { id: `code-${Date.now()}-${file.name}`, filename: file.name, status: "ready", code }]);
-      toast.success(`${file.name} attached`);
       return;
     }
     setUploading(true);
@@ -742,13 +750,26 @@ export default function Workspace({ mode = null }) {
       const { data } = await api.post(`/conversations/${convId}/files`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       setAttachments((a) => [...a, data]);
       if (data.status === "failed") toast.error(`Could not read ${data.filename}`);
-      else if (!data.chunkCount) toast.message(`${data.filename} attached. It has no text to read, but you can still ask about it.`);
-      else toast.success(`${data.filename} attached`);
+      else if (!data.chunkCount) toast.message(`${data.filename} has no text to read, but you can still ask about it.`);
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {
       setUploading(false);
     }
+  };
+
+  // A voice note: the recording is kept on the message, and Krish answers what was said.
+  const sendVoiceNote = async (blob, seconds) => {
+    if (streaming || tooManyStreams()) { toast.message("Wait for this reply to finish, then send your voice note."); return; }
+    const convId = await ensureConversation();
+    const type = (blob.type || "audio/webm").split(";")[0];
+    const fd = new FormData();
+    fd.append("file", blob, `voice-note.${type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm"}`);
+    fd.append("conversationId", convId);
+    const lang = getVoiceLang();
+    if (lang && lang !== "auto") fd.append("language", lang);
+    const { data } = await api.post("/audio/note", fd, { headers: { "Content-Type": "multipart/form-data" } });
+    await sendMessage(data.text, { composer: true, audio: { id: data.media.id, seconds: Math.round(seconds * 10) / 10 } });
   };
 
   const removeAttachment = async (fid) => {
@@ -759,11 +780,14 @@ export default function Workspace({ mode = null }) {
   };
 
   // `composer`: sent from the message box (typed, or dictated text), so attached pictures go too.
-  const sendMessage = async (text, { voice = false, voiceLang, onText, frame, composer = text === undefined } = {}) => {
+  const sendMessage = async (text, { voice = false, voiceLang, onText, frame, audio, composer = text === undefined } = {}) => {
     setPlanCard(null);
     const images = composer ? pendingImages : [];
+    const docs = composer ? attachments.filter((a) => a.code === undefined && a.status !== "failed") : [];
     const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
-    const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
+    const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?"
+      : images.length && !docs.length ? (images.length > 1 ? "What's in these pictures?" : "What's in this image?")
+      : docs.length + images.length > 1 ? "Read these and tell me what's in them." : docs.length ? "Read this file and tell me what's in it." : "");
     // Tell the model which images are video frames (and when they were taken).
     const videoNotes = groups.map((g) => {
       const times = images.filter((i) => i.videoGroup?.id === g.id).map((i) => `${i.time.toFixed(1)}s`);
@@ -798,9 +822,11 @@ export default function Workspace({ mode = null }) {
 
     const imageIds = images.map((i) => i.id);
     scrollNext.current = messages.length;
-    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
-    if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
+    const fileCards = docs.map((f) => ({ id: f.id, name: f.filename, contentType: f.contentType, size: f.size }));
+    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, files: fileCards, audio, conversationId: convId }]);
+    if (composer) { setInput(""); setPendingImages([]); setAttachments([]); }
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, files: docs.map((f) => f.id),
+      audio: audio?.id, audioSeconds: audio?.seconds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
   };
 
   // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
@@ -969,8 +995,10 @@ export default function Workspace({ mode = null }) {
         <div className="px-4"><LimitBanner /></div>
         <ComposerInput value={input} onChange={setInput} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
           streaming={streaming} disabled={loadingConv}
-          onAttach={counselling ? undefined : attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
+          onAttach={attachFile} attachments={attachments} onRemoveAttachment={removeAttachment}
           images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
+          onOpenImage={(img) => setPreviewItem({ ...img, contentType: img.contentType || "image/png" })}
+          onVoiceNote={counselling ? sendVoiceNote : undefined}
           agentMode={agentAvailable} agentAvailable={agentAvailable}
           agentHint="Agent mode needs a provider API key for this model on the backend"
           thinkMode={think} onToggleThink={counselling ? undefined : toggleThink}

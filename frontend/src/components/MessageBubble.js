@@ -24,6 +24,7 @@ import { AgentAvatar } from "@/lib/counselAgents";
 import ScrollTable from "@/components/ScrollTable";
 import AiLimitCard from "@/components/AiLimitCard";
 import ThinkingShape from "@/components/ThinkingShape";
+import { FileCard, VoiceNotePlayer } from "@/components/Attachments";
 
 // Pictures found for the question, like Perplexity's image strip. Each opens the page it came from.
 function ImageResults({ items, id }) {
@@ -304,15 +305,34 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
       <div className="group flex flex-col items-end radha-fade-up" data-testid={`user-message-item-${message.id}`}>
       <div className="flex w-full justify-end gap-3">
         <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-indigo-100 bg-gradient-to-br from-indigo-50 to-violet-50 px-4 py-2.5 text-[0.95rem] leading-relaxed text-foreground shadow-[0_6px_20px_-10px_rgba(99,102,241,0.35)] dark:border-indigo-400/20 dark:from-indigo-500/15 dark:to-violet-500/10 sm:px-5">
+          {message.audio?.id && (
+            <div className={userText ? "mb-1.5" : ""}>
+              <VoiceNotePlayer id={message.audio.id} seconds={message.audio.seconds} testId={`voice-note-${message.id}`} />
+            </div>
+          )}
           {message.images?.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2" data-testid={`user-message-images-${message.id}`}>
-              {message.images.map((mid) => (
-                <img key={mid} src={mediaUrl(`/api/media/${mid}`)} alt="Attached"
-                  className="h-28 max-w-[220px] rounded-lg border border-border object-cover" />
+            <div className={`mb-2 grid gap-1.5 ${message.images.length === 1 ? "grid-cols-1" : message.images.length === 2 || message.images.length === 4 ? "grid-cols-2" : "grid-cols-3"}`}
+              data-testid={`user-message-images-${message.id}`}>
+              {message.images.map((mid, i) => (
+                <button key={mid} type="button" onClick={() => onOpenMedia?.({ id: mid, url: `/api/media/${mid}`, contentType: "image/png", name: `Picture ${i + 1}` })}
+                  className="block overflow-hidden rounded-xl border border-white/60 bg-surface transition-opacity hover:opacity-90 dark:border-white/10">
+                  <img src={mediaUrl(`/api/media/${mid}`)} alt="Attached"
+                    className={message.images.length === 1 ? "max-h-72 w-auto max-w-full sm:max-w-[320px]" : "aspect-square h-24 w-24 object-cover sm:h-28 sm:w-28"} />
+                </button>
               ))}
             </div>
           )}
-          {userText && <p dir="auto" className="whitespace-pre-wrap break-words">{userText}</p>}
+          {message.files?.length > 0 && (
+            <div className="mb-2 flex flex-col gap-1.5" data-testid={`user-message-docs-${message.id}`}>
+              {message.files.map((f) => (
+                <FileCard key={f.id} name={f.name} contentType={f.contentType} size={f.size} inMessage testId={`message-file-${f.id}`}
+                  onOpen={() => window.open(mediaUrl(`/api/files/${f.id}/download`), "_blank", "noopener")} />
+              ))}
+            </div>
+          )}
+          {userText && (message.audio?.id
+            ? <p dir="auto" data-testid={`voice-note-text-${message.id}`} className="whitespace-pre-wrap break-words border-t border-indigo-200/60 pt-1.5 text-[13px] italic leading-snug text-muted-foreground dark:border-white/10">“{userText}”</p>
+            : <p dir="auto" className="whitespace-pre-wrap break-words">{userText}</p>)}
           {userFiles.length > 0 && (
             <div className={`flex flex-wrap gap-2 ${userText ? "mt-2" : ""}`} data-testid={`user-message-files-${message.id}`}>
               {userFiles.map((f) => (
