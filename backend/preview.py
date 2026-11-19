@@ -163,6 +163,19 @@ def _xlsx(data: bytes) -> dict:
     return {"type": "table", "sheets": sheets}
 
 
+# Designed decks name their decoration text (badges, "PART", the footer), which a preview leaves out.
+DECOR_NAMES = ("Label", "Footer")
+
+
+def slide_shapes(shapes):
+    """Every shape on a slide, with the ones inside groups (a designed deck groups each card), in order."""
+    for shape in shapes:
+        if getattr(shape, "shape_type", None) == 6:  # MSO_SHAPE_TYPE.GROUP
+            yield from slide_shapes(shape.shapes)
+        elif shape.name not in DECOR_NAMES:
+            yield shape
+
+
 def _pptx(data: bytes) -> dict:
     from pptx import Presentation
 
@@ -171,7 +184,7 @@ def _pptx(data: bytes) -> dict:
     for idx, slide in enumerate(prs.slides, 1):
         texts, table = [], None
         title = ""
-        for shape in slide.shapes:
+        for shape in slide_shapes(slide.shapes):
             if shape.has_text_frame and shape.text_frame.text.strip():
                 # Skip slide numbers ("3 / 8", "05") and the big decorative quote mark of designed decks.
                 lines = [p.text.replace("●  ", "•  ", 1) for p in shape.text_frame.paragraphs

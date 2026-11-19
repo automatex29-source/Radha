@@ -7,7 +7,7 @@ import io
 import os
 import re
 import zipfile
-from typing import Any, List
+from typing import Any, List, Optional
 
 from markdown_it import MarkdownIt
 
@@ -426,6 +426,83 @@ def _to_deck_slide(spec: dict, index: int, total: int) -> dict:
     else:
         slide["layout"] = layout
     return slide
+
+
+# Scripts by the language names people and models use, for checking a deck is written in the language asked for.
+_SCRIPTS = {
+    "devanagari": ("\u0900", "\u097f"), "bengali": ("\u0980", "\u09ff"), "gurmukhi": ("\u0a00", "\u0a7f"),
+    "gujarati": ("\u0a80", "\u0aff"), "odia": ("\u0b00", "\u0b7f"), "tamil": ("\u0b80", "\u0bff"),
+    "telugu": ("\u0c00", "\u0c7f"), "kannada": ("\u0c80", "\u0cff"), "malayalam": ("\u0d00", "\u0d7f"),
+    "arabic": ("\u0600", "\u06ff"),
+}
+_LANGUAGE_SCRIPT = [
+    (re.compile(r"hinglish|roman|english letters|latin", re.I), "latin"),
+    (re.compile(r"hindi|हिन्दी|हिंदी|marathi|मराठी|nepali|sanskrit|devanagari|bhojpuri|maithili|rajasthani", re.I), "devanagari"),
+    (re.compile(r"bengali|bangla|assamese|বাংলা", re.I), "bengali"),
+    (re.compile(r"punjabi|gurmukhi", re.I), "gurmukhi"),
+    (re.compile(r"gujarati", re.I), "gujarati"),
+    (re.compile(r"odia|oriya", re.I), "odia"),
+    (re.compile(r"tamil", re.I), "tamil"),
+    (re.compile(r"telugu", re.I), "telugu"),
+    (re.compile(r"kannada", re.I), "kannada"),
+    (re.compile(r"malayalam", re.I), "malayalam"),
+    (re.compile(r"urdu|arabic", re.I), "arabic"),
+]
+
+
+def _deck_words(slides: List[dict]) -> str:
+    """The text people read on the slides (not notes or picture search words)."""
+    parts = []
+    for sl in slides:
+        if not isinstance(sl, dict):
+            parts.append(str(sl))
+            continue
+        for key in ("title", "subtitle", "body", "quote", "left_title", "right_title"):
+            parts.append(str(sl.get(key) or ""))
+        for key in ("bullets", "left", "right"):
+            parts += [str(b.get("text", "") if isinstance(b, dict) else b) for b in (sl.get(key) or [])]
+        for it in sl.get("items") or []:
+            if isinstance(it, dict):
+                parts += [str(it.get("title") or ""), str(it.get("text") or "")]
+        for st in sl.get("stats") or []:
+            if isinstance(st, dict):
+                parts.append(str(st.get("label") or ""))
+    return " ".join(parts)
+
+
+def check_deck(slides: List[dict], brief) -> Optional[str]:
+    """What's wrong with a deck against the user's ask (slide count, language), or None when it fits."""
+    if not isinstance(brief, dict):
+        return None
+    try:
+        want = int(brief.get("slide_count") or 0)
+    except (TypeError, ValueError):
+        want = 0
+    if 0 < want <= MAX_SLIDES and len(slides) != want:
+        return (f"the user asked for {want} slides (counting the title and closing slides) but the deck has "
+                f"{len(slides)}. Make it exactly {want}: {'merge or cut' if len(slides) > want else 'add'} slides, "
+                "keeping the title first and the closing slide last.")
+    language = str(brief.get("language") or "")
+    script = next((sc for rx, sc in _LANGUAGE_SCRIPT if rx.search(language)), "latin")
+    if script != "latin" and re.search(r"english|bilingual|both|mix", language, re.I):
+        return None  # two languages on the slides: nothing to check
+    words = _deck_words(slides)
+    letters = [ch for ch in words if ch.isalpha()]
+    if len(letters) < 40:
+        return None
+    if script == "latin":
+        share = sum(ch.isascii() for ch in letters) / len(letters)
+        if share < 0.5:
+            return (f"the slides should be in {language or 'English'}, written in English letters, but most of the "
+                    "text is in another script. Rewrite the slide text in that language.")
+        return None
+    lo, hi = _SCRIPTS[script]
+    share = sum(lo <= ch <= hi for ch in letters) / len(letters)
+    if share < 0.6:
+        return (f"the user wants the deck in {language}, but most slide text is not in that language's own script. "
+                f"Write every title, bullet, card and label in {language} (names, numbers and short terms like "
+                "UPI or GDP can stay as they are). Keep image_query in English.")
+    return None
 
 
 def build_pptx(slides: List[dict], title: str = "", theme: str = "dark", pictures: dict = None) -> bytes:

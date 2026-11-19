@@ -1393,6 +1393,26 @@ HINGLISH_NOTE = ("The user's latest message is in Hinglish (Hindi typed in Engli
                  "not in Devanagari. Keep numbers, code, links and names as they are.")
 
 
+# Asking for a slide deck, typos and Hindi included ("ppt bana do", "presentaion", "प्रेजेंटेशन", "स्लाइड").
+_DECK_ASK = re.compile(r"\bp+p+t+x?s?\b|power\s*-?\s*point|\bpre?[sz][ea]?n?t[ae]?t?i?on|\bpers[ea]n?tation|\bslides?\b|\bslide\s*deck|"
+                       r"\bdeck\b|प्रेज़?ें?टेशन|प्रस्तुति|स्लाइड|पीपीटी", re.IGNORECASE)
+DECK_NOTE = (
+    "The user wants a presentation. Before calling create_presentation, read their message (and the chat and any "
+    "attached file) for what they actually asked, and fill its brief from their words: the exact topic (not a "
+    "nearby one), who it is for (class, exam, office, investors), the purpose, the number of slides they named "
+    "(make exactly that many, counting title and closing; 8-12 if they gave none), and everything they asked to "
+    "include (names, sections, points, their school or company). Slide language: the one they name; Hindi when "
+    "they write in Devanagari or say Hindi; English when they ask in English or Hinglish without naming one. "
+    "Only if the topic itself is missing, ask one short question instead. Content: every slide teaches something "
+    "specific and correct (real facts, examples, dates, numbers you are sure of, rounded and sourced; search the "
+    "web for anything current), titles say the takeaway, and every slide has 2-4 sentences of speaker notes. "
+    "Pitch it at the audience's level. Design: no two plain bullet slides in a row; use agenda, cards with emoji "
+    "icons, stats, a chart or table when there are numbers, steps or timeline for a process or history, "
+    "two_column for comparisons, image slides with exact photo words, and a theme that suits the topic. After it "
+    "is made, reply in one or two lines (in the user's chat language) with what the deck covers."
+)
+
+
 def _is_hinglish(text: Optional[str]) -> bool:
     """True when a message is Hindi typed in English letters (so the reply should be too)."""
     text = text or ""
@@ -1770,7 +1790,7 @@ def _quick_chat(history_docs: list) -> bool:
         return False
     if any(m.get("steps") for m in history_docs[-4:] if m["role"] == "assistant"):
         return False  # a follow-up to a turn that used tools ("now make it blue") keeps them
-    return not any(_NEEDS_TOOLS.search(m["content"] or "") for m in last_user)
+    return not any(_NEEDS_TOOLS.search(m["content"] or "") or _DECK_ASK.search(m["content"] or "") for m in last_user)
 
 
 def _attached_now(history_docs: list) -> Optional[str]:
@@ -2350,6 +2370,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(STUDY_CLOSE_KNOWN if (study_mode.clean(student) or {}).get("level") else STUDY_CLOSE_NOTE)
     if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
         system_parts.append(HINGLISH_NOTE)
+    if agent and not counselling and not voice and not app_id and _DECK_ASK.search(last_user or ""):
+        system_parts.append(DECK_NOTE)
     system_prompt = "\n\n".join(system_parts)
     # The Counsellor never shows letters from a script the person didn't use (see counsellor.keep_scripts).
     scripts = counsellor.allowed_scripts([m["content"] for m in history_docs if m["role"] == "user"],

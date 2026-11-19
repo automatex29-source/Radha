@@ -12,6 +12,11 @@ const FONTS_HREF =
   "&family=Space+Grotesk:wght@500;700&family=DM+Serif+Display&family=Playfair+Display:ital,wght@0,600;0,700;1,500" +
   "&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap";
 
+// Present mode builds each slide in like the .pptx does: the content rises in, one piece after another.
+const MOTION_CSS = "@keyframes deckRise{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}" +
+  "@keyframes deckFade{from{opacity:0}to{opacity:1}}" +
+  "@media (prefers-reduced-motion: reduce){.deck-motion *{animation:none!important}}";
+
 function loadFonts() {
   if (typeof document === "undefined" || document.getElementById("radha-deck-fonts")) return;
   const link = document.createElement("link");
@@ -19,6 +24,10 @@ function loadFonts() {
   link.rel = "stylesheet";
   link.href = FONTS_HREF;
   document.head.appendChild(link);
+  const style = document.createElement("style");
+  style.id = "radha-deck-motion";
+  style.textContent = MOTION_CSS;
+  document.head.appendChild(style);
 }
 
 let themesPromise = null;
@@ -184,7 +193,8 @@ function Chart({ chart, theme: t, width, height }) {
           const y0 = y(Math.max(0, v)), y1 = y(Math.min(0, v));
           return (
             <g key={`${i}-${si}`}>
-              <rect x={x + 3} y={y0} width={bw - 6} height={Math.max(1, y1 - y0)} rx={6} fill={colors[si % colors.length]} />
+              <rect x={x + 3} y={y0} width={bw - 6} height={Math.max(1, y1 - y0)} rx={6}
+                fill={multi || labels.length < 2 ? colors[si % colors.length] : c(mix(t.accent, t.bg, 0.55 * (1 - (i + 1) / labels.length)))} />
               {!multi && <text x={x + bw / 2} y={y0 - 10} textAnchor="middle" fontSize={18} fontWeight={700} fill={c(t.title)}>{fmt(v)}</text>}
             </g>
           );
@@ -194,9 +204,49 @@ function Chart({ chart, theme: t, width, height }) {
   );
 }
 
-export default function Slide({ slide, theme, index = 0, total = 1, pending = false }) {
+/** Section slides count their own parts: the 2nd section of a deck is "02", whatever its slide number. */
+export const partNumber = (slides, index) => (slides || []).slice(0, index + 1).filter((x) => x?.layout === "section").length || 1;
+
+const alpha = (hex, a) => `#${hex}${Math.round(a * 255).toString(16).padStart(2, "0")}`;
+
+function Decor({ t, layout, index }) {
+  const soft = t.dark ? 0.1 : 0.08;
+  const dot = (x, y, d, color, o = 0.8) => ({ position: "absolute", left: x, top: y, width: d, height: d, borderRadius: "50%", background: alpha(color, o) });
+  if (layout === "cover" || layout === "closing" || !layout) {
+    return (
+      <>
+        <div style={dot(SLIDE_W - 420, -220, 640, t.accent, soft + 0.06)} />
+        <div style={dot(-240, SLIDE_H - 260, 480, t.accent2, soft + 0.02)} />
+        <div style={{ ...dot(SLIDE_W - 250, SLIDE_H - 230, 300, t.accent2, 0), border: `2px solid ${c(t.accent2)}` }} />
+        <div style={dot(120, 90, 18, t.accent2)} />
+        <div style={dot(SLIDE_W - 200, 560, 12, t.accent)} />
+      </>
+    );
+  }
+  if (layout === "image_right" || layout === "image_left") {
+    return <div style={dot(layout === "image_right" ? 520 : 1080, SLIDE_H - 140, 240, t.accent, soft)} />;
+  }
+  // the .pptx counts slides from 1, so its "odd" slides are our even indexes
+  return index % 2 === 0 ? (
+    <>
+      <div style={dot(SLIDE_W - 230, -170, 400, t.accent, soft)} />
+      <div style={dot(SLIDE_W - 120, 150, 14, t.accent2, 0.7)} />
+    </>
+  ) : (
+    <>
+      <div style={dot(-170, SLIDE_H - 210, 380, t.accent2, soft)} />
+      <div style={dot(SLIDE_W - 150, 70, 14, t.accent, 0.7)} />
+    </>
+  );
+}
+
+export default function Slide({ slide, theme, index = 0, total = 1, pending = false, animate = false, deckTitle = "", part = 1 }) {
   if (!theme) return <div style={{ width: SLIDE_W, height: SLIDE_H, background: "#111" }} />;
   const t = theme;
+  // entrance animation for the n-th piece of content (present mode only)
+  const step = (n, kind = "deckRise", gap = 180) => (animate
+    ? { animation: `${kind} ${kind === "deckRise" ? 0.6 : 0.5}s cubic-bezier(.2,.7,.2,1) ${0.35 + n * gap / 1000}s both` } : {});
+  const onAccent = t.dark ? c(t.bg) : "#fff";
   const H = (extra) => ({ fontFamily: `'${t.html_heading}', 'Plus Jakarta Sans', sans-serif`, color: c(t.title),
     fontWeight: t.html_heading.includes("Serif") || t.html_heading.includes("Playfair") ? 600 : 700,
     letterSpacing: "-0.02em", lineHeight: 1.08, margin: 0, ...extra });
@@ -205,30 +255,36 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
   const bar = (extra) => <div style={{ width: 64, height: 6, borderRadius: 3, background: c(t.accent), ...extra }} />;
   const s = slide || {};
   const L = s.layout;
-  const cardBox = { background: c(t.surface), borderRadius: 20, border: t.dark ? "1px solid rgba(255,255,255,.06)" : `1px solid ${c(t.accent)}33`,
+  const cardBox = { background: c(t.surface), borderRadius: 20, border: t.dark ? "1px solid rgba(255,255,255,.06)" : `1px solid ${c(mix(t.accent, t.bg, 0.75))}`,
     boxShadow: t.dark ? "0 10px 30px rgba(0,0,0,.25)" : "0 10px 30px rgba(0,0,0,.06)" };
 
   const Heading = ({ x = PAD, w = SLIDE_W - 2 * PAD }) => (
     <div style={{ position: "absolute", left: x, top: 64, width: w, height: 110, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <h2 style={H({ fontSize: shrink(44, s.title, 40) })}>{s.title}</h2>
-      {bar({ marginTop: 16 })}
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>{bar()}<div style={{ width: 14, height: 6, borderRadius: 3, background: c(t.accent2) }} /></div>
     </div>
   );
 
-  const Bullets = ({ items, size = 26, style }) => {
+  const Bullets = ({ items, size = 26, style, staggered = true }) => {
     if (!items?.length) return null;
     const fs = Math.min(size, items.length <= 4 ? 26 : 22);
     return (
       <ul style={{ listStyle: "none", padding: 0, margin: 0, ...style }}>
         {items.map((b, i) => (
-          <li key={i} style={{ ...body, fontSize: fs, lineHeight: 1.35, display: "flex", gap: 16, marginBottom: fs * 0.7 }}>
-            <span style={{ flex: "none", width: 10, height: 10, borderRadius: 5, background: c(t.accent), marginTop: fs * 0.5 }} />
+          <li key={i} style={{ ...body, fontSize: fs, lineHeight: 1.35, display: "flex", gap: 16, marginBottom: fs * 0.7, ...(staggered ? step(i, "deckFade", 160) : {}) }}>
+            <span style={{ flex: "none", width: 10, height: 10, borderRadius: 5, background: c(i % 2 ? t.accent2 : t.accent), marginTop: fs * 0.5 }} />
             <span>{b}</span>
           </li>
         ))}
       </ul>
     );
   };
+
+  const Badge = ({ label, color, d = 72, size }) => (
+    <div style={{ width: d, height: d, borderRadius: "50%", background: alpha(color, t.dark ? 0.2 : 0.14), flex: "none",
+      display: "flex", alignItems: "center", justifyContent: "center", ...H({ fontSize: size || d * 0.46, color: c(color), lineHeight: 1 }) }}>{label}</div>
+  );
+  const tone = (i) => (i % 2 ? t.accent2 : t.accent);
 
   let content = null;
   if (L === "cover" || L === "closing" || !L) {
@@ -242,18 +298,49 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
           display: "flex", flexDirection: "column", justifyContent: "flex-end", textAlign: align }}>
           <h1 style={H({ fontSize: shrink(64, s.title, 36), lineHeight: 1.02 })}>{s.title}</h1>
         </div>
-        {bar({ position: "absolute", top: 420, left: img ? PAD : (SLIDE_W - 90) / 2, width: 90, height: 7 })}
+        {bar({ position: "absolute", top: 420, left: img ? PAD : (SLIDE_W - 90) / 2, width: 90, height: 7, ...step(0, "deckFade") })}
         <p style={{ ...muted, position: "absolute", left: img ? PAD : (SLIDE_W - tw) / 2, top: 452, width: tw, margin: 0,
-          fontSize: shrink(26, s.subtitle || s.body, 110), lineHeight: 1.35, textAlign: align }}>{s.subtitle || s.body}</p>
+          fontSize: shrink(26, s.subtitle || s.body, 110), lineHeight: 1.35, textAlign: align, ...step(1) }}>{s.subtitle || s.body}</p>
       </>
     );
   } else if (L === "section") {
+    const d = 460, dx = SLIDE_W - PAD - d + 40, dy = (SLIDE_H - d) / 2;
     content = (
-      <div style={{ position: "absolute", left: PAD, top: 170, width: SLIDE_W - 2 * PAD }}>
-        <div style={H({ fontSize: 96, color: c(t.accent), lineHeight: 1 })}>{String(index + 1).padStart(2, "0")}</div>
-        <h2 style={H({ fontSize: shrink(56, s.title, 40), marginTop: 30 })}>{s.title}</h2>
-        {(s.subtitle || s.body) && <p style={{ ...muted, fontSize: 26, marginTop: 24, maxWidth: 900 }}>{s.subtitle || s.body}</p>}
-      </div>
+      <>
+        <div style={{ position: "absolute", left: dx, top: dy, width: d, height: d, borderRadius: "50%", border: `2px solid ${c(t.accent)}`, ...step(0, "deckFade") }} />
+        <div style={{ position: "absolute", left: dx + 60, top: dy + 60, width: d - 120, height: d - 120, borderRadius: "50%",
+          background: `linear-gradient(135deg, ${c(t.accent)}, ${c(t.accent2)})`, display: "flex", alignItems: "center", justifyContent: "center", ...step(1) }}>
+          <span style={H({ fontSize: 150, color: onAccent, lineHeight: 1 })}>{String(part).padStart(2, "0")}</span>
+        </div>
+        <div style={H({ position: "absolute", left: PAD, top: 140, fontSize: 18, color: c(t.accent), letterSpacing: "0.12em" })}>PART</div>
+        <div style={{ position: "absolute", left: PAD, top: 190, width: 600, height: 250, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+          <h2 style={H({ fontSize: shrink(56, s.title, 30), lineHeight: 1.02 })}>{s.title}</h2>
+        </div>
+        {bar({ position: "absolute", left: PAD, top: 462, width: 90, height: 7 })}
+        {(s.subtitle || s.body) && <p style={{ ...muted, position: "absolute", left: PAD, top: 494, width: 600, margin: 0,
+          fontSize: shrink(24, s.subtitle || s.body, 120), lineHeight: 1.35, ...step(2) }}>{s.subtitle || s.body}</p>}
+      </>
+    );
+  } else if (L === "agenda") {
+    const entries = (s.bullets?.length ? s.bullets : (s.items || []).map((it) => it.title).filter(Boolean)).slice(0, 6);
+    const cols = entries.length > 3 ? 2 : 1;
+    const perCol = Math.max(1, Math.ceil(entries.length / cols));
+    const gap = 40, cw = (SLIDE_W - 2 * PAD - gap * (cols - 1)) / cols;
+    const rowH = Math.min(130, (SLIDE_H - 220 - 70) / perCol);
+    content = (
+      <>
+        <Heading />
+        {entries.map((e, i) => {
+          const col = Math.floor(i / perCol), row = i % perCol;
+          return (
+            <div key={i} style={{ ...cardBox, boxShadow: "none", position: "absolute", left: PAD + col * (cw + gap), top: 215 + row * rowH, width: cw,
+              height: rowH - 18, borderRadius: 16, display: "flex", alignItems: "center", gap: 20, padding: "0 20px", boxSizing: "border-box", ...step(i, "deckRise", 150) }}>
+              <Badge label={String(i + 1).padStart(2, "0")} color={tone(i)} d={56} size={22} />
+              <span style={H({ fontSize: shrink(cols === 1 ? 26 : 23, e, 34), fontWeight: 500, lineHeight: 1.2 })}>{e}</span>
+            </div>
+          );
+        })}
+      </>
     );
   } else if (L === "bullets") {
     content = (
@@ -270,7 +357,7 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
     const tx = right ? PAD : 680;
     content = (
       <>
-        <Picture image={s.image} theme={t} pending={pending} style={{ position: "absolute", top: 0, left: right ? 680 : 0, width: 600, height: SLIDE_H }} />
+        <Picture image={s.image} theme={t} pending={pending} style={{ position: "absolute", top: 0, left: right ? 680 : 0, width: 600, height: SLIDE_H, ...step(0, "deckFade") }} />
         <Heading x={tx} w={520} />
         <div style={{ position: "absolute", left: tx, top: 200, width: 520 }}>
           {s.body && <p style={{ ...muted, fontSize: shrink(22, s.body, 150), lineHeight: 1.45, margin: "0 0 26px" }}>{s.body}</p>}
@@ -283,13 +370,13 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
     content = (
       <>
         <Heading />
-        <div style={{ position: "absolute", left: PAD, top: 220, width: SLIDE_W - 2 * PAD, maxHeight: 420, display: "flex", gap: 28 }}>
+        <div style={{ position: "absolute", left: PAD, top: 220, width: SLIDE_W - 2 * PAD, maxHeight: 430, display: "flex", gap: 28 }}>
           {items.map((it, i) => (
-            <div key={i} style={{ ...cardBox, flex: 1, minHeight: 280, padding: 28, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              {it.icon ? <div style={{ fontSize: 44, lineHeight: 1, height: 64 }}>{it.icon}</div>
-                : <div style={{ width: 44, height: 44, borderRadius: 22, background: c(t.accent), marginBottom: 20 }} />}
-              <h3 style={H({ fontSize: shrink(24, it.title, 26), marginTop: 18 })}>{it.title}</h3>
-              <p style={{ ...body, fontSize: shrink(18, it.text, 110), lineHeight: 1.45, marginTop: 14 }}>{it.text}</p>
+            <div key={i} style={{ ...cardBox, flex: 1, minHeight: 330, padding: 28, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", ...step(i, "deckRise", 200) }}>
+              <div style={{ position: "absolute", left: 28, top: 0, width: 56, height: 5, background: c(tone(i)) }} />
+              <div style={{ marginTop: 4 }}><Badge label={it.icon || i + 1} color={tone(i)} size={it.icon ? 34 : 30} /></div>
+              <h3 style={H({ fontSize: shrink(24, it.title, 24), marginTop: 22 })}>{it.title}</h3>
+              <p style={{ ...body, fontSize: shrink(19, it.text, 110), lineHeight: 1.45, marginTop: 14 }}>{it.text}</p>
             </div>
           ))}
         </div>
@@ -300,31 +387,38 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
     content = (
       <>
         <Heading />
-        <div style={{ position: "absolute", left: PAD, top: 205, width: cw, height: 450 }}>
+        <div style={{ position: "absolute", left: PAD, top: 205, width: cw, height: 450, ...step(0, "deckFade") }}>
           {s.chart ? <Chart chart={s.chart} theme={t} width={cw} height={450} />
             : <p style={{ ...muted, fontSize: 22 }}>Add numbers to show a chart here.</p>}
         </div>
         {s.body && (
-          <div style={{ position: "absolute", left: PAD + cw + 40, top: 225, width: SLIDE_W - 2 * PAD - cw - 40, borderLeft: `4px solid ${c(t.accent)}`, paddingLeft: 20 }}>
-            <p style={{ ...body, fontSize: shrink(22, s.body, 180), lineHeight: 1.4, margin: 0 }}>{s.body}</p>
+          <div style={{ ...cardBox, boxShadow: "none", borderRadius: 18, position: "absolute", left: PAD + cw + 40, top: 215, width: SLIDE_W - 2 * PAD - cw - 40,
+            height: 330, boxSizing: "border-box", padding: "25px 24px 0 28px", overflow: "hidden", ...step(1, "deckRise", 350) }}>
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 6, background: c(t.accent) }} />
+            <div style={H({ fontSize: 13, color: c(t.accent), letterSpacing: "0.1em" })}>KEY POINT</div>
+            <p style={{ ...body, fontSize: shrink(22, s.body, 150), lineHeight: 1.4, margin: "14px 0 0" }}>{s.body}</p>
           </div>
         )}
       </>
     );
   } else if (L === "stats") {
+    const stats = s.stats || [];
+    const gap = 28, cw = (SLIDE_W - 2 * PAD - gap * (Math.max(1, stats.length) - 1)) / Math.max(1, stats.length);
+    const fitW = (size, v, w) => Math.max(20, Math.min(size, w / (Math.max(1, (v || "").length) * 0.6)));
     content = (
       <>
         <Heading />
-        <div style={{ position: "absolute", left: PAD, top: 250, width: SLIDE_W - 2 * PAD, display: "flex" }}>
-          {(s.stats || []).map((st, i) => (
-            <div key={i} style={{ flex: 1, paddingRight: 30 }}>
-              <div style={H({ fontSize: shrink(80, st.value, 6), color: c(t.accent), lineHeight: 1.1, height: 120, display: "flex", alignItems: "flex-end" })}>{st.value}</div>
-              <div style={{ width: 48, height: 4, borderRadius: 2, background: c(t.accent2), margin: "15px 0 16px" }} />
-              <p style={{ ...body, fontSize: 22, lineHeight: 1.35, margin: 0 }}>{st.label}</p>
+        <div style={{ position: "absolute", left: PAD, top: 225, width: SLIDE_W - 2 * PAD, display: "flex", gap }}>
+          {stats.map((st, i) => (
+            <div key={i} style={{ ...cardBox, flex: 1, height: 300, padding: "35px 32px 0", boxSizing: "border-box", position: "relative", overflow: "hidden", ...step(i, "deckRise", 200) }}>
+              <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 6, background: c(tone(i)) }} />
+              <div style={H({ fontSize: fitW(80, st.value, cw - 64), color: c(tone(i)), lineHeight: 1, height: 120, display: "flex", alignItems: "flex-end" })}>{st.value}</div>
+              <div style={{ width: 48, height: 4, borderRadius: 2, background: c(t.dark ? t.muted : t.title), margin: "15px 0 16px" }} />
+              <p style={{ ...body, fontSize: shrink(21, st.label, 50), lineHeight: 1.3, margin: 0 }}>{st.label}</p>
             </div>
           ))}
         </div>
-        {s.body && <p style={{ ...muted, position: "absolute", left: PAD, top: 570, width: SLIDE_W - 2 * PAD, fontSize: 20, margin: 0 }}>{s.body}</p>}
+        {s.body && <p style={{ ...muted, position: "absolute", left: PAD, top: 560, width: SLIDE_W - 2 * PAD, fontSize: 19, margin: 0, ...step(stats.length) }}>{s.body}</p>}
       </>
     );
   } else if (L === "steps") {
@@ -333,13 +427,33 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
     content = (
       <>
         <Heading />
-        <div style={{ position: "absolute", left: PAD + 28, top: 298, width: cw * (steps.length - 1), height: 4, background: c(t.accent2) }} />
+        <div style={{ position: "absolute", left: PAD + 28, top: 298, width: cw * (steps.length - 1), height: 4, background: alpha(t.accent2, 0.6), ...step(0, "deckFade") }} />
         {steps.map((st, i) => (
-          <div key={i} style={{ position: "absolute", left: PAD + i * cw, top: 272, width: cw - 30 }}>
-            <div style={{ width: 56, height: 56, borderRadius: 28, background: c(t.accent), color: t.dark ? c(t.bg) : "#fff",
-              display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 24, ...H({ color: t.dark ? c(t.bg) : "#fff" }) }}>{i + 1}</div>
-            <h3 style={H({ fontSize: shrink(24, st.title, 24), marginTop: 24 })}>{st.title}</h3>
+          <div key={i} style={{ position: "absolute", left: PAD + i * cw, top: 272, width: cw - 30, ...step(i + 1, "deckRise", 220) }}>
+            <div style={{ position: "absolute", left: -8, top: -8, width: 72, height: 72, borderRadius: 36, background: alpha(t.accent, 0.22) }} />
+            <div style={{ position: "relative", width: 56, height: 56, borderRadius: 28, background: c(tone(i)),
+              display: "flex", alignItems: "center", justifyContent: "center", ...H({ fontSize: 24, color: onAccent }) }}>{i + 1}</div>
+            <h3 style={H({ fontSize: shrink(24, st.title, 24), marginTop: 32 })}>{st.title}</h3>
             <p style={{ ...body, fontSize: shrink(18, st.text, 110), lineHeight: 1.45, marginTop: 12 }}>{st.text}</p>
+          </div>
+        ))}
+      </>
+    );
+  } else if (L === "timeline") {
+    const events = s.items?.length ? s.items : (s.bullets || []).slice(0, 6).map((b) => ({ title: b, text: "" }));
+    const cw = (SLIDE_W - 2 * PAD) / Math.max(1, events.length);
+    const fitW = (size, v, w) => Math.max(20, Math.min(size, w / (Math.max(1, (v || "").length) * 0.58)));
+    content = (
+      <>
+        <Heading />
+        <div style={{ position: "absolute", left: PAD, top: 398, width: SLIDE_W - 2 * PAD, height: 4, background: alpha(t.accent2, 0.5), ...step(0, "deckFade") }} />
+        {events.map((ev, i) => (
+          <div key={i} style={{ position: "absolute", left: PAD + i * cw, top: 300, width: cw, height: 340, ...step(i + 1, "deckRise", 220) }}>
+            <div style={H({ position: "absolute", left: 10, right: 10, top: 0, height: 70, display: "flex", alignItems: "flex-end", justifyContent: "center",
+              fontSize: fitW(34, ev.title, cw - 20), color: c(tone(i)), textAlign: "center" })}>{ev.title}</div>
+            <div style={{ position: "absolute", left: cw / 2 - 20, top: 80, width: 40, height: 40, borderRadius: 20, background: alpha(tone(i), 0.25) }} />
+            <div style={{ position: "absolute", left: cw / 2 - 11, top: 89, width: 22, height: 22, borderRadius: 11, background: c(tone(i)) }} />
+            <p style={{ ...body, position: "absolute", left: 12, right: 12, top: 140, margin: 0, textAlign: "center", fontSize: shrink(18, ev.text, 90), lineHeight: 1.4 }}>{ev.text}</p>
           </div>
         ))}
       </>
@@ -350,24 +464,29 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
       <>
         <div style={H({ position: "absolute", left: PAD, top: 60, fontSize: 200, color: c(t.accent), lineHeight: 1 })}>“</div>
         <div style={{ position: "absolute", left: 160, top: 200, width: SLIDE_W - 320, height: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <p style={H({ fontSize: shrink(40, q, 110), fontStyle: "italic", fontWeight: 500, lineHeight: 1.2, textAlign: "center" })}>{q}</p>
+          <p style={H({ fontSize: shrink(40, q, 110), fontStyle: "italic", fontWeight: 500, lineHeight: 1.2, textAlign: "center", ...step(0, "deckFade") })}>{q}</p>
         </div>
-        {s.author && <p style={{ ...muted, position: "absolute", left: 160, top: 540, width: SLIDE_W - 320, textAlign: "center", fontSize: 22, margin: 0 }}>— {s.author}</p>}
+        {s.author && <p style={{ ...muted, position: "absolute", left: 160, top: 540, width: SLIDE_W - 320, textAlign: "center", fontSize: 22, margin: 0, ...step(1, "deckRise", 400) }}>— {s.author}</p>}
       </>
     );
   } else if (L === "comparison") {
+    const most = Math.max(...["left", "right"].map((side) => (s[side]?.bullets || []).reduce((n, b) => n + 1 + Math.floor(b.length / 46), 0)));
+    const boxH = Math.min(420, Math.max(260, 150 + most * 44));
     content = (
       <>
         <Heading />
-        <div style={{ position: "absolute", left: PAD, top: 220, width: SLIDE_W - 2 * PAD, height: 420, display: "flex", gap: 32 }}>
+        <div style={{ position: "absolute", left: PAD, top: 220, width: SLIDE_W - 2 * PAD, height: boxH, display: "flex", gap: 32 }}>
           {["left", "right"].map((side, i) => (
-            <div key={side} style={{ ...cardBox, flex: 1, overflow: "hidden", position: "relative", padding: "36px 36px" }}>
+            <div key={side} style={{ ...cardBox, flex: 1, overflow: "hidden", position: "relative", padding: "36px 36px", ...step(i, "deckRise", 250) }}>
               <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 8, background: c(i ? t.accent2 : t.accent) }} />
               <h3 style={H({ fontSize: 28, color: c(i ? t.accent2 : t.accent), marginBottom: 26 })}>{s[side]?.title}</h3>
-              <Bullets items={s[side]?.bullets} size={20} />
+              <Bullets items={s[side]?.bullets} size={22} staggered={false} />
             </div>
           ))}
         </div>
+        <div style={{ position: "absolute", left: (SLIDE_W - 64) / 2, top: 220 + boxH / 2 - 32, width: 64, height: 64, borderRadius: 32,
+          background: c(t.dark ? t.accent : t.title), display: "flex", alignItems: "center", justifyContent: "center",
+          ...H({ fontSize: 20, color: c(t.dark ? t.bg : "FFFFFF") }), ...step(2, "deckFade", 200) }}>VS</div>
       </>
     );
   } else if (L === "table") {
@@ -384,7 +503,7 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
         <Heading />
         {s.body && <p style={{ ...muted, position: "absolute", left: PAD, top: 200, width: SLIDE_W - 2 * PAD, fontSize: 22, margin: 0 }}>{s.body}</p>}
         {tb ? (
-          <table style={{ position: "absolute", left: PAD, top, width: SLIDE_W - 2 * PAD, borderCollapse: "collapse", fontSize: fs }}>
+          <table style={{ position: "absolute", left: PAD, top, width: SLIDE_W - 2 * PAD, borderCollapse: "collapse", fontSize: fs, ...step(0, "deckFade") }}>
             <tbody>
               {rows.map((row, ri) => (
                 <tr key={ri} style={{ height: rowH, background: c(ri === 0 && head ? t.accent : ri % 2 ? t.surface : t.bg2) }}>
@@ -404,10 +523,14 @@ export default function Slide({ slide, theme, index = 0, total = 1, pending = fa
 
   const showNumber = total > 1 && !["cover", "closing", "image_right", "image_left"].includes(L);
   return (
-    <div style={{ width: SLIDE_W, height: SLIDE_H, position: "relative", overflow: "hidden",
-      background: `linear-gradient(135deg, ${c(t.bg)}, ${c(t.bg2)})`, textAlign: "left", ...body }}>
+    <div className={animate ? "deck-motion" : undefined} style={{ width: SLIDE_W, height: SLIDE_H, position: "relative", overflow: "hidden",
+      background: `linear-gradient(135deg, ${c(t.bg)}, ${c(t.bg2)})`, textAlign: "left", ...body, ...(animate ? { animation: "deckFade .45s ease both" } : {}) }}>
+      <Decor t={t} layout={L} index={index} />
       {content}
       {showNumber && <div style={{ ...muted, position: "absolute", right: PAD, bottom: 26, fontSize: 14 }}>{index + 1} / {total}</div>}
+      {showNumber && deckTitle && L !== "section" && (
+        <div style={{ ...muted, position: "absolute", left: PAD, bottom: 26, fontSize: 14, maxWidth: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deckTitle}</div>
+      )}
     </div>
   );
 }

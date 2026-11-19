@@ -367,6 +367,11 @@ async def _create_presentation(ctx: ToolContext, args: dict) -> ToolOutput:
         if isinstance(s, dict):
             s.pop("image", None)  # pictures only come from image_query below
     title = args.get("title") or ""
+    problem = documents.check_deck(slides, args.get("brief"))
+    if problem:
+        # Nothing is made: the model fixes the deck and calls again, so the user gets what they asked for.
+        return ToolOutput(content=f"Not created yet: {problem} Call create_presentation again with the fixed deck. "
+                                  "Don't mention this check to the user.", summary="Checking the slides", ok=False)
     pictures = {}
     try:
         pictures = await _slide_pictures(ctx, slides, title)
@@ -573,26 +578,47 @@ def default_registry() -> ToolRegistry:
             handler=_create_spreadsheet))
         .register(Tool(
             name="create_presentation", label="Create PowerPoint",
-            description="Create a designed 16:9 PowerPoint .pptx deck (same look as the Decks page). Mix layouts so "
-                        "it doesn't read as a wall of bullets: start with 'title', end with 'closing'; use 'stats' "
-                        "for 2-4 big numbers, 'chart' for numbers over time or by category, 'cards' for 3-4 ideas, "
-                        "'steps' for a process or timeline, 'table' for a small grid (max 6 columns, 10 rows), "
-                        "'two_column' to compare, 'quote', 'section' to open a part, 'image_right'/'image_left' for bullets beside a photo (give image_query; the title slide can have one too). Max 6 short bullets a slide; "
-                        "put detail in speaker notes. Themes: aurora (default, dark indigo), midnight, ocean, "
-                        "sunset, forest, paper (warm light), snow (clean light), candy, mono; 'dark'/'light' also work.",
+            description="Create a designed, animated 16:9 PowerPoint .pptx deck (same look as the Decks page: "
+                        "themes, icon cards, charts, slide transitions, content that builds in). First fill 'brief' "
+                        "with what the user actually asked for, then write slides that serve exactly that. Mix "
+                        "layouts so it never reads as a wall of bullets: start with 'title', end with 'closing'; "
+                        "'agenda' for the parts of the talk; 'stats' for 2-4 big numbers; 'chart' for numbers over "
+                        "time or by category; 'cards' for 3-4 ideas, each with an emoji icon; 'steps' for a process; "
+                        "'timeline' for dated events (item title = the year/date); 'table' for a small grid (max 6 "
+                        "columns, 10 rows); 'two_column' to compare; 'quote'; 'section' to open a part; "
+                        "'image_right'/'image_left' for bullets beside a photo (give image_query; the title slide can "
+                        "have one too). Never two plain 'bullets' slides in a row. Max 6 short bullets a slide; put "
+                        "the detail in speaker notes. Themes: aurora (default, dark indigo), midnight, ocean, sunset, "
+                        "forest, paper (warm light), snow (clean light), candy, mono; 'dark'/'light' also work.",
             parameters={"type": "object", "properties": {
                 "filename": {"type": "string"},
                 "title": {"type": "string"},
+                "brief": {"type": "object", "description": "What the user asked for, read from their words (typos "
+                          "and Hinglish read for meaning). The deck is checked against it.",
+                          "properties": {
+                              "topic": {"type": "string", "description": "The exact subject they named"},
+                              "audience": {"type": "string", "description": "e.g. 'class 8 students', 'investors'"},
+                              "purpose": {"type": "string", "description": "e.g. school project, sales pitch"},
+                              "slide_count": {"type": "integer", "description": "The number of slides they asked "
+                                              "for, counting the title and closing slides; 0 if they didn't say"},
+                              "language": {"type": "string", "description": "Language of the slide text: English, "
+                                           "Hindi (Devanagari), Hinglish, Marathi..."},
+                              "must_include": {"type": "array", "items": {"type": "string"},
+                                               "description": "Everything specific they asked to have: names, "
+                                               "points, sections, school or company name"},
+                          }, "required": ["topic", "slide_count", "language"]},
                 "theme": {"type": "string", "enum": ["aurora", "midnight", "ocean", "sunset", "forest", "paper", "snow",
                                                      "candy", "mono", "dark", "light"]},
                 "slides": {"type": "array", "items": {"type": "object", "properties": {
-                    "layout": {"type": "string", "enum": ["title", "section", "bullets", "image_right", "image_left",
-                                                          "two_column", "table", "quote", "stats", "chart", "cards",
-                                                          "steps", "closing"]},
-                    "title": {"type": "string"},
+                    "layout": {"type": "string", "enum": ["title", "agenda", "section", "bullets", "image_right",
+                                                          "image_left", "two_column", "table", "quote", "stats",
+                                                          "chart", "cards", "steps", "timeline", "closing"]},
+                    "title": {"type": "string", "description": "A takeaway, not a label: 'Solar costs fell 90% in "
+                              "ten years', not 'Costs'"},
                     "subtitle": {"type": "string", "description": "title/section/closing slides; quote: who said it"},
-                    "body": {"type": "string", "description": "One short line of context (bullets, chart, stats, table)"},
-                    "bullets": {"type": "array", "items": {"type": "string"}},
+                    "body": {"type": "string", "description": "One short line of context (bullets, chart takeaway, "
+                             "stats source, table)"},
+                    "bullets": {"type": "array", "items": {"type": "string"}, "description": "bullets/image/agenda"},
                     "left_title": {"type": "string"}, "left": {"type": "array", "items": {"type": "string"}},
                     "right_title": {"type": "string"}, "right": {"type": "array", "items": {"type": "string"}},
                     "table": {"type": "object", "properties": {
@@ -608,15 +634,17 @@ def default_registry() -> ToolRegistry:
                         "series": {"type": "array", "items": {"type": "object", "properties": {
                             "name": {"type": "string"}, "values": {"type": "array", "items": {"type": "number"}}}}},
                     }},
-                    "items": {"type": "array", "description": "cards/steps: 3-5 of {icon (one emoji), title, text}",
+                    "items": {"type": "array", "description": "cards: 3-4 {icon (one emoji), title, text}; steps: "
+                              "3-5 {title, text}; timeline: 3-6 {title (the date), text}",
                               "items": {"type": "object", "properties": {
                                   "icon": {"type": "string"}, "title": {"type": "string"}, "text": {"type": "string"}}}},
                     "quote": {"type": "string"},
                     "image_query": {"type": "string", "description": "title/image_right/image_left: 2-4 English words "
-                                    "for a stock photo, e.g. 'tea stall india'"},
-                    "notes": {"type": "string", "description": "Speaker notes"},
+                                    "for a stock photo of something visible, e.g. 'tea stall india'"},
+                    "notes": {"type": "string", "description": "Speaker notes: 2-4 sentences to say on this slide, "
+                              "with the detail and examples"},
                 }, "required": ["layout", "title"]}},
-            }, "required": ["filename", "slides"]},
+            }, "required": ["filename", "brief", "slides"]},
             handler=_create_presentation))
         .register(Tool(
             name="create_document", label="Create document",
