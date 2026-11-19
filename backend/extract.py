@@ -214,11 +214,12 @@ def _docx(data: bytes) -> str:
 
 def _pptx(data: bytes) -> str:
     from pptx import Presentation
+    from preview import slide_shapes
     prs = Presentation(io.BytesIO(data))
     out = []
     for n, slide in enumerate(prs.slides, 1):
         out.append(f"# Slide {n}")
-        for shape in slide.shapes:
+        for shape in slide_shapes(slide.shapes):
             if shape.has_text_frame and shape.text_frame.text.strip():
                 out.append(shape.text_frame.text)
             if getattr(shape, "has_table", False) and shape.has_table:

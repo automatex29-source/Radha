@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import preview  # noqa: E402
+from preview import slide_shapes  # noqa: E402
 from agent import Tool, ToolContext, ToolOutput, ToolRegistry, documents, run_agent, runtime, video, web  # noqa: E402
 
 MD = """# Report
@@ -76,7 +77,7 @@ class TestDocuments:
         ], title="Deck", theme="light")
         prs = Presentation(io.BytesIO(data))
         assert len(prs.slides) == 6
-        texts = [sh.text_frame.text for sh in prs.slides[1].shapes if sh.has_text_frame]
+        texts = [sh.text_frame.text for sh in slide_shapes(prs.slides[1].shapes) if sh.has_text_frame]
         assert "Points" in texts and any("a" in t and "b" in t for t in texts)
         assert prs.slides[1].notes_slide.notes_text_frame.text == "speak"
 
@@ -453,7 +454,7 @@ def test_pptx_uses_the_designed_deck_renderer():
               {"layout": "bullets", "title": "Thank you", "bullets": ["Questions?"]}]
     prs = Presentation(io.BytesIO(documents.build_pptx(slides, title="Plan", theme="light")))
     assert len(prs.slides) == len(slides)
-    texts = [" ".join(sh.text_frame.text for sh in s.shapes if sh.has_text_frame) for s in prs.slides]
+    texts = [" ".join(sh.text_frame.text for sh in slide_shapes(s.shapes) if sh.has_text_frame) for s in prs.slides]
     assert "one — nested" in texts[1]
     assert any(getattr(sh, "has_table", False) and sh.has_table for sh in prs.slides[3].shapes)
     previewed = preview.build_preview(preview.PPTX, documents.build_pptx(slides), "d.pptx")["slides"]

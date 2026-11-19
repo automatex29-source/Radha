@@ -14,6 +14,7 @@ os.environ["DECK_IMAGES"] = "0"
 
 import deck_render  # noqa: E402
 import decks  # noqa: E402
+from preview import slide_shapes  # noqa: E402
 
 ALL_LAYOUTS = [
     {"layout": "cover", "title": "Solar Power", "subtitle": "Cheaper than ever"},
@@ -61,7 +62,7 @@ def test_pptx_renders_every_layout_in_every_theme(theme):
     data = deck_render.build_deck_pptx("Solar", ALL_LAYOUTS, theme)
     prs = Presentation(io.BytesIO(data))
     assert len(prs.slides) == len(ALL_LAYOUTS)
-    texts = " ".join(sh.text_frame.text for sl in prs.slides for sh in sl.shapes if sh.has_text_frame)
+    texts = " ".join(sh.text_frame.text for sl in prs.slides for sh in slide_shapes(sl.shapes) if sh.has_text_frame)
     for word in ("Solar Power", "Benefits", "90%", "Solar vs coal", "The sun is the future"):
         assert word in texts
 
