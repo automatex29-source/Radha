@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="barLight">#FFFFFF</color>
+    <color name="barDark">#07080B</color>
+    <color name="splashBackground">#FFFFFF</color>
+    <color name="brand">#FF8A1E</color>
+    <color name="widgetSurface">#FFFFFF</color>
+    <color name="widgetText">#5F6368</color>
+    <color name="widgetIcon">#111111</color>
+    <color name="iconBackground">#FFFFFF</color>
+</resources>
