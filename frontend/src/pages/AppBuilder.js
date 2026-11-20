@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import ThinkingShape from "@/components/ThinkingShape";
 import { LoadingCanvas } from "@/components/PictureMaking";
+import ResizeHandle, { useStoredWidth } from "@/components/ResizeHandle";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit", "start_template"]);
 const SCREENSHOT_ASK = "Build this design as a working app. Match its layout, colours, fonts, spacing and content as closely as you can, and make every button work.";
@@ -66,11 +67,13 @@ export default function AppBuilder() {
   // Phones show one pane at a time, starting with the chat.
   const [tab, setTab] = useState(() => (window.matchMedia?.("(max-width: 767px)").matches ? "chat" : "preview"));
   const [previewKey, setPreviewKey] = useState(0);
-  // Auto-fix: after a build the user asked for, errors in the preview are sent back to Krish once, without a tap.
-  // Auto-fix: errors in the preview go straight back to Krish, quietly. Up to 2 rounds after each build you ask
-  // for, and once when the app is opened with errors already in it.
-  const [autoArmed, setAutoArmed] = useState(true);
-  const autoLeft = useRef(1);
+  // Auto-fix: any error in the preview goes straight back to Krish, without a tap: after a build, when the app is
+  // opened with errors already in it, or when a click causes one. Each different error gets AUTO_TRIES goes;
+  // only then does the "Fix errors with AI" button show.
+  // The chat and the preview share the screen: drag the line between them to give either one more room.
+  const [chatWidth, setChatWidth] = useStoredWidth("krish-builder-chat-width", 400, 300, () => Math.max(320, window.innerWidth - 380));
+  const autoTries = useRef({});
+  const autoRuns = useRef(0); // automatic fixes since your last message, so changing errors can't loop forever
   const [historyFocus, setHistoryFocus] = useState(null);
   // A new app arrives with the user's request from the Apps page: the builder starts on it at once.
   const [fixAsk, setFixAsk] = useState(() => (location.state?.prompt ? { content: location.state.prompt, at: Date.now() } : null));
@@ -173,10 +176,11 @@ export default function AppBuilder() {
         ))}
       </nav>
       <div className="flex min-h-0 flex-1">
-        <BuilderChat app={app} appId={id} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
+        <BuilderChat app={app} appId={id} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk} width={chatWidth}
           previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")}
-          onTurnDone={(auto) => { if (!auto) autoLeft.current = 1; setAutoArmed(autoLeft.current > 0); setBuilding(false); }} onBuildStart={() => { setAutoArmed(false); setBuilding(true); }}
+          onTurnDone={(auto) => { if (!auto) autoRuns.current = 0; setBuilding(false); }} onBuildStart={() => setBuilding(true)}
           onShowChanges={(commitId) => { setHistoryFocus({ id: commitId, at: Date.now() }); setTab("history"); }} />
+        <ResizeHandle width={chatWidth} onWidth={setChatWidth} side="left" initial={400} label="Drag to make the chat or the preview bigger" />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">
             {PANES.map(([t, Icon, label]) => (
@@ -188,8 +192,9 @@ export default function AppBuilder() {
           </nav>
           <div className="min-h-0 flex-1">
             {(tab === "preview" || tab === "chat") && <PreviewTab url={previewUrl} reloadKey={previewKey} onReload={() => setPreviewKey((k) => k + 1)}
-              appId={id} onChanged={onFilesChanged} autoFix={autoArmed} intro={fresh ? (building ? "building" : "idle") : null}
-              onAutoFix={(content) => { autoLeft.current -= 1; setAutoArmed(false); setFixAsk({ content, at: Date.now(), auto: true }); }}
+              appId={id} onChanged={onFilesChanged} autoFix={!building} intro={fresh ? (building ? "building" : "idle") : null}
+              canAutoFix={(sig) => (autoTries.current[sig] || 0) < AUTO_TRIES && autoRuns.current < AUTO_RUNS}
+              onAutoFix={(content, sig) => { autoTries.current[sig] = (autoTries.current[sig] || 0) + 1; autoRuns.current += 1; setFixAsk({ content, at: Date.now(), auto: true }); }}
               onFix={(content) => { setFixAsk({ content, at: Date.now() }); if (window.matchMedia?.("(max-width: 767px)").matches) setTab("chat"); }} />}
             {tab === "code" && <CodeTab appId={id} files={files} changes={changes} onSaved={onFilesChanged} />}
             {tab === "terminal" && <TerminalTab appId={id} />}
@@ -202,8 +207,11 @@ export default function AppBuilder() {
   );
 }
 
+const AUTO_TRIES = 2; // automatic fixes for one error before the "Fix errors with AI" button shows
+const AUTO_RUNS = 3;  // automatic fixes in a row, whatever the errors, until you write again
+
 /* ------------------------------------------------------------------ chat */
-function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUrl, previewKey, onShowPreview, onTurnDone, onBuildStart, onShowChanges }) {
+function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, width, previewUrl, previewKey, onShowPreview, onTurnDone, onBuildStart, onShowChanges }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -444,7 +452,8 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
   }, [ask, model]);
 
   return (
-    <aside className={`flex w-[400px] shrink-0 flex-col max-md:w-full ${hiddenOnPhone ? "max-md:hidden" : ""}`} data-testid="builder-chat">
+    <aside className={`flex w-[400px] shrink-0 flex-col max-md:!w-full ${hiddenOnPhone ? "max-md:hidden" : ""}`}
+      style={width ? { width } : undefined} data-testid="builder-chat">
       <div ref={scrollRef} className="radha-scroll flex-1 space-y-5 overflow-y-auto px-4 py-5">
         {messages.length === 0 && !streaming && (
           <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -619,7 +628,7 @@ function toHex(rgb) {
   return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
 }
 
-function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix, onAutoFix, intro }) {
+function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix, onAutoFix, canAutoFix, intro }) {
   const [logs, setLogs] = useState([]);
   const [device, setDevice] = useState("full");
   const [picking, setPicking] = useState(false);
@@ -699,17 +708,21 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
 
   const errors = logs.filter((l) => l.level === "error").length;
 
-  // Auto-fix: once the page has settled after a build, any errors go straight back to Krish (once per build).
+  // Auto-fix: once the page has settled, any errors go straight back to Krish (each error a few times at most).
   const autoFixRef = useRef(onAutoFix);
   autoFixRef.current = onAutoFix;
+  const found = [...new Set(logs.filter((l) => l.level === "error").map((l) => l.message.slice(0, 500)))].slice(0, 5);
+  const sig = found.join("\n");
+  // Krish is about to fix it, or is fixing it: no button to press meanwhile.
+  const autoFixing = errors > 0 && !!onAutoFix && (!autoFix || (canAutoFix ? canAutoFix(sig) : false));
   useEffect(() => {
-    if (!autoFix || !errors || !autoFixRef.current) return;
+    if (!autoFix || !errors || !autoFixRef.current || !canAutoFix?.(sig)) return;
     const t = setTimeout(() => {
-      const found = [...new Set(logs.filter((l) => l.level === "error").map((l) => l.message.slice(0, 500)))].slice(0, 5);
-      autoFixRef.current(`Auto-fix: the preview shows ${found.length === 1 ? "this error" : "these errors"} after your last change. Find the cause in the code and fix it:\n${found.join("\n")}`);
+      autoFixRef.current(`Auto-fix: the preview shows ${found.length === 1 ? "this error" : "these errors"} after your last change. Find the cause in the code and fix it:\n${sig}`, sig);
     }, 2500);
     return () => clearTimeout(t);
-  }, [autoFix, errors, logs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFix, errors, sig]);
   const fixErrors = (e) => {
     e.preventDefault();
     const found = [...new Set(logs.filter((l) => l.level === "error").map((l) => l.message.slice(0, 500)))].slice(0, 5);
@@ -789,7 +802,12 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
       <details className="max-h-48 overflow-auto border-t border-border bg-sunken" open={errors > 0} data-testid="preview-console">
         <summary className="cursor-pointer px-3 py-1.5 text-xs text-muted-foreground">
           Console {logs.length ? `(${logs.length})` : ""} {errors > 0 && <span className="ml-1 text-destructive">{errors} error{errors === 1 ? "" : "s"}</span>}
-          {errors > 0 && onFix && (
+          {autoFixing && (
+            <span className="ml-3 inline-flex items-center gap-1 text-[11px] font-medium text-primary" data-testid="preview-auto-fixing">
+              <Loader2 className="h-3 w-3 animate-spin" /> Krish is fixing this
+            </span>
+          )}
+          {errors > 0 && onFix && !autoFixing && (
             <button onClick={fixErrors} data-testid="preview-fix-errors"
               className="ml-3 rounded-md bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:opacity-90">
               Fix errors with AI
