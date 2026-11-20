@@ -185,3 +185,28 @@ def test_removals_and_named_files_edit_krish_code_in_place():
     assert code_edit.should_edit(history + [{"role": "user", "content": "remove the dropdown"}])
     assert code_edit.should_edit(history + [{"role": "user", "content": "in index make the title red"}])
     assert code_edit.should_edit(history + [{"role": "user", "content": "make the title red"}]) is None  # small: rewritten whole
+
+
+def test_a_failed_edit_is_tried_again_with_another_model(client, monkeypatch):
+    """App Builder follow-ups ("make the font size small") ended in "the AI model stopped" when the first free
+    model failed; the whole edit now runs again with another free model, cut to fit its own budget."""
+    import asyncio
+    import server
+
+    tried = []
+
+    async def run(model, files, ask):
+        tried.append(model)
+        if len(tried) == 1:
+            raise RuntimeError("429 out of free requests")
+        yield {"type": "result", "files": files, "applied": 1, "missed": 0, "summaries": []}
+
+    monkeypatch.setattr(code_edit, "run", run)
+    monkeypatch.setattr(code_edit, "backup_model", lambda m: "cerebras/gpt-oss-120b")
+
+    async def collect():
+        return [ev async for ev in server._code_edit_events("gemini-3.5-flash-lite", {"a.html": "x"}, "smaller")]
+
+    events = asyncio.run(collect())
+    assert tried == ["gemini-3.5-flash-lite", "cerebras/gpt-oss-120b"]
+    assert events[0] == {"type": "model", "model": "cerebras/gpt-oss-120b"} and events[-1]["type"] == "result"

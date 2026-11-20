@@ -255,24 +255,32 @@ def test_basic_gets_a_weekly_taste_of_krish_pro_on_haiku(client, monkeypatch):
         != "claude-haiku-5-5"  # no taste in the App Builder
 
 
-def test_basic_chat_has_40_messages_a_session_and_paid_plans_stay_unlimited(client, monkeypatch):
+def test_basic_chat_uses_the_meter_by_its_tokens_and_paid_plans_stay_unlimited(client, monkeypatch):
     import limits
     import server
     from fastapi import HTTPException
     basic, pro = _user(client, "chatcap@test.com"), _user(client, "chatcap-pro@test.com", "pro")
-    for _ in range(limits.BASIC_CHAT_SESSION):
+    charge = lambda uid, tokens: client.portal.call(
+        lambda: limits.charge_reply(server.db, uid, tokens, app=False, model_paid=False))
+    # Not a count of messages: a quick question uses a sliver of the session, a long chat about a file much more.
+    assert charge(basic, 3_000) == 0.6 and charge(basic, 40_000) == 8
+    for _ in range(60):  # many quick questions still fit in one session
         client.portal.call(server._count_basic_chat, basic, {})
+    for _ in range(5):
+        charge(basic, 40_000)
     with pytest.raises(HTTPException) as err:
         client.portal.call(server._count_basic_chat, basic, {})
     assert err.value.status_code == 402
-    assert err.value.detail.startswith("You've used this session's free messages. Upgrade to Pro, or wait until ")
-    client.portal.call(server._count_basic_chat, basic, {"appId": "a1"})  # App Builder messages use the meter
-    for _ in range(limits.BASIC_CHAT_SESSION + 5):
+    assert err.value.detail.startswith("You've used this session's usage on the Basic plan. It refills at ")
+    client.portal.call(server._count_basic_chat, basic, {"appId": "a1"})  # App Builder messages are checked as builds
+    assert charge(pro, 10**6) == 0  # Krish Basic on Pro and Max is never counted
+    for _ in range(100):
         client.portal.call(server._count_basic_chat, pro, {})
 
     # The session refills after 5 hours.
     async def age():
-        await server.db.usage.update_one({"_id": f"{basic}:chat"}, {"$inc": {"start": -limits.SESSION_HOURS * 3600}})
+        await server.db.usage.update_one({"_id": f"{basic}:meter"},
+                                         {"$inc": {"sessionStart": -limits.SESSION_HOURS * 3600}})
     client.portal.call(age)
     client.portal.call(server._count_basic_chat, basic, {})
 

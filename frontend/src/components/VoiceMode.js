@@ -3,12 +3,13 @@ import { useRecorder } from "@/hooks/useRecorder";
 import { useAuth } from "@/context/AuthContext";
 import { transcribeDetect, createSpeaker, stopSpeaking, speechText, watchForSpeech, VOICE_LANGS, getVoiceLang, setVoiceLang } from "@/lib/voice";
 import { X, Mic, MicOff, Loader2, Volume2, Square, Pause, Camera, CameraOff, MonitorUp, SwitchCamera } from "lucide-react";
+import ThinkingShape from "@/components/ThinkingShape";
 
 const LABELS = {
   idle: "Paused. Tap to talk",
   listening: "Listening… just speak",
   transcribing: "Got it…",
-  thinking: "Thinking…",
+  thinking: "Krish is thinking…",
   speaking: "Speaking… talk or tap to interrupt",
 };
 
@@ -252,6 +253,7 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
         className={`relative flex ${view ? "h-24 w-24" : "h-40 w-40"} items-center justify-center rounded-full bg-primary shadow-[0_0_80px_rgba(99,102,241,0.6)] transition-transform duration-100 disabled:opacity-80`}
         style={{ transform: `scale(${scale})` }}>
         {phase === "speaking" ? <Volume2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-pulse text-white`} />
+          : phase === "thinking" ? <ThinkingShape size={view ? 28 : 40} onColor className="text-white" />
           : busy ? <Loader2 className={`${view ? "h-8 w-8" : "h-12 w-12"} animate-spin text-white`} />
           : <Mic className={`${view ? "h-8 w-8" : "h-12 w-12"} ${phase === "idle" ? "text-white/80" : "text-white"}`} />}
         {phase === "listening" && <span className="absolute inset-0 animate-ping rounded-full bg-primary/30" />}

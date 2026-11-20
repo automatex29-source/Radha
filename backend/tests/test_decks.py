@@ -14,6 +14,7 @@ os.environ["DECK_IMAGES"] = "0"
 
 import deck_render  # noqa: E402
 import decks  # noqa: E402
+from preview import slide_shapes  # noqa: E402
 
 ALL_LAYOUTS = [
     {"layout": "cover", "title": "Solar Power", "subtitle": "Cheaper than ever"},
@@ -61,7 +62,7 @@ def test_pptx_renders_every_layout_in_every_theme(theme):
     data = deck_render.build_deck_pptx("Solar", ALL_LAYOUTS, theme)
     prs = Presentation(io.BytesIO(data))
     assert len(prs.slides) == len(ALL_LAYOUTS)
-    texts = " ".join(sh.text_frame.text for sl in prs.slides for sh in sl.shapes if sh.has_text_frame)
+    texts = " ".join(sh.text_frame.text for sl in prs.slides for sh in slide_shapes(sl.shapes) if sh.has_text_frame)
     for word in ("Solar Power", "Benefits", "90%", "Solar vs coal", "The sun is the future"):
         assert word in texts
 
@@ -121,7 +122,9 @@ def test_outline_generation_edit_and_undo(monkeypatch):
             return json.dumps({"title": "Solar", "slides": [{"title": f"S{i}", "points": ["p"]} for i in range(6)]})
         if system == decks.SLIDES_SYSTEM:
             n = int(user.split("exactly ")[1].split(" ")[0])
-            return "```json\n" + json.dumps({"slides": [ALL_LAYOUTS[i % len(ALL_LAYOUTS)] for i in range(n)]}) + "\n```"
+            first = int(user.split("Write slides ")[1].split(" ")[0]) - 1
+            return "```json\n" + json.dumps({"slides": [ALL_LAYOUTS[i % len(ALL_LAYOUTS)]
+                                                         for i in range(first, first + n)]}) + "\n```"
         return json.dumps({"reply": "Made it green.", "ops": [{"op": "theme", "theme": "forest"}]})
 
     monkeypatch.setattr(decks, "_complete", fake_complete)
@@ -331,5 +334,63 @@ def test_stock_pictures_are_fetched_together(monkeypatch):
         doc = await db.decks.find_one({"id": "d"})
         assert all(s["image"]["url"].startswith("https://img.test/") for s in doc["slides"])
         assert peak[0] == decks.STOCK_AT_ONCE and doc["picturesPending"] is False
+
+    asyncio.run(scenario())
+
+
+def test_a_slide_written_twice_is_kept_once(monkeypatch):
+    """Asked for slides 5 to 6, the model wrote slide 4 again first; the deck had the same slide twice."""
+    mongomock_motor = pytest.importorskip("mongomock_motor")
+    db = mongomock_motor.AsyncMongoMockClient()["t"]
+    decks.init(db, "test-model")
+    made = [{"layout": "bullets", "title": f"Point {i}", "bullets": [f"fact {i}"]} for i in range(6)]
+
+    async def fake_complete(model, system, user):
+        first = int(user.split("Write slides ")[1].split(" ")[0]) - 1
+        n = int(user.split("exactly ")[1].split(" ")[0])
+        return json.dumps({"slides": ([made[first - 1]] if first else []) + made[first:first + n]})
+
+    monkeypatch.setattr(decks, "_complete", fake_complete)
+
+    async def scenario():
+        outline = [{"title": f"Point {i}", "points": []} for i in range(6)]
+        deck = await decks.create_deck(decks.DeckIn(prompt="points", outline=outline, theme="snow"), user_id="u")
+        await asyncio.gather(*decks._tasks)
+        ready = await decks.get_deck(deck["id"], user_id="u")
+        assert [s["title"] for s in ready["slides"]] == [f"Point {i}" for i in range(6)]
+
+    asyncio.run(scenario())
+
+
+def test_speaker_notes_sent_as_a_list_read_as_text():
+    assert deck_render.normalize_slide({"notes": ["First line.", "Second line."]})["notes"] == "First line. Second line."
+    assert deck_render.normalize_slide({"notes": "['First line.', 'Second line.']"})["notes"] == "First line. Second line."
+    assert deck_render.normalize_slide({"notes": "[Pause] then say hello"})["notes"] == "[Pause] then say hello"
+
+
+def test_a_photo_slot_with_no_photo_gets_an_ai_picture(monkeypatch):
+    mongomock_motor = pytest.importorskip("mongomock_motor")
+    import deck_images
+
+    db = mongomock_motor.AsyncMongoMockClient()["t"]
+    decks.init(db, "test-model")
+    monkeypatch.setattr(deck_images, "enabled", lambda: True)
+
+    async def no_stock(slide, used, topic=""):
+        return None
+
+    async def fake_ai(db_, user_id, slide, topic="", prompt=None):
+        return {"url": "/api/media/bbbbbbbbbbbb", "thumb": "", "credit": "AI-made picture", "link": ""}
+
+    monkeypatch.setattr(deck_images, "find_stock", no_stock)
+    monkeypatch.setattr(deck_images, "make_ai", fake_ai)
+    slides = [deck_render.normalize_slide(ALL_LAYOUTS[3])]
+
+    async def scenario():
+        await db.decks.insert_one({"id": "d", "userId": "u", "title": "Solar", "theme": "aurora", "pictures": "stock",
+                                   "slides": slides, "status": "ready", "picturesPending": True, "updatedAt": decks._now()})
+        await decks.fill_pictures("d")
+        doc = await db.decks.find_one({"id": "d"})
+        assert doc["slides"][0]["image"]["url"] == "/api/media/bbbbbbbbbbbb"
 
     asyncio.run(scenario())

@@ -12,6 +12,7 @@ import {
   Wand2, X, Youtube, Type, ClipboardList,
 } from "lucide-react";
 import { ScaledSlide, findTheme, useDeckThemes } from "@/components/deck/Slide";
+import ThinkingShape from "@/components/ThinkingShape";
 
 const EXAMPLES = [
   "Pitch deck for a food delivery startup in India",
@@ -238,10 +239,10 @@ export default function DecksPage() {
                   <div className="flex w-full gap-2 max-sm:mt-1 sm:ml-auto sm:w-auto">
                     <Button variant="outline" onClick={improve} disabled={busy || improving || prompt.trim().length < 2} className="gap-1.5 max-sm:flex-1" data-testid="deck-improve-button"
                       title="Turn a rough idea into a clear brief you can edit">
-                      {improving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Improve prompt
+                      {improving ? <ThinkingShape size={14} /> : <Sparkles className="h-4 w-4" />} Improve prompt
                     </Button>
                     <Button onClick={makeOutline} disabled={busy || !ready} className="kb-btn gap-1.5 max-sm:flex-1" data-testid="deck-outline-button">
-                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Write outline
+                      {busy ? <ThinkingShape size={14} onColor /> : <Wand2 className="h-4 w-4" />} Write outline
                     </Button>
                   </div>
                 </div>

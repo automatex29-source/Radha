@@ -9,8 +9,9 @@ import { API } from "@/lib/api";
 import ThemeToggle from "@/components/ThemeToggle";
 import BrandMark from "@/components/BrandMark";
 import { LiveCards } from "@/components/LiveCards";
-import { linkCitations, faviconUrl } from "@/lib/citations";
-import SourceChip from "@/components/SourceChip";
+import { linkCitations } from "@/lib/citations";
+import SourceChip, { SourcesContext } from "@/components/SourceChip";
+import { SourceList } from "@/components/WebSearch";
 import { Link2, Loader2 } from "lucide-react";
 import ScrollTable from "@/components/ScrollTable";
 
@@ -71,26 +72,15 @@ export default function PageView() {
 
             <div className="mt-6"><LiveCards items={live} /></div>
             <div className="radha-prose mt-2 text-[1.02rem]" dir="auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SourceChip, table: ScrollTable, pre: DiagramPre }}>{linkCitations(page.content, sources)}</ReactMarkdown>
+              <SourcesContext.Provider value={sources}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SourceChip, table: ScrollTable, pre: DiagramPre }}>{linkCitations(page.content, sources)}</ReactMarkdown>
+              </SourcesContext.Provider>
             </div>
 
             {sources.length > 0 && (
               <section className="mt-10 border-t border-border pt-6">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">Sources</h2>
-                <ol className="mt-3 space-y-2.5">
-                  {sources.map((s, i) => (
-                    <li key={s.url} className="flex gap-3 text-sm">
-                      <span className="w-5 shrink-0 text-right tabular-nums text-muted-foreground">{i + 1}.</span>
-                      <a href={s.url} target="_blank" rel="noopener noreferrer" className="min-w-0 hover:text-brand">
-                        <span className="block font-medium leading-snug">{s.title}</span>
-                        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <img src={faviconUrl(s.domain)} alt="" className="h-3.5 w-3.5 rounded-sm" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                          {s.domain}
-                        </span>
-                      </a>
-                    </li>
-                  ))}
-                </ol>
+                <div className="mt-3"><SourceList items={sources} id="page" /></div>
               </section>
             )}
 

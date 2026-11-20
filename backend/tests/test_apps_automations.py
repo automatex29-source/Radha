@@ -540,8 +540,8 @@ class TestAskFirstAndEmailTrigger:
                                     {"to": "x@y.z", "subject": "", "body": "b"}, "s"))
         assert len(sent) == 1 and "Email sent" in out.summary
 
-    def test_pro_with_ask_first_off_still_asks(self, monkeypatch):
-        database = self._setup("proask", plan="pro", ask_first=False)
+    def test_basic_with_ask_first_off_still_asks(self, monkeypatch):
+        database = self._setup("basicask", plan="basic", ask_first=False)
         import connector_tools
         monkeypatch.setattr(connector_tools, "send_gmail", lambda *a: (_ for _ in ()).throw(AssertionError("sent")))
         out = run(automations.gated("u", {"id": "c", "automationId": "a"}, "gmail_send",
@@ -559,13 +559,15 @@ class TestAskFirstAndEmailTrigger:
             with pytest.raises(HTTPException) as e1:
                 await automations.check_plan_rules("free", email, None, False)
             await automations.check_plan_rules("pro", email, None, False)
+            daily = {"type": "daily", "time": "09:00", "timezone": "UTC"}
             with pytest.raises(HTTPException) as e2:
-                await automations.check_plan_rules("pro", email, None, False, ask_first=False)
+                await automations.check_plan_rules("free", daily, None, False, ask_first=False)
+            await automations.check_plan_rules("pro", email, None, False, ask_first=False)
             await automations.check_plan_rules("max", email, None, False, ask_first=False)
             return e1.value.detail, e2.value.detail
 
         d1, d2 = run(scenario())
-        assert "Pro and Max" in d1 and "Max plan" in d2
+        assert "Pro and Max" in d1 and "without asking" in d2 and "Pro and Max" in d2
 
     def test_inbox_check_runs_once_with_only_new_emails(self, monkeypatch):
         database = mongomock_motor.AsyncMongoMockClient()["inbox"]

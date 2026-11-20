@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Square, X, Paperclip, FileText, Loader2, Bot, Mic, AudioLines, Film, ShieldCheck, Lightbulb, GraduationCap, Globe, ChevronDown, BookOpenText, MessagesSquare, PlaySquare, Sparkles, Check } from "lucide-react";
+import { ArrowUp, Square, X, Paperclip, Loader2, Bot, Mic, AudioLines, ShieldCheck, Lightbulb, GraduationCap, Globe, ChevronDown, BookOpenText, MessagesSquare, PlaySquare, Sparkles, Check } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
@@ -8,6 +8,10 @@ import { mediaUrl } from "@/lib/api";
 import { useRecorder } from "@/hooks/useRecorder";
 import { transcribe } from "@/lib/voice";
 import { useT } from "@/lib/i18n";
+import { FileCard, ImageThumb, DropOverlay, VoiceNoteRecorder } from "@/components/Attachments";
+
+const MAX_FILES = 10; // at once, like ChatGPT
+const PICTURE_RE = /^image\/(png|jpe?g|webp|gif)$/;
 
 
 const narrowScreen = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 639px)").matches;
@@ -15,8 +19,8 @@ const phoneKeyboard = () => typeof window !== "undefined" && !!window.matchMedia
 
 export default function ComposerInput({
   resetKey, onSend, onStop, streaming, disabled,
-  onAttach, attachments = [], onRemoveAttachment, uploading,
-  images = [], onRemoveImage,
+  onAttach, attachments = [], onRemoveAttachment,
+  images = [], onRemoveImage, onOpenImage, onVoiceNote,
   agentMode, onToggleAgent, agentAvailable, agentHint,
   thinkMode, onToggleThink, studyMode, onToggleStudy, webMode, onToggleWeb, searchFocus = "web", onSearchFocus,
   proSearch, onTogglePro,
@@ -38,12 +42,30 @@ export default function ComposerInput({
   textNow.current = text;
   useEffect(() => { if (resetKey) setText(""); }, [resetKey]);
   const change = (v) => setText(v);
-  // Send what is in the box.
-  const send = () => onSend(text);
+  const send = () => onSend(text); // send what is in the box
 
-  // One after another, so the first file's upload creates the chat before the next one needs it.
-  const attachAll = async (files) => {
-    for (const f of files) await onAttach(f);
+  // Files show as cards the moment they're picked (pictures as their own thumbnail), with a spinner until
+  // they're uploaded.
+  const [pending, setPending] = useState([]);
+  const attachAll = async (picked) => {
+    if (!onAttach || !picked.length) return;
+    let files = picked;
+    if (files.length > MAX_FILES) {
+      toast.message(`You can add up to ${MAX_FILES} files at once. I added the first ${MAX_FILES}.`);
+      files = files.slice(0, MAX_FILES);
+    }
+    const items = files.map((f, i) => ({
+      key: `p-${Date.now()}-${i}-${f.name}`, file: f, name: f.name || "Pasted picture", size: f.size, type: f.type,
+      preview: PICTURE_RE.test(f.type || "") ? URL.createObjectURL(f) : null,
+    }));
+    setPending((p) => [...p, ...items]);
+    const one = async (it) => {
+      try { await onAttach(it.file); } finally {
+        setPending((p) => p.filter((x) => x.key !== it.key));
+        if (it.preview) setTimeout(() => URL.revokeObjectURL(it.preview), 4000);
+      }
+    };
+    for (const it of items) await one(it); // one at a time: each upload needs the chat the first one made
   };
 
   // Pasting a copied file or a screenshot attaches it, like the paperclip. Text copied from Word or
@@ -52,23 +74,66 @@ export default function ComposerInput({
     const files = Array.from(e.clipboardData?.files || []);
     if (!onAttach || !files.length || e.clipboardData.getData("text/plain").trim()) return;
     e.preventDefault();
-    attachAll(files);
+    attachAll(files.map((f, i) => (f.name && f.name !== "image.png") ? f
+      : new File([f], `Pasted picture${files.length > 1 ? ` ${i + 1}` : ""}.${(f.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: f.type })));
   };
 
-  const dropProps = onAttach ? {
-    onDragOver: (e) => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); setDragging(true); } },
-    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); },
-    onDrop: (e) => {
-      const files = Array.from(e.dataTransfer?.files || []);
-      setDragging(false);
-      if (!files.length) return;
+  // Files can be dropped anywhere on the page, like ChatGPT and Claude (a full-page "Drop files here" shows).
+  const attachRef = useRef(attachAll);
+  attachRef.current = attachAll;
+  useEffect(() => {
+    if (!onAttach) return undefined;
+    let depth = 0;
+    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+    const enter = (e) => { if (!hasFiles(e)) return; depth += 1; setDragging(true); };
+    const over = (e) => { if (hasFiles(e)) e.preventDefault(); };
+    const leave = (e) => { if (!hasFiles(e)) return; depth = Math.max(0, depth - 1); if (!depth) setDragging(false); };
+    const drop = (e) => {
+      if (!hasFiles(e)) return;
       e.preventDefault();
-      attachAll(files);
-    },
-  } : {};
-  const canSend = (text.trim() || images.length > 0 || attachments.some((a) => a.code !== undefined)) && !disabled;
+      depth = 0;
+      setDragging(false);
+      const files = Array.from(e.dataTransfer?.files || []);
+      if (files.length) attachRef.current(files);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [!!onAttach]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const busyFiles = pending.length > 0 || attachments.some((a) => a.status === "processing");
+  const hasFiles = attachments.some((a) => a.status !== "failed");
+  const canSend = (text.trim() || images.length > 0 || hasFiles) && !disabled && !busyFiles;
+
+  // Voice notes (like WhatsApp): tap the mic, talk as long as you like, then send. The note plays back on the
+  // message and Krish answers what you said.
+  const [note, setNote] = useState(null); // { startedAt, sending }
+  const recordNote = async () => {
+    const startedAt = Date.now();
+    setNote({ startedAt, sending: false });
+    try {
+      const blob = await rec.record({ maxMs: 5 * 60 * 1000 });
+      const secs = (Date.now() - startedAt) / 1000;
+      if (!blob) return;
+      if (secs < 0.8) { toast.message("Tap the mic, say something, then tap send."); return; }
+      setNote({ startedAt, sending: true });
+      await onVoiceNote(blob, secs);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || e.message || "Microphone error");
+    } finally {
+      setNote(null);
+    }
+  };
 
   const toggleMic = async () => {
+    if (onVoiceNote) { if (!note) recordNote(); return; }
     if (rec.recording) { rec.stop(); return; }
     try {
       // Stops by itself when you finish speaking, then sends what you said (no need to tap Send).
@@ -113,47 +178,33 @@ export default function ComposerInput({
 
   return (
     <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-1 sm:px-4 sm:pb-5">
-      {images.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2" data-testid="composer-images">
+      {(images.length > 0 || attachments.length > 0 || pending.length > 0) && (
+        <div className="radha-scroll -mx-1 mb-2 flex gap-2.5 overflow-x-auto px-1 pb-1 pt-2 sm:flex-wrap sm:overflow-visible" data-testid="composer-attachments">
           {groupImages(images).map((img) => img.videoGroup ? (
-            <div key={img.videoGroup.id} className="relative flex items-center gap-2 rounded-lg border border-border-strong bg-surface py-1 pl-1 pr-3" data-testid="composer-video">
-              <img src={mediaUrl(img.url)} alt="" className="h-14 w-20 rounded-md object-cover" />
-              <div className="min-w-0">
-                <p className="flex max-w-[180px] items-center gap-1 truncate text-xs text-foreground"><Film className="h-3 w-3 shrink-0 text-primary" /> {img.videoGroup.name}</p>
-                <p className="text-[10px] text-muted-foreground">{img.count} frames · {img.videoGroup.duration.toFixed(1)}s</p>
-              </div>
-              <button onClick={() => images.filter((i) => i.videoGroup?.id === img.videoGroup.id).forEach((i) => onRemoveImage?.(i.id))}
-                title="Remove video" className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-destructive">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
+            <FileCard key={img.videoGroup.id} name={img.videoGroup.name} contentType="video/mp4" testId="composer-video"
+              extra={`${img.count} frames · ${img.videoGroup.duration.toFixed(1)}s`}
+              onRemove={() => images.filter((i) => i.videoGroup?.id === img.videoGroup.id).forEach((i) => onRemoveImage?.(i.id))} />
           ) : (
-            <div key={img.id} className="group/img relative">
-              <img src={mediaUrl(img.url)} alt={img.name || "Attachment"} className="h-16 w-16 rounded-lg border border-border-strong object-cover" />
-              <button onClick={() => onRemoveImage?.(img.id)} data-testid={`remove-image-${img.id}`} title="Remove image"
-                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-destructive">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
+            <ImageThumb key={img.id} src={mediaUrl(img.url)} name={img.name} testId="composer-image" removeTestId={`remove-image-${img.id}`}
+              onOpen={onOpenImage ? () => onOpenImage(img) : undefined} onRemove={() => onRemoveImage?.(img.id)} />
           ))}
-        </div>
-      )}
-      {attachments.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2" data-testid="composer-attachments">
           {attachments.map((a) => (
-            <div key={a.id} className="flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-2.5 py-1.5 text-xs">
-              {a.status === "processing" ? <Loader2 className="h-3 w-3 animate-spin text-amber-600 dark:text-amber-400" /> : <FileText className="h-3 w-3 text-primary" />}
-              <span className="max-w-[160px] truncate text-foreground">{a.filename}</span>
-              <button onClick={() => onRemoveAttachment?.(a.id)} data-testid={`remove-attachment-${a.id}`} className="text-muted-foreground hover:text-destructive">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
+            <FileCard key={a.id} name={a.filename} contentType={a.contentType} size={a.size ?? a.code?.length} status={a.status}
+              testId={`attachment-${a.id}`} onRemove={() => onRemoveAttachment?.(a.id)} />
           ))}
+          {pending.map((p) => p.preview
+            ? <ImageThumb key={p.key} src={p.preview} name={p.name} uploading testId="composer-uploading" />
+            : <FileCard key={p.key} name={p.name} contentType={p.type} size={p.size} status="uploading" testId="composer-uploading" />)}
         </div>
       )}
+      <DropOverlay show={dragging} />
       {/* Tapping a button here keeps the typing focus: on phones losing it brings back the tab bar, which
           moved the button away mid-tap so the tap landed on the tab bar instead. */}
-      <div {...dropProps} onMouseDown={(e) => { if (e.target.closest?.("button")) e.preventDefault(); }} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}@container rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
+      <div onMouseDown={(e) => { if (e.target.closest?.("button")) e.preventDefault(); }} data-testid="composer-box" className={`${dragging ? "ring-2 ring-indigo-400 " : ""}${note ? "border-rose-200 dark:border-rose-400/30 " : ""}@container rounded-[26px] border border-white/80 bg-white/85 p-2 shadow-[0_12px_40px_rgba(99,102,241,0.14)] backdrop-blur-xl transition-colors focus-within:border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-200/60 dark:border-border dark:bg-card/90 dark:shadow-[0_8px_40px_rgba(0,0,0,0.4)] dark:focus-within:ring-primary/30 sm:px-3`}>
+        {note ? (
+          <VoiceNoteRecorder level={rec.level} startedAt={note.startedAt} sending={note.sending}
+            onCancel={() => rec.cancel()} onSend={() => rec.stop()} />
+        ) : (<>
         <textarea
           ref={ref}
           data-testid="message-composer-textarea"
@@ -172,9 +223,9 @@ export default function ComposerInput({
               <>
                 <input ref={fileRef} type="file" multiple className="hidden" data-testid="composer-file-input"
                   onChange={(e) => { attachAll(Array.from(e.target.files || [])); if (fileRef.current) fileRef.current.value = ""; }} />
-                <button onClick={() => fileRef.current?.click()} disabled={uploading || disabled} data-testid="composer-attach-button" title="Attach any file: documents, web pages, code, ZIP, images or video. You can also paste or drag files here."
+                <button onClick={() => fileRef.current?.click()} disabled={disabled} data-testid="composer-attach-button" title="Add pictures and files: PDFs, Word, Excel, slides, code, ZIP or video. You can also paste or drop them here." aria-label="Add pictures and files"
                   className="flex h-10 w-10 items-center justify-center rounded-lg sm:h-8 sm:w-8 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50">
-                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                  <Paperclip className="h-4 w-4" />
                 </button>
               </>
             )}
@@ -200,8 +251,8 @@ export default function ComposerInput({
                 title={studyMode ? "Study mode is on: Krish teaches step by step and quizzes you" : "Study mode: learn step by step with quizzes and flashcards"} />
             )}
             <button onClick={toggleMic} disabled={!voiceEnabled || transcribing || disabled} data-testid="composer-mic-button"
-              title={voiceEnabled ? (rec.recording ? "Listening… stop talking and it sends by itself" : "Speak your message: it sends when you stop talking") : voiceHint}
-              aria-label="Speak your message"
+              title={voiceEnabled ? (onVoiceNote ? "Send a voice note" : rec.recording ? "Listening… stop talking and it sends by itself" : "Speak your message: it sends when you stop talking") : voiceHint}
+              aria-label={onVoiceNote ? "Record a voice note" : "Speak your message"}
               className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 disabled:opacity-40 ${
                 rec.recording ? "animate-pulse bg-rose-500 text-white shadow-[0_0_0_4px_rgba(244,63,94,0.25)]"
                   : "bg-indigo-100 text-indigo-600 hover:bg-indigo-200 dark:bg-primary/20 dark:text-brand dark:hover:bg-primary/30"}`}>
@@ -233,6 +284,7 @@ export default function ComposerInput({
             </Button>
           )}
         </div>
+        </>)}
       </div>
       <p className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground max-sm:hidden"><ShieldCheck className="h-3.5 w-3.5" /> Krish AI can make mistakes. Verify important information.</p>
     </div>

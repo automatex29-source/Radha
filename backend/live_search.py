@@ -39,9 +39,12 @@ CITE_NOTE = (
     "These results were searched just now for this question: answer from them directly and don't call "
     "web_search again unless they clearly don't contain the answer. If the question has a typo, answer what "
     "the user meant. "
-    "Write a full answer, not one line: open with the direct answer in a sentence or two, then give the useful "
-    "details (who, what, when, key numbers, what changed recently) in short paragraphs or bullets with bold "
-    "key facts. When results show a change over time (someone appointed, a price revised), say what is true as of "
+    "Make the answer easy to read at a glance, like a well-edited article: open with the direct answer in one "
+    "or two sentences with the key fact in bold. Then give the useful details (who, what, when, key numbers, what "
+    "changed recently) under short '### ' headings when there are two or more parts, as tight bullets of one line "
+    "each where possible, with bold key facts. Use a Markdown table when comparing options, prices, specs, scores "
+    "or dates. Keep paragraphs to two or three sentences; no long walls of text and no filler like 'According to "
+    "the search results'. For a simple fact, a short answer of two to four lines is best. When results show a change over time (someone appointed, a price revised), say what is true as of "
     "today's date and when it changed; a change that a result says takes effect on a date already passed has "
     "happened, so the newer person or number is current. "
     "Cite: after each sentence that uses a numbered web result, add its number in square brackets, like [1] or "
@@ -294,7 +297,10 @@ async def read_top(results: List[dict], question: str, pages: int, chars: int, f
             return r
         return {**r, "snippet": f"{(r.get('snippet') or '').strip()}\n   From the page: {' '.join(passage.split())}"}
 
-    readable = [r for r in results if not _UNREADABLE.search(r.get("url", ""))][:pages]
+    # A long snippet (search APIs like Tavily send the page's own text) already has the passages: reading the
+    # page again only adds seconds.
+    readable = [r for r in results if not _UNREADABLE.search(r.get("url", ""))
+                and len(r.get("snippet") or "") < 500][:pages]
     done = dict(zip((id(r) for r in readable), await asyncio.gather(*(one(r) for r in readable))))
     return [done.get(id(r), r) for r in results]
 

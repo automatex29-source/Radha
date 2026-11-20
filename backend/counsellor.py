@@ -54,20 +54,24 @@ PROMPT = (
     "Make them feel known: if you remember something about them (name, exams, work, goals), bring one up when "
     "it truly fits (\"How did the maths exam go?\"), never list it. For a mood check-in, thank them and ask "
     "one soft question; after a breathing exercise, ask how their body feels now.\n\n"
-    "The Bhagavad Gita: you may share its wisdom now and then, only when a verse truly helps with what they "
-    "face (fear, failure, anger, grief, a hard choice, duty, a restless mind) or when they ask about Krishna, the "
-    "Gita or life's big questions. Most replies have no verse. Never in small talk or happy news, never in two "
-    "replies in a row, and not in the first reply to someone raw with pain: listen first. Put it on its own line, "
-    "like: > **Gita 2.47:** You have a right to your work, never to its results. Then one line on what it means "
-    "for them today. Use only what a verse really says; never stretch or invent one. Verses you can rely on:\n"
+    "The Bhagavad Gita is Krish AI's special touch: when someone shares a real struggle (stress, fear, failure, "
+    "exams, anger, grief, loneliness, a hard choice, a restless or overthinking mind, feeling lost) or asks about "
+    "Krishna, the Gita or life's big questions, share one fitting verse as a gentle gift of strength. Skip it in "
+    "small talk, quick facts and happy news, never in two replies in a row, and when someone is in crisis or "
+    "danger, care and helplines come first, with no verse. Put it on its own line, like: > **Gita 2.47:** You "
+    "have a right to your work, never to its results. Then one warm line on what it means for them today. Use "
+    "only what a verse really says; never stretch or invent one. Verses you can rely on:\n"
     "- 2.14: pleasure and pain come and go like heat and cold; bear them patiently, they don't last.\n"
     "- 2.47: your right is to your effort, never to its results; don't stop acting either.\n"
     "- 2.48: do your work steady in mind, the same in success and failure.\n"
+    "- 2.56: one not shaken by sorrow, not craving pleasure, free of fear and anger, has a steady mind.\n"
     "- 2.62-63: dwelling on something breeds desire, desire turns to anger, anger clouds the mind.\n"
     "- 3.35: better your own path done imperfectly than someone else's done well.\n"
     "- 6.5: lift yourself up by your own mind; the mind is your best friend or your worst enemy.\n"
+    "- 6.17: balance in food, rest, sleep, work and play ends sorrow.\n"
     "- 6.35: the mind is restless and hard to hold, but practice and letting go train it.\n"
     "- 2.20: the soul is never born and never dies (for grief and loss).\n"
+    "- 18.66: let go and take refuge in Me; I will free you, do not grieve (for feeling lost or weighed down).\n"
     "Never preach or push it: if they follow another faith or none, respect every faith and people with none, "
     "and give plain practical help instead. No other scriptures or prayers unless they bring up their own faith, "
     "which you respect warmly.\n\n"
@@ -96,8 +100,8 @@ BRIEF = ("Reminder: reply in the same language and script as their latest messag
          "script. If they asked something, answer it directly first. Keep it short: a line or two for small talk, "
          "about 40 to 90 words for a feeling, up to about 150 for a real question. Be specific to what they said, "
          "warm and encouraging, and don't repeat yourself. Short parts with blank lines between them, the key idea "
-         "in **bold**, at most one question, never one dense paragraph. A Gita verse only if it truly fits; most "
-         "replies have none. Never "
+         "in **bold**, at most one question, never one dense paragraph. A Gita verse when they share a struggle "
+         "and none was in your last two replies. Never "
          "call them \"bestie\".")
 
 # Added last in a voice call with the Counsellor, after the general voice rules: a call is a warm phone talk, so
@@ -113,6 +117,37 @@ VOICE = ("This is a voice call with the Counsellor: talk like a caring friend on
 # Added when one of the last two replies already quoted the Gita, so verses stay occasional.
 NO_VERSE = "You quoted the Gita recently in this chat. Don't quote a verse in this reply."
 _VERSE = re.compile(r"\bGita\s+\d{1,2}\.\d{1,2}", re.IGNORECASE)
+
+
+# Added when the latest message shares a struggle and no recent reply quoted a verse: free models skipped the
+# Gita almost always when it was only allowed, so this asks for one.
+GITA_NOTE = ("They are sharing a struggle: include one Gita verse from the list that truly fits, on its own line "
+             "as > **Gita X.Y:** ..., then one warm line on what it means for them today. Translate the verse into "
+             "their language and script.")
+_STRUGGLE = re.compile(
+    r"stress|anxi|worr|fear|scar|afraid|nervous|panic|fail|exam|result|marks|reject|lonely|alone|sad|depress|"
+    r"cry|hurt|broke ?up|breakup|heartbr|angry|anger|frustrat|jealous|grief|griev|lost (?:my|him|her)|passed away|"
+    r"died|overthink|confus|stuck|lost|purpose|meaning|demotiv|unmotiv|hopeless|tired of|give up|useless|"
+    r"worthless|pressure|guilt|regret|career|job|krishna|gita|"
+    r"tension|pareshan|dukh|udaas|udas|dar lag|darr|gussa|akela|akeli|fail ho|rona|ro rah|thak gay|thak gayi|"
+    r"samajh nahi aa|kya karu|kya karun|himmat|"
+    r"तनाव|परेशान|दुख|दुःख|उदास|डर|गुस्सा|अकेला|अकेली|फेल|रोना|थक|हिम्मत|कृष्ण|गीता",
+    re.IGNORECASE)
+
+
+_HAPPY = re.compile(r"happy|excited|great news|\byay\b|got (?:the|a|my) (?:job|offer)|\bpassed\b|selected|topped|"
+                    r"khush|khushi|खुश", re.IGNORECASE)
+
+
+def gita_note(messages: list) -> str:
+    """GITA_NOTE when the latest message shares a struggle, isn't a crisis, and no recent reply had a verse."""
+    said = [m.get("content") or "" for m in messages if m.get("role") == "user"]
+    last = said[-1] if said else ""
+    if not last or is_crisis(last) or verse_note(messages) or len(last.split()) < 3:
+        return ""
+    if _HAPPY.search(last) and not re.search(r"\b(but|par|lekin|still)\b|stress|scar|fear|worr", last, re.I):
+        return ""  # good news gets joy, not a lesson
+    return GITA_NOTE if _STRUGGLE.search(last) else ""
 
 
 def verse_note(messages: list) -> str:

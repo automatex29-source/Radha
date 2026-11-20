@@ -15,13 +15,13 @@ import {
   ArrowDown, ArrowLeft, ArrowUp, Copy, Download, FileText, ImageIcon, Loader2, Palette, Pencil, Play, Plus,
   Presentation, Send, Sparkles, Trash2, Undo2, X, ChevronLeft, ChevronRight,
 } from "lucide-react";
-import Slide, { SLIDE_H, SLIDE_W, ScaledSlide, findTheme, useDeckThemes } from "@/components/deck/Slide";
+import Slide, { SLIDE_H, SLIDE_W, ScaledSlide, findTheme, partNumber, useDeckThemes } from "@/components/deck/Slide";
 import PicturePicker from "@/components/deck/PicturePicker";
 
 const LAYOUTS = [
-  ["cover", "Cover"], ["section", "Section"], ["bullets", "Bullet points"], ["image_right", "Text + picture right"],
+  ["cover", "Cover"], ["section", "Section"], ["agenda", "Agenda"], ["bullets", "Bullet points"], ["image_right", "Text + picture right"],
   ["image_left", "Picture left + text"], ["cards", "Cards with icons"], ["stats", "Big numbers"], ["chart", "Chart"],
-  ["steps", "Steps / timeline"], ["quote", "Quote"], ["comparison", "Comparison"], ["closing", "Closing"],
+  ["steps", "Steps"], ["timeline", "Timeline (dates)"], ["quote", "Quote"], ["comparison", "Comparison"], ["closing", "Closing"],
 ];
 const IMAGE_LAYOUTS = ["cover", "image_right", "image_left"];
 const SUGGESTIONS = [
@@ -111,14 +111,14 @@ function SlideForm({ draft, setDraft }) {
           <Textarea className={inputCls} rows={2} value={draft.body} onChange={(e) => set({ body: e.target.value })} />
         </Field>
       )}
-      {["bullets", "image_right", "image_left"].includes(L) && (
-        <Field label="Bullet points (one per line)">
+      {["bullets", "image_right", "image_left", "agenda"].includes(L) && (
+        <Field label={L === "agenda" ? "Parts of the talk (one per line, up to 6)" : "Bullet points (one per line)"}>
           <Textarea className={inputCls} rows={5} value={lines(draft.bullets)} onChange={(e) => set({ bullets: e.target.value.split("\n") })} />
         </Field>
       )}
-      {["cards", "steps"].includes(L) && (
+      {["cards", "steps", "timeline"].includes(L) && (
         <div className="space-y-2">
-          <span className="text-xs font-medium text-muted-foreground">{L === "cards" ? "Cards" : "Steps"}</span>
+          <span className="text-xs font-medium text-muted-foreground">{L === "cards" ? "Cards" : L === "timeline" ? "Dates (title is the year or date)" : "Steps"}</span>
           {draft.items.map((it, i) => (
             <div key={i} className="space-y-1.5 rounded-lg border border-border p-2">
               <div className="flex gap-1.5">
@@ -129,7 +129,7 @@ function SlideForm({ draft, setDraft }) {
               <Textarea className={inputCls} rows={2} value={it.text} placeholder="Text" onChange={(e) => setItem(i, { text: e.target.value })} />
             </div>
           ))}
-          {draft.items.length < (L === "steps" ? 5 : 4) && (
+          {draft.items.length < ({ steps: 5, timeline: 6 }[L] || 4) && (
             <Button variant="outline" size="sm" onClick={() => set({ items: [...draft.items, { icon: "✨", title: "", text: "" }] })}>
               <Plus className="mr-1 h-3.5 w-3.5" /> Add
             </Button>
@@ -193,9 +193,9 @@ function switchLayout(d, layout) {
   const fromSides = [...(d.left?.bullets || []), ...(d.right?.bullets || [])];
   const points = unlines(lines(d.bullets)).length ? unlines(lines(d.bullets))
     : fromItems.length ? fromItems : fromStats.length ? fromStats : fromSides;
-  if (["bullets", "image_right", "image_left"].includes(layout) && !unlines(lines(d.bullets)).length) next.bullets = points.slice(0, 6);
-  if (["cards", "steps"].includes(layout) && !(d.items || []).length) {
-    next.items = points.slice(0, layout === "steps" ? 5 : 4).map((p) => {
+  if (["bullets", "image_right", "image_left", "agenda"].includes(layout) && !unlines(lines(d.bullets)).length) next.bullets = points.slice(0, 6);
+  if (["cards", "steps", "timeline"].includes(layout) && !(d.items || []).length) {
+    next.items = points.slice(0, { steps: 5, timeline: 6 }[layout] || 4).map((p) => {
       const [title, ...rest] = p.split(": ");
       return { icon: "✨", title: rest.length ? title : p.split(" ").slice(0, 4).join(" "), text: rest.length ? rest.join(": ") : p };
     });
@@ -224,7 +224,7 @@ const cleanDraft = (d) => ({
 });
 
 // ------------------------------------------------------------ present + print
-function PresentMode({ slides, theme, start, onClose }) {
+function PresentMode({ slides, theme, start, onClose, title }) {
   const [i, setI] = useState(start);
   const ref = useRef(null);
   useEffect(() => {
@@ -246,7 +246,8 @@ function PresentMode({ slides, theme, start, onClose }) {
   return (
     <div ref={ref} className="fixed inset-0 z-50 bg-black" data-testid="deck-present"
       onClick={(e) => setI((v) => (e.clientX < window.innerWidth / 3 ? Math.max(0, v - 1) : Math.min(slides.length - 1, v + 1)))}>
-      <ScaledSlide fit className="h-full w-full" slide={slides[i]} theme={theme} index={i} total={slides.length} />
+      <ScaledSlide key={i} fit animate className="h-full w-full" slide={slides[i]} theme={theme} index={i} total={slides.length}
+        deckTitle={title} part={partNumber(slides, i)} />
       <div className="absolute bottom-4 right-4 flex items-center gap-2 text-xs text-white/60">
         {i + 1} / {slides.length}
         <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="rounded-md bg-white/10 p-1.5 hover:bg-white/20"><X className="h-4 w-4" /></button>
@@ -255,7 +256,7 @@ function PresentMode({ slides, theme, start, onClose }) {
   );
 }
 
-function PrintDeck({ slides, theme, onDone }) {
+function PrintDeck({ slides, theme, onDone, title }) {
   const ref = useRef(null);
   useEffect(() => {
     let cancelled = false;
@@ -283,7 +284,7 @@ function PrintDeck({ slides, theme, onDone }) {
         }
       `}</style>
       {slides.map((s, i) => (
-        <div className="deck-page" key={s.id || i}><Slide slide={s} theme={theme} index={i} total={slides.length} /></div>
+        <div className="deck-page" key={s.id || i}><Slide slide={s} theme={theme} index={i} total={slides.length} deckTitle={title} part={partNumber(slides, i)} /></div>
       ))}
     </div>,
     document.body,
@@ -512,7 +513,7 @@ export default function DeckEditor() {
               <div key={s.id} className="group relative">
                 <button onClick={() => selectSlide(i)} data-testid={`deck-thumb-${i}`}
                   className={`block w-full overflow-hidden rounded-md border-2 transition-colors ${i === sel ? "border-primary" : "border-transparent hover:border-border"}`}>
-                  <ScaledSlide slide={s} theme={theme} index={i} total={slides.length} pending={deck.picturesPending} />
+                  <ScaledSlide slide={s} theme={theme} index={i} total={slides.length} pending={deck.picturesPending} part={partNumber(slides, i)} />
                 </button>
                 <span className="absolute left-1 top-1 rounded bg-black/50 px-1 text-[10px] text-white">{i + 1}</span>
                 {!generating && (
@@ -537,7 +538,8 @@ export default function DeckEditor() {
           <main className="flex min-w-0 flex-col bg-sunken/40 max-lg:h-[55vh] max-lg:shrink-0 max-sm:h-auto lg:flex-1">
             <div className="flex min-h-0 flex-1 items-center justify-center p-4 max-sm:aspect-video max-sm:flex-none max-sm:p-3 sm:p-8">
               {current ? (
-                <ScaledSlide fit className="h-full w-full" slide={shown} theme={theme} index={sel} total={slides.length} pending={deck.picturesPending} />
+                <ScaledSlide fit className="h-full w-full" slide={shown} theme={theme} index={sel} total={slides.length} pending={deck.picturesPending}
+                  deckTitle={deck.title} part={partNumber(slides, sel)} />
               ) : generating ? (
                 <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
                   <Sparkles className="h-8 w-8 animate-pulse text-primary" /> Krish AI is designing your slides…
@@ -628,10 +630,10 @@ export default function DeckEditor() {
           </aside>
         </div>
       </div>
-      {presenting && slides.length > 0 && <PresentMode slides={slides} theme={theme} start={sel} onClose={closePresent} />}
+      {presenting && slides.length > 0 && <PresentMode slides={slides} theme={theme} start={sel} onClose={closePresent} title={deck.title} />}
       <PicturePicker open={picker} onOpenChange={setPicker} deckId={id} index={sel} slide={current}
         onDeck={(data) => { setDeck(data); setDraft(null); }} />
-      {printing && <PrintDeck slides={slides} theme={theme} onDone={donePrinting} />}
+      {printing && <PrintDeck slides={slides} theme={theme} onDone={donePrinting} title={deck.title} />}
     </div>
   );
 }

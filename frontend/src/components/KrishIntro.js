@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import KrishWordmark from "@/components/KrishWordmark";
+import { LoadingCanvas } from "@/components/PictureMaking";
 
 const BUILD_LINES = [
   "Reading your idea…",
@@ -36,10 +37,27 @@ function useTyping(lines) {
 }
 
 /** The preview's start screen while a new app is still the empty starter: the Krish AI chakra, turning
- *  smoothly and faster while Krish builds, with what it is doing typed underneath. */
+ *  turning smoothly, with ideas typed underneath. While Krish builds it becomes "Gathering light". */
 export default function KrishIntro({ building }) {
   const [burst, setBurst] = useState(0);
   const typed = useTyping(building ? BUILD_LINES : IDLE_LINES);
+
+  // While Krish builds: "Gathering light", sparks drawing in to the centre, with what it is doing typed underneath.
+  if (building) {
+    return (
+      <div data-testid="krish-intro" className="krish-intro relative flex h-full w-full select-none flex-col items-center justify-center overflow-hidden">
+        <LoadingCanvas transparent className="pointer-events-none absolute inset-0 h-full w-full" />
+        <div className="relative mt-[46%] flex flex-col items-center sm:mt-[30%]">
+          <h2 className="text-center text-[24px] font-extrabold tracking-tight text-white sm:text-[30px]">
+            <KrishWordmark className="krish-intro-word text-[28px] sm:text-[34px]" /> <span>is building</span>
+          </h2>
+          <p className="mt-3 h-6 text-center font-mono text-[14px] text-orange-100/85 sm:text-[15px]" data-testid="krish-intro-typing">
+            {typed}<span className="krish-intro-caret" />
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div data-testid="krish-intro"

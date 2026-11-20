@@ -58,6 +58,36 @@ DRAFT_RULES = (
 )
 
 
+MAX_CONTINUE = 3  # times a reply cut off inside a file is asked to go on
+
+
+CONTINUE_TAIL = 1500  # characters of where the reply stopped, repeated in the request (older parts may be trimmed)
+
+
+def continue_rules(path: Optional[str], tail: str = "") -> str:
+    where = f"\n\nYour reply ended with:\n<<<\n{tail}\n>>>" if tail else ""
+    return (f"Your reply was cut off in the middle of {path}. Go on with {path} exactly where you stopped: start "
+            "with the very next characters, don't repeat anything already written, don't open a new code block "
+            "and don't write any intro. Then close the block with ``` and write any files that are still missing "
+            "the same way, then the one short line saying what you built." + where)
+
+
+def continuation_start(held: str):
+    """(decided, text to read) for the start of a continuation, held until its first line is complete. A repeated
+    fence line that opens the same file again ("```js app.js") is dropped; anything else is read as it is."""
+    stripped = held.lstrip()
+    if not stripped:
+        return False, ""
+    if not stripped.startswith("```"):
+        return True, held
+    if "\n" not in stripped:
+        return False, ""
+    line, rest = stripped.split("\n", 1)
+    if _FENCE_OPEN.match(line) and not _FENCE_CLOSE.match(line):
+        return True, rest
+    return True, held
+
+
 def _plain(files: Dict[str, str]) -> Dict[str, str]:
     return {p: c for p, c in files.items() if not p.startswith(_SKIP_DIRS) and p != apps.KIT_NAME}
 
@@ -124,7 +154,8 @@ async def instant_start(app_id: str, request: str, files: Dict[str, str]) -> Asy
 class _Reader:
     """Reads the streamed reply line by line: text outside code blocks, and code blocks that name a file."""
 
-    def __init__(self):
+    def __init__(self, force_path: Optional[str] = None):
+        self.force = force_path
         self.buf = ""
         self.path: Optional[str] = None
         self.lines: List[str] = []
@@ -147,8 +178,8 @@ class _Reader:
             m = _FENCE_OPEN.match(line)
             if not m:
                 return [("text", line + "\n")]
-            path = m.group(2) or _DEFAULT_NAMES.get(m.group(1).lower())
-            if path in self.used and not m.group(2):
+            path = self.force or m.group(2) or _DEFAULT_NAMES.get(m.group(1).lower())
+            if path in self.used and not m.group(2) and not self.force:
                 path = None
             try:
                 path = apps.clean_path(path) if path else f"extra-{len(self.used) + 1}.txt"
@@ -165,18 +196,23 @@ class _Reader:
         return [("code", self.path, line + "\n")]
 
 
-async def draft(stream_fn, app_id: str, model: str, llm_messages: list) -> AsyncIterator[dict]:
+async def draft(stream_fn, app_id: str, model: str, llm_messages: list, rules: Optional[str] = DRAFT_RULES,
+                force_path: Optional[str] = None) -> AsyncIterator[dict]:
     """Stream the one-reply build. Yields text, code_draft and write_file step events; the last event is
-    {"type": "draft_done", "files": [paths written], "plan": [...], "said": "the reply's text"}."""
+    {"type": "draft_done", "files": [paths written], "plan": [...], "said": "the reply's text"}.
+    `rules` None sends `llm_messages` as they are (a fix writes its own request); `force_path` saves every block
+    as that file (a fix of js/app.js answered as "```js app.js" must not add a second app.js)."""
     messages = list(llm_messages)
     last = messages[-1] if messages else None
-    if last and last.get("role") == "user" and isinstance(last.get("content"), str):
-        messages[-1] = {**last, "content": last["content"] + "\n\n" + DRAFT_RULES}
+    if rules is None:
+        pass
+    elif last and last.get("role") == "user" and isinstance(last.get("content"), str):
+        messages[-1] = {**last, "content": last["content"] + "\n\n" + rules}
     elif last and last.get("role") == "user" and isinstance(last.get("content"), list):
-        messages[-1] = {**last, "content": last["content"] + [{"type": "text", "text": DRAFT_RULES}]}
+        messages[-1] = {**last, "content": last["content"] + [{"type": "text", "text": rules}]}
     else:
-        messages.append({"role": "user", "content": DRAFT_RULES})
-    reader = _Reader()
+        messages.append({"role": "user", "content": rules})
+    reader = _Reader(force_path)
     written, plan, said, pending, steps = [], [], [], {}, {}
     key = uuid.uuid4().hex[:6]
 
@@ -215,12 +251,34 @@ async def draft(stream_fn, app_id: str, model: str, llm_messages: list) -> Async
                 except ValueError as exc:
                     yield _event("end", steps[path], "", path, False, str(exc)[:200])
 
-    async for ev in stream_fn(model, messages, []):
-        if ev["type"] == "text":
-            async for out in handle(reader.feed(ev["text"])):
+    reply: List[str] = []
+    for attempt in range(MAX_CONTINUE + 1):
+        ask = messages if attempt == 0 else messages + [
+            {"role": "assistant", "content": "".join(reply)},
+            {"role": "user", "content": continue_rules(reader.path, "".join(reply)[-CONTINUE_TAIL:])}]
+        held = "" if attempt > 0 else None
+        async for ev in stream_fn(model, ask, []):
+            if ev["type"] == "text":
+                text = ev["text"]
+                if held is not None:
+                    # The model sometimes opens the block again ("```js app.js") before going on.
+                    decided, text = continuation_start(held + text)
+                    held = None if decided else held + ev["text"]
+                    if not decided:
+                        continue
+                reply.append(text)
+                async for out in handle(reader.feed(text)):
+                    yield out
+            elif ev["type"] == "heartbeat":
+                yield ev
+        if held:  # the continuation was only a fence line: the closing ```
+            reply.append(held)
+            async for out in handle(reader.feed(held)):
                 yield out
-        elif ev["type"] == "heartbeat":
-            yield ev
+        if reader.path is None:
+            break  # every file was closed: nothing was cut off
+        # The reply ran out of room inside a file. Saving it like this left app.js cut off ("Unexpected end of
+        # input"), so the model is asked to go on from where it stopped instead.
     async for out in handle(reader.feed("", final=True)):
         yield out
     yield {"type": "draft_done", "files": written, "plan": plan, "said": "".join(said)}
@@ -235,3 +293,41 @@ async def tidy_starter(app_id: str, template: Optional[str], written: List[str])
     for path in apps.TEMPLATES.get(template, {}):
         if path not in written and path in files and path.rsplit("/", 1)[-1] not in used:
             await apps.delete_file(app_id, path)
+
+
+# ------------------------------------------------------------------ fixing one broken file without tools
+# The free builders often answer a repair request with chat ("Sure! What would you like to build?") instead of
+# calling edit_file. A file that doesn't parse (usually cut off) is fixed the way the first build is written:
+# one reply holding the whole corrected file, saved when its block closes, and continued if it is cut off again.
+_PROBLEM_FILE = re.compile(r"^([\w\-./]+\.(?:m?js|jsx|tsx?|html?|css))\b has\b")
+FIX_SYSTEM = ("You are Krish AI, a senior engineer fixing a broken file in the user's web app. You never chat, "
+              "greet or ask questions: you answer with the complete corrected file and one short line.")
+
+
+def broken_file(problem: str, files: Dict[str, str]) -> Optional[str]:
+    """The file a syntax-error problem names, when it is in the app, else None."""
+    m = _PROBLEM_FILE.match(problem or "")
+    if not m or m.group(1) not in files:
+        return None
+    return m.group(1) if re.search(r"syntax error|doesn't compile|cut off", problem) else None
+
+
+def fix_room(model: str) -> int:
+    """Characters of a file that fit in a fix request, with room left for the whole file to come back."""
+    if not agent_llm.lean(model):
+        return 60000
+    return max(0, int((agent_llm.token_budget(model) - 4000) / 2 * agent_llm._CHARS_PER_TOKEN))
+
+
+def fix_messages(path: str, code: str, problem: str, request: str) -> List[dict]:
+    ext = path.rsplit(".", 1)[-1].lower()
+    lang = {"mjs": "js", "htm": "html"}.get(ext, ext)
+    ask = f"\n\nWhat the user asked this app to do:\n{request.strip()[:2500]}" if request.strip() else ""
+    return [{"role": "system", "content": FIX_SYSTEM}, {"role": "user", "content": (
+        f"The automatic test of the app found this problem:\n{problem}{ask}\n\n"
+        f"Here is {path} as it is now ({code.count(chr(10)) + 1} lines):\n````{lang}\n{code}\n````\n\n"
+        f"Write the complete corrected {path} as one code block whose first line names the file:\n"
+        f"```{lang} {path}\n...\n```\n"
+        "Keep everything that works, finish anything that was cut off, and make every feature the user asked "
+        "for work. Never write \"...\" or leave a part out. After the block, one short line saying what you "
+        "fixed. No greeting, no questions, no plan.")}]
