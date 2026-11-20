@@ -485,7 +485,37 @@
     });
   }
 
-  function start() { transitions(); stories(); fonts(); navs(); reveals(); pointer(); counters(); typed(); extras(); scrolly(); scenes(); }
+  // Pictures: a soft moving sheen in the style's colours while one loads, and if it can't load, a gradient
+  // in those colours in its place, never a blank box or a broken-image icon. AI pictures get one more try.
+  function pictures() {
+    var cs = getComputedStyle(document.body || document.documentElement);
+    function swatch(img) {
+      var a = (cs.getPropertyValue("--accent") || "#6d28d9").trim(), b = (cs.getPropertyValue("--accent-2") || a).trim();
+      var w = img.getAttribute("width") || 800, h = img.getAttribute("height") || 600;
+      return "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h +
+        '" viewBox="0 0 100 75" preserveAspectRatio="none"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + a +
+        '" stop-opacity=".55"/><stop offset="1" stop-color="' + b + '" stop-opacity=".35"/></linearGradient><radialGradient id="r" cx=".7" cy=".25" r=".7"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect width="100" height="75" fill="url(#g)"/><rect width="100" height="75" fill="url(#r)"/></svg>');
+    }
+    document.querySelectorAll("img:not([data-kpic])").forEach(function (img) {
+      img.setAttribute("data-kpic", "");
+      if (img.complete && img.naturalWidth) return;
+      if (!img.complete) img.classList.add("k-wait");
+      function failed() {
+        img.classList.remove("k-wait");
+        if (/\/api\/site-image/.test(img.src) && !img.hasAttribute("data-kretry")) {
+          img.setAttribute("data-kretry", "");
+          img.classList.add("k-wait");
+          setTimeout(function () { img.src = img.src + (img.src.indexOf("?") < 0 ? "?" : "&") + "r=1"; }, 2500);
+          return;
+        }
+        if (img.src.indexOf("data:image/svg") !== 0) { img.classList.add("k-standin"); img.src = swatch(img); }
+      }
+      img.addEventListener("load", function () { img.classList.remove("k-wait"); });
+      img.addEventListener("error", failed);
+      if (img.complete && !img.naturalWidth && img.src) failed();
+    });
+  }
+  function start() { pictures(); transitions(); stories(); fonts(); navs(); reveals(); pointer(); counters(); typed(); extras(); scrolly(); scenes(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
   // Pages that draw their content with JavaScript get the menu button and reveals once it is there.
@@ -494,7 +524,7 @@
     new MutationObserver(function () {
       if (queued) return;
       queued = true;
-      setTimeout(function () { queued = false; transitions(); stories(); fonts(); navs(); extras(); reveals(); scrolly(); scenes(); }, 120);
+      setTimeout(function () { queued = false; pictures(); transitions(); stories(); fonts(); navs(); extras(); reveals(); scrolly(); scenes(); }, 120);
     }).observe(document.documentElement, { childList: true, subtree: true });
   }
 })();

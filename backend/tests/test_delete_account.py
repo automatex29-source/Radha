@@ -67,3 +67,9 @@ def test_security_headers(client):
     r = client.get("/api/")
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+
+
+def test_uptime_monitors_can_check_with_head(client):
+    """Free uptime monitors (UptimeRobot and others) check with HEAD; a 405 shows the site as down."""
+    assert client.head("/api/").status_code == 200
+    assert client.get("/api/").json()["status"] == "ok"

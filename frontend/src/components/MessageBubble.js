@@ -1,86 +1,41 @@
 import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, Globe, CornerDownRight, Play, Newspaper, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Copy, Check, Pencil, User, FileText as FileIcon, Volume2, Square, Loader2, CornerDownRight, Play, Newspaper, ThumbsUp, ThumbsDown } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, speechText, unlockSpeech } from "@/lib/voice";
 import { ToolSteps, MediaGallery } from "@/components/ToolSteps";
+import PictureMaking from "@/components/PictureMaking";
+import { PictureGallery, PictureChanges, isMadePicture, markFresh } from "@/components/PictureGallery";
+import ApprovalCard from "@/components/ApprovalCard";
 import CodeProject from "@/components/CodeProject";
 import { extractFiles, stripFileBlocks } from "@/lib/codeFiles";
 import KrishWordmark from "@/components/KrishWordmark";
 import BrandMark from "@/components/BrandMark";
-import { hideRelatedLine, linkCitations, faviconUrl } from "@/lib/citations";
+import { hideRelatedLine, linkCitations } from "@/lib/citations";
 import { prepareMath, useMathPlugins } from "@/lib/math";
 import AnswerVisual, { visualSource, withoutDiagrams, AnswerStreaming } from "@/components/DiagramBlock";
-import SourceChip from "@/components/SourceChip";
+import SourceChip, { SourcesContext } from "@/components/SourceChip";
+import { SearchTabs, SearchingStatus } from "@/components/WebSearch";
 import { LiveCards } from "@/components/LiveCards";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { modelLabel } from "@/lib/models";
 import { AgentAvatar } from "@/lib/counselAgents";
 import ScrollTable from "@/components/ScrollTable";
 import AiLimitCard from "@/components/AiLimitCard";
-
-function SiteIcon({ domain, className = "h-3.5 w-3.5" }) {
-  const [failed, setFailed] = useState(false);
-  if (failed || !domain) return <Globe className={`${className} text-muted-foreground`} />;
-  return <img src={faviconUrl(domain)} alt="" loading="lazy" onError={() => setFailed(true)} className={`${className} rounded-sm`} />;
-}
-
-// Like Perplexity: the web pages the answer came from, as cards above it.
-function WebSources({ items, id }) {
-  const [all, setAll] = useState(false);
-  const shown = all || items.length <= 4 ? items : items.slice(0, 3);
-  const more = items.length - shown.length;
-  return (
-    <div className="mb-3" data-testid={`web-sources-${id}`}>
-      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        <Globe className="h-3.5 w-3.5" /> Sources
-      </p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {shown.map((s, i) => (
-          <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" title={s.snippet || s.title}
-            data-testid={`web-source-card-${i + 1}`}
-            className="flex min-w-0 flex-col justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5 transition-colors hover:border-primary/50 hover:bg-surface">
-            {s.thumbnail && (
-              <span className="relative -mx-1 -mt-0.5 block overflow-hidden rounded-lg bg-surface">
-                <img src={s.thumbnail} alt="" loading="lazy" className="aspect-video w-full object-cover" />
-                <span className="absolute inset-0 flex items-center justify-center">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white"><Play className="ml-0.5 h-4 w-4 fill-current" /></span>
-                </span>
-              </span>
-            )}
-            <span className="line-clamp-2 text-[12.5px] font-medium leading-snug text-foreground">{s.title}</span>
-            <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-              <SiteIcon domain={s.domain} />
-              <span className="truncate">{s.domain}</span>
-              <span className="ml-auto shrink-0 tabular-nums">{i + 1}</span>
-            </span>
-          </a>
-        ))}
-        {more > 0 && (
-          <button onClick={() => setAll(true)} data-testid={`web-sources-more-${id}`}
-            className="flex min-w-0 flex-col justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-surface">
-            <span className="flex -space-x-1">
-              {items.slice(3, 7).map((s) => <SiteIcon key={s.url} domain={s.domain} className="h-4 w-4 rounded-full bg-card ring-2 ring-card" />)}
-            </span>
-            <span className="text-[11px] text-muted-foreground">View {more} more</span>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
+import ThinkingShape from "@/components/ThinkingShape";
+import { FileCard, VoiceNotePlayer } from "@/components/Attachments";
 
 // Pictures found for the question, like Perplexity's image strip. Each opens the page it came from.
-function ImageResults({ items, id }) {
+function ImageResults({ items, id, all = false }) {
   const [hidden, setHidden] = useState({});
-  const shown = items.filter((im) => !hidden[im.thumbnail]).slice(0, 6);
+  const shown = items.filter((im) => !hidden[im.thumbnail]).slice(0, all ? 12 : 6);
   if (!shown.length) return null;
   return (
     <div className="mb-3 grid grid-cols-3 gap-1.5 sm:grid-cols-6" data-testid={`image-results-${id}`}>
       {shown.map((im, i) => (
         <a key={im.thumbnail} href={im.url} target="_blank" rel="noopener noreferrer" title={im.title}
-          className={`group/img block overflow-hidden rounded-lg border border-border bg-surface ${i >= 3 ? "max-sm:hidden" : ""}`}>
+          className={`group/img block overflow-hidden rounded-lg border border-border bg-surface ${i >= 3 && !all ? "max-sm:hidden" : ""}`}>
           <img src={im.thumbnail} alt={im.title || ""} loading="lazy"
             onError={() => setHidden((h) => ({ ...h, [im.thumbnail]: true }))}
             className="aspect-square h-full w-full object-cover transition-transform duration-300 group-hover/img:scale-105" />
@@ -91,15 +46,15 @@ function ImageResults({ items, id }) {
 }
 
 // YouTube videos for how-tos and recipes, like Perplexity's video row.
-function VideoResults({ items, id }) {
+function VideoResults({ items, id, all = false }) {
   const [hidden, setHidden] = useState({});
-  const shown = items.filter((v) => !hidden[v.thumbnail]).slice(0, 4);
+  const shown = items.filter((v) => !hidden[v.thumbnail]).slice(0, all ? 8 : 4);
   if (!shown.length) return null;
   return (
     <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid={`video-results-${id}`}>
       {shown.map((v, i) => (
         <a key={v.url} href={v.url} target="_blank" rel="noopener noreferrer" title={v.title}
-          className={`group/vid block overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 ${i >= 2 ? "max-sm:hidden" : ""}`}>
+          className={`group/vid block overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 ${i >= 2 && !all ? "max-sm:hidden" : ""}`}>
           <span className="relative block aspect-video overflow-hidden bg-surface">
             <img src={v.thumbnail} alt="" loading="lazy" onError={() => setHidden((h) => ({ ...h, [v.thumbnail]: true }))}
               className="h-full w-full object-cover transition-transform duration-300 group-hover/vid:scale-105" />
@@ -109,7 +64,10 @@ function VideoResults({ items, id }) {
               </span>
             </span>
           </span>
-          <span className="block px-2.5 py-2"><span className="line-clamp-2 text-xs font-medium leading-snug text-foreground">{v.title}</span></span>
+          <span className="block px-2.5 py-2">
+            <span className="line-clamp-2 text-xs font-medium leading-snug text-foreground">{v.title}</span>
+            {v.channel && <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{v.channel}</span>}
+          </span>
         </a>
       ))}
     </div>
@@ -136,7 +94,7 @@ function MakePageButton({ id }) {
   return (
     <button onClick={make} disabled={busy} data-testid={`make-page-button-${id}`} title="Publish this answer as a page anyone can read"
       className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 max-md:min-h-9 max-md:px-1">
-      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Newspaper className="h-3 w-3" />} Make a page
+      {busy ? <ThinkingShape size={11} /> : <Newspaper className="h-3 w-3" />} Make a page
     </button>
   );
 }
@@ -270,6 +228,8 @@ function RateButtons({ message }) {
   );
 }
 
+const PICTURE_TOOLS = new Set(["generate_image", "edit_image"]);
+
 export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, quickReplies, compactSteps = false, agent = null }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -278,8 +238,14 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   // With the side panel, the files live there (like Claude's artifacts) and the chat keeps just the words.
   const webSources = useMemo(() => (message.sources || []).filter((s) => (s.type === "web" || s.type === "video") && s.url), [message.sources]);
   const liveCards = useMemo(() => (message.sources || []).filter((s) => s.type === "weather" || s.type === "stock"), [message.sources]);
+  // Pictures Krish made show big, right under the steps, where the "Creating image" frame was.
+  const madePictures = useMemo(() => (message.media || []).filter(isMadePicture), [message.media]);
+  const otherMedia = useMemo(() => (message.media || []).filter((m) => !isMadePicture(m)), [message.media]);
+  const makingPicture = streaming ? (message.steps || []).find((s) => s.status === "running" && PICTURE_TOOLS.has(s.name)) : null;
+  if (streaming) markFresh(madePictures);
   const imageResults = useMemo(() => (message.sources || []).filter((s) => s.type === "image" && s.thumbnail), [message.sources]);
-  const videoResults = useMemo(() => (message.sources || []).filter((s) => s.type === "clip" && s.thumbnail && s.url), [message.sources]);
+  // YouTube rows: the how-to videos, and the results of a Video search (those also stay numbered in the sources).
+  const videoResults = useMemo(() => (message.sources || []).filter((s) => (s.type === "clip" || s.type === "video") && s.thumbnail && s.url), [message.sources]);
   const fileSources = useMemo(() => (message.sources || []).filter((s) => s.fileName), [message.sources]);
   const shown = useMemo(() => {
     if (isUser) return message.content || "";
@@ -339,15 +305,34 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
       <div className="group flex flex-col items-end radha-fade-up" data-testid={`user-message-item-${message.id}`}>
       <div className="flex w-full justify-end gap-3">
         <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-indigo-100 bg-gradient-to-br from-indigo-50 to-violet-50 px-4 py-2.5 text-[0.95rem] leading-relaxed text-foreground shadow-[0_6px_20px_-10px_rgba(99,102,241,0.35)] dark:border-indigo-400/20 dark:from-indigo-500/15 dark:to-violet-500/10 sm:px-5">
+          {message.audio?.id && (
+            <div className={userText ? "mb-1.5" : ""}>
+              <VoiceNotePlayer id={message.audio.id} seconds={message.audio.seconds} testId={`voice-note-${message.id}`} />
+            </div>
+          )}
           {message.images?.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2" data-testid={`user-message-images-${message.id}`}>
-              {message.images.map((mid) => (
-                <img key={mid} src={mediaUrl(`/api/media/${mid}`)} alt="Attached"
-                  className="h-28 max-w-[220px] rounded-lg border border-border object-cover" />
+            <div className={`mb-2 grid gap-1.5 ${message.images.length === 1 ? "grid-cols-1" : message.images.length === 2 || message.images.length === 4 ? "grid-cols-2" : "grid-cols-3"}`}
+              data-testid={`user-message-images-${message.id}`}>
+              {message.images.map((mid, i) => (
+                <button key={mid} type="button" onClick={() => onOpenMedia?.({ id: mid, url: `/api/media/${mid}`, contentType: "image/png", name: `Picture ${i + 1}` })}
+                  className="block overflow-hidden rounded-xl border border-white/60 bg-surface transition-opacity hover:opacity-90 dark:border-white/10">
+                  <img src={mediaUrl(`/api/media/${mid}`)} alt="Attached"
+                    className={message.images.length === 1 ? "max-h-72 w-auto max-w-full sm:max-w-[320px]" : "aspect-square h-24 w-24 object-cover sm:h-28 sm:w-28"} />
+                </button>
               ))}
             </div>
           )}
-          {userText && <p dir="auto" className="whitespace-pre-wrap break-words">{userText}</p>}
+          {message.files?.length > 0 && (
+            <div className="mb-2 flex flex-col gap-1.5" data-testid={`user-message-docs-${message.id}`}>
+              {message.files.map((f) => (
+                <FileCard key={f.id} name={f.name} contentType={f.contentType} size={f.size} inMessage testId={`message-file-${f.id}`}
+                  onOpen={() => window.open(mediaUrl(`/api/files/${f.id}/download`), "_blank", "noopener")} />
+              ))}
+            </div>
+          )}
+          {userText && (message.audio?.id
+            ? <p dir="auto" data-testid={`voice-note-text-${message.id}`} className="whitespace-pre-wrap break-words border-t border-indigo-200/60 pt-1.5 text-[13px] italic leading-snug text-muted-foreground dark:border-white/10">“{userText}”</p>
+            : <p dir="auto" className="whitespace-pre-wrap break-words">{userText}</p>)}
           {userFiles.length > 0 && (
             <div className={`flex flex-wrap gap-2 ${userText ? "mt-2" : ""}`} data-testid={`user-message-files-${message.id}`}>
               {userFiles.map((f) => (
@@ -391,35 +376,55 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           {agent ? <AgentAvatar agent={agent} speaking={streaming} className="h-7 w-7 shrink-0 text-sm sm:hidden" />
             : <BrandMark className="h-7 w-7 shrink-0 sm:hidden" thinking={streaming} />}
           {agent ? <span data-testid="agent-name" className="text-[15px] font-bold tracking-tight text-foreground">{agent.name}</span>
-            : <KrishWordmark className="text-[15px]" />}
+            : <KrishWordmark className="krish-wordmark-chat" />}
           {message.model && (
-            <span className="rounded-full border border-border-strong bg-surface px-2 py-0.5 text-[10px] font-medium tracking-wide text-brand">
+            <span className="krish-model-badge" data-testid="model-badge">
               {modelLabel(message.model)}
             </span>
           )}
         </div>
-        <ToolSteps steps={message.steps} compact={compactSteps} />
+        <ToolSteps steps={message.steps} compact={compactSteps}
+          thinking={!!(streaming && !shown && !(message.searched?.running && !webSources.length) && !(message.steps || []).some((x) => x.status === "running"))} />
+        {makingPicture && <PictureMaking step={makingPicture} />}
+        <PictureGallery items={madePictures} onAsk={onAsk} />
+        {(message.steps || []).filter((s) => s.approval).map((s) => <ApprovalCard key={s.approval.id} card={s.approval} onAsk={onAsk} />)}
         <LiveCards items={liveCards} />
-        {webSources.length > 0 && <WebSources items={webSources} id={message.id} />}
-        {imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
-        {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
-        {message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
-        <div dir="auto" className="radha-prose krish-answer min-w-0">
+        {streaming && message.searched?.running && !webSources.length && !shown && <SearchingStatus query={message.searched.queries?.[0]} />}
+        {(() => {
+          const answerBody = (
+            message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
+        <div dir="auto" className={`radha-prose krish-answer min-w-0 ${streaming && shown ? "is-streaming" : ""}`}>
           <AnswerStreaming.Provider value={!!streaming}>
+            <SourcesContext.Provider value={webSources}>
             <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={math ? math.rehype : undefined} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable, blockquote: DraftBlock }}>
               {shown}
             </ReactMarkdown>
+            </SourcesContext.Provider>
           </AnswerStreaming.Provider>
-          {streaming && <span className="radha-cursor" data-testid="streaming-cursor" />}
         </div>
-        )}
+        )
+          );
+          // A web answer gets Answer / Sources / Images / Videos tabs (WebSearch.js); other answers stay plain.
+          if (!webSources.length) {
+            return <>{imageResults.length > 0 && <ImageResults items={imageResults} id={message.id} />}
+              {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}{answerBody}</>;
+          }
+          return (
+            <SearchTabs sources={webSources} images={imageResults} searched={message.searched} id={message.id}
+              renderImages={() => <ImageResults items={imageResults} id={message.id} all />}>
+              {videoResults.length > 0 && <VideoResults items={videoResults} id={message.id} />}
+              {answerBody}
+            </SearchTabs>
+          );
+        })()}
         {message.stopped && !streaming && (
           <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="reply-stopped-note">
             <Square className="h-2.5 w-2.5 fill-current" /> You stopped this reply
           </p>
         )}
+        {!streaming && <PictureChanges items={madePictures} onAsk={onAsk} />}
         {codeProject && <CodeProject content={message.content || ""} streaming={streaming} onOpen={onOpenCode} active={codeActive} />}
-        <MediaGallery items={message.media} onOpen={onOpenMedia} />
+        <MediaGallery items={otherMedia} onOpen={onOpenMedia} />
         {fileSources.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid={`message-sources-${message.id}`}>
             <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Sources</span>

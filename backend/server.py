@@ -51,7 +51,10 @@ import appcloud
 import decks
 import appdata
 import automations
+import custom_connectors
 import live_search
+import study as study_mode
+import search_modes
 import related
 import mailer
 import counsellor
@@ -67,10 +70,14 @@ import limits
 import billing
 import languages
 import abuse
+import live_turns
 import daily_verse
 import google_signin
 import monitor
 import owner_dashboard
+import user_activity
+import questions as owner_questions
+import setup_status
 import promos
 import referrals
 import growth_mail
@@ -227,6 +234,9 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1)
     model: Optional[str] = None
     images: List[str] = Field(default_factory=list, max_length=8)
+    files: List[str] = Field(default_factory=list, max_length=20)  # documents attached with this message (shown on it)
+    audio: Optional[str] = Field(default=None, max_length=64)  # a voice note (media id); content is what was said
+    audioSeconds: Optional[float] = Field(default=None, ge=0, le=900)
     agent: bool = False
     think: bool = False  # the Think button: reason longer and check the answer
     study: bool = False  # Study mode: teach step by step and quiz instead of just answering
@@ -271,9 +281,11 @@ def public_user(doc: dict) -> dict:
         "isOwner": is_owner_email(doc["email"]),
         "hasPassword": bool(doc.get("password_hash")),
         "google": bool(doc.get("googleId")),
+        "picture": doc.get("picture") or None,  # the Google profile photo, when they signed in with Google
         # The welcome questions (counsellor.WORK / USES): asked once; they shape every reply.
         "about": doc.get("about"),
         "needsWelcome": not doc.get("aboutAt"),
+        "study": study_mode.clean(doc.get("study")),  # Study mode: class or exam, board, language (study.py)
     }
 
 
@@ -348,7 +360,10 @@ def public_message(doc: dict) -> dict:
         "sources": doc.get("sources"),
         "related": doc.get("related") or [],
         "webHint": bool(doc.get("webHint")),
+        "searched": doc.get("searched"),
         "images": doc.get("images") or [],
+        "files": doc.get("files") or [],
+        "audio": doc.get("audio"),
         "steps": doc.get("steps") or [],
         "media": doc.get("media") or [],
         "stopped": bool(doc.get("stopped")),
@@ -414,6 +429,14 @@ def _welcome_emails(user: dict, referral: Optional[dict]) -> None:
             referral["joined"])))
 
 
+def _google_photo(url) -> Optional[str]:
+    """Google's profile photo URL, kept only when it really is a Google-hosted https picture."""
+    url = (url or "").strip()
+    if not re.match(r"^https://[a-z0-9-]+\.googleusercontent\.com/", url) or len(url) > 1000:
+        return None
+    return url
+
+
 @api.post("/auth/google")
 async def google_sign_in(body: GoogleSignInIn, request: Request):
     """Sign in (or sign up) with the token from Google's button. A matching email account is the same account."""
@@ -427,6 +450,8 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
     referral = None
     if doc:
         changes = {"googleId": info["sub"], "lastLoginAt": ts, "lastSeenAt": ts, "emailVerified": True}
+        if _google_photo(info.get("picture")):
+            changes["picture"] = _google_photo(info.get("picture"))
         if not doc.get("googleId") and doc.get("password_hash") and not doc.get("emailVerified"):
             # Sign-up doesn't check that the email is really yours, so someone could make a password account
             # with another person's email and wait for them to arrive with Google. Google has now proved who
@@ -442,6 +467,7 @@ async def google_sign_in(body: GoogleSignInIn, request: Request):
         doc = {
             "id": str(uuid.uuid4()), "email": info["email"], "name": info["name"].strip() or "Friend",
             "password_hash": "", "googleId": info["sub"], "emailVerified": True,
+            "picture": _google_photo(info.get("picture")),
             "createdAt": ts, "updatedAt": ts, "lastLoginAt": ts, "lastSeenAt": ts, "loginCount": 1,
         }
         try:
@@ -623,6 +649,7 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     for app in await db.apps.find({"userId": user_id}, {"id": 1}).to_list(None):
         await apps.delete_app(app["id"], user_id)
     await connectors.delete_user(user_id)
+    await custom_connectors.delete_user(user_id)
     for auto in await db.automations.find({"userId": user_id}, {"id": 1}).to_list(None):
         await automations.delete_automation(auto["id"], user_id)
     async for f in db.files.find({"userId": user_id}, {"storage_path": 1}):
@@ -633,7 +660,7 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     await media.delete_media(db, {"userId": user_id})
     for name in ("conversations", "files", "chunks", "memories", "projects", "decks", "docs", "pages",
                  "help_reports", "password_resets", "push_subscriptions", "message_feedback", "activity",
-                 "usage_events", "logins"):
+                 "usage_events", "logins", "token_daily"):
         await db[name].delete_many({"userId": user_id})
     await db.referrals.delete_many({"$or": [{"inviterId": user_id}, {"friendId": user_id}]})
     await db.usage.delete_many({"_id": {"$regex": f"^{re.escape(user_id)}:"}})
@@ -688,12 +715,48 @@ async def admin_stats(days: int = Query(14, ge=1, le=60), user_id: str = Depends
     return await monitor.stats(db, days)
 
 
+@api.get("/admin/activity")
+async def admin_activity(days: int = Query(30), user_id: str = Depends(current_user_id)):
+    """Owner only: the most used features, people per feature, active people per day and the most active people.
+    Counts only: no one's messages are read."""
+    await _require_owner(user_id)
+    return await user_activity.overview(db, days)
+
+
+@api.get("/admin/questions")
+async def admin_questions(days: int = Query(7), topic: str = Query("", max_length=60), q: str = Query("", max_length=200),
+                          page: int = Query(0, ge=0, le=1000), user: str = Query("", max_length=64),
+                          user_id: str = Depends(current_user_id)):
+    """Owner only: what people ask, by topic, with each question and who asked it (optionally one person's).
+    Counsellor chats are never included."""
+    await _require_owner(user_id)
+    return await owner_questions.overview(db, days, topic, q, page, user)
+
+
+@api.get("/admin/users/{target_id}/activity")
+async def admin_user_activity(target_id: str, days: int = Query(30), user_id: str = Depends(current_user_id)):
+    """Owner only: what one person did (features, how often and when, tokens, plan, what they made). Never the
+    text of their chats or prompts."""
+    await _require_owner(user_id)
+    data = await user_activity.person(db, target_id, days)
+    if data is None:
+        raise HTTPException(status_code=404, detail="No such account")
+    return data
+
+
 @api.get("/admin/dashboard")
 async def admin_dashboard(range: str = Query("24h", pattern="^(24h|7d|30d|90d|1y)$"),
                           user_id: str = Depends(current_user_id)):
     """Owner only: sign-ins, active people, plans sold, revenue and profit, use per person, what people ask."""
     await _require_owner(user_id)
     return await owner_dashboard.overview(db, range)
+
+
+@api.get("/admin/setup")
+async def admin_setup(user_id: str = Depends(current_user_id)):
+    """Owner only: which connectors and plugins are live, and the keys the rest still need (names, never values)."""
+    await _require_owner(user_id)
+    return setup_status.status()
 
 
 class OwnerCostsIn(BaseModel):
@@ -838,6 +901,23 @@ async def set_about(body: AboutIn, user_id: str = Depends(current_user_id)):
     return public_user(doc)
 
 
+class StudyIn(BaseModel):
+    level: Optional[Literal[tuple(study_mode.LEVELS)]] = None
+    board: Optional[Literal[tuple(study_mode.BOARDS)]] = None
+    lang: Optional[Literal[tuple(study_mode.LANGS)]] = None
+
+
+@api.put("/auth/study")
+async def set_study(body: StudyIn, user_id: str = Depends(current_user_id)):
+    """The Study screen: the student's class or exam, board and the language they learn in."""
+    await db.users.update_one({"id": user_id}, {"$set": {"study": study_mode.clean(body.model_dump()),
+                                                        "updatedAt": now_iso()}})
+    doc = await db.users.find_one({"id": user_id})
+    if not doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    return public_user(doc)
+
+
 class ProfileIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
@@ -875,6 +955,8 @@ async def export_account(user_id: str = Depends(current_user_id)):
         "projects": await db.projects.find({"userId": user_id}, hide).to_list(None),
         "connectedApps": [{"app": c["connector"], "account": c.get("account"), "since": c.get("createdAt")}
                           async for c in db.connections.find({"userId": user_id})],
+        "appsAddedByLink": [{"name": c["name"], "kind": c["kind"], "website": c.get("host"), "since": c.get("createdAt")}
+                            async for c in db.custom_connectors.find({"userId": user_id})],
         "plugins": await plugins.state(user_id),
         "payments": await db.payments.find({"userId": user_id}, {"_id": 0, "plan": 1, "amount": 1, "status": 1,
                                                                  "createdAt": 1}).to_list(None),
@@ -979,7 +1061,20 @@ async def _owned_conversation(conv_id: str, user_id: str) -> dict:
 async def get_conversation(conv_id: str, user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
     msgs = await db.messages.find({"conversationId": conv_id}).sort("createdAt", 1).to_list(2000)
-    return {"conversation": public_conversation(conv), "messages": [public_message(m) for m in msgs]}
+    # live: a reply is still being written (maybe asked on another device); the chat follows it with /live.
+    return {"conversation": public_conversation(conv), "messages": [public_message(m) for m in msgs],
+            "live": live_turns.running(conv_id, user_id)}
+
+
+@api.get("/conversations/{conv_id}/state")
+async def conversation_state(conv_id: str, user_id: str = Depends(current_user_id)):
+    """A small check the open chat makes every few seconds, so a question asked on another device shows up
+    (with its answer writing out) without reloading: how many messages, the newest one, and whether a reply
+    is being written now."""
+    await _owned_conversation(conv_id, user_id)
+    last = await db.messages.find_one({"conversationId": conv_id}, {"id": 1, "_id": 0}, sort=[("createdAt", -1)])
+    return {"count": await db.messages.count_documents({"conversationId": conv_id}),
+            "lastId": (last or {}).get("id"), "live": live_turns.running(conv_id, user_id)}
 
 
 @api.patch("/conversations/{conv_id}")
@@ -1210,10 +1305,19 @@ NO_RESULTS_NOTE_PLAIN = (
 STREAM_FAILED_NOTE = ("Sorry, the AI model stopped before writing the answer (it may be busy or out of free "
                       "requests for now). Tap Regenerate, or pick another model from the menu at the top.")
 WEB_OFF_NOTE = (
-    "Web search is off for this answer (the user turns it on with the Web button). Answer from what you know and "
-    "never say you searched. If the answer depends on facts that change (news, prices, who holds a job), add one "
-    "short line that it may be out of date. Live exchange rates, weather or stock data given below are current."
+    "Nothing was searched on the web for this answer: answer from what you know and never say you searched. If "
+    "the answer depends on facts that change (news, prices, who holds a job), add one short line that it may be "
+    "out of date. Live exchange rates, weather or stock data given below are current."
 )
+# Agent turns can still search on their own when Krish's up-front judgment (live_search.auto_search) didn't.
+WEB_AUTO_NOTE = (
+    "Nothing was searched up front for this question. If the answer depends on facts that change or that you "
+    "aren't sure of (news, prices, scores, people, dates, rules, products), call web_search before answering, "
+    "without asking the user. Otherwise answer from what you know and never say you searched."
+)
+# Asking for a report or research offers deep_research even without the Web button.
+_RESEARCH_ASK = re.compile(r"\b(research|report|in[- ]depth|market analysis|competitor analysis|detailed comparison)\b",
+                           re.I)
 MAX_WEB_SEARCHES = 3  # per answer, when nothing was searched before the model started
 
 AGENT_PROMPT = (
@@ -1289,6 +1393,26 @@ HINGLISH_NOTE = ("The user's latest message is in Hinglish (Hindi typed in Engli
                  "not in Devanagari. Keep numbers, code, links and names as they are.")
 
 
+# Asking for a slide deck, typos and Hindi included ("ppt bana do", "presentaion", "प्रेजेंटेशन", "स्लाइड").
+_DECK_ASK = re.compile(r"\bp+p+t+x?s?\b|power\s*-?\s*point|\bpre?[sz][ea]?n?t[ae]?t?i?on|\bpers[ea]n?tation|\bslides?\b|\bslide\s*deck|"
+                       r"\bdeck\b|प्रेज़?ें?टेशन|प्रस्तुति|स्लाइड|पीपीटी", re.IGNORECASE)
+DECK_NOTE = (
+    "The user wants a presentation. Before calling create_presentation, read their message (and the chat and any "
+    "attached file) for what they actually asked, and fill its brief from their words: the exact topic (not a "
+    "nearby one), who it is for (class, exam, office, investors), the purpose, the number of slides they named "
+    "(make exactly that many, counting title and closing; 8-12 if they gave none), and everything they asked to "
+    "include (names, sections, points, their school or company). Slide language: the one they name; Hindi when "
+    "they write in Devanagari or say Hindi; English when they ask in English or Hinglish without naming one. "
+    "Only if the topic itself is missing, ask one short question instead. Content: every slide teaches something "
+    "specific and correct (real facts, examples, dates, numbers you are sure of, rounded and sourced; search the "
+    "web for anything current), titles say the takeaway, and every slide has 2-4 sentences of speaker notes. "
+    "Pitch it at the audience's level. Design: no two plain bullet slides in a row; use agenda, cards with emoji "
+    "icons, stats, a chart or table when there are numbers, steps or timeline for a process or history, "
+    "two_column for comparisons, image slides with exact photo words, and a theme that suits the topic. After it "
+    "is made, reply in one or two lines (in the user's chat language) with what the deck covers."
+)
+
+
 def _is_hinglish(text: Optional[str]) -> bool:
     """True when a message is Hindi typed in English letters (so the reply should be too)."""
     text = text or ""
@@ -1301,6 +1425,46 @@ def _is_hinglish(text: Optional[str]) -> bool:
     # Two Hindi words, or one in a short message ("solve karo step by step"); a long English paste with a stray
     # "ka" is not Hinglish.
     return hits * 10 >= len(words) and (hits >= 2 or (hits == 1 and len(words) <= 12))
+
+
+# A student asking for help with an exam, a chapter or a sum (English, Hinglish or Hindi).
+_STUDY_ASK = re.compile(
+    r"\b(exam|exams|paper|boards?|test|quiz|mcqs?|pyqs?|flashcards?|syllabus|ncert|chapter|revision|revise|time ?table|study plan|homework|"
+    r"assignment|numericals?|derivation|padhu|padhna|padhai|padhun|padh|samjhao|samjha do|samajh nahi|"
+    r"yaad nahi|ratta|jee|neet|upsc|cbse|icse|cuet|ssc|class \d{1,2}|\d{1,2}(?:th|vi) class|solve)\b|"
+    r"\u092a\u0922\u093c|\u092a\u0930\u0940\u0915\u094d\u0937\u093e|\u0938\u092e\u091d\u093e", re.IGNORECASE)  # पढ़ परीक्षा समझा
+STUDY_CLOSE_NOTE = ("This is a study question. After the answer, finish with two short lines in the user's "
+                    "language: first one question that would make your help fit them better (their board or "
+                    "exam, how much they have covered, or theory or numericals), then one offer for the next "
+                    "step they can say yes to (\"5 numericals practice karein?\", a 5-question quiz, or one "
+                    "topic explained simply). Nothing after those two lines.")
+
+
+STUDY_CLOSE_KNOWN = ("This is a study question. After the answer, finish with one short line in the user's "
+                     "language: an offer for the next step they can say yes to (\"5 numericals practice karein?\", "
+                     "a 5-question quiz, or one topic explained simply). Nothing after that line.")
+
+
+def _study_ask(text: Optional[str]) -> bool:
+    """True when the message is a student asking for study or exam help (see STUDY_CLOSE_NOTE)."""
+    return bool(_STUDY_ASK.search(text or ""))
+
+
+ENGLISH_NOTE = ("The user's latest message is in English. Write your whole reply in English, even when the topic "
+                "is Indian (a word like chai or yaar is fine). Not in Hinglish and not in Hindi.")
+
+
+def _english_chat(history_docs: list, settings_lang: Optional[str] = None) -> bool:
+    """True when the latest message is plainly English (5+ English words, no Hindi words or letters, no language
+    named) and the app language is English or unset. Free models sometimes answer these in Hinglish."""
+    if settings_lang not in (None, "", "en", "english"):
+        return False
+    said = [m.get("content") or "" for m in history_docs if m.get("role") == "user"]
+    text = said[-1] if said else ""
+    if re.search(r"[\u0900-\u097F]", text) or re.search(r"\b(hindi|hinglish|devanagari)\b", text, re.I):
+        return False
+    words = re.findall(r"[A-Za-z']+", text)
+    return len(words) >= 5 and not _HINGLISH_WORDS.search(text)
 
 
 def _hinglish_chat(history_docs: list) -> bool:
@@ -1408,6 +1572,10 @@ CODE_PROMPT = (
     "- After the code, say in one line how to run it and show one example input and its output, or a short test.\n"
     "- If you have the run_python tool and the code is Python (or its logic can be checked in Python), run it on "
     "a small test before you answer and fix anything that fails. Don't paste the test run unless it helps.\n"
+    "- When the user asks you to run the code, the answer has three parts: the final code in a code block, the "
+    "real output of the run (copied from the tool result, never invented), and a short explanation of the result. "
+    "If the run fails, including your own wrong test, find out whether the code or the test is wrong, fix it and "
+    "run it again before you answer.\n"
     "- Explain what isn't obvious in a few short lines, in the user's language (Hinglish if they write it), with "
     "code, names and comments in English; explain line by line only if the user is learning or asks.\n"
     "- Be honest about what the code does: never present a front-end demo as having a real backend, mock data as "
@@ -1552,14 +1720,7 @@ def voice_prompt(lang: Optional[str], fallback: Optional[str] = None) -> str:
     )
 
 
-STUDY_PROMPT = (
-    "Study mode is on: act as a patient, encouraging tutor for a student in India. Don't just hand over the final "
-    "answer. First ask what level they are at if it isn't clear (class, exam such as CBSE, JEE, NEET, UPSC, or "
-    "college). Explain one idea at a time in simple words with a small everyday example, then ask one short "
-    "question to check they understood before moving on. For homework, give hints and let them try each step; "
-    "show the full solution only after they try or ask for it. When a topic is done, offer a quick quiz or "
-    "flashcards (use create_flashcards) for revision."
-)
+STUDY_PROMPT = study_mode.PROMPT  # see study.py
 
 MAX_CONTEXT_IMAGES = 6
 
@@ -1620,12 +1781,27 @@ _TOOL_ASK = re.compile(
 _NEEDS_TOOLS = re.compile(
     _TOOL_ASK.pattern + r"|\b(file|files|pdf|excel|xlsx|csv|word|docx|ppt|pptx|powerpoint|presentation|slides?|deck|"
     r"spreadsheet|sheet|zip|image|images|picture|pic|photo|logo|poster|video|animate|edit|crop|resize|research|"
-    r"report|code|run|script|app|website|site|game|page|browser|open|visit|fetch|url|link|flashcards?|quiz|"
+    r"report|code|run|script|app|website|site|game|page|browser|open|visit|fetch|url|link|flashcards?|quiz|mcqs?|"
     r"remind|schedule|email|send|save|translate|time|date|price|rate|weather|news|today|current|latest|"
     r"drive|calendar|gmail|inbox|mails?|github|repo|notion|telegram|whatsapp|slack|discord|meeting|events?|"
     r"panchang|tithi|muhurat|nakshatra|festivals?|ekadashi|cricket|score|match|forecast|rain)\b|https?://|www\."
     r"|vide?o+s?\b|animat|photos?\b|pictures?\b",  # inside typos too ("avideoo", "kidsphoto")
     re.IGNORECASE)
+
+
+_MY_THINGS = re.compile(r"\bmy\s+(?:\w+\s+)?(?:shop|store|crm|sheets?|calendar|inbox|e?mails?|files?|drive|boards?|"
+                       r"tickets?|issues?|orders?|customers?|leads?|notes?|tasks?|projects?|repos?|channel|account|"
+                       r"payments?|sales|meetings?|events?|docs?|pages?|workspace)\b", re.I)
+
+
+def _mentions_apps(text: Optional[str], app_names: List[str]) -> bool:
+    """True when a message with connected apps asks about one of them (by name, or "my orders", "my inbox"...)."""
+    if not text or not app_names:
+        return False
+    low = text.lower()
+    return bool(_MY_THINGS.search(text)) or any(
+        len(w) >= 3 and re.search(rf"\b{re.escape(w)}\b", low)
+        for name in app_names for w in [name.lower()] + name.lower().split() if w not in ("google", "add", "the", "and", "my", "to"))
 
 
 def _quick_chat(history_docs: list) -> bool:
@@ -1635,7 +1811,32 @@ def _quick_chat(history_docs: list) -> bool:
         return False
     if any(m.get("steps") for m in history_docs[-4:] if m["role"] == "assistant"):
         return False  # a follow-up to a turn that used tools ("now make it blue") keeps them
-    return not any(_NEEDS_TOOLS.search(m["content"] or "") for m in last_user)
+    return not any(_NEEDS_TOOLS.search(m["content"] or "") or _DECK_ASK.search(m["content"] or "") for m in last_user)
+
+
+def _attached_now(history_docs: list) -> Optional[str]:
+    """What came with the latest message (files, pictures, a voice note), so "this" and "it" point at the right thing."""
+    last = next((m for m in reversed(history_docs) if m["role"] == "user"), None)
+    if not last:
+        return None
+    parts = []
+    names = [f["name"] for f in last.get("files") or [] if f.get("name")]
+    if names:
+        parts.append("these files: " + ", ".join(f"[{n}]" for n in names[:20]))
+    if last.get("images"):
+        n = len(last["images"])
+        parts.append(f"{n} picture{'s' if n > 1 else ''} (you can see {'them' if n > 1 else 'it'} in the message)")
+    if not parts and not last.get("audio"):
+        return None
+    note = "With their latest message the user attached " + " and ".join(parts) + ". " if parts else ""
+    if parts:
+        note += ("\"This\", \"it\" or \"the file\" means what they just attached. Read all of it carefully before you answer: "
+                 "quote exact figures, names and dates, and say which file each point comes from. If they sent no question, "
+                 "say in a line what each one is, then give its key points.")
+    if last.get("audio"):
+        note += (" Their message is a voice note, written out for you; answer what they said naturally, and don't "
+                 "mention the transcript unless a word was clearly misheard.")
+    return note.strip()
 
 
 async def _file_context(conv_id: str, user_id: str, project_id, question: str, limit: int):
@@ -1848,6 +2049,12 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
     ending silently."""
     said, changed, plan, tools_used = [], False, [], set()
     first_version = False
+    ask = next((m["content"] for m in reversed(llm_messages) if m.get("role") == "user"
+                and isinstance(m.get("content"), str)), "")
+    # "Fix it", "Fix errors with AI" or the preview's automatic fix: the app is always checked and repaired
+    # afterwards, and the model's words are shown only when it changed a file.
+    fixing = bool(ctx.app_id and use_tools and _FIX_ASK.match(ask or ""))
+    agent_changed = False
     if fast_for and ctx.app_id and use_tools:
         # The first build of a fresh app: a starter on screen at once, then every file in one streamed reply.
         files = await apps.snapshot(ctx.app_id)
@@ -1877,11 +2084,20 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
                                   max_steps=max_steps):
             if ev["type"] == "text":
                 said.append(ev["text"])
+                if fixing:
+                    continue
             elif ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
                 changed = True
             if ev["type"] == "tool_start":
                 tools_used.add(ev["name"])
             yield ev
+        if fixing:
+            agent_changed = changed
+            if changed and "".join(said).strip():
+                yield {"type": "text", "text": "".join(said).strip()}
+            else:
+                said = []
+            changed = True
     if not ctx.app_id and use_tools and not tools_used & set(_MEDIA_TOOLS):
         ask = next((m["content"] for m in reversed(llm_messages) if m.get("role") == "user"
                     and isinstance(m.get("content"), str)), "")
@@ -1890,6 +2106,8 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
     if not (ctx.app_id and use_tools and changed):
         return
     problems, features_checked, reviewed = [], False, False
+    # The errors the preview showed, for a fix the static checks can't see (an error only a click causes).
+    shown = [l.strip() for l in (ask or "").split("\n")[1:] if l.strip()] if fixing else []
     # A new app or a big change gets one senior-engineer code review once it passes the tests (not on Groq's
     # small free budget, where the files rarely fit and every request counts).
     wants_review = SELF_REVIEW and bool(plan or first_version) and \
@@ -1900,6 +2118,8 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
                 problems = ev["problems"]
             else:
                 yield ev
+        if not problems and shown and repair_round == 0 and not agent_changed:
+            problems = ["The preview shows: " + e for e in shown[:5]]
         if not problems and plan and not features_checked and repair_round < REPAIR_ROUNDS:
             features_checked = True  # once per turn: each check is one more request on the free tier
             async for ev in _feature_events(ctx, model, plan):
@@ -1921,19 +2141,67 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
         llm_messages.append({"role": "assistant", "content": "".join(said).strip() or "I wrote the files."})
         llm_messages.append({"role": "user", "content": (
             "Automatic test of the app found these problems:\n- " + "\n- ".join(problems)
-            + "\nFix every one now (read the files, then edit_file or write_file the missing parts so the whole app "
-            "works), then say in one short line what you fixed.")})
+            + "\nFix every one now: read the files, then call edit_file or write_file for the missing parts so the "
+            "whole app works. Don't greet me, don't ask what to build and don't write a plan: change the files, "
+            "then say in one short line what you fixed.")})
         said = []
-        async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
-                                  max_steps=REPAIR_STEPS):
-            if ev["type"] == "text":
-                said.append(ev["text"])
-            yield ev
+        fixed = False
+        files = await apps.snapshot(ctx.app_id)
+        path = next((p for p in map(lambda x: fast_build.broken_file(x, files), problems) if p), None)
+        if path and len(files[path]) <= fast_build.fix_room(model):
+            # A file that doesn't parse: the whole corrected file in one reply, which free models do far more
+            # reliably than a chain of edit_file calls.
+            async for ev in _fix_file_events(stream_fn, ctx, model, path, files[path],
+                                             next(p for p in problems if p.startswith(path)), ask):
+                if ev["type"] == "fixed":
+                    fixed = ev["ok"]
+                    said = [ev["said"]] if fixed else []
+                else:
+                    yield ev
+        if not fixed:
+            # The model's words are shown only when it really changed a file: a free model that answers a repair
+            # with chat ("Namaste! How can I help you today?") is never shown to the user.
+            async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
+                                      max_steps=REPAIR_STEPS):
+                if ev["type"] == "text":
+                    said.append(ev["text"])
+                    continue
+                if ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
+                    fixed = True
+                yield ev
+            if not fixed:
+                said = []
+        if said:
+            yield {"type": "text", "text": "".join(said).strip() + "\n\n"}
     if first_version:
         await apps.commit(ctx.app_id, "First version", author="Krish AI")
     if problems:
         yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + problems[0].split(" The file looks cut off")[0]
                + " Tap “Fix errors with AI” under the preview, or reply “fix it”."}
+
+
+_FIX_ASK = re.compile(r"\s*(?:auto-fix:|the preview shows (?:this|these) errors?|fix(?:\s+(?:it|this|that|them|"
+                      r"the (?:app|errors?|bugs?|problems?)|errors?|all|everything))?\s*[.!]*\s*$)", re.IGNORECASE)
+
+
+async def _fix_file_events(stream_fn, ctx: ToolContext, model: str, path: str, code: str, problem: str,
+                           request: str):
+    """Rewrite one broken file in a single reply (fast_build.fix_messages). Yields the file being typed and saved;
+    the last event is {"type": "fixed", "ok": the file was saved, "said": its one line}."""
+    # The user's own request for the app: the first message of the build, not "fix it".
+    convo = [m for m in await db.messages.find({"conversationId": ctx.conversation_id}).sort("createdAt", 1)
+             .to_list(50) if m.get("role") == "user"] if ctx.conversation_id else []
+    first = next((m.get("content") or "" for m in convo if not _FIX_ASK.match(m.get("content") or "")), request)
+    result = None
+    async for ev in fast_build.draft(stream_fn, ctx.app_id, model, fast_build.fix_messages(path, code, problem, first),
+                                     rules=None, force_path=path):
+        if ev["type"] == "draft_done":
+            result = ev
+        elif ev["type"] != "text":
+            yield ev
+    ok = bool(result and path in result["files"])
+    line = (result or {}).get("said", "").strip().splitlines()
+    yield {"type": "fixed", "ok": ok, "said": (line[-1] if line and len(line[-1]) < 300 else f"Fixed {path}.") if ok else ""}
 
 
 def _builder_summary(steps: list) -> str:
@@ -1987,17 +2255,22 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if base is SYSTEM_PROMPT and not agent_llm.lean(model):
         system_parts.append(ANSWER_SHAPES)
     connected, plugin_state = frozenset(), {}  # Settings > Connectors and Plugins (see below)
+    own_tools = ()
+    app_names = []  # the names of the user's connected apps, so a short question about one keeps the tools
     sources = []
     quiet_cards = []  # automatic search results, shown only if the answer cites them
     pro_step = None
+    searched = None  # {"queries"} of the web search behind this answer, for the "Searched the web" row
 
     # Memory (user-global + project) — real, user-controlled facts.
     settings_lang = None
+    student = None  # Study mode: the student's class or exam (study.py)
     if user_id:
         remembered = await memory.prompt_section(db, user_id, project_id)
         if remembered:
             system_parts.append(remembered)
-        owner = await db.users.find_one({"id": user_id}, {"language": 1, "about": 1})
+        owner = await db.users.find_one({"id": user_id}, {"language": 1, "about": 1, "study": 1})
+        student = (owner or {}).get("study")
         settings_lang = (owner or {}).get("language")
         about = counsellor.about_line((owner or {}).get("about"))
         if about:
@@ -2006,6 +2279,12 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         plugin_state = await plugins.state(user_id)
         if connected and not counselling:
             system_parts.append(connectors.prompt_line(connected))
+        if not counselling:  # apps the user added by link (Settings > Connectors > Add any app)
+            own_tools = tuple(await custom_connectors.tools_for(user_id))
+            app_names = await custom_connectors.names(user_id)
+            if app_names:
+                system_parts.append(custom_connectors.prompt_line(app_names))
+            app_names = app_names + [connectors.CONNECTORS[c]["name"] for c in connected]
         lang_line = languages.prompt_line(settings_lang)
         if lang_line and not voice:  # voice replies follow the language spoken (see voice_prompt)
             system_parts.append(lang_line)
@@ -2034,7 +2313,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                                 "instructions now: respond with care and give the helplines.")
 
     # Files attached to this chat, plus project documents (RAG).
-    if user_id and last_user and not counselling:
+    if user_id and last_user:  # files attached to the chat, in the Counsellor too
         lean = agent_llm.lean(model)
         if lean and agent and not (conv or {}).get("appId") and not _TOOL_ASK.search(last_user) and \
                 await db.files.count_documents({"conversationId": conv_id, "is_deleted": False}):
@@ -2048,13 +2327,17 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 system_parts.append(file_ctx)
         except Exception:
             logger.exception("RAG retrieval failed")
+    turn_note = _attached_now(history_docs)
+    if turn_note:
+        system_parts.append(turn_note)
 
     app_id = conv.get("appId") if conv else None
     versions = None  # App Builder: the app before and after this turn, for See changes and Undo
     ai_limit = None  # set when a free model's usage limit ends the reply (the chat shows a card)
     token_count = agent_llm.start_token_count()  # the tokens this reply really uses, for the usage meter
     if agent and not app_id and not extra_system and not think and not study and agent_llm.lean(model) \
-            and _quick_chat(history_docs) and not await db.files.count_documents(
+            and _quick_chat(history_docs) and not _mentions_apps(last_user, app_names) \
+            and not await db.files.count_documents(
                 {"conversationId": conv_id, "is_deleted": False}):
         agent = False
     if app_id:
@@ -2065,29 +2348,42 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             logger.exception("choosing the app's style failed")
         system_parts.append(await apps.app_prompt(db, app_id))
     use_runtime = agent or any(m.get("images") for m in history_docs)
-    # Web search runs only when the user turns it on (or asks for a search in words); automations and the app
-    # builder keep it. Otherwise a question that needs fresh facts gets a "Search the web" suggestion.
+    # The Web button (or asking for a search in words) always searches; automations and the app builder keep
+    # it. Otherwise Krish searches on its own when the question needs fresh or checkable facts (auto_search),
+    # and agent turns can still call web_search themselves.
     asked = live_search.asks_for_search(last_user or "")
-    searching = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked \
+    chosen_web = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked \
         or plugin_state.get("auto_search", False)
+    auto = not chosen_web and not counselling and live_search.auto_search(last_user or "")
+    searching = chosen_web or auto
     web = web or asked
     web_hint = not searching and not counselling and not voice and live_search.suggests_web(last_user or "")
     if not searching and not counselling:
-        system_parts.append(WEB_OFF_NOTE)
+        system_parts.append(WEB_AUTO_NOTE if agent else WEB_OFF_NOTE)
+    # How-tos, recipes and lessons get a row of YouTube videos, whether or not the web was searched.
+    videos = not (coding or counselling or voice or app_id or extra_system) and \
+        search_modes.wants_videos(last_user or "")
     # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
     if not app_id and not counselling:
         user_texts = [m["content"] for m in history_docs if m["role"] == "user"]
+        # Like Claude: "Searching the web" with the query shows while the search runs (Pro shows its own step).
+        searching_for = "" if pro else live_search.search_label(user_texts, search=searching, force=web, focus=focus)
+        if searching_for:
+            yield f"event: searching\ndata: {_sse_json({'query': searching_for, 'focus': focus})}\n\n"
         if pro:
             pro_step = {"id": "pro-search", "name": "pro_search", "label": "Pro search",
                         "args": {"query": (last_user or "")[:200]}, "status": "running"}
             yield f"event: tool\ndata: {_sse_json(pro_step)}\n\n"
-        found = await live_search.gather(user_texts, search=searching, force=web, focus=focus, pro=pro, model=model)
+        found = await live_search.gather(user_texts, search=searching, force=web, focus=focus, pro=pro, model=model,
+                                        videos=videos)
         if found["context"]:
             system_parts.append(found["context"])
             web_hint = web_hint and searching  # a live rates, weather or stock card already answered it
         if (web or pro) and not any(c.get("type") in ("web", "video") for c in found["sources"]):
             system_parts.append(NO_RESULTS_NOTE if agent else NO_RESULTS_NOTE_PLAIN)
         sources = sources + found["sources"]
+        if any(c.get("type") in ("web", "video") for c in found["sources"]):
+            searched = {"queries": found["queries"][:4]}
         if not (web or pro or focus != "web"):
             # Automations search on their own; those source cards only show when the answer cites them.
             quiet_cards = [c for c in found["sources"] if c.get("type") in ("web", "video")]
@@ -2115,6 +2411,18 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(agent_prompt())
     if study and not app_id and not counselling:
         system_parts.append(STUDY_PROMPT)
+    studying = not app_id and not counselling and not extra_system and (study or _study_ask(last_user))
+    if studying:
+        system_parts.append(study_mode.RULES)
+    if user_id and studying:
+        # Remember the class, exam or board the student mentions, so Krish never has to ask again.
+        learnt = study_mode.learn(student, last_user)
+        if learnt:
+            student = learnt
+            await db.users.update_one({"id": user_id}, {"$set": {"study": learnt}})
+        student_line = study_mode.profile_line(student)
+        if student_line:
+            system_parts.append(student_line)
     # How to answer this kind of question well: code, or ideas (not in the app builder, voice or counselling).
     if not (app_id or counselling or voice or extra_system):
         if coding:
@@ -2140,13 +2448,22 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(counsellor.REPLIES)
     if counselling and counsellor.verse_note(history_docs):
         system_parts.append(counsellor.NO_VERSE)
+    elif counselling and counsellor.gita_note(history_docs):
+        system_parts.append(counsellor.GITA_NOTE)
     if counselling and not voice:
         system_parts.append(counsellor.BRIEF)
     if counselling and voice:
         system_parts.append(counsellor.VOICE)
     # Free models often drift to English or formal Hindi; the last line of the prompt is the one they follow.
+    if base is SYSTEM_PROMPT and not voice and not coding and not study and _study_ask(last_user):
+        # Study mode asks its own check question after each idea; a known class or exam needs no asking.
+        system_parts.append(STUDY_CLOSE_KNOWN if (study_mode.clean(student) or {}).get("level") else STUDY_CLOSE_NOTE)
     if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
         system_parts.append(HINGLISH_NOTE)
+    elif not counselling and not voice and not app_id and _english_chat(history_docs, settings_lang):
+        system_parts.append(ENGLISH_NOTE)
+    if agent and not counselling and not voice and not app_id and _DECK_ASK.search(last_user or ""):
+        system_parts.append(DECK_NOTE)
     system_prompt = "\n\n".join(system_parts)
     # The Counsellor never shows letters from a script the person didn't use (see counsellor.keep_scripts).
     scripts = counsellor.allowed_scripts([m["content"] for m in history_docs if m["role"] == "user"],
@@ -2171,8 +2488,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             searched = any(s.get("type") in ("web", "video") for s in sources)
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model, sources=None if app_id else sources,
-                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES), web=searching,
-                              connected=connected,
+                              searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES),
+                              web=not counselling, research=chosen_web or bool(_RESEARCH_ASK.search(last_user or "")),
+                              connected=connected, extra=own_tools,
                               plugins_off=frozenset(k for k, on in plugin_state.items() if not on))
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
             if app_id:
@@ -2205,6 +2523,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                     if step is not None:
                         step.update(status="done" if ev["ok"] else "error", summary=ev["summary"],
                                     output=ev["output"], media=ev["media"])
+                        if ev.get("approval"):
+                            step["approval"] = ev["approval"]
                         produced.extend(ev["media"])
                         yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
                     if ctx.limit_hit:
@@ -2279,6 +2599,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                     yield f"event: sources\ndata: {_sse_json(sources)}\n\n"
             else:
                 sources = [s for s in sources if s not in quiet_cards]
+                searched = None
         if content or steps:
             if stopped:
                 for step in steps:
@@ -2293,6 +2614,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 "sources": sources or None,
                 "related": follow_ups or None,
                 "webHint": web_hint or None,
+                "searched": searched,
                 "steps": steps or None,
                 "media": produced or None,
                 "stopped": stopped or None,
@@ -2315,12 +2637,13 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                         await limits.add_fair_use(db, user_id, token_count["tokens"])
                     except Exception:
                         logger.exception("fair-use count failed")
-                # App builds and premium-model chats use the meter by the tokens they really took.
-                if user_id and (app_id or agent_llm.paid(model)) and token_count["tokens"]:
+                    await monitor.tokens(db, user_id, token_count["tokens"], "build" if app_id else "chat")
+                # The meter follows the tokens a reply really took: App Builder turns, premium-model chats, and
+                # on the free plan every chat (a quick question uses little, a long chat or a file more).
+                if user_id and token_count["tokens"]:
                     try:
-                        plan = await limits.plan_of(db, user_id)
-                        prepaid = limits.cost("build" if app_id else "chat", len(last_user or ""), plan)
-                        await limits.charge_tokens(db, user_id, token_count["tokens"], prepaid)
+                        await limits.charge_reply(db, user_id, token_count["tokens"], app=bool(app_id),
+                                                  model_paid=agent_llm.paid(model), ask_chars=len(last_user or ""))
                     except Exception:
                         logger.exception("token metering failed")
             if not stopped:
@@ -2372,23 +2695,6 @@ async def _check_code_reply(model: str, full: list, steps: list):
     yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
 
 
-class _TurnResponse(StreamingResponse):
-    """A reply stream that is always closed, so a stopped turn saves what it wrote.
-
-    When the browser stops reading, Starlette cancels the response; if that lands while the reply is
-    waiting to be sent, the generator is left open and its cleanup would only run whenever it is
-    garbage-collected. Closing it here runs it right away.
-    """
-
-    async def stream_response(self, send) -> None:
-        try:
-            await super().stream_response(send)
-        finally:
-            with anyio.CancelScope(shield=True):
-                await self.body_iterator.aclose()
-
-
-
 async def _with_notice(notice: str, turn):
     """The reply stream with a plan notice first (the upgrade popup), e.g. when the free taste of Krish Pro is used."""
     try:
@@ -2399,16 +2705,44 @@ async def _with_notice(notice: str, turn):
         await turn.aclose()
 
 
-def _stream_response(conv_id: str, model: str, agent: bool = False, think: bool = False, study: bool = False,
-                     voice: bool = False, voice_lang: Optional[str] = None, web: bool = False, focus: str = "web",
-                     pro: bool = False, notice: str = "") -> StreamingResponse:
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+
+
+async def _live_response(conv_id: str, user_id: str, turn) -> StreamingResponse:
+    """Write the reply as a background job (see live_turns.py) and stream it to this browser.
+
+    The reply goes on if this browser leaves; another device on the same account can follow it with
+    GET /conversations/{id}/live, and Stop is POST /conversations/{id}/stop.
+    """
+    live = await live_turns.start(db, conv_id, user_id, turn)
+    return StreamingResponse(live_turns.follow(live), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+async def _stream_response(conv_id: str, user_id: str, model: str, agent: bool = False, think: bool = False,
+                           study: bool = False, voice: bool = False, voice_lang: Optional[str] = None,
+                           web: bool = False, focus: str = "web", pro: bool = False,
+                           notice: str = "") -> StreamingResponse:
     turn = run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang, web=web,
                     focus=focus, pro=pro)
-    return _TurnResponse(
-        _with_notice(notice, turn) if notice else turn,
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
-    )
+    return await _live_response(conv_id, user_id, _with_notice(notice, turn) if notice else turn)
+
+
+@api.get("/conversations/{conv_id}/live")
+async def follow_reply(conv_id: str, after: int = 0, user_id: str = Depends(current_user_id)):
+    """Follow the reply being written in this chat (from another tab or device, or after the connection
+    dropped), from event number `after` on. 204 when no reply is being written (it is saved in the chat)."""
+    await _owned_conversation(conv_id, user_id)
+    live = live_turns.get(conv_id, user_id)
+    if not live or (live.done and after >= len(live.events)):
+        return Response(status_code=204)
+    return StreamingResponse(live_turns.follow(live, after), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+@api.post("/conversations/{conv_id}/stop")
+async def stop_reply(conv_id: str, user_id: str = Depends(current_user_id)):
+    """The Stop button: end the reply being written; the part already written is saved."""
+    await _owned_conversation(conv_id, user_id)
+    return {"stopped": await live_turns.stop(conv_id, user_id)}
 
 
 @api.post("/conversations/{conv_id}/stream")
@@ -2425,6 +2759,20 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         if not doc or not (doc.get("contentType") or "").startswith("image/"):
             raise HTTPException(status_code=400, detail="Unknown image attachment")
         image_ids.append(mid)
+    # Documents sent with this message show on it as cards (name, type, size), like ChatGPT and Claude.
+    file_cards = []
+    for fid in dict.fromkeys(body.files):
+        f = await db.files.find_one({"id": fid, "userId": user_id, "conversationId": conv_id, "is_deleted": False},
+                                    {"original_filename": 1, "content_type": 1, "size": 1})
+        if f:
+            file_cards.append({"id": fid, "name": f["original_filename"], "contentType": f.get("content_type"),
+                               "size": f.get("size")})
+    voice_note = None
+    if body.audio:
+        a = await db.media.find_one({"id": body.audio, "userId": user_id}, {"data": 0})
+        if not a or not (a.get("contentType") or "").startswith("audio/"):
+            raise HTTPException(status_code=400, detail="Unknown voice note")
+        voice_note = {"id": body.audio, "seconds": round(body.audioSeconds or 0, 1)}
     if conv.get("appId"):  # an App Builder message uses credits by how much it asks for
         await limits.require(db, user_id, "build", size=len(body.content), model=model)
 
@@ -2437,7 +2785,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
             raise HTTPException(status_code=400, detail=str(exc))
         if pasted:
             content, ready_reply = pasted
-    elif conv.get("mode") != counsellor.MODE and not body.images:
+    elif conv.get("mode") != counsellor.MODE and not body.images and not body.audio:
         # Code pasted or attached in the chat is shown exactly as given: no AI rewrite when the user only
         # wants to see it. With instructions ("make the button red"), the AI works on it as usual.
         ready_reply = show_as_is(body.content)
@@ -2448,6 +2796,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         "role": "user",
         "content": content,
         "images": image_ids or None,
+        "files": file_cards or None,
+        "audio": voice_note,
         "model": None,
         "createdAt": now_iso(),
     }
@@ -2471,14 +2821,12 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         _background(memory.learn(db, user_id, body.content, model))
 
     if ready_reply:
-        return StreamingResponse(_canned_turn(conv_id, ready_reply, user_code=not conv.get("appId")),
-                                 media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return await _live_response(conv_id, user_id, _canned_turn(conv_id, ready_reply, user_code=not conv.get("appId")))
     if not conv.get("appId") and conv.get("mode") != counsellor.MODE and not body.images:
         edit = await _code_edit_ask(conv_id)
         if edit:
-            return _code_edit_response(conv_id, model, *edit)
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study,
+            return await _code_edit_response(conv_id, user_id, model, *edit)
+    return await _stream_response(conv_id, user_id, model, agent=body.agent, think=body.think, study=body.study,
                             voice=body.voice, voice_lang=body.voiceLang, web=body.web,
                             focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
@@ -2500,8 +2848,8 @@ PRO_LONG_ASK_CHARS = 1500
 
 
 async def _count_basic_chat(user_id: str, conv: dict) -> None:
-    """A chat message on the free plan counts toward its session's messages (a 402 once they're used). App Builder
-    messages use the usage meter instead."""
+    """A chat message on the free plan needs room on the usage meter (a 402 once the session or week is used up);
+    its reply's tokens are counted once it's written. App Builder messages are checked as builds instead."""
     if conv.get("appId"):
         return
     try:
@@ -2643,9 +2991,28 @@ async def _code_edit_ask(conv_id: str):
     return code_edit.should_edit(recent[::-1])
 
 
-def _code_edit_response(conv_id: str, model: str, files: dict, ask: str):
-    return _TurnResponse(_code_edit_turn(conv_id, model, files, ask), media_type="text/event-stream",
-                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+async def _code_edit_response(conv_id: str, user_id: str, model: str, files: dict, ask: str):
+    return await _live_response(conv_id, user_id, _code_edit_turn(conv_id, model, files, ask))
+
+
+async def _code_edit_events(model: str, files: dict, ask: str):
+    """code_edit.run, tried once more with another free model when the first one fails (busy, out of free
+    requests, or the file too big for its budget). Nothing is saved until the end, so starting over is safe.
+    Yields {"type": "model", "model"} before the second try."""
+    try:
+        async for ev in code_edit.run(model, files, ask):
+            yield ev
+        return
+    except (asyncio.CancelledError, GeneratorExit):
+        raise
+    except Exception as exc:
+        backup = code_edit.backup_model(model)
+        if not backup:
+            raise
+        logger.warning("code edit with %s failed (%s), trying %s", model, str(exc)[:200], backup)
+    yield {"type": "model", "model": backup}
+    async for ev in code_edit.run(backup, files, ask):
+        yield ev
 
 
 async def _code_edit_turn(conv_id: str, model: str, files: dict, ask: str):
@@ -2653,7 +3020,14 @@ async def _code_edit_turn(conv_id: str, model: str, files: dict, ask: str):
     model = code_edit.editing_model(model)
     steps, text, failed = [], "", False
     try:
-        async for ev in code_edit.run(model, files, ask):
+        async for ev in _code_edit_events(model, files, ask):
+            if ev["type"] == "model":
+                model = ev["model"]
+                for step in steps:
+                    if step["status"] == "running":
+                        step.update(status="error", summary="Trying another model", output="", media=[])
+                        yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
+                continue
             if ev["type"] == "heartbeat":
                 yield ": keepalive\n\n"
             elif ev["type"] == "part":
@@ -2723,9 +3097,9 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
     if not conv.get("appId") and conv.get("mode") != counsellor.MODE:
         edit = await _code_edit_ask(conv_id)
         if edit:
-            return _code_edit_response(conv_id, model, *edit)
+            return await _code_edit_response(conv_id, user_id, model, *edit)
 
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
+    return await _stream_response(conv_id, user_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
                             focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
 
@@ -2749,7 +3123,7 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
     if later:
         await db.messages.delete_many({"id": {"$in": later}})
     await db.messages.update_one({"id": message_id}, {"$set": {"content": body.content, "editedAt": now_iso()}})
-    return _stream_response(conv_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
+    return await _stream_response(conv_id, user_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
                             focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
 
 
@@ -3007,17 +3381,21 @@ async def _process_file(file_id: str, user_id: str, project_id, data: bytes, ext
 
 
 async def _check_upload_size(user_id: str, data: bytes, what: str) -> None:
-    """Uploads can be as big as the plan allows (20MB on Basic, more on Pro and Max)."""
+    """Every plan takes uploads up to the same server-wide ceiling (limits.UPLOAD_MB)."""
     limit = await limits.upload_bytes(db, user_id)
     if len(data) > limit:
-        more = " Pro and Max take bigger files." if limit < limits.quality_of("max")["uploadMb"] * 1024 * 1024 else ""
-        raise HTTPException(status_code=413, detail=f"{what} too large (max {limit // (1024 * 1024)}MB).{more}")
+        raise HTTPException(status_code=413, detail=f"{what} too large (max {limit // (1024 * 1024)}MB).")
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    """Read at most one byte past the ceiling, so an oversized upload is refused without loading all of it."""
+    return await file.read(limits.UPLOAD_MB * 1024 * 1024 + 1)
 
 
 @api.post("/projects/{pid}/files")
 async def upload_file(pid: str, file: UploadFile = File(...), user_id: str = Depends(current_user_id)):
     await _owned_project(pid, user_id)
-    data = await file.read()
+    data = await _read_upload(file)
     await _check_upload_size(user_id, data, "File")
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
     file_id = str(uuid.uuid4())
@@ -3076,7 +3454,7 @@ async def list_conversation_files(conv_id: str, user_id: str = Depends(current_u
 @api.post("/conversations/{conv_id}/files")
 async def upload_conversation_file(conv_id: str, file: UploadFile = File(...), user_id: str = Depends(current_user_id)):
     conv = await _owned_conversation(conv_id, user_id)
-    data = await file.read()
+    data = await _read_upload(file)
     await _check_upload_size(user_id, data, "File")
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
     file_id = str(uuid.uuid4())
@@ -3379,7 +3757,7 @@ async def upload_media(file: UploadFile = File(...), conversationId: Optional[st
         raise HTTPException(status_code=415, detail="Only PNG, JPEG, WebP and GIF images are supported")
     if conversationId:
         await _owned_conversation(conversationId, user_id)
-    data = await file.read()
+    data = await _read_upload(file)
     await _check_upload_size(user_id, data, "Image")
     try:
         return await media.save_media(db, user_id, data, content_type, "upload",
@@ -3456,13 +3834,45 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
         raise HTTPException(status_code=400, detail="Empty audio")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
+    return await _transcribe(data, file.filename, language, hint, context, user_id)
+
+
+@api.post("/audio/note")
+async def voice_note(file: UploadFile = File(...), conversationId: str = Form(...), language: Optional[str] = Form(None),
+                     user_id: str = Depends(current_user_id)):
+    """A voice note, like WhatsApp: the recording is kept (it plays back on the message) and written out as text,
+    which is what Krish answers."""
+    abuse.require("media", user_id)
+    await _owned_conversation(conversationId, user_id)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio")
+    if len(data) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Voice note too long (max 12MB, about 10 minutes)")
+    content_type = (file.content_type or "audio/webm").split(";")[0].lower()
+    if not content_type.startswith("audio/"):
+        raise HTTPException(status_code=415, detail="That isn't a recording")
+    await _check_upload_size(user_id, data, "Voice note")
+    heard = await _transcribe(data, file.filename, language, None, None, user_id)
+    if not heard["text"]:
+        raise HTTPException(status_code=422, detail="I couldn't hear any words in that voice note. Try again a little closer to the mic.")
+    try:
+        saved = await media.save_media(db, user_id, data, content_type, "voice_note",
+                                       name=file.filename or "voice-note.webm", conversation_id=conversationId)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    return {"media": saved, **heard}
+
+
+async def _transcribe(data: bytes, filename: Optional[str], language: Optional[str], hint: Optional[str],
+                      context: Optional[str], user_id: str) -> dict:
     try:
         lang = language if language in media.VOICE_LANGUAGES else None
         owner = await db.users.find_one({"id": user_id}, {"language": 1}) if not lang else None
         settings_lang = (owner or {}).get("language")
         # The language they spoke last (sent by voice mode), else their Settings language, steers Whisper.
         steer = hint if hint in media.VOICE_LANGUAGES else settings_lang
-        text, heard = await media.transcribe_detect(data, file.filename or "audio.webm", lang,
+        text, heard = await media.transcribe_detect(data, filename or "audio.webm", lang,
                                                     hint=steer, context=(context or "")[:400] or None)
         text = media.clean_transcript(text)
         if heard in ("hi", "ur") and not lang:
@@ -3554,7 +3964,8 @@ def _sse_json(payload) -> str:
     return _json.dumps(payload)
 
 
-@api.get("/")
+# HEAD too: free uptime monitors (UptimeRobot and others) check with HEAD and would report a 405 as "down".
+@api.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {"service": "Krish AI", "company": "EmpireX", "status": "ok"}
 
@@ -3573,6 +3984,8 @@ app.include_router(writer.router)
 automations.init(db, run_turn, AI_MODEL, _pick_model)
 connectors.init(db, run_turn, AI_MODEL)
 plugins.init(db)
+custom_connectors.init(db)
+app.include_router(custom_connectors.router)
 app.include_router(connectors.router)
 app.include_router(plugins.router)
 app.include_router(automations.router)
@@ -3606,7 +4019,7 @@ FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST") or ROOT_DIR.parent / "front
 if (FRONTEND_DIST / "index.html").is_file():
     from fastapi.responses import FileResponse
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def frontend(full_path: str, request: Request):
         if full_path.startswith("api/") or full_path == "api":
             raise HTTPException(status_code=404, detail="Not found")
@@ -3791,12 +4204,22 @@ async def startup():
     await db.password_resets.create_index("tokenHash")
     await db.conversations.create_index([("userId", 1), ("updatedAt", -1)])
     await db.conversations.create_index("shareId", sparse=True)
+    await db.conversations.create_index("liveDraft.startedAt", sparse=True)
+    # Replies that were being written when the server last stopped are saved with the part written.
+    try:
+        recovered = await live_turns.recover(db)
+        if recovered:
+            logger.info("saved %d replies cut off by the last restart", recovered)
+    except Exception:
+        logger.exception("recovering cut-off replies failed")
     await db.pages.create_index("id", unique=True)
     await db.pages.create_index([("messageId", 1), ("userId", 1)])
     await db.messages.create_index([("conversationId", 1), ("createdAt", 1)])
     await db.projects.create_index([("userId", 1), ("updatedAt", -1)])
     await db.files.create_index([("projectId", 1), ("is_deleted", 1)])
     await db.chunks.create_index([("userId", 1), ("projectId", 1)])
+    await db.chat_approvals.create_index([("userId", 1), ("conversationId", 1), ("status", 1)])
+    await db.chat_approvals.create_index("id")
     await db.memories.create_index([("userId", 1), ("projectId", 1)])
     await db.media.create_index("id", unique=True)
     await db.media.create_index([("userId", 1), ("conversationId", 1)])
@@ -3817,6 +4240,8 @@ async def startup():
     await db.errors.create_index("createdAt")
     await db.activity.create_index("day")
     await db.usage_events.create_index("at")
+    await db.usage_events.create_index([("userId", 1), ("at", -1)])
+    await db.token_daily.create_index([("userId", 1), ("day", 1)])
     await db.logins.create_index("at")
     await db.messages.create_index("createdAt")
     await db.payments.create_index("paidAt", sparse=True)
@@ -3844,6 +4269,7 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    await live_turns.stop_all()  # replies being written are saved with the part written so far
     await automations.stop_scheduler()
     await daily_verse.stop_scheduler()
     monitor.stop()

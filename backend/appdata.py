@@ -44,7 +44,7 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 _FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-SDK = """<script>(function(){var A=%s,D=%s,B=new URL(location.href).origin+"/api/appdata/"+A,K="radha-user-"+A,T=null,U=null;
+SDK = """<script>(function(){var A=%s,D=%s,B=(%s||new URL(location.href).origin)+"/api/appdata/"+A,K="radha-user-"+A,T=null,U=null;
 try{var s=JSON.parse(localStorage.getItem(K)||"null");if(s){T=s.token;U=s.user}}catch(e){}
 function keep(){try{T?localStorage.setItem(K,JSON.stringify({token:T,user:U})):localStorage.removeItem(K)}catch(e){}}
 async function call(m,p,b){var h={"Content-Type":"application/json"};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]=D;
@@ -95,9 +95,11 @@ async def ensure_indexes():
     await db.appdata_users.create_index([("appId", 1), ("email", 1)], unique=True)
 
 
-def sdk_script(app_id: str, draft: bool = False) -> str:
-    """The RADHA client for a page. `draft` (the builder's preview) runs the working copy's rules and server code."""
-    return SDK % (json.dumps(app_id), json.dumps(appbackend.draft_key(app_id)) if draft else "null")
+def sdk_script(app_id: str, draft: bool = False, origin: str = "") -> str:
+    """The RADHA client for a page. `draft` (the builder's preview) runs the working copy's rules and server code;
+    `origin` is this server's address for a page opened from somewhere else (a downloaded file)."""
+    return SDK % (json.dumps(app_id), json.dumps(appbackend.draft_key(app_id)) if draft else "null",
+                  json.dumps(origin) if origin else "null")
 
 
 def _now() -> str:

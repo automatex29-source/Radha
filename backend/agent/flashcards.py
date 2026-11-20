@@ -5,6 +5,8 @@ Tap a card to flip it, mark "Got it" or "Again", and cards marked Again come bac
 import html
 import json
 
+from .plain_math import plain_math
+
 MAX_CARDS = 60
 
 
@@ -15,7 +17,7 @@ def clean_cards(cards) -> list:
     out = []
     for c in cards:
         if isinstance(c, dict):
-            front, back = str(c.get("front") or "").strip(), str(c.get("back") or "").strip()
+            front, back = plain_math(str(c.get("front") or "").strip()), plain_math(str(c.get("back") or "").strip())
             if front and back:
                 out.append({"front": front[:500], "back": back[:1500]})
     if not out:

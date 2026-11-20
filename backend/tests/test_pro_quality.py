@@ -69,7 +69,7 @@ def test_plans_list_their_quality(client):
     basic, pro = plans["basic"]["quality"], plans["pro"]["quality"]
     assert plans["pro"]["price"] == 499
     assert basic["media"] == "free" and pro["media"] == "premium"
-    assert pro["videoSeconds"] > basic["videoSeconds"] and pro["uploadMb"] > basic["uploadMb"]
+    assert pro["videoSeconds"] > basic["videoSeconds"] and pro["uploadMb"] == basic["uploadMb"] == limits.UPLOAD_MB
     assert "memory" not in pro
     assert plans["max"]["quality"]["videoSeconds"] == 60
 
@@ -100,15 +100,18 @@ def test_premium_messages_use_the_meter_by_length(client, monkeypatch):
     assert pick(30000) == server.AI_MODEL  # a long chat doesn't fit in what's left: Krish Basic answers
     assert pick(10) == "claude-sonnet-5-5"
 
-def test_uploads_follow_the_plan(client):
+def test_uploads_are_the_same_on_every_plan(client):
+    import limits
     import server
     from fastapi import HTTPException
     basic, pro = _user(client, "up-basic@test.com"), _user(client, "up-pro@test.com", "pro")
-    big = b"x" * (30 * 1024 * 1024)
-    with pytest.raises(HTTPException) as err:
-        client.portal.call(server._check_upload_size, basic, big, "File")
-    assert err.value.status_code == 413 and "20MB" in err.value.detail and "Pro" in err.value.detail
-    client.portal.call(server._check_upload_size, pro, big, "File")  # 30MB fits in Pro's 50MB
+    big = b"x" * (60 * 1024 * 1024)
+    client.portal.call(server._check_upload_size, basic, big, "File")  # 60MB fits on Basic too
+    too_big = b"x" * (limits.UPLOAD_MB * 1024 * 1024 + 1)
+    for uid in (basic, pro):
+        with pytest.raises(HTTPException) as err:
+            client.portal.call(server._check_upload_size, uid, too_big, "File")
+        assert err.value.status_code == 413 and f"{limits.UPLOAD_MB}MB" in err.value.detail
 
 
 def test_memory_keeps_learning_when_it_is_long(client, monkeypatch):
@@ -252,24 +255,32 @@ def test_basic_gets_a_weekly_taste_of_krish_pro_on_haiku(client, monkeypatch):
         != "claude-haiku-5-5"  # no taste in the App Builder
 
 
-def test_basic_chat_has_40_messages_a_session_and_paid_plans_stay_unlimited(client, monkeypatch):
+def test_basic_chat_uses_the_meter_by_its_tokens_and_paid_plans_stay_unlimited(client, monkeypatch):
     import limits
     import server
     from fastapi import HTTPException
     basic, pro = _user(client, "chatcap@test.com"), _user(client, "chatcap-pro@test.com", "pro")
-    for _ in range(limits.BASIC_CHAT_SESSION):
+    charge = lambda uid, tokens: client.portal.call(
+        lambda: limits.charge_reply(server.db, uid, tokens, app=False, model_paid=False))
+    # Not a count of messages: a quick question uses a sliver of the session, a long chat about a file much more.
+    assert charge(basic, 3_000) == 0.6 and charge(basic, 40_000) == 8
+    for _ in range(60):  # many quick questions still fit in one session
         client.portal.call(server._count_basic_chat, basic, {})
+    for _ in range(5):
+        charge(basic, 40_000)
     with pytest.raises(HTTPException) as err:
         client.portal.call(server._count_basic_chat, basic, {})
     assert err.value.status_code == 402
-    assert err.value.detail.startswith("You've used this session's free messages. Upgrade to Pro, or wait until ")
-    client.portal.call(server._count_basic_chat, basic, {"appId": "a1"})  # App Builder messages use the meter
-    for _ in range(limits.BASIC_CHAT_SESSION + 5):
+    assert err.value.detail.startswith("You've used this session's usage on the Basic plan. It refills at ")
+    client.portal.call(server._count_basic_chat, basic, {"appId": "a1"})  # App Builder messages are checked as builds
+    assert charge(pro, 10**6) == 0  # Krish Basic on Pro and Max is never counted
+    for _ in range(100):
         client.portal.call(server._count_basic_chat, pro, {})
 
     # The session refills after 5 hours.
     async def age():
-        await server.db.usage.update_one({"_id": f"{basic}:chat"}, {"$inc": {"start": -limits.SESSION_HOURS * 3600}})
+        await server.db.usage.update_one({"_id": f"{basic}:meter"},
+                                         {"$inc": {"sessionStart": -limits.SESSION_HOURS * 3600}})
     client.portal.call(age)
     client.portal.call(server._count_basic_chat, basic, {})
 

@@ -163,7 +163,8 @@ export default function Workspace({ mode = null }) {
   const [breatheOpen, setBreatheOpen] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
+  // Bumped after a message is sent from the chat box, which empties it (the box keeps what is typed).
+  const [composerReset, setComposerReset] = useState(0);
   // Replies being written, by chat id: up to MAX_STREAMS chats can be answering at once, and a reply keeps
   // writing in the background when you open another chat (it shows again when you come back).
   const [streamingIds, setStreamingIds] = useState(() => new Set());
@@ -177,9 +178,10 @@ export default function Workspace({ mode = null }) {
   const [model, setModel] = useState(null);
   const [streamSources, setStreamSources] = useState([]);
   const [attachments, setAttachments] = useState([]);
-  const [uploading, setUploading] = useState(false);
+  const [, setUploading] = useState(false);
   const [pendingImages, setPendingImages] = useState([]);
   const [streamSteps, setStreamSteps] = useState([]);
+  const [streamSearched, setStreamSearched] = useState(null); // {queries, running}: "Searching the web" while it runs
   const [planCard, setPlanCard] = useState(null); // the plan's meter ran out on the last send: a limit card in the chat
   const [caps, setCaps] = useState(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -230,6 +232,7 @@ export default function Workspace({ mode = null }) {
     setStreamText(st ? st.text : "");
     setStreamSources(st ? st.sources : []);
     setStreamSteps(st ? st.steps : []);
+    setStreamSearched(st ? st.searched : null);
   };
   // Bumped whenever the screen switches chats, so a load still running for the chat that was left
   // can't write its messages into the one now open. Replies keep writing in the background.
@@ -374,17 +377,74 @@ export default function Workspace({ mode = null }) {
       if (seq !== chatSeq.current) return;
       setMessages(data.messages);
       showStream(streamsRef.current.get(id)); // a reply still being written here shows live again
+      // A reply being written on the server (asked on another device, or before the page was closed) is
+      // followed here as it is written.
+      if (data.live && !streamsRef.current.has(id)) followLive(id);
       if (data.conversation?.model) setModel(menuModel(data.conversation.model));
       setProjectId(data.conversation?.projectId || null);
-      let files = [];
-      try { files = (await api.get(`/conversations/${id}/files`)).data; } catch { /* none */ }
-      if (seq === chatSeq.current) setAttachments(files);
+      // The box starts empty, like ChatGPT: files sent earlier show on their messages and Krish still reads them.
+      setAttachments([]);
     } catch (e) {
       if (seq === chatSeq.current) toast.error(formatApiError(e));
     } finally {
       if (seq === chatSeq.current) setLoadingConv(false);
     }
   };
+
+  const followLive = (id) => {
+    runStream(`${API}/conversations/${id}/live?after=0`, null, id).catch(() => {});
+  };
+
+  // Back on this page (another tab, the phone woke up, or the same account was used on another device):
+  // show the chat as it is now, with any new answer, and follow a reply that is still being written.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const refreshOpenChat = async () => {
+    const id = activeIdRef.current;
+    if (!id || streamsRef.current.has(id)) return;
+    const seq = chatSeq.current;
+    try {
+      const { data } = await api.get(`/conversations/${id}`);
+      if (seq !== chatSeq.current || streamsRef.current.has(id)) return;
+      setMessages(data.messages);
+      if (data.live) followLive(id);
+    } catch { /* keep what is shown */ }
+  };
+  useEffect(() => {
+    let hiddenAt = 0;
+    const onShow = () => {
+      if (document.visibilityState !== "visible") { hiddenAt = Date.now(); return; }
+      loadConversations();
+      // An answer this page was reading while it was in the background: its connection may have been
+      // frozen (phones do that), so pick it up again from the last piece instead of waiting.
+      if (hiddenAt && Date.now() - hiddenAt > 5000) {
+        streamsRef.current.forEach((st) => st.reader?.cancel().catch(() => {}));
+      }
+      hiddenAt = 0;
+      refreshOpenChat();
+    };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("online", onShow);
+    // Like Claude on two devices: while this chat is on screen, a question asked in it from another device
+    // (or another tab) shows here with its answer writing out. A small check every few seconds.
+    const poll = setInterval(async () => {
+      const id = activeIdRef.current;
+      if (document.visibilityState !== "visible" || !id || streamsRef.current.has(id)) return;
+      try {
+        const { data } = await api.get(`/conversations/${id}/state`);
+        const shown = messagesRef.current;
+        const last = shown[shown.length - 1];
+        if (id !== activeIdRef.current || streamsRef.current.has(id)) return;
+        if (data.live || data.count !== shown.length || (last && data.lastId && data.lastId !== last.id)) refreshOpenChat();
+      } catch { /* try again next time */ }
+    }, 5000);
+    return () => {
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("online", onShow);
+      clearInterval(poll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadConversations]);
 
   const newConversation = () => {
     leaveChat();
@@ -424,8 +484,13 @@ export default function Workspace({ mode = null }) {
     }
   };
 
+  // Stop ends the reply on the server too (leaving the page doesn't); the part already written is saved.
   const stopGeneration = () => {
-    streamsRef.current.get(activeIdRef.current)?.controller.abort();
+    const id = activeIdRef.current;
+    const st = streamsRef.current.get(id);
+    if (!st) return;
+    api.post(`/conversations/${id}/stop`).catch(() => {});
+    st.controller.abort();
   };
 
   const exportConversation = () => {
@@ -449,8 +514,11 @@ export default function Workspace({ mode = null }) {
     toast.success("Conversation exported");
   };
 
+  // Replies are written on the server (like Claude): leaving the page, switching apps or losing the
+  // connection doesn't stop them. `body` null follows a reply already being written (GET .../live). When the
+  // connection drops before the end, the chat picks the reply up again from the last piece it got.
   const runStream = async (url, body, convId, onText) => {
-    const st = { controller: new AbortController(), text: "", sources: [], steps: [], related: [], webHint: false, timer: 0 };
+    const st = { controller: new AbortController(), text: "", sources: [], steps: [], related: [], webHint: false, searched: null, timer: 0, seen: 0, finished: false };
     streamsRef.current.set(convId, st);
     markStreaming();
     const onScreen = () => activeIdRef.current === convId;
@@ -461,28 +529,24 @@ export default function Workspace({ mode = null }) {
       if (now) { clearTimeout(st.timer); st.timer = 0; showStream(st); return; }
       if (!st.timer) st.timer = setTimeout(() => { st.timer = 0; if (onScreen()) showStream(st); }, 50);
     };
+    const open = (target, payload) => fetch(target, payload ? {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify(payload),
+      signal: st.controller.signal,
+    } : { headers: { Authorization: `Bearer ${getToken()}` }, signal: st.controller.signal });
 
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify(body),
-        signal: st.controller.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({}));
-        if (res.status === 402) { showPlanLimit(err.detail); setPlanCard(Date.now()); }
-        throw new Error(err.detail || "Failed to reach Krish AI");
-      }
-
+    const read = async (res) => {
       const reader = res.body.getReader();
+      st.reader = reader;
+      st.lastByte = Date.now();
       const decoder = new TextDecoder();
       let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        st.lastByte = Date.now();
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split("\n\n");
         buffer = events.pop() || "";
@@ -490,13 +554,26 @@ export default function Workspace({ mode = null }) {
           const lines = evt.split("\n");
           let eventName = "message";
           let dataStr = "";
+          let real = false; // not a keep-alive comment: counted, so a reconnect continues after it
           for (const line of lines) {
-            if (line.startsWith("event:")) eventName = line.slice(6).trim();
-            else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
+            if (line.startsWith("event:")) { eventName = line.slice(6).trim(); real = true; }
+            else if (line.startsWith("data:")) { dataStr += line.slice(5).trim(); real = true; }
           }
-          if (eventName === "error") throw new Error(JSON.parse(dataStr || '"Stream error"'));
+          if (real) st.seen += 1;
+          if (eventName === "error") {
+            const err = new Error(JSON.parse(dataStr || '"Stream error"'));
+            err.fromServer = true;
+            throw err;
+          }
+          if (eventName === "searching") {
+            const q = JSON.parse(dataStr || "{}");
+            st.searched = { queries: q.query ? [q.query] : [], running: true };
+            paint(true);
+            continue;
+          }
           if (eventName === "sources") {
             st.sources = JSON.parse(dataStr || "[]");
+            if (st.searched) st.searched = { ...st.searched, running: false };
             paint(true);
             continue;
           }
@@ -527,7 +604,7 @@ export default function Workspace({ mode = null }) {
             if (doc && onScreen()) setPreviewItem(doc);
             continue;
           }
-          if (eventName === "done") continue;
+          if (eventName === "done") { st.finished = true; continue; }
           if (dataStr) {
             st.text += JSON.parse(dataStr);
             paint();
@@ -535,10 +612,45 @@ export default function Workspace({ mode = null }) {
           }
         }
       }
+    };
+
+    // A connection can go quiet without failing (a phone that slept, a laptop that woke up): the server sends
+    // something at least every 15 s, so after 35 s of silence the chat reconnects and carries on.
+    const watchdog = setInterval(() => {
+      if (st.reader && Date.now() - st.lastByte > 35000) { st.lastByte = Date.now(); st.reader.cancel().catch(() => {}); }
+    }, 5000);
+    try {
+      let res = await open(url, body);
+      let seenAtTry = 0;
+      for (let tries = 0; ; ) {
+        if (res && res.status === 204) break; // nothing being written any more: the chat has the saved reply
+        if (res && (!res.ok || !res.body)) {
+          const err = await res.json().catch(() => ({}));
+          if (res.status === 402) { showPlanLimit(err.detail); setPlanCard(Date.now()); }
+          throw new Error(err.detail || "Failed to reach Krish AI");
+        }
+        try {
+          if (res) await read(res);
+        } catch (e) {
+          if (e.fromServer || e.name === "AbortError") throw e;
+          // The connection dropped (phone asleep, network change); the reply goes on on the server.
+        }
+        st.reader = null;
+        if (st.finished || st.controller.signal.aborted) break;
+        if (st.seen > seenAtTry) { seenAtTry = st.seen; tries = 0; } // it was getting the reply: start counting again
+        if (++tries > 20) break;
+        await new Promise((r) => setTimeout(r, Math.min(500 * tries, 5000)));
+        if (st.controller.signal.aborted) break;
+        res = await open(`${API}/conversations/${convId}/live?after=${st.seen}`, null).catch((e) => {
+          if (e.name === "AbortError") throw e;
+          return null; // still offline: try again shortly
+        });
+      }
     } catch (e) {
       // When the reply already explains the failure (the server writes a note with Regenerate), no technical toast.
       if (e.name !== "AbortError" && !st.text.trim()) toast.error(e.message || "Something went wrong");
     } finally {
+      clearInterval(watchdog);
       clearTimeout(st.timer);
       const stopped = st.controller.signal.aborted;
       streamsRef.current.delete(convId);
@@ -552,6 +664,7 @@ export default function Workspace({ mode = null }) {
         if (st.text || steps.length || st.aiLimit) {
           setMessages((m) => [...m, { id: `ai-${Date.now()}`, role: "assistant", content: st.text, model, stopped, aiLimit: st.aiLimit,
             sources: st.sources.length ? st.sources : null, related: st.related, webHint: st.webHint,
+            searched: st.searched ? { queries: st.searched.queries } : null,
             steps, media: steps.flatMap((x) => x.media || []) }]);
         }
         // Sync ordering/titles/ids from server. After Stop the server needs a moment to save the
@@ -581,8 +694,18 @@ export default function Workspace({ mode = null }) {
     return true;
   };
 
+  // Several files added at once run from one render, so the chat the first one creates is kept in a ref:
+  // without it every file made a new, empty "New conversation".
+  const newChatRef = useRef(null); // { forId, promise }
   const ensureConversation = async () => {
     if (activeId) return activeId;
+    if (newChatRef.current?.forId === chatSeq.current) return newChatRef.current.promise;
+    const promise = createConversation();
+    newChatRef.current = { forId: chatSeq.current, promise };
+    promise.catch(() => { newChatRef.current = null; });
+    return promise;
+  };
+  const createConversation = async () => {
     const { data } = await api.post("/conversations",
       counselling ? { mode, agent: KRISH_ROBO.id } : projectId ? { projectId } : {});
     setActive(data.id);
@@ -644,7 +767,6 @@ export default function Workspace({ mode = null }) {
     if (CODE_FILE_RE.test(file.name || "") && file.size < 400000) {
       const code = await file.text();
       setAttachments((a) => [...a.filter((x) => x.filename !== file.name), { id: `code-${Date.now()}-${file.name}`, filename: file.name, status: "ready", code }]);
-      toast.success(`${file.name} attached`);
       return;
     }
     setUploading(true);
@@ -655,13 +777,26 @@ export default function Workspace({ mode = null }) {
       const { data } = await api.post(`/conversations/${convId}/files`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       setAttachments((a) => [...a, data]);
       if (data.status === "failed") toast.error(`Could not read ${data.filename}`);
-      else if (!data.chunkCount) toast.message(`${data.filename} attached. It has no text to read, but you can still ask about it.`);
-      else toast.success(`${data.filename} attached`);
+      else if (!data.chunkCount) toast.message(`${data.filename} has no text to read, but you can still ask about it.`);
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {
       setUploading(false);
     }
+  };
+
+  // A voice note: the recording is kept on the message, and Krish answers what was said.
+  const sendVoiceNote = async (blob, seconds) => {
+    if (streaming || tooManyStreams()) { toast.message("Wait for this reply to finish, then send your voice note."); return; }
+    const convId = await ensureConversation();
+    const type = (blob.type || "audio/webm").split(";")[0];
+    const fd = new FormData();
+    fd.append("file", blob, `voice-note.${type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm"}`);
+    fd.append("conversationId", convId);
+    const lang = getVoiceLang();
+    if (lang && lang !== "auto") fd.append("language", lang);
+    const { data } = await api.post("/audio/note", fd, { headers: { "Content-Type": "multipart/form-data" } });
+    await sendMessage(data.text, { composer: true, audio: { id: data.media.id, seconds: Math.round(seconds * 10) / 10 } });
   };
 
   const removeAttachment = async (fid) => {
@@ -672,11 +807,14 @@ export default function Workspace({ mode = null }) {
   };
 
   // `composer`: sent from the message box (typed, or dictated text), so attached pictures go too.
-  const sendMessage = async (text, { voice = false, voiceLang, onText, frame, composer = text === undefined } = {}) => {
+  const sendMessage = async (text, { voice = false, voiceLang, onText, frame, audio, composer = text === undefined } = {}) => {
     setPlanCard(null);
     const images = composer ? pendingImages : [];
+    const docs = composer ? attachments.filter((a) => a.code === undefined && a.status !== "failed") : [];
     const groups = [...new Map(images.filter((i) => i.videoGroup).map((i) => [i.videoGroup.id, i.videoGroup])).values()];
-    const typed = (text ?? input).trim() || (groups.length ? "What happens in this video?" : images.length ? "What's in this image?" : "");
+    const typed = (text ?? "").trim() || (groups.length ? "What happens in this video?"
+      : images.length && !docs.length ? (images.length > 1 ? "What's in these pictures?" : "What's in this image?")
+      : docs.length + images.length > 1 ? "Read these and tell me what's in them." : docs.length ? "Read this file and tell me what's in it." : "");
     // Tell the model which images are video frames (and when they were taken).
     const videoNotes = groups.map((g) => {
       const times = images.filter((i) => i.videoGroup?.id === g.id).map((i) => `${i.time.toFixed(1)}s`);
@@ -711,9 +849,11 @@ export default function Workspace({ mode = null }) {
 
     const imageIds = images.map((i) => i.id);
     scrollNext.current = messages.length;
-    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, conversationId: convId }]);
-    if (composer) { setInput(""); setPendingImages([]); if (codeFiles.length) setAttachments((a) => a.filter((x) => x.code === undefined)); }
-    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
+    const fileCards = docs.map((f) => ({ id: f.id, name: f.filename, contentType: f.contentType, size: f.size }));
+    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", content, images: imageIds, files: fileCards, audio, conversationId: convId }]);
+    if (composer) { setComposerReset((n) => n + 1); setPendingImages([]); setAttachments([]); }
+    return runStream(`${API}/conversations/${convId}/stream`, { content, model, images: imageIds, files: docs.map((f) => f.id),
+      audio: audio?.id, audioSeconds: audio?.seconds, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...searchOpts(), voice, voiceLang }, convId, onText);
   };
 
   // A request handed over from another page (e.g. "make a video of this" in Docs) starts a new chat once ready.
@@ -840,7 +980,7 @@ export default function Workspace({ mode = null }) {
               {planCard && !streaming && <div className="md:ml-11"><AiLimitCard limit={{ kind: "plan" }} id="plan" /></div>}
               {streaming && (
                 <MessageBubble message={{ id: "streaming", role: "assistant", content: streamText, model, sources: streamSources,
-                  steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
+                  searched: streamSearched, steps: streamSteps, media: streamSteps.flatMap((s) => s.media || []) }} streaming onOpenMedia={setPreviewItem}
                   onOpenCode={() => setCodePanel("live")} codeActive={panelLive} agent={chatAgent} />
               )}
               {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
@@ -880,10 +1020,12 @@ export default function Workspace({ mode = null }) {
           </p>
         )}
         <div className="px-4"><LimitBanner /></div>
-        <ComposerInput value={input} onChange={setInput} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
+        <ComposerInput resetKey={composerReset} onSend={(dictated) => sendMessage(typeof dictated === "string" ? dictated : undefined, { composer: true })} onStop={stopGeneration}
           streaming={streaming} disabled={loadingConv}
-          onAttach={counselling ? undefined : attachFile} attachments={attachments} onRemoveAttachment={removeAttachment} uploading={uploading}
+          onAttach={attachFile} attachments={attachments} onRemoveAttachment={removeAttachment}
           images={pendingImages} onRemoveImage={(id) => setPendingImages((imgs) => imgs.filter((i) => i.id !== id))}
+          onOpenImage={(img) => setPreviewItem({ ...img, contentType: img.contentType || "image/png" })}
+          onVoiceNote={counselling ? sendVoiceNote : undefined}
           agentMode={agentAvailable} agentAvailable={agentAvailable}
           agentHint="Agent mode needs a provider API key for this model on the backend"
           thinkMode={think} onToggleThink={counselling ? undefined : toggleThink}

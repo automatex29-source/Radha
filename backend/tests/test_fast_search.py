@@ -1,0 +1,191 @@
+"""Web search is quick: a slow engine doesn't hold up the answer, the same search isn't repeated, and the chat
+shows "Searching the web" while it runs."""
+import asyncio
+import json
+import time
+
+import live_search
+from agent import web
+
+
+def _engines(monkeypatch, ddg, bing, calls=None):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+    def engine(name, delay, result):
+        async def run(client, query, limit):
+            if calls is not None:
+                calls.append(name)
+            await asyncio.sleep(delay)
+            return result
+        run.__name__ = name
+        return run
+    monkeypatch.setattr(web, "_ddg", engine("ddg", *ddg))
+    monkeypatch.setattr(web, "_bing", engine("bing", *bing))
+    monkeypatch.setattr(web, "_yahoo", engine("yahoo", 0.0, []))
+
+
+A = [{"title": "A", "url": "https://a.test", "snippet": "a"}]
+B = [{"title": "B", "url": "https://b.test", "snippet": "b"}]
+
+
+def test_slow_engine_does_not_hold_up_the_search(monkeypatch):
+    monkeypatch.setattr(web, "MERGE_GRACE", 0.2)
+    _engines(monkeypatch, (0.0, A), (3.0, B))
+    start = time.monotonic()
+    found = asyncio.run(web.search("q"))
+    assert time.monotonic() - start < 1.0
+    assert [r["url"] for r in found] == ["https://a.test"]
+
+
+def test_both_engines_merge_when_close(monkeypatch):
+    _engines(monkeypatch, (0.0, A), (0.05, B))
+    assert {r["url"] for r in asyncio.run(web.search("q"))} == {"https://a.test", "https://b.test"}
+
+
+def test_an_empty_engine_waits_for_the_other(monkeypatch):
+    monkeypatch.setattr(web, "MERGE_GRACE", 0.01)
+    _engines(monkeypatch, (0.0, []), (0.2, B))
+    assert [r["url"] for r in asyncio.run(web.search("q"))] == ["https://b.test"]
+
+
+def test_same_search_is_reused_and_shared(monkeypatch):
+    calls = []
+    _engines(monkeypatch, (0.05, A), (0.05, B), calls)
+
+    async def go():
+        first, second = await asyncio.gather(web.search("Best phones  2026"), web.search("best phones 2026"))
+        third = await web.search("best phones 2026")
+        return first, second, third
+    first, second, third = asyncio.run(go())
+    assert calls == ["ddg", "bing", "yahoo"]  # asked once for all three
+    assert first == second == third
+    first[0]["title"] = "changed"  # callers get their own copies
+    assert asyncio.run(web.search("best phones 2026"))[0]["title"] != "changed"
+
+
+def test_failed_search_is_not_kept(monkeypatch):
+    calls = []
+    _engines(monkeypatch, (0.0, []), (0.0, []), calls)
+    monkeypatch.setattr(web, "_ddg_lite", lambda *a: asyncio.sleep(0, []))
+    monkeypatch.setattr(web, "_wikipedia", lambda *a: asyncio.sleep(0, []))
+    asyncio.run(web.search("q"))
+    asyncio.run(web.search("q"))
+    assert calls == ["ddg", "bing", "yahoo", "ddg", "bing", "yahoo"]
+
+
+def test_search_label():
+    assert live_search.search_label(["hey krish who is the ceo of infosys?"]) == "who is the ceo of infosys"
+    assert live_search.search_label(["hi"]) == ""
+    assert live_search.search_label(["who is the ceo of infosys"], search=False) == ""
+
+
+def test_chat_shows_searching_and_saves_queries(monkeypatch):
+    from tests.test_builder_models import _server
+    server = _server()
+    import mongomock_motor
+    db = mongomock_motor.AsyncMongoMockClient()["t"]
+    monkeypatch.setattr(server, "db", db)
+    card = {"type": "web", "title": "Infosys", "url": "https://infosys.test", "domain": "infosys.test", "snippet": "x"}
+
+    async def fake_gather(*a, **k):
+        return {"context": "[1] Infosys", "sources": [card], "queries": ["ceo of infosys"]}
+
+    async def fake_stream(req):
+        yield "Salil Parekh [1]."
+    monkeypatch.setattr(server.live_search, "gather", fake_gather)
+    monkeypatch.setattr(server.model_router, "stream", fake_stream)
+
+    async def go():
+        await db.conversations.insert_one({"id": "c1", "userId": "u1"})
+        await db.messages.insert_one({"id": "m1", "conversationId": "c1", "role": "user",
+                                      "content": "who is the ceo of infosys", "createdAt": "1"})
+        chunks = [c async for c in server.run_turn("c1", "openai/gpt-oss-120b", web=True)]
+        return chunks, await db.messages.find_one({"role": "assistant"})
+    chunks, saved = asyncio.run(go())
+    names = [c.split("\n", 1)[0] for c in chunks if c.startswith("event: ")]
+    assert names.index("event: searching") < names.index("event: sources")
+    searching = next(c for c in chunks if c.startswith("event: searching"))
+    assert json.loads(searching.split("data: ", 1)[1])["query"] == "who is the ceo of infosys"
+    assert saved["searched"] == {"queries": ["ceo of infosys"]}
+
+
+def test_yahoo_results_are_parsed():
+    page = """<html><body>
+    <div class="dd algo algo-sr Sr"><div class="compTitle options-toggle">
+      <a href="https://r.search.yahoo.com/_ylt=x/RV=2/RE=1/RO=10/RU=https%3a%2f%2fwww.infosys.com%2fabout%2fmanagement.html/RK=2/RS=abc-">
+      <h3 class="title"><span>infosys.com</span> Management | Infosys</h3></a></div>
+      <div class="compText aAbs"><p>Salil Parekh is the CEO and MD.</p></div></div>
+    <div class="dd algo algo-sr"><div class="compTitle"><a href="https://search.yahoo.com/other"><h3>Yahoo</h3></a></div></div>
+    </body></html>"""
+    found = web.parse_yahoo_html(page, 5)
+    assert found == [{"title": "infosys.com Management | Infosys", "url": "https://www.infosys.com/about/management.html",
+                      "snippet": "Salil Parekh is the CEO and MD."}]
+
+
+def test_ddg_robot_check_is_a_failure_not_empty(monkeypatch):
+    import httpx
+
+    def handler(request):
+        return httpx.Response(202, text="<form id='challenge-form'></form>")
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await web._try(web._ddg, client, "q", 5)
+    assert isinstance(asyncio.run(go()), web.Blocked)
+    assert web.engine_health()["ddg"]["failed"] >= 1
+
+
+def test_keyed_engine_comes_first_and_free_engines_back_it_up(monkeypatch):
+    calls = []
+    _engines(monkeypatch, (0.0, A), (0.0, B), calls)
+    monkeypatch.setenv("SERPER_API_KEY", "k")
+
+    async def serper(client, query, limit):
+        calls.append("serper")
+        return [{"title": "G", "url": "https://g.test", "snippet": "g"}]
+    monkeypatch.setattr(web, "KEYED_ENGINES", (("SERPER_API_KEY", serper),))
+    assert [r["url"] for r in asyncio.run(web.search("q"))] == ["https://g.test"]
+    assert calls == ["serper"]
+
+    async def out_of_searches(client, query, limit):
+        calls.append("serper")
+        raise RuntimeError("432 quota")
+    monkeypatch.setattr(web, "KEYED_ENGINES", (("SERPER_API_KEY", out_of_searches),))
+    web.clear_cache()
+    assert {r["url"] for r in asyncio.run(web.search("q"))} == {"https://a.test", "https://b.test"}
+
+
+def test_tavily_sends_the_key_both_ways_and_explains_failures(monkeypatch):
+    import httpx
+    seen = {}
+
+    def handler(request):
+        seen["auth"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        if seen["body"]["api_key"] == "bad":
+            return httpx.Response(401, json={"detail": "invalid"})
+        return httpx.Response(200, json={"results": [{"title": "T", "url": "https://t.test", "content": "x " * 400}]})
+
+    async def go(key):
+        monkeypatch.setenv("TAVILY_API_KEY", f" {key} ")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await web._try(web._tavily, client, "latest news on isro", 5)
+    found = asyncio.run(go("tvly-1"))
+    assert seen["auth"] == "Bearer tvly-1" and seen["body"]["topic"] == "news"
+    assert len(found[0]["snippet"]) <= 900
+    failed = asyncio.run(go("bad"))
+    assert "check TAVILY_API_KEY" in str(failed)
+    import setup_status
+    assert "tavily: 1 worked, 1 failed" in setup_status._search_health()
+
+
+def test_long_snippets_are_not_read_again():
+    reads = []
+
+    async def fetch(url):
+        reads.append(url)
+        return {"text": "isro launch details"}
+    results = [{"title": "A", "url": "https://a.test", "snippet": "y" * 600},
+               {"title": "B", "url": "https://b.test", "snippet": "short"}]
+    asyncio.run(live_search.read_top(results, "isro launch", 3, 300, fetch=fetch))
+    assert reads == ["https://b.test"]

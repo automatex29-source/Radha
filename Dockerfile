@@ -42,4 +42,4 @@ RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BA
 
 EXPOSE 8001
 # Hosting platforms (Railway, Render, Fly…) pass the port to listen on in $PORT.
-CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001} --proxy-headers --forwarded-allow-ips='*' --timeout-graceful-shutdown 20"]

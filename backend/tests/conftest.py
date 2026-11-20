@@ -24,3 +24,12 @@ def _fresh_server_per_module():
     sys.modules.pop("server", None)
     yield
     sys.modules.pop("server", None)
+
+
+@pytest.fixture(autouse=True)
+def _no_remembered_searches():
+    """Searches and page reads are reused for a few minutes (web._remembered); every test starts without them."""
+    from agent import web
+    web.clear_cache()
+    yield
+    web.clear_cache()

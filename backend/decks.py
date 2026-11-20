@@ -136,7 +136,10 @@ OUTLINE_SYSTEM = (
     "'Costs'). Follow every instruction in the brief (audience, tone, slides the user asked for, things to include). "
     "When source material is given, build the deck from it: keep its real facts and figures, don't invent new ones, "
     "and when it has numbers that compare or change over time, plan a slide for them and copy the exact numbers "
-    "into its points (label: value). Write in the language of the brief."
+    "into its points (label: value). Read the brief for what the user means even when it is misspelt or in "
+    "Hinglish: the deck is about exactly the topic they named, pitched at their audience (a class 6 deck is "
+    "simpler than a college one). Write in the language the brief asks for; otherwise in the brief's own "
+    "language, with Hinglish briefs getting English slides unless they ask for Hindi."
 )
 
 REPHRASE_SYSTEM = (
@@ -150,17 +153,19 @@ SLIDE_SCHEMA = (
     "Each slide is an object with a \"layout\" and only the fields that layout uses:\n"
     "- cover: title, subtitle, image_query, image_prompt\n"
     "- section: title, subtitle (a divider between parts)\n"
+    "- agenda: title, bullets [3-6 short names of the parts of the talk] (slide 2 of a longer deck)\n"
     "- bullets: title, body (optional one-sentence intro), bullets [3-6 strings]\n"
     "- image_right / image_left: title, body, bullets [2-4], image_query, image_prompt\n"
     "- cards: title, items [3-4 {icon: one emoji, title: 2-4 words, text}]\n"
     "- stats: title, stats [2-4 {value: short number like \"87%\" or \"$4.2B\", label}], body (optional source/insight)\n"
     "- chart: title, chart {type: bar|line|pie|doughnut, labels [2-10], series [1-3 {name, values [numbers]}], "
     "unit}, body (one-sentence takeaway). Use line for change over time, pie/doughnut for parts of a whole.\n"
-    "- steps: title, items [3-5 {title, text}] (a process or timeline, in order)\n"
+    "- steps: title, items [3-5 {title, text}] (a process, in order)\n"
+    "- timeline: title, items [3-6 {title: the year or date, text: what happened}] (history, milestones, a plan)\n"
     "- quote: quote, author\n"
     "- comparison: title, left {title, bullets [2-4]}, right {title, bullets [2-4]}\n"
     "- closing: title, subtitle\n"
-    "Every slide may also have notes (2-3 sentences the speaker can say).\n"
+    "Every slide has notes: 2-4 sentences the speaker can say, with the detail and an example.\n"
     "Pictures must match the slide exactly. image_query is 2-4 concrete English words for a photo search that "
     "names something you can see (\"farmer checking wheat field\", not \"growth\" or \"strategy\"). image_prompt "
     "is one English sentence (15-35 words) describing a realistic photo for this exact slide: subject, action, "
@@ -171,10 +176,13 @@ SLIDE_SCHEMA = (
 SLIDES_SYSTEM = (
     "You write polished presentation slides, like Gamma.app. Reply with ONLY a JSON object: "
     '{"slides": [ ... ]}\n' + SLIDE_SCHEMA + "\n"
-    "Design rules: vary layouts so no two neighbouring slides share one; use cards, stats, chart, steps, comparison "
-    "and image layouts often and plain bullets rarely; use chart and stats only with numbers from the outline or "
-    "source, or real, well-known figures (never invent precise numbers; round and hedge instead); the first slide "
-    "is cover, the last is closing. Write in the language of the outline."
+    "Design rules: vary layouts so no two neighbouring slides share one; use cards, stats, chart, steps, timeline, "
+    "comparison and image layouts often and plain bullets rarely; give every card an emoji icon that fits it; use "
+    "chart and stats only with numbers from the outline or source, or real, well-known figures (never invent "
+    "precise numbers; round and hedge instead); the first slide is cover, the last is closing. "
+    "Content rules: titles state the takeaway; every slide teaches something specific and correct (facts, "
+    "examples, names, dates) at the audience's level, not generic filler; keep exactly the points the outline "
+    "planned. Write in the language of the outline (Hindi in Devanagari when the outline is in Hindi)."
 )
 
 EDIT_SYSTEM = (
@@ -250,6 +258,20 @@ async def fill_pictures(deck_id: str, only_ids: Optional[set] = None):
         if img is None:
             async with stock_slots:
                 img = await deck_images.find_stock(slide, used, topic)
+        if img is None and state["mode"] == "stock" and state["ai_failures"] < 2:
+            # No photo found (the photo search can be down or have nothing): an AI picture beats an empty slot.
+            async with ai_slots:
+                try:
+                    await limits.use(db, deck["userId"], "picture")
+                except limits.LimitReached:
+                    pass
+                else:
+                    try:
+                        img = await deck_images.make_ai(db, deck["userId"], slide, topic)
+                    except Exception as exc:
+                        await limits.refund(db, deck["userId"], "picture")
+                        state["ai_failures"] += 1
+                        logger.info("no photo and the AI picture failed too: %s", exc)
         if img:
             await db.decks.update_one({"id": deck_id, "slides.id": slide["id"]}, {"$set": {"slides.$.image": img}})
 
@@ -291,6 +313,11 @@ def clean_outline(raw) -> List[dict]:
     return out
 
 
+def _same(slide: dict) -> str:
+    """What a slide says, without its id: two slides with the same value are copies."""
+    return json.dumps({k: v for k, v in slide.items() if k not in ("id", "image")}, sort_keys=True, default=str)
+
+
 async def generate_slides(deck_id: str, model: str):
     deck = await db.decks.find_one({"id": deck_id})
     outline, total = deck["outline"], len(deck["outline"])
@@ -309,9 +336,14 @@ async def generate_slides(deck_id: str, model: str):
             data = await ask_json(model, SLIDES_SYSTEM,
                                   base + f"Write slides {start + 1} to {end} only (exactly {end - start} slides), "
                                   f"following the outline. The previous slide's layout was {prev}.")
-            batch = [normalize_slide(s, keep_id=False) for s in (data.get("slides") or [])][: end - start]
+            # A model asked for slides 4 to 6 sometimes writes slide 3 again first: skip a copy of a slide made.
+            made = {_same(s) for s in slides}
+            batch = [s for s in (normalize_slide(s, keep_id=False) for s in (data.get("slides") or []))
+                     if _same(s) not in made][: end - start]
             for s in batch:
                 if s["layout"] == "chart" and not s["chart"]:
+                    s["layout"] = "bullets"
+                if s["layout"] in ("agenda", "timeline") and not (s["bullets"] or s["items"]):
                     s["layout"] = "bullets"
                 if mode == "none" and s["layout"] in ("image_right", "image_left"):
                     s["layout"] = "bullets"

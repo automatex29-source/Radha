@@ -157,3 +157,67 @@ def test_panchang_day():
     p = panchang.day_panchang(date(2026, 10, 25), 28.61, 77.21, ZoneInfo("Asia/Kolkata"))
     assert p["tithi"] == "Shukla Chaturdashi" and p["month"].startswith("Ashwin")
     assert p["vara"].startswith("Ravivara")
+
+
+def test_google_api_turned_off_is_not_blamed_on_the_user():
+    import httpx
+    off = httpx.Response(403, json={"error": {"message": "Google Sheets API has not been used in project 123 before "
+                                                         "or it is disabled.", "status": "PERMISSION_DENIED"}})
+    with pytest.raises(RuntimeError, match="switched off on Krish's side"):
+        connector_tools._check(off)
+    with pytest.raises(RuntimeError, match="connect it again"):
+        connector_tools._check(httpx.Response(401, json={"error": {"message": "Invalid Credentials"}}))
+
+
+def test_sheet_range_is_escaped_in_the_url(monkeypatch):
+    seen = []
+
+    async def fake_get(url, token, params=None, headers=None):
+        seen.append(url)
+        import httpx
+        body = {"sheets": [{"properties": {"title": "Q1 / Orders"}}]} if "/values/" not in url else {"values": [["a"]]}
+        return httpx.Response(200, json=body)
+
+    async def fake_token(ctx, cid):
+        return "t"
+
+    monkeypatch.setattr(connector_tools, "_get", fake_get)
+    monkeypatch.setattr(connector_tools, "_token", fake_token)
+    run(connector_tools._sheets_read(None, {"sheet": "1" * 30}))
+    assert seen[-1].endswith("/values/'Q1%20%2F%20Orders'")
+
+
+def test_drive_and_sheets_use_the_file_picker_permission_only(db, monkeypatch):
+    # drive.file is non-sensitive: Google shows no "unverified app" screen and needs no security review for it.
+    for cid in ("google_drive", "google_sheets"):
+        assert connectors.CONNECTORS[cid]["scopes"] == [connectors.GOOGLE + "drive.file"]
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "123456789-abc.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "s")
+    monkeypatch.setenv("AUTH_SECRET", "test")
+    items = {c["id"]: c for c in run(connectors.listing("u2"))}
+    assert items["google_drive"]["picker"] == "files" and items["google_sheets"]["picker"] == "sheets"
+    assert items["gmail"]["picker"] is None
+    run(connectors._save("u2", "google_drive", {"access": "tok", "refresh": "r", "expires": 9e12}, "me@x.com"))
+    setup = run(connectors.picker_route("google_drive", "u2"))
+    assert setup == {"token": "tok", "appId": "123456789", "apiKey": None, "view": "files"}
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):
+        run(connectors.picker_route("gmail", "u2"))
+
+
+def test_a_file_the_user_did_not_choose_says_how_to_choose_it(monkeypatch):
+    import httpx
+
+    async def fake_get(url, token, params=None, headers=None):
+        connector_tools._check(httpx.Response(404, json={"error": {"message": "File not found"}}))
+
+    async def fake_token(ctx, cid):
+        return "t"
+
+    monkeypatch.setattr(connector_tools, "_get", fake_get)
+    monkeypatch.setattr(connector_tools, "_token", fake_token)
+    with pytest.raises(RuntimeError, match="Choose files"):
+        run(connector_tools._drive_read(None, {"file_id": "a" * 20}))
+    sheets = connector_tools._picked_sheet(connector_tools._sheets_read)
+    with pytest.raises(RuntimeError, match="Google Sheets"):
+        run(sheets(None, {"sheet": "1" * 30}))

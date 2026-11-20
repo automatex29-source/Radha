@@ -6,16 +6,20 @@ and sends messages to the user's own Telegram, WhatsApp, Slack or Discord. Sendi
 in an automation, and waits for the user's OK there unless they let it send on its own (see automations.gated).
 """
 import base64
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Optional
+from urllib.parse import quote
 
 import httpx
 
 import connectors
 import extract
 from agent.tools import Tool, ToolContext, ToolOutput, ToolRegistry
+
+logger = logging.getLogger("radha.connector_tools")
 
 GAPI = "https://www.googleapis.com"
 MAX_READ = 14_000
@@ -40,6 +44,13 @@ async def _post(url: str, token: str, body: dict, headers: Optional[dict] = None
 
 
 def _check(r: httpx.Response):
+    if r.status_code == 403 and re.search(r"has not been used in project|is disabled|accessNotConfigured|SERVICE_DISABLED",
+                                          r.text or ""):
+        # Google answers 403 when the API itself is off in Krish's Google Cloud project: reconnecting can't fix it.
+        logger.error("A Google API is turned off in the Cloud project: %s", (r.text or "")[:300])
+        raise RuntimeError("This Google app is switched off on Krish's side (its API isn't enabled in Krish's "
+                           "Google Cloud project), so reconnecting won't help. Tell the user the Krish team has "
+                           "been told and to try again later.")
     if r.status_code in (401, 403):
         raise RuntimeError("The app refused access. Ask the user to connect it again in Settings > Connectors "
                            f"(it answered {r.status_code}).")
@@ -64,6 +75,9 @@ def _q(text: str) -> str:
 
 
 # -------------------------------------------------------------------- Drive
+PICK_HINT = ("Krish can only open the files the user chose for it. Ask the user to open Settings > Connectors > "
+             "{app} and press Choose files, then pick the file there.")
+
 _EXPORT = {"application/vnd.google-apps.document": ("text/plain", "txt"),
            "application/vnd.google-apps.spreadsheet": ("text/csv", "csv"),
            "application/vnd.google-apps.presentation": ("text/plain", "txt")}
@@ -81,25 +95,36 @@ async def _drive_search(ctx: ToolContext, args: dict) -> ToolOutput:
     if query:
         q += f" and (name contains '{_q(query)}' or fullText contains '{_q(query)}')"
     params = {"q": q, "pageSize": max(1, min(int(args.get("max_results") or 10), 25)),
-              "fields": "files(id,name,mimeType,modifiedTime,webViewLink,size)"}
+              "fields": "files(id,name,mimeType,modifiedTime,webViewLink,size)",
+              "corpora": "allDrives", "includeItemsFromAllDrives": "true", "supportsAllDrives": "true"}
     if not query:
         params["orderBy"] = "modifiedTime desc"
     r = await _get(f"{GAPI}/drive/v3/files", token, params)
     files = r.json().get("files", [])
     if not files:
-        return ToolOutput(content="No files found in Google Drive." + (" Try other words." if query else ""),
-                          summary="No files found")
+        return ToolOutput(content="No matching files among the ones the user chose for Krish. "
+                                  + PICK_HINT.format(app="Google Drive"), summary="No files found")
     lines = [f"- {f['name']} (id: {f['id']}, {f['mimeType'].split('.')[-1].split('/')[-1]}, "
              f"changed {f.get('modifiedTime', '')[:10]}) {f.get('webViewLink', '')}" for f in files]
     return ToolOutput(content="Google Drive files:\n" + "\n".join(lines), summary=f"Found {len(files)} files")
 
 
 async def _drive_read(ctx: ToolContext, args: dict) -> ToolOutput:
+    try:
+        return await _drive_read_file(ctx, args)
+    except RuntimeError as exc:
+        if str(exc).startswith("Not found"):
+            raise RuntimeError(PICK_HINT.format(app="Google Drive"))
+        raise
+
+
+async def _drive_read_file(ctx: ToolContext, args: dict) -> ToolOutput:
     token = await _token(ctx, "google_drive")
     fid = (args.get("file_id") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{10,200}", fid):
         raise ValueError("Give a file_id from drive_search")
-    meta = (await _get(f"{GAPI}/drive/v3/files/{fid}", token, {"fields": "id,name,mimeType,size"})).json()
+    meta = (await _get(f"{GAPI}/drive/v3/files/{fid}", token, {"fields": "id,name,mimeType,size",
+                                                                 "supportsAllDrives": "true"})).json()
     mime = meta.get("mimeType", "")
     if mime in _EXPORT:
         r = await _get(f"{GAPI}/drive/v3/files/{fid}/export", token, {"mimeType": _EXPORT[mime][0]})
@@ -108,7 +133,7 @@ async def _drive_read(ctx: ToolContext, args: dict) -> ToolOutput:
         if int(meta.get("size") or 0) > 15 * 1024 * 1024:
             raise ValueError("That file is too big to read (over 15MB)")
         ext = _EXT.get(mime) or (meta["name"].rsplit(".", 1)[-1].lower() if "." in meta["name"] else "txt")
-        r = await _get(f"{GAPI}/drive/v3/files/{fid}", token, {"alt": "media"})
+        r = await _get(f"{GAPI}/drive/v3/files/{fid}", token, {"alt": "media", "supportsAllDrives": "true"})
         text = extract.extract_text(r.content, ext, mime)
     if not (text or "").strip():
         return ToolOutput(content=f"{meta['name']} has no text Krish can read.", summary="No text")
@@ -293,6 +318,7 @@ async def new_emails(user_id: str, query: str, after: float, limit: int = 10) ->
 # ------------------------------------------------------------------- Sheets
 _SHEET_ID = re.compile(r"(?:/spreadsheets/d/)?([A-Za-z0-9_-]{25,100})")
 SHEETS = "https://sheets.googleapis.com/v4/spreadsheets"
+_RANGE_SAFE = "!:'"  # a range like 'My Tab'!A1:F9 goes in the URL path; the rest (spaces, /, #, ?) is escaped
 
 
 def _sheet_id(value: str) -> str:
@@ -309,13 +335,25 @@ def _range(value: str) -> str:
     return rng
 
 
+def _picked_sheet(fn):
+    """A sheet the user didn't choose for Krish answers 404: say how to choose it."""
+    async def run(ctx: ToolContext, args: dict) -> ToolOutput:
+        try:
+            return await fn(ctx, args)
+        except RuntimeError as exc:
+            if str(exc).startswith("Not found"):
+                raise RuntimeError(PICK_HINT.format(app="Google Sheets"))
+            raise
+    return run
+
+
 async def _sheets_read(ctx: ToolContext, args: dict) -> ToolOutput:
     token = await _token(ctx, "google_sheets")
     sid = _sheet_id(args.get("sheet"))
     meta = (await _get(f"{SHEETS}/{sid}", token, {"fields": "properties.title,sheets.properties.title"})).json()
     tabs = [t["properties"]["title"] for t in meta.get("sheets", [])]
     rng = _range(args.get("range")) or (f"'{tabs[0]}'" if tabs else "A1:Z200")
-    values = (await _get(f"{SHEETS}/{sid}/values/{rng}", token)).json().get("values", [])
+    values = (await _get(f"{SHEETS}/{sid}/values/{quote(rng, safe=_RANGE_SAFE)}", token)).json().get("values", [])
     rows = "\n".join(" | ".join(str(c) for c in row) for row in values[:300])
     title = meta.get("properties", {}).get("title", "Sheet")
     return ToolOutput(content=f"# {title} (tabs: {', '.join(tabs)})\nRange {rng}, {len(values)} rows:\n{_clip(rows)}",
@@ -332,7 +370,7 @@ async def _sheets_append(ctx: ToolContext, args: dict) -> ToolOutput:
             for r in rows[:500]]
     rng = _range(args.get("range")) or "A1"
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(f"{SHEETS}/{sid}/values/{rng}:append",
+        r = await client.post(f"{SHEETS}/{sid}/values/{quote(rng, safe=_RANGE_SAFE)}:append",
                               params={"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"},
                               json={"values": rows}, headers={"Authorization": f"Bearer {token}"})
     _check(r)
@@ -492,8 +530,8 @@ I = {"type": "integer"}
 
 def register_tools(registry: ToolRegistry):
     tools = [
-        Tool("drive_search", "Search the user's Google Drive by file name or words inside files. Leave 'query' "
-             "empty to list recent files. Then drive_read a file by its id.",
+        Tool("drive_search", "Search the Google Drive files the user chose for Krish, by file name or words inside "
+             "them. Leave 'query' empty to list them. Then drive_read a file by its id.",
              _obj({"query": S, "max_results": I}, []), _drive_search, label="Search Google Drive", connector="google_drive"),
         Tool("drive_read", "Read a Google Drive file's text (Docs, Sheets as CSV, Slides, PDF, Word, Excel).",
              _obj({"file_id": S}, ["file_id"]), _drive_read, label="Read Drive file", connector="google_drive"),
@@ -519,13 +557,13 @@ def register_tools(registry: ToolRegistry):
              "unless they let this automation send on its own. Give thread_id to reply in a thread.",
              _obj({"to": S, "subject": S, "body": S, "thread_id": S}, ["to", "body"]), _gmail_send,
              label="Send email", connector="gmail"),
-        Tool("sheets_read", "Read a Google Sheet by its link or id. 'range' is optional, e.g. 'Orders!A1:F100'.",
-             _obj({"sheet": S, "range": S}, ["sheet"]), _sheets_read, label="Read Google Sheet",
+        Tool("sheets_read", "Read a Google Sheet the user chose for Krish (or Krish made), by its link or id. 'range' is optional, e.g. 'Orders!A1:F100'.",
+             _obj({"sheet": S, "range": S}, ["sheet"]), _picked_sheet(_sheets_read), label="Read Google Sheet",
              connector="google_sheets"),
         Tool("sheets_append", "Add rows to the end of a Google Sheet. 'rows' is a list of rows, each a list of cell "
              "values. 'range' picks the tab, e.g. 'Orders!A1' (default: the first tab).",
              _obj({"sheet": S, "range": S, "rows": {"type": "array", "items": {"type": "array", "items": S}}},
-                  ["sheet", "rows"]), _sheets_append, label="Add rows to sheet", connector="google_sheets"),
+                  ["sheet", "rows"]), _picked_sheet(_sheets_append), label="Add rows to sheet", connector="google_sheets"),
         Tool("sheets_create", "Make a new Google Sheet, with an optional header row. Returns its link and id.",
              _obj({"title": S, "header": {"type": "array", "items": S}}, ["title"]), _sheets_create,
              label="Make Google Sheet", connector="google_sheets"),

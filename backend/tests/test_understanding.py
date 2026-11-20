@@ -37,7 +37,7 @@ def test_messy_questions_are_still_spotted():
 def test_search_uses_the_tidied_question(monkeypatch):
     asked = []
 
-    async def fake_search(text, limit=5, focus="web"):
+    async def fake_search(text, limit=5, focus="web", model=""):
         asked.append(text)
         return None
 

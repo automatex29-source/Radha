@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import preview  # noqa: E402
+from preview import slide_shapes  # noqa: E402
 from agent import Tool, ToolContext, ToolOutput, ToolRegistry, documents, run_agent, runtime, video, web  # noqa: E402
 
 MD = """# Report
@@ -76,7 +77,7 @@ class TestDocuments:
         ], title="Deck", theme="light")
         prs = Presentation(io.BytesIO(data))
         assert len(prs.slides) == 6
-        texts = [sh.text_frame.text for sh in prs.slides[1].shapes if sh.has_text_frame]
+        texts = [sh.text_frame.text for sh in slide_shapes(prs.slides[1].shapes) if sh.has_text_frame]
         assert "Points" in texts and any("a" in t and "b" in t for t in texts)
         assert prs.slides[1].notes_slide.notes_text_frame.text == "speak"
 
@@ -85,10 +86,59 @@ class TestDocuments:
 
         doc = Document(io.BytesIO(documents.build_docx(MD, "Report")))
         styles = [(p.style.name, p.text) for p in doc.paragraphs if p.text]
-        assert ("Heading 1", "Report") in styles and ("Heading 2", "Section") in styles
+        assert ("Title", "Report") in styles and ("Heading 2", "Section") in styles
+        assert [t for _, t in styles].count("Report") == 1  # the title is not repeated
         assert ("List Bullet 2", "nested") in styles and ("List Number", "first") in styles
         assert ("Quote", "quoted") in styles
         assert [[c.text for c in r.cells] for r in doc.tables[0].rows] == [["Region", "Revenue"], ["EMEA", "120"]]
+
+    def test_docx_mock_test_polish(self):
+        from docx import Document
+
+        md = ("# Grammar Test\n\n**Total Marks:** 10\n\n###Section A\n\n1. **Name:**Rohit *(2 marks)*\n"
+              "   - (a) He reads ______ Gita.\n\n### Section B\n\n1. Second list\n\n## Answer Key\n\n1. I")
+        doc = Document(io.BytesIO(documents.build_docx(md, "Grammar Test")))
+        paras = [p for p in doc.paragraphs if p.text]
+        text = "\n".join(p.text for p in paras)
+        assert "#" not in text and "**" not in text  # no raw Markdown symbols
+        assert ("Heading 3", "Section A") in [(p.style.name, p.text) for p in paras]
+        name = next(p for p in paras if p.text.startswith("Name:"))
+        assert name.runs[0].text == "Name:" and name.runs[0].bold
+        assert any(r.text == "(2 marks)" and r.font.color.rgb is not None for r in name.runs)
+        sub = next(p for p in paras if p.text.startswith("(a)"))
+        assert sub.style.name == "Normal"  # labelled sub-part: no extra bullet
+        # Each numbered list restarts at 1 instead of running on from the last one.
+        nums = [p._p.pPr.numPr.numId.val for p in paras if p.style.name == "List Number"]
+        assert len(nums) == 3 and len(set(nums)) == 3
+        key = next(p for p in paras if p.text == "Answer Key")
+        assert key.paragraph_format.page_break_before
+        assert "PAGE" in doc.sections[0].footer._element.xml
+
+    def test_docx_question_title_on_its_own_line(self):
+        from docx import Document
+
+        md = ("1. **Choose the Pronoun:**(2 marks) (a) Rohit and ___ went. (b) This book is ___.\n"
+              "2. **Name:**______ **Roll No.:**____\n3. **Prefix:** *(1 mark)* Add a prefix to 'happy'.\n")
+        texts = [p.text for p in Document(io.BytesIO(documents.build_docx(md))).paragraphs if p.text]
+        # Marks go to the right margin (a right tab stop), the question on the next line.
+        assert texts == ["Choose the Pronoun:\t(2 marks)\n(a) Rohit and ___ went.\n(b) This book is ___.",
+                         "Name:______ Roll No.:____", "Prefix:\t(1 mark)\nAdd a prefix to 'happy'."]
+
+    def test_docx_paper_layout(self):
+        from docx import Document
+
+        md = ("# Grammar Test\n\n## Test 1\n\nTime: 20 min | Total Marks: 15\n\n1. **Q:** Write a line. (1 mark)\n\n"
+              "   ______\n   ______\n\n## Test 2\n\n1. **Q2:** Again\n")
+        doc = Document(io.BytesIO(documents.build_docx(md)))
+        paras = doc.paragraphs
+        texts = [p.text for p in paras]
+        assert texts[0] == "Grammar Test"
+        assert doc.tables[0].cell(0, 0).text.startswith("Name: ")  # student details box
+        assert "Time: 20 min\tTotal Marks: 15" in texts
+        assert "Q:\nWrite a line.\t(1 mark)" in texts
+        assert not any("____" in t for t in texts)  # ruled lines, not underscores
+        test2 = next(p for p in paras if p.text == "Test 2")
+        assert test2.paragraph_format.page_break_before  # each test on its own page
 
     def test_pdf_renders_text(self):
         from pypdf import PdfReader
@@ -359,3 +409,101 @@ class TestChunkedMedia:
             assert await db.media_chunks.count_documents({}) == 0 and await db.media.count_documents({}) == 0
 
         run(scenario())
+
+
+# ------------------------------------------------- launch polish: Excel, PowerPoint, PDF
+def test_xlsx_turns_money_percent_and_dates_into_real_numbers():
+    from openpyxl import load_workbook
+
+    data = documents.build_xlsx([{
+        "name": "Budget", "columns": ["Item", "Month", "Planned (₹)", "Actual (₹)", "Difference", "% Used"],
+        "rows": [["Rent", "2026-01-01", "₹25,000", "₹25,000", "=D2-C2", "=D2/C2"],
+                 ["Power", "2026-01-01", "₹2,500", "₹2,180", "=D3-C3", "=D3/C3"],
+                 ["Total", "", "=SUM(C2:C3)", "=SUM(D2:D3)", "=D4-C4", "=D4/C4"]],
+        "chart": {"type": "bar", "category_column": "Item", "value_columns": ["Planned (₹)", "Actual (₹)"]}}])
+    ws = load_workbook(io.BytesIO(data))["Budget"]
+    assert ws["C2"].value == 25000 and "₹" in ws["C2"].number_format
+    assert ws["B2"].value.year == 2026
+    assert ws["F2"].number_format == "0.0%"
+    assert "-" in ws["E2"].number_format.split(";")[1]  # a difference keeps its minus sign
+    assert ws["A4"].font.bold  # the total row stands out
+    chart = ws._charts[0]
+    assert chart.x_axis.delete is False and chart.y_axis.delete is False
+    assert chart.series[0].val.numRef.f.endswith("$3")  # the total row is left out of the chart
+    rows = preview.build_preview(preview.XLSX, data, "b.xlsx")["sheets"][0]["rows"]
+    assert rows[1][2] == "₹25,000" and rows[2][4] == "-₹320" and rows[1][5] == "100.0%"
+    assert rows[1][1] == "01 Jan 2026"
+
+
+def test_xlsx_keeps_ids_and_lists_as_text():
+    assert documents._parse_cell("0123")[0] == "0123"
+    assert documents._parse_cell("1,2,3")[0] == "1,2,3"
+    assert documents._parse_cell("1,20,000") == (120000, documents._lakh())
+    assert documents._parse_cell("26.7%")[0] == pytest.approx(0.267)
+
+
+def test_pptx_uses_the_designed_deck_renderer():
+    from pptx import Presentation
+
+    slides = [{"layout": "title", "title": "Plan", "subtitle": "2027"},
+              {"layout": "bullets", "title": "Today", "bullets": ["one", "  nested", "two"]},
+              {"layout": "two_column", "title": "Pros and cons", "left_title": "Pros", "left": ["a"],
+               "right_title": "Cons", "right": ["b"]},
+              {"layout": "table", "title": "Cities", "table": {"columns": ["City", "Sales"], "rows": [["Pune", "12"]]}},
+              {"layout": "stats", "title": "Numbers", "stats": [{"value": "42", "label": "kiosks"}]},
+              {"layout": "bullets", "title": "Thank you", "bullets": ["Questions?"]}]
+    prs = Presentation(io.BytesIO(documents.build_pptx(slides, title="Plan", theme="light")))
+    assert len(prs.slides) == len(slides)
+    texts = [" ".join(sh.text_frame.text for sh in slide_shapes(s.shapes) if sh.has_text_frame) for s in prs.slides]
+    assert "one — nested" in texts[1]
+    assert any(getattr(sh, "has_table", False) and sh.has_table for sh in prs.slides[3].shapes)
+    previewed = preview.build_preview(preview.PPTX, documents.build_pptx(slides), "d.pptx")["slides"]
+    assert previewed[0]["title"] == "Plan" and previewed[3]["table"][1] == ["Pune", "12"]
+
+
+def test_pdf_embeds_fonts_for_indian_scripts():
+    data = documents.build_pdf("# रिपोर्ट\n\nयह हिंदी में है। தமிழ் ₹25,000", title="Hindi")
+    assert b"NotoSansDevanagari" in data and b"NotoSansTamil" in data
+    assert data.count(b"/Type /Page") >= 1
+
+
+def test_pdf_paper_layout_matches_word():
+    md = ("# Science Mock Test\n\n## Test 1\nTime Allowed: 30 Minutes | Total Marks: 10\n\n"
+          "1. **Fill in the blanks:** (2 marks)\n(a) Light ____.\n(b) Sound ____.\n\n"
+          "2. **Explain:** (3 marks)\nWhy?\n______________\n\n## Answer Key\n1. (a) travels")
+    data = documents.build_pdf(md, title="Science Mock Test")
+    from pypdf import PdfReader
+    text = "\n".join(p.extract_text() for p in PdfReader(io.BytesIO(data)).pages)
+    assert "Name:" in text and "Roll No.:" in text
+    assert "Page 1 of" in text
+    assert len(PdfReader(io.BytesIO(data)).pages) == 2  # the answer key starts a new page
+
+
+def test_same_title_is_not_printed_twice():
+    assert documents._same_title("Solar Energy in India", "Solar Energy in India: A Short Report")
+    assert not documents._same_title("Budget", "Travel plan")
+
+
+def test_chat_deck_gets_stock_photos(monkeypatch):
+    import deck_images
+    from agent import tools as agent_tools
+    from PIL import Image
+    from pptx import Presentation
+
+    buf = io.BytesIO()
+    Image.new("RGB", (800, 500), (200, 120, 40)).save(buf, "JPEG")
+
+    async def fake_stock(slide, used, topic=""):
+        return {"url": "https://img.example/" + slide["image_query"].replace(" ", "-"), "thumb": "", "credit": "x",
+                "link": ""}
+
+    monkeypatch.setenv("DECK_IMAGES", "1")
+    monkeypatch.setattr(deck_images, "find_stock", fake_stock)
+    monkeypatch.setattr(deck_images, "download", lambda url: buf.getvalue())
+    slides = [{"layout": "title", "title": "Chai", "image_query": "masala chai"},
+              {"layout": "image_right", "title": "Kiosks", "bullets": ["42"], "image_query": "tea stall"},
+              {"layout": "bullets", "title": "No photo", "bullets": ["x"], "image_query": "ignored"}]
+    pictures = asyncio.run(agent_tools._slide_pictures(None, slides, "chai"))
+    assert len(pictures) == 2
+    prs = Presentation(io.BytesIO(documents.build_pptx(slides, pictures=pictures)))
+    assert sum(sh.shape_type == 13 for s in prs.slides for sh in s.shapes) == 2  # 13 = picture

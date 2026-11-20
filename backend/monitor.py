@@ -132,6 +132,21 @@ async def count(db, user_id: str, *features: str) -> None:
         logger.warning("Usage count failed: %s", exc)
 
 
+async def tokens(db, user_id: str, n: int, kind: str = "chat") -> None:
+    """Add the AI tokens one reply took to this person's count for today (India time), for the owner's
+    per-person activity page. Only the number is kept, never what was said."""
+    if not user_id or n <= 0:
+        return
+    day = limits.today()
+    try:
+        await db.token_daily.update_one({"_id": f"{day}:{user_id}"},
+                                        {"$setOnInsert": {"day": day, "userId": user_id},
+                                         "$inc": {"tokens": int(n), "replies": 1, f"byKind.{kind}": int(n)}},
+                                        upsert=True)
+    except Exception as exc:
+        logger.warning("Token count failed: %s", exc)
+
+
 async def login(db, user_id: str, method: str) -> None:
     """Note one sign-in ("password", "google", "signup" or "reset") for the owner dashboard."""
     try:
@@ -177,3 +192,4 @@ async def clean_old(db) -> None:
     events_cutoff = (_now() - timedelta(days=EVENT_KEEP_DAYS)).isoformat()
     await db.usage_events.delete_many({"at": {"$lt": events_cutoff}})
     await db.logins.delete_many({"at": {"$lt": events_cutoff}})
+    await db.token_daily.delete_many({"day": {"$lt": (_now() - timedelta(days=EVENT_KEEP_DAYS)).date().isoformat()}})

@@ -7,8 +7,8 @@ feature counts (monitor.py), and from this update on a timed row per sign-in (`l
 Profit is an estimate: revenue minus the payment fee, the hosting bill and a cost for each AI request. The
 owner sets those costs on the dashboard (kept in `settings`, id "owner_costs").
 
-What people ask: the questions are grouped into topics, and the latest ones are shown cut short, with emails and
-phone numbers hidden. Counsellor chats are private and never shown or counted here.
+What people ask: the questions are grouped into topics, and the latest ones are shown cut short, with who asked
+them and with emails and phone numbers hidden. Counsellor chats are private and never shown or counted here.
 """
 import re
 from collections import Counter, defaultdict

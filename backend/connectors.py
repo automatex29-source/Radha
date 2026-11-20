@@ -49,16 +49,20 @@ STATE_MINUTES = 30
 CONNECTORS = {
     "google_drive": {
         "name": "Google Drive", "category": "files", "plan": "basic", "how": "google",
-        "scopes": [GOOGLE + "drive.readonly"],
-        "blurb": "Ask about your Docs, Sheets, Slides and PDFs",
-        "does": ["Find files by name or by words inside them", "Read Docs, Sheets, Slides and PDFs to answer you",
-                 "Krish only reads. It never changes or deletes your files"],
+        # drive.file: only the files the user picks in Google's file picker (or Krish made). It is a non-sensitive
+        # scope, so Google shows no "unverified app" screen and needs no security review for it.
+        "scopes": [GOOGLE + "drive.file"], "picker": "files",
+        "blurb": "Ask about the Docs, Sheets, Slides and PDFs you choose",
+        "does": ["You choose which files Krish may see, in Google's own file picker",
+                 "Read those Docs, Sheets, Slides and PDFs to answer you",
+                 "Krish never changes or deletes your files"],
     },
     "google_sheets": {
         "name": "Google Sheets", "category": "files", "plan": "pro", "how": "google",
-        "scopes": [GOOGLE + "spreadsheets"],
-        "blurb": "Read your sheets and add rows to them",
-        "does": ["Read a sheet you share by its link", "Add rows, like today's orders or prices, to a sheet",
+        "scopes": [GOOGLE + "drive.file"], "picker": "sheets",
+        "blurb": "Read the sheets you choose and add rows to them",
+        "does": ["You choose which sheets Krish may use, in Google's own file picker",
+                 "Add rows, like today's orders or prices, to those sheets",
                  "Make a new sheet for an automation's results"],
     },
     "google_calendar": {
@@ -74,7 +78,7 @@ CONNECTORS = {
         "blurb": "Summarise your inbox and draft replies",
         "does": ["Find and summarise emails", "Write replies as drafts in your Gmail",
                  "Start an automation when a new email arrives",
-                 "Automations ask you before sending an email (on Max you can let them send without asking)"],
+                 "Automations ask you before sending an email (on Pro and Max you can let them send without asking)"],
     },
     "github": {
         "name": "GitHub", "category": "work", "plan": "basic", "how": "oauth",
@@ -227,6 +231,7 @@ async def listing(user_id: str) -> list:
             "does": c["does"], "how": how, "ready": ready(cid), "locked": not _plan_ok(plan, c["plan"]),
             "connected": bool(link), "account": (link or {}).get("account"), "connectedAt": (link or {}).get("createdAt"),
             "help": TOKEN_HELP.get(cid) if how == "token" else c.get("help"),
+            "picker": c.get("picker"),
         })
     return out
 
@@ -654,6 +659,28 @@ async def start_route(cid: str, request: Request, user_id: str = Depends(current
     raise HTTPException(status_code=400, detail="Paste the link or token to connect this app.")
 
 
+def _picker_app_id() -> str:
+    """The Cloud project number, which the picker needs so the files picked are shared with this app. It is the
+    first part of the OAuth client id (<number>-<random>.apps.googleusercontent.com)."""
+    return _env("GOOGLE_PROJECT_NUMBER") or google_signin.client_id().split("-", 1)[0]
+
+
+@router.post("/{cid}/picker")
+async def picker_route(cid: str, user_id: str = Depends(current_user_id)):
+    """What the page needs to open Google's file picker for Drive or Sheets: a fresh access token and app ids."""
+    if not CONNECTORS.get(cid, {}).get("picker"):
+        raise HTTPException(status_code=404, detail="That app doesn't use the file picker.")
+    await _check_plan(user_id, cid)
+    try:
+        data = await secret_for(user_id, cid)
+    except ConnectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="Couldn't reach Google. Try again in a minute.")
+    return {"token": data["access"], "appId": _picker_app_id(), "apiKey": _env("GOOGLE_PICKER_API_KEY") or None,
+            "view": CONNECTORS[cid]["picker"]}
+
+
 @router.get("/oauth/callback")
 async def oauth_callback(state: str = "", code: str = "", error: str = ""):
     doc = await _take_state(state) if state else None
@@ -664,6 +691,16 @@ async def oauth_callback(state: str = "", code: str = "", error: str = ""):
     cid = doc["connector"]
     if error or not code:
         return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote("You cancelled the sign-in."))
+    if doc.get("custom"):  # an app added by link (custom_connectors.py)
+        import custom_connectors
+        try:
+            xid = await custom_connectors.finish_sign_in(doc, code)
+        except (custom_connectors.ConnectError, ConnectError) as exc:
+            return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote(str(exc)))
+        except (httpx.HTTPError, KeyError, ValueError):
+            logger.exception("Sign-in for a custom connector failed")
+            return RedirectResponse(f"{back}/?settings=connectors&connectError=" + quote("Sign-in failed. Please try again."))
+        return RedirectResponse(f"{back}/?settings=connectors&connected=custom:{xid}")
     try:
         await _finish_oauth(doc["userId"], cid, code, doc["redirect"])
     except ConnectError as exc:
@@ -737,14 +774,18 @@ async def whatsapp_webhook(request: Request, x_hub_signature_256: str = Header(d
         raise HTTPException(status_code=400, detail="Bad body")
     for entry in body.get("entry") or []:
         for change in entry.get("changes") or []:
-            value = change.get("value") or {}
-            names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts") or []}
-            for msg in value.get("messages") or []:
-                if msg.get("type") != "text" or not msg.get("from"):
-                    continue
-                phone = msg["from"]
-                try:
-                    await on_message("whatsapp", phone, names.get(phone) or f"+{phone}", (msg.get("text") or {}).get("body", ""))
-                except Exception:
-                    logger.exception("WhatsApp message failed")
+            await whatsapp_bot_value(change.get("value") or {})
     return {"ok": True}
+
+
+async def whatsapp_bot_value(value: dict):
+    """Messages to Krish's own WhatsApp number."""
+    names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts") or []}
+    for msg in value.get("messages") or []:
+        if msg.get("type") != "text" or not msg.get("from"):
+            continue
+        phone = msg["from"]
+        try:
+            await on_message("whatsapp", phone, names.get(phone) or f"+{phone}", (msg.get("text") or {}).get("body", ""))
+        except Exception:
+            logger.exception("WhatsApp message failed")

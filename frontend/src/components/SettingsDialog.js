@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import UserAvatar from "@/components/UserAvatar";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -12,13 +13,15 @@ import { Switch } from "@/components/ui/switch";
 import MemoryDialog from "@/components/MemoryDialog";
 import { toast } from "sonner";
 import {
-  Bell, Blocks, Brain, Check, ChevronLeft, ChevronRight, CreditCard, Crown, Download, ExternalLink, Gauge, Languages,
+  Bell, Blocks, Brain, Check, ChevronLeft, ChevronRight, CreditCard, Crown, Download, Gauge, Languages,
   Loader2, LogOut, Monitor, Moon, Pencil, Plug, Settings, Shield, Smartphone, Sun, Trash2, User,
 } from "lucide-react";
 import { canInstall, install, isIos, isStandalone, onInstallChange, pushSupported, turnVerseOff, turnVerseOn, verseOn } from "@/lib/pwa";
 
 const ConnectorsPanel = lazy(() => import("@/components/settings/ConnectorsPanel"));
 const PluginsPanel = lazy(() => import("@/components/settings/PluginsPanel"));
+const DesktopAppPanel = lazy(() => import("@/components/settings/DesktopAppPanel"));
+const UsagePanel = lazy(() => import("@/components/settings/UsagePanel"));
 
 const SECTIONS = [
   { group: "Settings", items: [
@@ -28,6 +31,7 @@ const SECTIONS = [
     { id: "billing", label: "Billing", icon: CreditCard },
     { id: "usage", label: "Usage", icon: Gauge },
     { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "desktop", label: "Desktop app", icon: Monitor },
   ] },
   { group: "Customize", items: [
     { id: "connectors", label: "Connectors", icon: Blocks },
@@ -51,6 +55,7 @@ export function SettingsHost() {
       setSection(ALL.some((s) => s.id === wanted) ? wanted : null);
       setOpen(true);
       if (params.get("connectError")) toast.error(params.get("connectError"));
+      try { if (params.get("connected")) sessionStorage.setItem("krish-connected", params.get("connected")); } catch { /* private mode */ }
       for (const key of ["settings", "connected", "connectError"]) params.delete(key);
       const rest = params.toString();
       window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
@@ -114,10 +119,11 @@ export default function SettingsDialog({ open, onOpenChange, section = null }) {
               {active === "account" && <Account onClose={() => onOpenChange(false)} />}
               {active === "privacy" && <Privacy go={go} />}
               {active === "billing" && <Billing onClose={() => onOpenChange(false)} />}
-              {active === "usage" && <Usage onClose={() => onOpenChange(false)} />}
+              {active === "usage" && <UsagePanel onClose={() => onOpenChange(false)} />}
               {active === "notifications" && <Notifications go={go} />}
               {active === "connectors" && <ConnectorsPanel onClose={() => onOpenChange(false)} />}
               {active === "plugins" && <PluginsPanel onClose={() => onOpenChange(false)} />}
+              {active === "desktop" && <DesktopAppPanel />}
             </Suspense>
           </div>
         </section>
@@ -173,6 +179,7 @@ function General() {
   return (
     <>
       <PageTitle title="General" hint="How Krish looks and which language it speaks." />
+      <InstallApp />
       <Block title={t("language")} hint={t("languageHint")} icon={Languages} testid="settings-language">
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3" role="radiogroup" aria-label={t("language")}>
           {LANGUAGES.map((l) => {
@@ -210,7 +217,6 @@ function General() {
           })}
         </div>
       </Block>
-      <InstallApp />
     </>
   );
 }
@@ -250,9 +256,7 @@ function Account({ onClose }) {
     <>
       <PageTitle title="Account" hint="Who you are on Krish, and how you sign in." />
       <div className="mb-6 flex items-center gap-4 rounded-2xl border border-border bg-card p-4">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-400 text-xl font-bold text-white">
-          {user?.name?.[0]?.toUpperCase() || "U"}
-        </div>
+        <UserAvatar user={user} className="h-14 w-14 text-xl" />
         <div className="min-w-0 flex-1">
           {editing ? (
             <form onSubmit={save} className="flex gap-2">
@@ -468,67 +472,6 @@ function Billing({ onClose }) {
             )}
       </Block>
       <p className="text-xs text-muted-foreground">Questions about a payment? See the <a href="/refunds" target="_blank" rel="noreferrer" className="underline">refund policy</a>.</p>
-    </>
-  );
-}
-
-// ------------------------------------------------------------------- Usage
-function Meter({ label, part, idle, testid }) {
-  const pct = part.limit ? Math.min(100, Math.round((part.used / part.limit) * 100)) : 0;
-  const resets = part.resetsAt ? new Date(part.resetsAt * 1000) : null;
-  return (
-    <div data-testid={testid}>
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-medium">{label}</span>
-        <span className="tabular-nums text-muted-foreground">{pct}% used</span>
-      </div>
-      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface">
-        <div className={`h-full rounded-full transition-all ${pct > 85 ? "bg-amber-500" : "bg-gradient-to-r from-indigo-500 to-violet-500"}`} style={{ width: `${Math.max(pct, 2)}%` }} />
-      </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        {resets ? `Refills ${resets.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}` : idle}
-      </p>
-    </div>
-  );
-}
-
-function Usage({ onClose }) {
-  const navigate = useNavigate();
-  const [data, setData] = useState(null);
-  useEffect(() => { api.get("/usage").then(({ data: d }) => setData(d)).catch((e) => { toast.error(formatApiError(e)); setData(false); }); }, []);
-  if (data === null) return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
-  if (!data) return null;
-  // What each thing uses, as a share of one session.
-  const pct = (n) => Math.max(1, Math.round((n / Math.max(1, data.meter?.session?.limit || 1)) * 100));
-  const pctOf = (n) => `${pct(n)}%`;
-  const pctRange = (r) => (pct(r[0]) === pct(r[1]) ? `${pct(r[0])}%` : `${pct(r[0])}–${pct(r[1])}%`);
-  return (
-    <>
-      <PageTitle title="Usage" hint={data.plan === "basic" ? "The free plan has 40 Krish Basic messages every 5 hours. Making things uses your allowance." : "Chat on Krish Basic is never counted. Making things uses your allowance."} />
-      {!data.limitsOn ? <p className="text-sm text-muted-foreground">There are no usage limits right now. Make as much as you like.</p> : (
-        <>
-          <div className="grid gap-6 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2">
-            <Meter label="This session" part={data.meter.session} testid="usage-session"
-              idle={`Starts when you make something, then refills ${data.meter.session.hours} hours later`} />
-            <Meter label="This week" part={data.meter.week} testid="usage-week" idle="Starts when you make something" />
-            {data.meter.today && <Meter label="Today (all AI use)" part={data.meter.today} testid="usage-today" idle="Refills every night at 12" />}
-          </div>
-          <Block title="Automations" hint={`${data.usage.automation.used} of ${data.usage.automation.limit} on your plan`} />
-          <Block title="What things use">
-            <ul className="grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
-              {[["App build", pctRange(data.costs.build)], ["AI picture", pctOf(data.costs.picture)],
-                ["Slide deck", `${pctOf(data.costs.deck)} + pictures`], ...(data.video ? [["Video", `${pctOf(data.costs.videoSecond)} a second`]] : []),
-                ["Premium message", pctRange(data.costs.chat)]].map(([k, v]) => (
-                <li key={k} className="flex justify-between gap-3"><span>{k}</span><span className="tabular-nums text-muted-foreground">{v}</span></li>
-              ))}
-            </ul>
-          </Block>
-        </>
-      )}
-      {data.plan !== "max" && (
-        <Button variant="outline" className="mt-2 h-10" onClick={() => { onClose(); navigate("/plans"); }} data-testid="usage-more">
-          Get more usage <ExternalLink className="ml-1.5 h-3.5 w-3.5" /></Button>
-      )}
     </>
   );
 }

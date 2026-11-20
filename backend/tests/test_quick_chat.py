@@ -34,3 +34,11 @@ def test_follow_ups_and_images_keep_tools():
     # the previous question carries over to a short follow-up
     assert not server._quick_chat([user("create an excel of my sales"), {"role": "assistant", "content": "Sure"},
                                    user("yes please")])
+
+
+def test_questions_about_connected_apps_keep_tools():
+    assert server._mentions_apps("How many orders came in my shop today?", ["My shop"])
+    assert server._mentions_apps("any new linear issues?", ["Linear"])
+    assert server._mentions_apps("what's in my inbox", ["Gmail"])
+    assert not server._mentions_apps("tell me a joke", ["My shop", "Google Drive"])
+    assert not server._mentions_apps("how many orders came in my shop?", [])  # nothing connected

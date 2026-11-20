@@ -15,7 +15,7 @@ and automations beyond the plan's count are paused. Runs send a heartbeat while 
 An automation can also start when a new email arrives (schedule type "email", Pro and Max): the scheduler checks
 the user's Gmail every EMAIL_CHECK_MINUTES for mail matching its search and runs once with the new emails. Actions
 that reach other people (sending an email) wait for the user's OK in `automation_approvals` unless the automation
-has askFirst off, which only Max allows.
+has askFirst off, which Pro and Max allow.
 """
 import asyncio
 import ipaddress
@@ -269,7 +269,7 @@ async def check_plan_rules(user_id: str, schedule: dict, model: Optional[str], t
     if thorough and not rules["thorough"]:
         problems.append(("Thorough mode is part of the Max plan.", lambda r: r["thorough"]))
     if not ask_first and not rules["noAsk"]:
-        problems.append(("Letting an automation send emails without asking you is part of the Max plan.",
+        problems.append(("Letting an automation send emails without asking you is part of the Pro and Max plans.",
                          lambda r: r["noAsk"]))
     if model and _premium(model) and not rules["premiumModels"]:
         problems.append(("The premium AI models are part of the Pro and Max plans.", lambda r: r["premiumModels"]))
@@ -544,7 +544,7 @@ async def _deliver(auto: dict, run: dict) -> list:
 
 
 # ---------------------------------------------------------- asking first
-ACTIONS = {"gmail_send": "Send email"}
+ACTIONS = {"gmail_send": "Send email", "custom_tool": "Use an app"}
 
 
 async def gated(user_id: str, conv: dict, kind: str, payload: dict, summary: str):
@@ -575,6 +575,10 @@ async def _do_action(user_id: str, kind: str, payload: dict) -> str:
     if kind == "gmail_send":
         await connector_tools.send_gmail(user_id, payload)
         return f"Email sent to {payload['to']}"
+    if kind == "custom_tool":  # a tool of an app the user added by link (custom_connectors.py)
+        import custom_connectors
+        text = await custom_connectors.run_tool(user_id, payload["connector"], payload["tool"], payload.get("args") or {})
+        return f"{payload.get('app', 'App')}: {payload.get('label') or payload['tool']} done. {text[:300]}".strip()
     raise ValueError("Unknown action")
 
 
@@ -584,7 +588,9 @@ def public_approval(doc: dict) -> dict:
             "runId": doc.get("runId"), "kind": doc["kind"], "label": ACTIONS.get(doc["kind"], doc["kind"]),
             "summary": doc.get("summary"), "status": doc["status"], "result": doc.get("result"),
             "createdAt": doc["createdAt"], "expiresAt": doc.get("expiresAt"),
-            "detail": {"to": p.get("to"), "subject": p.get("subject"), "body": p.get("body")}}
+            "detail": {"to": p.get("to"), "subject": p.get("subject"), "body": p.get("body")} if doc["kind"] == "gmail_send"
+            else {"app": p.get("app"), "action": p.get("label") or p.get("tool"),
+                  "body": json.dumps(p.get("args") or {}, ensure_ascii=False, indent=1)[:1500]}}
 
 
 # ------------------------------------------------------------------ inbox
@@ -685,7 +691,7 @@ class AutomationIn(BaseModel):
     emailResult: bool = False
     notifyUrl: Optional[str] = Field(default=None, max_length=500)  # Discord/Slack/any webhook
     sendTo: List[str] = Field(default_factory=list, max_length=4)  # connected apps: telegram, whatsapp, slack, discord
-    askFirst: bool = True  # emails it sends wait for the user's OK (Max can turn this off)
+    askFirst: bool = True  # emails it sends wait for the user's OK (Pro and Max can turn this off)
 
 
 class AutomationPatch(BaseModel):
@@ -804,6 +810,8 @@ async def plan_automation(body: PlanIn, user_id: str = Depends(current_user_id))
         except (ZoneInfoNotFoundError, ValueError):
             tz = ZoneInfo("UTC")
         linked = [APPS_HINT[c] for c in APPS_HINT if c in await connectors.active(user_id)]
+        import custom_connectors
+        linked += [f"{n} (added by link; its tools start with app_)" for n in await custom_connectors.names(user_id)]
         context = (f"Now: {datetime.now(tz).strftime('%A %Y-%m-%d %H:%M')} ({body.timezone}). "
                    + (f"The user connected these apps, which the agent can use: {'; '.join(linked)}. " if linked
                       else "The user has not connected Gmail, Calendar, Drive or Notion yet. "))

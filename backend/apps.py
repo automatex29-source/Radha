@@ -287,8 +287,14 @@ async def write_file(app_id: str, path: str, content: str):
     await db.app_files.update_one({"appId": app_id, "path": path},
                                   {"$set": {"content": content, "updatedAt": _now()}}, upsert=True)
     await _add_kit(app_id, path, content)
+    if site_images.HOST in content:
+        _warming.add(asyncio.ensure_future(site_images.warm(content)))
+        _warming.difference_update({t for t in _warming if t.done()})
     await db.apps.update_one({"id": app_id}, {"$set": {"updatedAt": _now()}})
     return path
+
+
+_warming: set = set()
 
 
 KIT_NAME = "krish-ui.css"
@@ -1747,14 +1753,29 @@ async def restore_commit(app_id: str, commit_id: str, user_id: str = Depends(cur
 
 
 @router.get("/apps/{app_id}/export")
-async def export_app(app_id: str, request: Request, git: bool = Query(True), auth: Optional[str] = Query(None)):
+async def export_app(app_id: str, request: Request, git: bool = Query(True), auth: Optional[str] = Query(None),
+                     format: str = Query("project", pattern="^(project|html)$")):
+    """format=html: the app as one HTML file that opens from the computer (several pages: a ZIP of such pages).
+    format=project: the source files with their git history, for developers."""
+    import app_bundle
+
     header = request.headers.get("Authorization", "")
     token = header[7:] if header.startswith("Bearer ") else auth
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     app = await owned_app(app_id, decode_token(token)["sub"])
-    data = await export_zip(app, include_git=git)
     name = re.sub(r"[^\w\-]+", "-", app["name"]).strip("-").lower() or "app"
+    if format == "html":
+        files = await snapshot(app_id)
+        origin = public_origin() or str(request.base_url).rstrip("/")
+        one = await asyncio.to_thread(app_bundle.single_file, files, app_id, origin)
+        if one is not None:
+            return Response(one.encode("utf-8"), media_type="text/html; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="{name}.html"'})
+        data = await asyncio.to_thread(app_bundle.pages_zip, files, name, app_id, origin)
+        return Response(data, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
+    data = await export_zip(app, include_git=git)
     return Response(data, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
 

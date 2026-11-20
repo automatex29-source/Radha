@@ -35,6 +35,10 @@ PER_DAY = int(os.environ.get("SITE_IMAGE_PER_DAY", "600"))
 _recent: Dict[str, list] = {}
 _day = {"date": "", "count": 0}
 _inflight: Dict[str, asyncio.Future] = {}
+_tasks: set = set()
+WAIT = float(os.environ.get("SITE_IMAGE_WAIT", "12"))
+WARM_PER_PAGE = 16
+_warm_slots: Dict[int, asyncio.Semaphore] = {}
 
 
 def init(database):
@@ -140,8 +144,24 @@ async def site_image(request: Request, prompt: str = Query("", max_length=400), 
     if pending is None:
         if not _allowed(request.client.host if request.client else "?"):
             return _fallback(prompt, w, h)
-        fut = asyncio.get_running_loop().create_future()
-        _inflight[key] = fut
+        pending = _start(key, prompt, w, h)
+    try:
+        # A visitor never stares at an empty box: past WAIT seconds they get a stand-in photo now, and the picture
+        # keeps being made, so the next visit gets it.
+        data = await asyncio.wait_for(asyncio.shield(pending), WAIT)
+    except asyncio.TimeoutError:
+        return _fallback(prompt, w, h)
+    if not data:
+        return _fallback(prompt, w, h)
+    return Response(data, media_type="image/webp", headers=headers)
+
+
+def _start(key: str, prompt: str, w: int, h: int) -> asyncio.Future:
+    """Make and keep one picture in the background (once per key, however many visitors ask)."""
+    fut = asyncio.get_running_loop().create_future()
+    _inflight[key] = fut
+
+    async def run():
         try:
             data = await _make(prompt, w, h)
             await db.site_images.update_one({"key": key}, {"$set": {"data": data, "createdAt": datetime.now(timezone.utc)}},
@@ -153,12 +173,40 @@ async def site_image(request: Request, prompt: str = Query("", max_length=400), 
             fut.set_result(None)
         finally:
             _inflight.pop(key, None)
-        data = fut.result()
-    else:
-        data = await pending
-    if not data:
-        return _fallback(prompt, w, h)
-    return Response(data, media_type="image/webp", headers=headers)
+
+    _tasks.add(asyncio.ensure_future(run()))
+    fut.add_done_callback(lambda _: _tasks.difference_update({t for t in _tasks if t.done()}))
+    return fut
+
+
+def links(text: str) -> list:
+    """(prompt, w, h) for each AI picture link in `text`."""
+    out = []
+    for m in _LINK_RE.finditer(text or ""):
+        params = dict(p.split("=", 1) for p in (m.group(2) or "").split("&") if "=" in p)
+        w, h = _size(_int(params.get("w")), _int(params.get("h")))
+        out.append((clean_prompt(m.group(1)) or "abstract colorful background", w, h))
+    return out
+
+
+async def warm(text: str):
+    """Start making the pictures a page links to as soon as the builder writes it, a few at a time, so they are
+    ready when the user opens the preview. Counts toward the daily cap."""
+    async def one(item):
+        prompt, w, h = item
+        key = f"{prompt.lower()}|{w}x{h}"
+        async with slots:
+            if key in _inflight or await db.site_images.find_one({"key": key}, {"_id": 1}):
+                return
+            if _day["count"] >= PER_DAY:
+                return
+            _day["count"] += 1
+            await _start(key, prompt, w, h)
+
+    slots = _warm_slots.setdefault(id(asyncio.get_running_loop()), asyncio.Semaphore(3))
+    items = list(dict.fromkeys(links(text)))[:WARM_PER_PAGE]
+    if db is not None and items:
+        await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
 
 
 async def _trim():

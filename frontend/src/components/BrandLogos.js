@@ -59,3 +59,24 @@ export function AppLogo({ id, size = "md", className = "" }) {
     </span>
   );
 }
+
+/** A tile for an app without a mark here: its first letter in its colour, or a plug for one the user added. */
+export function LetterLogo({ name = "", color, kind, size = "md", className = "" }) {
+  const box = size === "lg" ? "h-14 w-14 rounded-2xl text-2xl" : size === "sm" ? "h-8 w-8 rounded-lg text-sm" : "h-11 w-11 rounded-xl text-lg";
+  const icon = size === "lg" ? "h-7 w-7" : size === "sm" ? "h-4 w-4" : "h-5 w-5";
+  if (!color) {
+    return (
+      <span className={`flex shrink-0 items-center justify-center border border-border bg-surface-strong text-brand ${box} ${className}`}>
+        {kind === "webhook"
+          ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={icon} aria-hidden="true"><path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2" /><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06" /><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8" /></svg>
+          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={icon} aria-hidden="true"><path d="M12 22v-5" /><path d="M9 8V2" /><path d="M15 8V2" /><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" /></svg>}
+      </span>
+    );
+  }
+  return (
+    <span className={`flex shrink-0 items-center justify-center font-heading font-bold text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] ${box} ${className}`}
+      style={{ background: color }} aria-hidden="true">
+      {(name.trim()[0] || "?").toUpperCase()}
+    </span>
+  );
+}

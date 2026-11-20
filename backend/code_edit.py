@@ -197,6 +197,17 @@ def editing_model(model: str) -> str:
     return model
 
 
+def backup_model(model: str) -> Optional[str]:
+    """Another free model to try the whole edit again with when `model` fails. It cuts the file into parts that
+    fit its own budget, which a hand-over inside one request can't (a part sized for Gemini is too big for Groq)."""
+    first = agent_llm.concrete(model)
+    for other in ("cerebras/gpt-oss-120b", "gemini-3.5-flash-lite", "openai/gpt-oss-120b"):
+        if other != first and agent_llm.provider_for(other) != agent_llm.provider_for(first) \
+                and agent_llm.configured(other):
+            return other
+    return None
+
+
 def part_size(model: str) -> int:
     """Characters of code per request for this model."""
     if not agent_llm.lean(model):

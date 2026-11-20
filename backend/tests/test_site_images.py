@@ -68,3 +68,24 @@ def test_cache_is_trimmed(client, monkeypatch):
     for i in range(4):
         client.get("/api/site-image", params={"prompt": f"cake {i}"})
     assert asyncio.run(site_images.db.site_images.count_documents({})) == 2
+
+
+def test_slow_picture_gets_a_stand_in_now_and_is_ready_next_time(client, monkeypatch):
+    monkeypatch.setattr(site_images, "WAIT", 0.01)
+    with client:  # one event loop for both visits, so the picture keeps being made in between
+        first = client.get("/api/site-image", params={"prompt": "silk saree"}, follow_redirects=False)
+        assert first.status_code == 302 and "loremflickr" in first.headers["location"]
+        import time
+        time.sleep(0.2)
+        second = client.get("/api/site-image", params={"prompt": "silk saree"}, follow_redirects=False)
+    assert second.status_code == 200 and second.content == b"RIFF....WEBPfake"
+    assert client.made == [("silk saree", 800, 600)]
+
+
+def test_pages_warm_their_pictures(client):
+    page = ('<img src="https://krish-image.invalid/banarasi-silk-saree.jpg?w=400&h=500">'
+            '<img src="https://krish-image.invalid/banarasi-silk-saree.jpg?w=400&h=500">'
+            '<img src="https://krish-image.invalid/cotton-saree.jpg">')
+    assert site_images.links(page)[0] == ("banarasi silk saree", 400, 504)
+    asyncio.run(site_images.warm(page))
+    assert sorted(client.made) == [("banarasi silk saree", 400, 504), ("cotton saree", 800, 600)]
