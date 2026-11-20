@@ -25,7 +25,11 @@ _EDIT_WORDS = re.compile(
     r"\b(make|change|convert|turn|add|remove|delete|replace|fix|update|modify|edit|rename|translate|improve|"
     r"redesign|restyle|style|move|swap|put|set|increase|decrease|reduce|bigger|smaller|larger|light|dark|theme|"
     r"colou?rs?|font|responsive|mobile|cent(?:er|re)|align|hide|insert|switch|bana|banao|badal|badlo|hata|hatao|"
-    r"jod|jodo|daal|daalo)\b", re.IGNORECASE)
+    r"jod|jodo|daal|daalo|"
+    # fast phone typing of the same asks ("chnage the colr", "isme login lagao", "dark mode chahiye")
+    r"chnage|chage|cahnge|chnge|chang|chng|remov|delet|updte|updat|modfy|addd|fx|fixx|lagao|laga|lga|lgao|"
+    r"lagado|dalo|dal|daldo|daal ?do|chahiye|chaiye|chahie|bdlo|bdl|hatado|hta|htao|sudharo|thik ?karo|"
+    r"theek ?karo)\b", re.IGNORECASE)
 # ...unless it is a question about the code ("what does this do?", "explain the script").
 _ASKS_ABOUT = re.compile(r"^\s*(what|why|explain|describe|summari[sz]e|review|is|are|does|which|who|when|where|"
                          r"tell me (?:about|what)|can you explain)\b", re.IGNORECASE)

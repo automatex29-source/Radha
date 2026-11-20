@@ -354,36 +354,42 @@ async def _pro(text: str, model: str) -> Optional[Tuple[str, List[dict], List[st
     return (*plain, [query]) if plain else None
 
 
+def _question_text(user_messages: List[str], meant: str = "") -> str:
+    """What to look up: the reading of the question (understand.py: "aur iska price?" becomes "iPhone 16 price
+    in India") when there is one, else the latest message joined with the one before a short follow-up."""
+    text = tidy(meant.strip() if meant and meant.strip() else _recent_user_text(user_messages))
+    return _with_weather_place(user_messages, text) if text else text
+
+
 def search_label(user_messages: List[str], search: bool = True, force: bool = False, focus: str = "web",
-                 pro: bool = False) -> str:
+                 pro: bool = False, meant: str = "") -> str:
     """What gather() will look up on the web for this turn ("" when it won't search), so the chat can show
     "Searching the web" with the query while it runs."""
     if not search:
         return ""
     focus = focus if focus in search_modes.FOCUSES else "web"
     force = force or pro or focus != "web"
-    text = tidy(_recent_user_text(user_messages))
-    text = _with_weather_place(user_messages, text) if text else text
+    text = _question_text(user_messages, meant)
     if not text or not (force or needs_lookup(text)):
         return ""
     return search_query(text) if focus == "web" else text[:200]
 
 
 async def gather(user_messages: List[str], search: bool = True, force: bool = False, focus: str = "web",
-                 pro: bool = False, model: str = "", videos: Optional[bool] = None) -> dict:
+                 pro: bool = False, model: str = "", videos: Optional[bool] = None, meant: str = "") -> dict:
     """Live context for the latest question: {"context", "sources", "queries"}; context is None when the
     question needs no lookup or every lookup fails.
 
     force=True (the Search button) always searches, with more results and pictures; focus picks Academic,
     Social or Video sources; pro plans several searches and reads the best pages. With search=False only
     exchange rates are fetched. videos=True adds a row of YouTube videos (how-tos, recipes, lessons) even when
-    the web isn't searched; by default only the Search button adds them.
+    the web isn't searched; by default only the Search button adds them. `meant` is the reading of the
+    question (see understand.py), looked up instead of the raw words when given.
     """
     empty = {"context": None, "sources": [], "queries": []}
     focus = focus if focus in search_modes.FOCUSES else "web"
     force = force or pro or focus != "web"
-    text = tidy(_recent_user_text(user_messages))
-    text = _with_weather_place(user_messages, text) if text else text
+    text = _question_text(user_messages, meant)
     if not text or not (force or needs_lookup(text)):
         return empty
     jobs = {}  # name -> awaitable; each part has its own time limit, so one slow source never costs the rest
