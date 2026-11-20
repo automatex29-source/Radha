@@ -18,7 +18,7 @@ const narrowScreen = () => typeof window !== "undefined" && !!window.matchMedia?
 const phoneKeyboard = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
 
 export default function ComposerInput({
-  value, onChange, onSend, onStop, streaming, disabled,
+  resetKey, onSend, onStop, streaming, disabled,
   onAttach, attachments = [], onRemoveAttachment,
   images = [], onRemoveImage, onOpenImage, onVoiceNote,
   agentMode, onToggleAgent, agentAvailable, agentHint,
@@ -32,6 +32,17 @@ export default function ComposerInput({
   const t = useT();
   const [transcribing, setTranscribing] = useState(false);
   const [dragging, setDragging] = useState(false);
+
+  // What is typed lives here, not in the chat page: a key press re-renders only the chat box. When the page kept
+  // it, each key press re-rendered every message of an open chat (code blocks, sources, buttons), and when
+  // presses came faster than those re-renders React stopped with "Maximum update depth exceeded" and that
+  // letter was lost ("B-D 5" arrived as "B-D "). The page clears the box after sending by changing resetKey.
+  const [text, setText] = useState("");
+  const textNow = useRef(text);
+  textNow.current = text;
+  useEffect(() => { if (resetKey) setText(""); }, [resetKey]);
+  const change = (v) => setText(v);
+  const send = () => onSend(text); // send what is in the box
 
   // Files show as cards the moment they're picked (pictures as their own thumbnail), with a spinner until
   // they're uploaded.
@@ -99,7 +110,7 @@ export default function ComposerInput({
 
   const busyFiles = pending.length > 0 || attachments.some((a) => a.status === "processing");
   const hasFiles = attachments.some((a) => a.status !== "failed");
-  const canSend = (value.trim() || images.length > 0 || hasFiles) && !disabled && !busyFiles;
+  const canSend = (text.trim() || images.length > 0 || hasFiles) && !disabled && !busyFiles;
 
   // Voice notes (like WhatsApp): tap the mic, talk as long as you like, then send. The note plays back on the
   // message and Krish answers what you said.
@@ -129,10 +140,10 @@ export default function ComposerInput({
       const blob = await rec.record({ autoStop: true });
       if (!blob) { toast.message("I didn't hear anything. Tap the mic and speak."); return; }
       setTranscribing(true);
-      const text = await transcribe(blob);
-      if (!text) { toast.message("Didn't catch that — try again."); return; }
-      const full = value ? `${value.trimEnd()} ${text}` : text;
-      onChange(full);
+      const said = await transcribe(blob);
+      if (!said) { toast.message("Didn't catch that — try again."); return; }
+      const full = textNow.current ? `${textNow.current.trimEnd()} ${said}` : said;
+      change(full);
       if (!streaming && !disabled) onSend(full);
     } catch (e) {
       toast.error(e?.response?.data?.detail || e.message || "Microphone error");
@@ -147,7 +158,7 @@ export default function ComposerInput({
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [value]);
+  }, [text]);
 
   // Esc stops a reply that is being written, like ChatGPT and Claude.
   useEffect(() => {
@@ -161,7 +172,7 @@ export default function ComposerInput({
     // On phones the keyboard's return key adds a new line; the send button sends.
     if (e.key === "Enter" && !e.shiftKey && !phoneKeyboard()) {
       e.preventDefault();
-      if (!streaming && canSend) onSend();
+      if (!streaming && canSend) send();
     }
   };
 
@@ -197,8 +208,8 @@ export default function ComposerInput({
         <textarea
           ref={ref}
           data-testid="message-composer-textarea"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={text}
+          onChange={(e) => change(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           disabled={disabled}
@@ -254,8 +265,8 @@ export default function ComposerInput({
                 <AudioLines className="h-4 w-4" />
               </button>
             )}
-            {value && !streaming && (
-              <button onClick={() => onChange("")} data-testid="clear-composer-button" title="Clear" aria-label="Clear"
+            {text && !streaming && (
+              <button onClick={() => change("")} data-testid="clear-composer-button" title="Clear" aria-label="Clear"
                 className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground @lg:px-2">
                 <X className="h-3 w-3" /><span className="@max-lg:hidden">Clear</span>
               </button>
@@ -267,7 +278,7 @@ export default function ComposerInput({
               <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
           ) : (
-            <Button size="icon" onClick={onSend} onMouseDown={(e) => e.preventDefault()} disabled={!canSend} data-testid="send-message-button" aria-label="Send"
+            <Button size="icon" onClick={send} onMouseDown={(e) => e.preventDefault()} disabled={!canSend} data-testid="send-message-button" aria-label="Send"
               className="h-11 w-11 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-[0_8px_24px_rgba(99,102,241,0.45)] hover:from-indigo-500 hover:to-violet-600">
               <ArrowUp className="h-4 w-4" />
             </Button>

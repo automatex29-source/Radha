@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import litellm
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -351,3 +352,39 @@ def test_broken_tool_call_json_after_text_asks_for_the_call_again():
 
 def test_json_parse_failure_counts_as_a_bad_tool_call():
     assert llm._bad_tool_call(Exception("GroqException - Failed to parse tool call arguments as JSON"))
+
+
+QUESTION = "Write Python for Dijkstra and RUN it on A-B 4, A-C 2, C-B 1, B-D 5, C-D 8, D-E 3, B-E 10."
+
+
+@pytest.mark.parametrize("tool,output", [
+    ("run_python", "stdout:\nCost: 11\n" + "trace line\n" * 900 + "AssertionError: expected 7, got 8\nexit code: 1"),
+    ("web_search", "Result: " + "a long page of search results " * 900),
+    ("read_file", "Page 1 of the uploaded PDF " * 1200),
+])
+def test_question_survives_trimming_after_any_tool(tool, output):
+    """After a tool step the request is the question plus a long tool output. Trimming used to drop "the oldest
+    turns" first, which was the question itself, so the model answered "How can I help you today?"."""
+    msgs = [{"role": "system", "content": "Rules for Krish. " * 1500},  # a long system prompt, like the real one
+            {"role": "user", "content": "hi"}, {"role": "assistant", "content": "Hello! " * 300},
+            {"role": "user", "content": QUESTION},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": {
+                "name": tool, "arguments": json.dumps({"code": "x = 1\n" * 1500})}}]},
+            {"role": "tool", "tool_call_id": "c1", "content": output}]
+    tools = [{"type": "function", "function": {"name": tool, "description": "d" * 3000, "parameters": {}}}]
+    fitted = llm.harmony_safe(llm.fit_messages(msgs, tools, 7700))
+    assert any(m["role"] == "user" and m["content"] == QUESTION for m in fitted)
+    assert [m["role"] for m in fitted][-3:] == ["user", "assistant", "tool"]  # question, call, result in order
+    assert llm.estimate_tokens(fitted) <= 7700 - llm._MIN_OUTPUT - llm.estimate_tokens(tools)
+    if tool == "run_python":
+        assert "exit code: 1" in fitted[-1]["content"]  # a shortened run keeps its error at the end
+
+
+def test_answer_nudge_is_not_taken_for_the_question():
+    msgs = [{"role": "system", "content": "s" * 30000}, {"role": "user", "content": QUESTION},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": {
+                "name": "web_search", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "c1", "content": "r" * 30000},
+            {"role": "user", "content": "Now answer my question in plain words, using the tool results above."}]
+    fitted = llm.fit_messages(msgs, [], 7700)
+    assert any(m["role"] == "user" and m["content"] == QUESTION for m in fitted)
