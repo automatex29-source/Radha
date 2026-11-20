@@ -175,7 +175,7 @@ export default function AppBuilder() {
       <div className="flex min-h-0 flex-1">
         <BuilderChat app={app} appId={id} onFilesChanged={onFilesChanged} hiddenOnPhone={tab !== "chat"} ask={fixAsk}
           previewUrl={previewUrl} previewKey={previewKey} onShowPreview={() => setTab("preview")}
-          onTurnDone={(auto) => { if (!auto) autoLeft.current = 2; setAutoArmed(autoLeft.current > 0); setBuilding(false); }} onBuildStart={() => { setAutoArmed(false); setBuilding(true); }}
+          onTurnDone={(auto) => { if (!auto) autoLeft.current = 1; setAutoArmed(autoLeft.current > 0); setBuilding(false); }} onBuildStart={() => { setAutoArmed(false); setBuilding(true); }}
           onShowChanges={(commitId) => { setHistoryFocus({ id: commitId, at: Date.now() }); setTab("history"); }} />
         <section className={`flex min-w-0 flex-1 flex-col border-l border-border max-md:border-l-0 ${tab === "chat" ? "max-md:hidden" : ""}`}>
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5 max-md:hidden">

@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import re
-from typing import AsyncIterator, List, Optional, Union
+from typing import AsyncIterator, Callable, List, Optional, Union
 
 _PROVIDER_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY",
                  "groq": "GROQ_API_KEY", "cerebras": "CEREBRAS_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
@@ -268,6 +268,38 @@ def _compact_call(call: dict) -> dict:
     return {**call, "function": {**call["function"], "arguments": args}}
 
 
+PINNED_ASK_CHARS = 6000  # the latest request is kept even when older turns are dropped, up to this long
+
+
+def _drop_oldest(rest: List[dict], too_big: Callable[[List[dict]], bool]) -> List[dict]:
+    """Drop the oldest turns of `rest` until `too_big` is false, never splitting a tool call from its results and
+    never dropping the latest user message (the request being worked on) or the last turn.
+
+    Dropping the request too left a free builder looking at a file it had just read with no question in sight,
+    and it answered "Namaste! How can I help you today?" instead of fixing the app."""
+    units: List[List[dict]] = []
+    for m in rest:
+        if m["role"] == "tool" and units and (units[-1][0].get("tool_calls")):
+            units[-1].append(m)
+        else:
+            units.append([m])
+    ask = max((i for i, u in enumerate(units) if u[0]["role"] == "user"), default=None)
+    if ask is not None and isinstance(units[ask][0].get("content"), str):
+        units[ask] = [{**units[ask][0], "content": _shorten(units[ask][0]["content"], PINNED_ASK_CHARS)}]
+    flat = lambda us: [m for u in us for m in u]
+    while too_big(flat(units)):
+        drop = next((i for i in range(len(units) - 1) if i != ask), None)
+        if drop is None:
+            break
+        units.pop(drop)
+        if ask is not None and drop < ask:
+            ask -= 1
+    out = flat(units)
+    while len(out) > 1 and out[0]["role"] == "tool":
+        out = out[1:]  # a tool result can't start the conversation
+    return out
+
+
 def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[dict]:
     """Shrink a conversation so the prompt leaves room for at least _MIN_OUTPUT tokens.
 
@@ -289,11 +321,7 @@ def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[d
             m = {**m, "content": _shorten(m["content"], 2000)}
         out.append(m)
     head = [m for m in out[:1] if m["role"] == "system"]
-    rest = out[len(head):]
-    while len(rest) > 1 and estimate_tokens(head + rest) > limit:
-        rest = rest[1:]
-        while len(rest) > 1 and rest[0]["role"] == "tool":
-            rest = rest[1:]  # a tool result can't start the conversation
+    rest = _drop_oldest(out[len(head):], lambda kept: estimate_tokens(head + kept) > limit)
     if estimate_tokens(head + rest) > limit and head:
         # Cut only what is over (plus a margin), not down to half the room: a prompt a little over the budget
         # lost its file excerpts and search results that way.

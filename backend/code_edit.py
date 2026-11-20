@@ -197,6 +197,21 @@ def editing_model(model: str) -> str:
     return model
 
 
+_STAND_INS = ("cerebras/gpt-oss-120b", "gemini-3.5-flash-lite", "openai/gpt-oss-120b")
+
+
+def stand_ins(model: str) -> List[str]:
+    """The model, then up to two other free models that are set up, to take over a part it couldn't finish."""
+    if agent_llm.paid(model):
+        return [model]
+    chain = [model]
+    for m in list(agent_llm.fallbacks_for(model, [])) + list(_STAND_INS):
+        if len(chain) < 3 and m not in chain and agent_llm.configured(m) and \
+                agent_llm.concrete(m) != agent_llm.concrete(model):
+            chain.append(m)
+    return chain
+
+
 def part_size(model: str) -> int:
     """Characters of code per request for this model."""
     if not agent_llm.lean(model):
@@ -297,11 +312,24 @@ async def run(model: str, files: Dict[str, str], ask: str, ask_model: Ask = _def
             messages = [{"role": "system", "content": SYSTEM},
                         {"role": "user", "content": _prompt(path, ask, part, i, len(parts), first_line, line_count)}]
             reply = []
-            async for ev in ask_model(model, messages, _OUTPUT):
-                if ev["type"] == "text":
-                    reply.append(ev["text"])
-                elif ev["type"] == "heartbeat":
-                    yield ev
+            chain = stand_ins(model)
+            for n, current in enumerate(chain):
+                # A free model that stops half-way (busy, out of requests) hands the part to the next one, so a
+                # small edit like "make the font smaller" doesn't end in "tap Regenerate". Nothing is applied
+                # until a whole reply is in, so starting the part again is safe.
+                reply = []
+                try:
+                    async for ev in ask_model(current, messages, _OUTPUT):
+                        if ev["type"] == "text":
+                            reply.append(ev["text"])
+                        elif ev["type"] == "heartbeat":
+                            yield ev
+                except Exception:
+                    if n == len(chain) - 1:
+                        raise
+                    continue
+                if "".join(reply).strip() or n == len(chain) - 1:
+                    break
             text = "".join(reply)
             new, got, lost = part, 0, 0
             for search, replace in parse_edits(text):
