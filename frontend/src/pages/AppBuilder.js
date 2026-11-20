@@ -20,6 +20,8 @@ import {
   Download, Save, FilePlus, Trash2, RotateCcw, Globe, Copy, Play, Circle, AppWindow, MessageSquare, Database,
   Paperclip, X, Wand2, ImagePlus, MapPin, MousePointerClick, Monitor, Tablet, Smartphone, Sparkles, Undo2, GitCompare, Wrench,
 } from "lucide-react";
+import ThinkingShape from "@/components/ThinkingShape";
+import { LoadingCanvas } from "@/components/PictureMaking";
 
 const FILE_TOOLS = new Set(["write_file", "append_file", "edit_file", "delete_file", "commit", "start_template"]);
 const SCREENSHOT_ASK = "Build this design as a working app. Match its layout, colours, fonts, spacing and content as closely as you can, and make every button work.";
@@ -568,7 +570,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, previewUr
             </Button>
             <Button size="icon" variant="ghost" onClick={boost} disabled={!input.trim() || boosting || streaming}
               title="Improve my prompt" aria-label="Improve my prompt" data-testid="builder-boost" className="h-10 w-10 sm:h-8 sm:w-8">
-              {boosting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+              {boosting ? <ThinkingShape size={12} /> : <Wand2 className="h-3.5 w-3.5" />}
             </Button>
             <span className="flex-1" />
             {streaming ? (
@@ -592,10 +594,13 @@ function LiveCode({ draft }) {
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [draft.text]);
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-sunken md:ml-11" data-testid="live-code">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground">
-        <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-primary" /></span>
-        Writing <span className="font-mono text-foreground">{draft.path}</span>
-        <span className="ml-auto font-mono">{lines.length} lines</span>
+      {/* "Gathering light": sparks drawing in while Krish writes the code. */}
+      <div className="relative h-16 overflow-hidden border-b border-border">
+        <LoadingCanvas transparent className="absolute inset-0 h-full w-full" />
+        <div className="relative flex h-full items-end gap-2 px-3 pb-1.5 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-2 rounded-full bg-card/85 px-2 py-0.5 backdrop-blur"><ThinkingShape size={10} /> Writing <span className="font-mono text-foreground">{draft.path}</span></span>
+          <span className="ml-auto rounded-full bg-card/85 px-2 py-0.5 font-mono backdrop-blur">{lines.length} lines</span>
+        </div>
       </div>
       <pre ref={ref} className="radha-scroll max-h-56 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground/90">
         {lines.slice(-200).join("\n")}<span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-primary align-middle" />

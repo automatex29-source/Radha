@@ -3,6 +3,8 @@ import { toast } from "sonner";
 import { AppWindow, Check, Code2, Copy, Eye, Loader2, Maximize2, Minimize2, RefreshCw, X } from "lucide-react";
 import { buildPreview, extractFiles } from "@/lib/codeFiles";
 import { DownloadMenu, projectBtn, useProjectActions } from "@/components/CodeProject";
+import ThinkingShape from "@/components/ThinkingShape";
+import { LoadingCanvas } from "@/components/PictureMaking";
 
 /**
  * The chat's side panel for a reply with code files, like Claude's artifacts: a live Preview and the Code,
@@ -50,7 +52,7 @@ export default function CodePanel({ content, streaming, onClose }) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold" data-testid="code-panel-title">{name}</p>
           <p className="truncate font-mono text-[11px] text-muted-foreground">
-            {streaming ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Building…</span>
+            {streaming ? <span className="inline-flex items-center gap-1"><ThinkingShape size={10} /> Building…</span>
               : files.map((f) => f.path).join(" · ")}
           </p>
         </div>
@@ -87,8 +89,9 @@ export default function CodePanel({ content, streaming, onClose }) {
               sandbox="allow-scripts allow-forms allow-modals allow-popups"
               className="block h-full w-full border-0 bg-white" />
           ) : (
-            <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-              {streaming ? <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> The preview appears when the code is finished.</span>
+            <div className="relative flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+              {streaming && <LoadingCanvas transparent className="absolute inset-0 h-full w-full" />}
+              {streaming ? <span className="relative flex items-center gap-2 rounded-full border border-border bg-card/90 px-3 py-1.5 backdrop-blur"><ThinkingShape size={14} /> The preview appears when the code is finished.</span>
                 : "There's no web page to preview in these files. Open the Code tab."}
             </div>
           )

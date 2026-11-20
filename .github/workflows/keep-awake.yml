@@ -2,6 +2,8 @@
 # Render's free server sleeps after 15 minutes without visits, and a sleeping server can't start a 7:30 AM job.
 # Set the repository variable APP_URL (Settings > Secrets and variables > Actions > Variables), for example
 # https://radha.onrender.com. Without it this workflow does nothing.
+# GitHub runs scheduled jobs late (often hours apart), so this is only a backup. The main keep-awake is a free
+# monitor at https://cron-job.org or https://uptimerobot.com hitting https://krishai.net/api/ every 5-10 minutes.
 name: Keep server awake
 
 on:

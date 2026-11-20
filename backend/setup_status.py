@@ -57,6 +57,15 @@ def items() -> list:
          "steps": ["In Render, add VIDEO_GENERATION with the value on",
                    "It needs one video service key: OPENAI_API_KEY (Sora), FAL_KEY (Veo) or POLLINATIONS_API_KEY",
                    "Each second of video costs money on that service, so check its prices first"]},
+        {"id": "search", "name": "Web search key (makes search reliable)", "effort": "3 minutes, free",
+         "keys": [], "any": ["TAVILY_API_KEY", "SERPER_API_KEY", "BRAVE_SEARCH_API_KEY"],
+         "unlocks": "Searches answer every time, fast. Without a key Krish uses free engines, which sometimes "
+                    "turn a server away with a robot check",
+         "link": "https://app.tavily.com",
+         "steps": ["Sign up at app.tavily.com (1,000 free searches a month) and copy the API key",
+                   "In Render > your service > Environment, add TAVILY_API_KEY with that key and save",
+                   "Optional, for Google results: get a key at serper.dev (2,500 free) and add SERPER_API_KEY too",
+                   "Krish uses every key that is set and falls back to the free engines if a key runs out"]},
         {"id": "github", "name": "GitHub one-click sign-in (optional)", "effort": "5 minutes",
          "keys": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"],
          "unlocks": "Already live with a pasted token; this adds a one-click Connect button",
@@ -72,6 +81,14 @@ def items() -> list:
     ]
 
 
+def _search_health() -> str:
+    """How each search engine has done since the server started, so a failing key shows here."""
+    from agent import web
+    rows = [f"{name}: {h['ok']} worked, {h['failed']} failed" + (f" (last: {h['lastError']})" if h["failed"] else "")
+            for name, h in sorted(web.engine_health().items())]
+    return ("Since the last restart · " + " · ".join(rows)) if rows else ""
+
+
 def status() -> dict:
     out = []
     for it in items():
@@ -81,7 +98,10 @@ def status() -> dict:
             missing = ["VIDEO_GENERATION"]
         if it.get("any") and not any(_set(k) for k in it["any"]):
             missing.append(" or ".join(it["any"]))
-        out.append({**{k: v for k, v in it.items() if k != "any"}, "live": not missing, "missing": missing})
+        row = {**{k: v for k, v in it.items() if k != "any"}, "live": not missing, "missing": missing}
+        if it["id"] == "search":
+            row["unlocks"] = _search_health() or row["unlocks"]
+        out.append(row)
     always = ["Slack", "Discord", "GitHub (pasted token)", "Notion (pasted secret)", "Add any app (MCP and webhooks)",
               "Weather", "Panchang & festivals", "Cricket scores", "Always search the web", "Daily Gita verse"]
     return {"items": out, "alwaysLive": always, "live": sum(i["live"] for i in out), "total": len(out)}

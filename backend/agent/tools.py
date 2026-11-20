@@ -5,6 +5,7 @@ handler. The registry exposes OpenAI-style function schemas to the model and
 runs calls safely (bad arguments or handler errors come back to the model as
 tool errors instead of crashing the turn). Adding a tool = one `register()`.
 """
+import asyncio
 import contextlib
 import json
 import logging
@@ -254,6 +255,21 @@ async def _allowance(ctx: ToolContext, kind: str = "picture", size: Optional[int
 
 
 
+# What Krish says with a picture. The chat already shows it big, with Download, Copy, Edit, "More like this" and
+# one-tap changes (night, title, story size...), so the words stay short and warm, like a designer handing it over.
+PICTURE_REPLY = (
+    "The picture is made and shown to the user, large, with download, edit and quick-change buttons under it. "
+    "Do not embed it, link it, or list its settings or the prompt. Reply in the user's own language and tone "
+    "(Hinglish if they wrote Hinglish) with one or two warm, specific lines: what you made and one detail you chose "
+    "for it (light, colour, mood or composition). No headings, no bullet lists, no long questions; at most one short "
+    "offer such as trying another mood."
+)
+PICTURE_EDIT_REPLY = (
+    "The changed picture is shown to the user with download and edit buttons. Do not embed or link it. In the user's "
+    "own language and tone, say in one short line exactly what you changed and that the rest was kept."
+)
+
+
 async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     prompt = _require(args, "prompt")
     async with _allowance(ctx):
@@ -264,8 +280,7 @@ async def _generate_image(ctx: ToolContext, args: dict) -> ToolOutput:
     name = documents.safe_filename(args.get("filename") or prompt[:40] or "image", ext)
     saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated",
                                    name=name, conversation_id=ctx.conversation_id)
-    return ToolOutput(content="Image generated and shown to the user with a download button. Do not embed it or "
-                              "paste a link; just describe it in one short sentence.",
+    return ToolOutput(content=PICTURE_REPLY,
                       summary=f"Generated “{prompt[:80]}”", media=[saved])
 
 
@@ -288,8 +303,7 @@ async def _edit_image(ctx: ToolContext, args: dict) -> ToolOutput:
     base = (src.get("name") or "picture").rsplit(".", 1)[0]
     saved = await media.save_media(ctx.db, ctx.user_id, data, ctype, "generated",
                                    name=documents.safe_filename(f"{base}-edited", ext), conversation_id=ctx.conversation_id)
-    return ToolOutput(content="Edited picture shown to the user with a download button. Describe the change in one "
-                              "short sentence.", summary=f"Edited {src.get('name') or 'the picture'}", media=[saved])
+    return ToolOutput(content=PICTURE_EDIT_REPLY, summary=f"Edited {src.get('name') or 'the picture'}", media=[saved])
 
 
 async def _save_file(ctx: ToolContext, data: bytes, ext: str, filename: str) -> dict:
@@ -309,12 +323,62 @@ async def _create_spreadsheet(ctx: ToolContext, args: dict) -> ToolOutput:
                       summary=f"Created {saved['name']}", media=[saved])
 
 
+async def _slide_pictures(ctx: ToolContext, slides: list, topic: str) -> dict:
+    """Photos for picture slides (stock photos found from each slide's image_query), fetched in parallel
+    with a time limit. A slide without one keeps its designed colour panel."""
+    import deck_images
+
+    if not deck_images.enabled():
+        return {}
+    want = [s for s in slides if isinstance(s, dict) and s.get("image_query")
+            and str(s.get("layout") or "") in ("title", "cover", "image_right", "image_left", "image")]
+    if not want:
+        return {}
+    used: set = set()
+    loop = asyncio.get_running_loop()
+
+    async def one(slide):
+        img = await deck_images.find_stock({"image_query": slide["image_query"], "title": slide.get("title")}, used, topic)
+        if not img:
+            return None
+        data = await loop.run_in_executor(None, deck_images.download, img["url"])
+        if data:
+            slide["image"] = img
+            return img["url"], data
+        return None
+
+    try:
+        found = await asyncio.wait_for(asyncio.gather(*(one(s) for s in want[:8]), return_exceptions=True), 20)
+    except asyncio.TimeoutError:
+        return {}
+    pictures = dict(r for r in found if isinstance(r, tuple))
+    for s in want:  # a photo that never arrived must not leave a broken picture slot
+        if s.get("image") and s["image"]["url"] not in pictures:
+            s.pop("image", None)
+    return pictures
+
+
 async def _create_presentation(ctx: ToolContext, args: dict) -> ToolOutput:
     slides = args.get("slides")
     if not isinstance(slides, list) or not slides:
         raise ValueError("'slides' must be a non-empty list")
-    data = documents.build_pptx(slides, title=args.get("title") or "", theme=args.get("theme") or "dark")
-    saved = await _save_file(ctx, data, "pptx", args.get("filename") or args.get("title") or "presentation")
+    slides = [dict(s) if isinstance(s, dict) else s for s in slides]
+    for s in slides:
+        if isinstance(s, dict):
+            s.pop("image", None)  # pictures only come from image_query below
+    title = args.get("title") or ""
+    problem = documents.check_deck(slides, args.get("brief"))
+    if problem:
+        # Nothing is made: the model fixes the deck and calls again, so the user gets what they asked for.
+        return ToolOutput(content=f"Not created yet: {problem} Call create_presentation again with the fixed deck. "
+                                  "Don't mention this check to the user.", summary="Checking the slides", ok=False)
+    pictures = {}
+    try:
+        pictures = await _slide_pictures(ctx, slides, title)
+    except Exception:  # photos are a nice extra; never fail the deck over them
+        pictures = {}
+    data = documents.build_pptx(slides, title=title, theme=args.get("theme") or "aurora", pictures=pictures)
+    saved = await _save_file(ctx, data, "pptx", args.get("filename") or title or "presentation")
     return ToolOutput(content=f"Created {saved['name']} with {len(slides)} slides. It is shown to the user with a "
                               "preview and download button.", summary=f"Created {saved['name']}", media=[saved])
 
@@ -431,7 +495,10 @@ async def _browser(ctx: ToolContext, args: dict) -> ToolOutput:
     return ToolOutput(content=browser.describe(snap), summary=f"{snap['title'] or snap['url']}"[:160], media=[shot])
 
 
-_CELL_NOTE = "Cell values as strings; numeric strings become numbers and strings starting with '=' become Excel formulas."
+_CELL_NOTE = ("Cell values as strings. Numbers, money ('₹25,000', '$1,200'), percentages ('12.5%') and dates "
+              "('2026-01-31') become real typed cells with the right format; strings starting with '=' become Excel "
+              "formulas (the header is row 1, data starts at row 2). End with a 'Total' row using =SUM() when "
+              "the data adds up; it is styled as a total and left out of the chart.")
 
 
 def default_registry() -> ToolRegistry:
@@ -511,33 +578,85 @@ def default_registry() -> ToolRegistry:
             handler=_create_spreadsheet))
         .register(Tool(
             name="create_presentation", label="Create PowerPoint",
-            description="Create a designed 16:9 PowerPoint .pptx deck. Layouts: title, section, bullets, two_column, "
-                        "table, quote. Keep bullets short (max ~6 per slide); indent a bullet with two leading spaces "
-                        "to nest it. Put detail in speaker notes.",
+            description="Create a designed, animated 16:9 PowerPoint .pptx deck (same look as the Decks page: "
+                        "themes, icon cards, charts, slide transitions, content that builds in). First fill 'brief' "
+                        "with what the user actually asked for, then write slides that serve exactly that. Mix "
+                        "layouts so it never reads as a wall of bullets: start with 'title', end with 'closing'; "
+                        "'agenda' for the parts of the talk; 'stats' for 2-4 big numbers; 'chart' for numbers over "
+                        "time or by category; 'cards' for 3-4 ideas, each with an emoji icon; 'steps' for a process; "
+                        "'timeline' for dated events (item title = the year/date); 'table' for a small grid (max 6 "
+                        "columns, 10 rows); 'two_column' to compare; 'quote'; 'section' to open a part; "
+                        "'image_right'/'image_left' for bullets beside a photo (give image_query; the title slide can "
+                        "have one too). Never two plain 'bullets' slides in a row. Max 6 short bullets a slide; put "
+                        "the detail in speaker notes. Themes: aurora (default, dark indigo), midnight, ocean, sunset, "
+                        "forest, paper (warm light), snow (clean light), candy, mono; 'dark'/'light' also work.",
             parameters={"type": "object", "properties": {
                 "filename": {"type": "string"},
                 "title": {"type": "string"},
-                "theme": {"type": "string", "enum": ["dark", "light"]},
+                "brief": {"type": "object", "description": "What the user asked for, read from their words (typos "
+                          "and Hinglish read for meaning). The deck is checked against it.",
+                          "properties": {
+                              "topic": {"type": "string", "description": "The exact subject they named"},
+                              "audience": {"type": "string", "description": "e.g. 'class 8 students', 'investors'"},
+                              "purpose": {"type": "string", "description": "e.g. school project, sales pitch"},
+                              "slide_count": {"type": "integer", "description": "The number of slides they asked "
+                                              "for, counting the title and closing slides; 0 if they didn't say"},
+                              "language": {"type": "string", "description": "Language of the slide text: English, "
+                                           "Hindi (Devanagari), Hinglish, Marathi..."},
+                              "must_include": {"type": "array", "items": {"type": "string"},
+                                               "description": "Everything specific they asked to have: names, "
+                                               "points, sections, school or company name"},
+                          }, "required": ["topic", "slide_count", "language"]},
+                "theme": {"type": "string", "enum": ["aurora", "midnight", "ocean", "sunset", "forest", "paper", "snow",
+                                                     "candy", "mono", "dark", "light"]},
                 "slides": {"type": "array", "items": {"type": "object", "properties": {
-                    "layout": {"type": "string", "enum": ["title", "section", "bullets", "two_column", "table", "quote"]},
-                    "title": {"type": "string"},
-                    "subtitle": {"type": "string", "description": "title/section/quote slides (quote: attribution)"},
-                    "bullets": {"type": "array", "items": {"type": "string"}},
+                    "layout": {"type": "string", "enum": ["title", "agenda", "section", "bullets", "image_right",
+                                                          "image_left", "two_column", "table", "quote", "stats",
+                                                          "chart", "cards", "steps", "timeline", "closing"]},
+                    "title": {"type": "string", "description": "A takeaway, not a label: 'Solar costs fell 90% in "
+                              "ten years', not 'Costs'"},
+                    "subtitle": {"type": "string", "description": "title/section/closing slides; quote: who said it"},
+                    "body": {"type": "string", "description": "One short line of context (bullets, chart takeaway, "
+                             "stats source, table)"},
+                    "bullets": {"type": "array", "items": {"type": "string"}, "description": "bullets/image/agenda"},
                     "left_title": {"type": "string"}, "left": {"type": "array", "items": {"type": "string"}},
                     "right_title": {"type": "string"}, "right": {"type": "array", "items": {"type": "string"}},
                     "table": {"type": "object", "properties": {
                         "columns": {"type": "array", "items": {"type": "string"}},
                         "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
                     }},
+                    "stats": {"type": "array", "items": {"type": "object", "properties": {
+                        "value": {"type": "string", "description": "Short, e.g. '₹18 Cr', '61%'"},
+                        "label": {"type": "string"}}}},
+                    "chart": {"type": "object", "properties": {
+                        "type": {"type": "string", "enum": ["bar", "line", "pie", "doughnut"]},
+                        "labels": {"type": "array", "items": {"type": "string"}},
+                        "series": {"type": "array", "items": {"type": "object", "properties": {
+                            "name": {"type": "string"}, "values": {"type": "array", "items": {"type": "number"}}}}},
+                    }},
+                    "items": {"type": "array", "description": "cards: 3-4 {icon (one emoji), title, text}; steps: "
+                              "3-5 {title, text}; timeline: 3-6 {title (the date), text}",
+                              "items": {"type": "object", "properties": {
+                                  "icon": {"type": "string"}, "title": {"type": "string"}, "text": {"type": "string"}}}},
                     "quote": {"type": "string"},
-                    "notes": {"type": "string", "description": "Speaker notes"},
+                    "image_query": {"type": "string", "description": "title/image_right/image_left: 2-4 English words "
+                                    "for a stock photo of something visible, e.g. 'tea stall india'"},
+                    "notes": {"type": "string", "description": "Speaker notes: 2-4 sentences to say on this slide, "
+                              "with the detail and examples"},
                 }, "required": ["layout", "title"]}},
-            }, "required": ["filename", "slides"]},
+            }, "required": ["filename", "brief", "slides"]},
             handler=_create_presentation))
         .register(Tool(
             name="create_document", label="Create document",
             description="Create a Word (.docx) or PDF document from Markdown: headings, bold/italic, links, nested "
-                        "lists, block quotes, tables and code blocks are all formatted properly.",
+                        "lists, block quotes, tables and code blocks are all formatted properly, with a title, "
+                        "page numbers and styled headings. Start with one '# Title', use '##' for parts and '###' "
+                        "for sections. For tests, worksheets and question papers: use "
+                        "'## Test N' or '## Part N' (each starts on a new page), with 'Time Allowed: 20 Minutes | "
+                        "Total Marks: 15' on the line under it; number questions '1. **Question title:** (2 marks)' "
+                        "then the question; sub-parts (a), (b); '________' for blanks; a line of only underscores "
+                        "under a question becomes a ruled answer line; end with '## Answer Key' (new page) unless "
+                        "the user said no answers. A Name/Class/Roll No./Date box is added automatically.",
             parameters={"type": "object", "properties": {
                 "filename": {"type": "string"},
                 "format": {"type": "string", "enum": ["docx", "pdf"]},

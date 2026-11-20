@@ -75,6 +75,8 @@ import daily_verse
 import google_signin
 import monitor
 import owner_dashboard
+import user_activity
+import questions as owner_questions
 import setup_status
 import promos
 import referrals
@@ -232,6 +234,9 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1)
     model: Optional[str] = None
     images: List[str] = Field(default_factory=list, max_length=8)
+    files: List[str] = Field(default_factory=list, max_length=20)  # documents attached with this message (shown on it)
+    audio: Optional[str] = Field(default=None, max_length=64)  # a voice note (media id); content is what was said
+    audioSeconds: Optional[float] = Field(default=None, ge=0, le=900)
     agent: bool = False
     think: bool = False  # the Think button: reason longer and check the answer
     study: bool = False  # Study mode: teach step by step and quiz instead of just answering
@@ -357,6 +362,8 @@ def public_message(doc: dict) -> dict:
         "webHint": bool(doc.get("webHint")),
         "searched": doc.get("searched"),
         "images": doc.get("images") or [],
+        "files": doc.get("files") or [],
+        "audio": doc.get("audio"),
         "steps": doc.get("steps") or [],
         "media": doc.get("media") or [],
         "stopped": bool(doc.get("stopped")),
@@ -653,7 +660,7 @@ async def delete_account(body: DeleteAccountIn, user_id: str = Depends(current_u
     await media.delete_media(db, {"userId": user_id})
     for name in ("conversations", "files", "chunks", "memories", "projects", "decks", "docs", "pages",
                  "help_reports", "password_resets", "push_subscriptions", "message_feedback", "activity",
-                 "usage_events", "logins"):
+                 "usage_events", "logins", "token_daily"):
         await db[name].delete_many({"userId": user_id})
     await db.referrals.delete_many({"$or": [{"inviterId": user_id}, {"friendId": user_id}]})
     await db.usage.delete_many({"_id": {"$regex": f"^{re.escape(user_id)}:"}})
@@ -706,6 +713,35 @@ async def admin_stats(days: int = Query(14, ge=1, le=60), user_id: str = Depends
     """Owner only: people and features used each day, 👍 / 👎 on answers, and the latest problems."""
     await _require_owner(user_id)
     return await monitor.stats(db, days)
+
+
+@api.get("/admin/activity")
+async def admin_activity(days: int = Query(30), user_id: str = Depends(current_user_id)):
+    """Owner only: the most used features, people per feature, active people per day and the most active people.
+    Counts only: no one's messages are read."""
+    await _require_owner(user_id)
+    return await user_activity.overview(db, days)
+
+
+@api.get("/admin/questions")
+async def admin_questions(days: int = Query(7), topic: str = Query("", max_length=60), q: str = Query("", max_length=200),
+                          page: int = Query(0, ge=0, le=1000), user: str = Query("", max_length=64),
+                          user_id: str = Depends(current_user_id)):
+    """Owner only: what people ask, by topic, with each question and who asked it (optionally one person's).
+    Counsellor chats are never included."""
+    await _require_owner(user_id)
+    return await owner_questions.overview(db, days, topic, q, page, user)
+
+
+@api.get("/admin/users/{target_id}/activity")
+async def admin_user_activity(target_id: str, days: int = Query(30), user_id: str = Depends(current_user_id)):
+    """Owner only: what one person did (features, how often and when, tokens, plan, what they made). Never the
+    text of their chats or prompts."""
+    await _require_owner(user_id)
+    data = await user_activity.person(db, target_id, days)
+    if data is None:
+        raise HTTPException(status_code=404, detail="No such account")
+    return data
 
 
 @api.get("/admin/dashboard")
@@ -1357,6 +1393,26 @@ HINGLISH_NOTE = ("The user's latest message is in Hinglish (Hindi typed in Engli
                  "not in Devanagari. Keep numbers, code, links and names as they are.")
 
 
+# Asking for a slide deck, typos and Hindi included ("ppt bana do", "presentaion", "प्रेजेंटेशन", "स्लाइड").
+_DECK_ASK = re.compile(r"\bp+p+t+x?s?\b|power\s*-?\s*point|\bpre?[sz][ea]?n?t[ae]?t?i?on|\bpers[ea]n?tation|\bslides?\b|\bslide\s*deck|"
+                       r"\bdeck\b|प्रेज़?ें?टेशन|प्रस्तुति|स्लाइड|पीपीटी", re.IGNORECASE)
+DECK_NOTE = (
+    "The user wants a presentation. Before calling create_presentation, read their message (and the chat and any "
+    "attached file) for what they actually asked, and fill its brief from their words: the exact topic (not a "
+    "nearby one), who it is for (class, exam, office, investors), the purpose, the number of slides they named "
+    "(make exactly that many, counting title and closing; 8-12 if they gave none), and everything they asked to "
+    "include (names, sections, points, their school or company). Slide language: the one they name; Hindi when "
+    "they write in Devanagari or say Hindi; English when they ask in English or Hinglish without naming one. "
+    "Only if the topic itself is missing, ask one short question instead. Content: every slide teaches something "
+    "specific and correct (real facts, examples, dates, numbers you are sure of, rounded and sourced; search the "
+    "web for anything current), titles say the takeaway, and every slide has 2-4 sentences of speaker notes. "
+    "Pitch it at the audience's level. Design: no two plain bullet slides in a row; use agenda, cards with emoji "
+    "icons, stats, a chart or table when there are numbers, steps or timeline for a process or history, "
+    "two_column for comparisons, image slides with exact photo words, and a theme that suits the topic. After it "
+    "is made, reply in one or two lines (in the user's chat language) with what the deck covers."
+)
+
+
 def _is_hinglish(text: Optional[str]) -> bool:
     """True when a message is Hindi typed in English letters (so the reply should be too)."""
     text = text or ""
@@ -1738,7 +1794,32 @@ def _quick_chat(history_docs: list) -> bool:
         return False
     if any(m.get("steps") for m in history_docs[-4:] if m["role"] == "assistant"):
         return False  # a follow-up to a turn that used tools ("now make it blue") keeps them
-    return not any(_NEEDS_TOOLS.search(m["content"] or "") for m in last_user)
+    return not any(_NEEDS_TOOLS.search(m["content"] or "") or _DECK_ASK.search(m["content"] or "") for m in last_user)
+
+
+def _attached_now(history_docs: list) -> Optional[str]:
+    """What came with the latest message (files, pictures, a voice note), so "this" and "it" point at the right thing."""
+    last = next((m for m in reversed(history_docs) if m["role"] == "user"), None)
+    if not last:
+        return None
+    parts = []
+    names = [f["name"] for f in last.get("files") or [] if f.get("name")]
+    if names:
+        parts.append("these files: " + ", ".join(f"[{n}]" for n in names[:20]))
+    if last.get("images"):
+        n = len(last["images"])
+        parts.append(f"{n} picture{'s' if n > 1 else ''} (you can see {'them' if n > 1 else 'it'} in the message)")
+    if not parts and not last.get("audio"):
+        return None
+    note = "With their latest message the user attached " + " and ".join(parts) + ". " if parts else ""
+    if parts:
+        note += ("\"This\", \"it\" or \"the file\" means what they just attached. Read all of it carefully before you answer: "
+                 "quote exact figures, names and dates, and say which file each point comes from. If they sent no question, "
+                 "say in a line what each one is, then give its key points.")
+    if last.get("audio"):
+        note += (" Their message is a voice note, written out for you; answer what they said naturally, and don't "
+                 "mention the transcript unless a word was clearly misheard.")
+    return note.strip()
 
 
 async def _file_context(conv_id: str, user_id: str, project_id, question: str, limit: int):
@@ -2148,7 +2229,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                                 "instructions now: respond with care and give the helplines.")
 
     # Files attached to this chat, plus project documents (RAG).
-    if user_id and last_user and not counselling:
+    if user_id and last_user:  # files attached to the chat, in the Counsellor too
         lean = agent_llm.lean(model)
         if lean and agent and not (conv or {}).get("appId") and not _TOOL_ASK.search(last_user) and \
                 await db.files.count_documents({"conversationId": conv_id, "is_deleted": False}):
@@ -2162,6 +2243,9 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                 system_parts.append(file_ctx)
         except Exception:
             logger.exception("RAG retrieval failed")
+    turn_note = _attached_now(history_docs)
+    if turn_note:
+        system_parts.append(turn_note)
 
     app_id = conv.get("appId") if conv else None
     versions = None  # App Builder: the app before and after this turn, for See changes and Undo
@@ -2290,6 +2374,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(STUDY_CLOSE_KNOWN if (study_mode.clean(student) or {}).get("level") else STUDY_CLOSE_NOTE)
     if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
         system_parts.append(HINGLISH_NOTE)
+    if agent and not counselling and not voice and not app_id and _DECK_ASK.search(last_user or ""):
+        system_parts.append(DECK_NOTE)
     system_prompt = "\n\n".join(system_parts)
     # The Counsellor never shows letters from a script the person didn't use (see counsellor.keep_scripts).
     scripts = counsellor.allowed_scripts([m["content"] for m in history_docs if m["role"] == "user"],
@@ -2463,12 +2549,13 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                         await limits.add_fair_use(db, user_id, token_count["tokens"])
                     except Exception:
                         logger.exception("fair-use count failed")
-                # App builds and premium-model chats use the meter by the tokens they really took.
-                if user_id and (app_id or agent_llm.paid(model)) and token_count["tokens"]:
+                    await monitor.tokens(db, user_id, token_count["tokens"], "build" if app_id else "chat")
+                # The meter follows the tokens a reply really took: App Builder turns, premium-model chats, and
+                # on the free plan every chat (a quick question uses little, a long chat or a file more).
+                if user_id and token_count["tokens"]:
                     try:
-                        plan = await limits.plan_of(db, user_id)
-                        prepaid = limits.cost("build" if app_id else "chat", len(last_user or ""), plan)
-                        await limits.charge_tokens(db, user_id, token_count["tokens"], prepaid)
+                        await limits.charge_reply(db, user_id, token_count["tokens"], app=bool(app_id),
+                                                  model_paid=agent_llm.paid(model), ask_chars=len(last_user or ""))
                     except Exception:
                         logger.exception("token metering failed")
             if not stopped:
@@ -2584,6 +2671,20 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         if not doc or not (doc.get("contentType") or "").startswith("image/"):
             raise HTTPException(status_code=400, detail="Unknown image attachment")
         image_ids.append(mid)
+    # Documents sent with this message show on it as cards (name, type, size), like ChatGPT and Claude.
+    file_cards = []
+    for fid in dict.fromkeys(body.files):
+        f = await db.files.find_one({"id": fid, "userId": user_id, "conversationId": conv_id, "is_deleted": False},
+                                    {"original_filename": 1, "content_type": 1, "size": 1})
+        if f:
+            file_cards.append({"id": fid, "name": f["original_filename"], "contentType": f.get("content_type"),
+                               "size": f.get("size")})
+    voice_note = None
+    if body.audio:
+        a = await db.media.find_one({"id": body.audio, "userId": user_id}, {"data": 0})
+        if not a or not (a.get("contentType") or "").startswith("audio/"):
+            raise HTTPException(status_code=400, detail="Unknown voice note")
+        voice_note = {"id": body.audio, "seconds": round(body.audioSeconds or 0, 1)}
     if conv.get("appId"):  # an App Builder message uses credits by how much it asks for
         await limits.require(db, user_id, "build", size=len(body.content), model=model)
 
@@ -2596,7 +2697,7 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
             raise HTTPException(status_code=400, detail=str(exc))
         if pasted:
             content, ready_reply = pasted
-    elif conv.get("mode") != counsellor.MODE and not body.images:
+    elif conv.get("mode") != counsellor.MODE and not body.images and not body.audio:
         # Code pasted or attached in the chat is shown exactly as given: no AI rewrite when the user only
         # wants to see it. With instructions ("make the button red"), the AI works on it as usual.
         ready_reply = show_as_is(body.content)
@@ -2607,6 +2708,8 @@ async def stream_message(conv_id: str, body: MessageIn, user_id: str = Depends(c
         "role": "user",
         "content": content,
         "images": image_ids or None,
+        "files": file_cards or None,
+        "audio": voice_note,
         "model": None,
         "createdAt": now_iso(),
     }
@@ -2657,8 +2760,8 @@ PRO_LONG_ASK_CHARS = 1500
 
 
 async def _count_basic_chat(user_id: str, conv: dict) -> None:
-    """A chat message on the free plan counts toward its session's messages (a 402 once they're used). App Builder
-    messages use the usage meter instead."""
+    """A chat message on the free plan needs room on the usage meter (a 402 once the session or week is used up);
+    its reply's tokens are counted once it's written. App Builder messages are checked as builds instead."""
     if conv.get("appId"):
         return
     try:
@@ -3616,13 +3719,45 @@ async def transcribe_audio(file: UploadFile = File(...), language: Optional[str]
         raise HTTPException(status_code=400, detail="Empty audio")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
+    return await _transcribe(data, file.filename, language, hint, context, user_id)
+
+
+@api.post("/audio/note")
+async def voice_note(file: UploadFile = File(...), conversationId: str = Form(...), language: Optional[str] = Form(None),
+                     user_id: str = Depends(current_user_id)):
+    """A voice note, like WhatsApp: the recording is kept (it plays back on the message) and written out as text,
+    which is what Krish answers."""
+    abuse.require("media", user_id)
+    await _owned_conversation(conversationId, user_id)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio")
+    if len(data) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Voice note too long (max 12MB, about 10 minutes)")
+    content_type = (file.content_type or "audio/webm").split(";")[0].lower()
+    if not content_type.startswith("audio/"):
+        raise HTTPException(status_code=415, detail="That isn't a recording")
+    await _check_upload_size(user_id, data, "Voice note")
+    heard = await _transcribe(data, file.filename, language, None, None, user_id)
+    if not heard["text"]:
+        raise HTTPException(status_code=422, detail="I couldn't hear any words in that voice note. Try again a little closer to the mic.")
+    try:
+        saved = await media.save_media(db, user_id, data, content_type, "voice_note",
+                                       name=file.filename or "voice-note.webm", conversation_id=conversationId)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    return {"media": saved, **heard}
+
+
+async def _transcribe(data: bytes, filename: Optional[str], language: Optional[str], hint: Optional[str],
+                      context: Optional[str], user_id: str) -> dict:
     try:
         lang = language if language in media.VOICE_LANGUAGES else None
         owner = await db.users.find_one({"id": user_id}, {"language": 1}) if not lang else None
         settings_lang = (owner or {}).get("language")
         # The language they spoke last (sent by voice mode), else their Settings language, steers Whisper.
         steer = hint if hint in media.VOICE_LANGUAGES else settings_lang
-        text, heard = await media.transcribe_detect(data, file.filename or "audio.webm", lang,
+        text, heard = await media.transcribe_detect(data, filename or "audio.webm", lang,
                                                     hint=steer, context=(context or "")[:400] or None)
         text = media.clean_transcript(text)
         if heard in ("hi", "ur") and not lang:
@@ -3714,7 +3849,8 @@ def _sse_json(payload) -> str:
     return _json.dumps(payload)
 
 
-@api.get("/")
+# HEAD too: free uptime monitors (UptimeRobot and others) check with HEAD and would report a 405 as "down".
+@api.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {"service": "Krish AI", "company": "EmpireX", "status": "ok"}
 
@@ -3749,7 +3885,7 @@ FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST") or ROOT_DIR.parent / "front
 if (FRONTEND_DIST / "index.html").is_file():
     from fastapi.responses import FileResponse
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def frontend(full_path: str, request: Request):
         if full_path.startswith("api/") or full_path == "api":
             raise HTTPException(status_code=404, detail="Not found")
@@ -3970,6 +4106,8 @@ async def startup():
     await db.errors.create_index("createdAt")
     await db.activity.create_index("day")
     await db.usage_events.create_index("at")
+    await db.usage_events.create_index([("userId", 1), ("at", -1)])
+    await db.token_daily.create_index([("userId", 1), ("day", 1)])
     await db.logins.create_index("at")
     await db.messages.create_index("createdAt")
     await db.payments.create_index("paidAt", sparse=True)

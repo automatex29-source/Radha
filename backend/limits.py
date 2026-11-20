@@ -1,10 +1,11 @@
 """Plan limits: Basic (free), Pro and Max.
 
-Chat on Krish Basic is unlimited on Pro and Max; the free plan gets BASIC_CHAT_SESSION messages a session, and a
-taste of Krish Pro (PRO_TASTE_WEEK credits a week, on Claude Haiku). Everything else that costs real money to make (app builds, pictures, decks,
-videos and messages on the premium models) runs down one usage meter, like Claude's own limit: each request
-uses credits by how big it really is (the length of what's asked, the seconds of video, a premium or free
-engine), and the meter refills a few hours after the first use (a "session"). A weekly meter on top keeps a
+Chat on Krish Basic is unlimited on Pro and Max. Everything else (and, on the free plan, chat too) runs down one
+usage meter, like Claude's own limit: nothing is counted by the number of messages. Each request uses credits by
+how heavy it really is (the tokens the AI read and wrote, the length of what's asked, the seconds of video, a
+premium or free engine), so a quick chat uses a sliver and a big app build or a long file a lot more. The meter
+refills a few hours after the first use (a "session"). The free plan also gets a taste of Krish Pro
+(PRO_TASTE_WEEK credits a week, on Claude Haiku). A weekly meter on top keeps a
 heavy user's month safe on cost. Automations are counted as the total the user has now, so deleting one frees
 a slot. Publishing apps is for Pro and Max only.
 
@@ -16,7 +17,8 @@ can cost more than that, and raising a price raises its meter with it.
 A user's plan is the `plan` field on their account ("basic" when missing). A paid
 plan bought in the app also has `planExpiresAt` (an ISO time); once that passes the
 user is back on Basic. A plan set by hand without an expiry never runs out.
-Set FREE_LIMITS=off to switch every limit off (for testing).
+Set FREE_LIMITS=off to switch every limit off (for testing, or a launch week). What people use is still added up
+then, so the Usage page shows real numbers; nothing is ever refused.
 """
 import math
 import os
@@ -62,7 +64,7 @@ PLANS = {
         "meter": paid_meter(499),
         "total": {"automation": 10},
         "automations": {"minInterval": 60, "thorough": False, "premiumModels": True, "events": True,
-                        "noAsk": False},
+                        "noAsk": True},
         "publish": True, "premium": True,
         "quality": {"media": "premium", "videoSeconds": 12, "uploadMb": UPLOAD_MB},
     },
@@ -198,8 +200,9 @@ def message(kind: str, plan: str, resets: Optional[float] = None, week: bool = F
     return f"You've used {which} usage on the {info['name']} plan.{when}{more}{chat}"
 
 
-# The free plan: Krish Basic messages a session, and a weekly taste of Krish Pro (in paid-plan credits, on Haiku).
-BASIC_CHAT_SESSION = 40
+# The free plan: chat on Krish Basic uses the meter by the tokens each reply really took (CHAT_TOKENS_PER_CREDIT
+# tokens a credit, so a quick question is a sliver of a session and a long chat with a file is more), and a weekly
+# taste of Krish Pro (in paid-plan credits, on Haiku).
 PRO_TASTE_WEEK = 15
 PRO_TASTE_MODEL = "claude-haiku-5-5"
 BASIC_BOOST_WEEK = 50  # Krish Basic messages a week answered by Claude Haiku on the free plan, then the free engines
@@ -225,14 +228,16 @@ def _clock(ts: float) -> str:
 
 
 async def use_basic_chat(db, user_id: str) -> None:
-    """Count one Krish Basic message on the free plan (Pro and Max chat on it without a limit). Raises
-    LimitReached once the session's messages are used."""
+    """Before a free-plan chat message: there must be room left on the meter (Pro and Max chat on Krish Basic
+    without a limit). Nothing is taken here; the reply's tokens are, once it is written (see charge_reply).
+    Raises LimitReached when the session or the week is used up."""
     if not enabled() or await plan_of(db, user_id) != "basic":
         return
-    ok, refills, _ = await _count(db, f"{user_id}:chat", user_id, SESSION_HOURS * 3600, BASIC_CHAT_SESSION, 1)
-    if not ok:
-        raise LimitReached("chat", "basic", "You've used this session's free messages. Upgrade to Pro, or wait "
-                                            f"until {_clock(refills)}.")
+    doc, limit = await _meter(db, user_id), PLANS["basic"]["meter"]
+    week = doc.get("weekUsed", 0) >= limit["week"]
+    if week or doc.get("sessionUsed", 0) >= limit["session"]:
+        resets = doc["weekStart"] + WEEK_DAYS * 86400 if week else doc["sessionStart"] + SESSION_HOURS * 3600
+        raise LimitReached("chat", "basic", message("chat", "basic", resets, week))
 
 
 async def use_basic_boost(db, user_id: str) -> bool:
@@ -312,7 +317,7 @@ async def _meter(db, user_id: str) -> dict:
     doc = await db.usage.find_one({"_id": _meter_id(user_id)}) or {}
     fresh = {}
     if not doc.get("sessionStart") or now >= doc["sessionStart"] + SESSION_HOURS * 3600:
-        fresh.update(sessionStart=now, sessionUsed=0)
+        fresh.update(sessionStart=now, sessionUsed=0, sessionKinds={})
     if not doc.get("weekStart") or now >= doc["weekStart"] + WEEK_DAYS * 86400:
         fresh.update(weekStart=now, weekUsed=0)
     if fresh:
@@ -325,13 +330,26 @@ async def _meter(db, user_id: str) -> dict:
     return doc
 
 
-async def _spend(db, user_id: str, plan: str, kind: str, credits: int) -> None:
+def _inc(kind: str, credits: float) -> dict:
+    return {"$inc": {"sessionUsed": credits, "weekUsed": credits, f"sessionKinds.{kind}": credits}}
+
+
+async def _record(db, user_id: str, kind: str, credits: float) -> None:
+    """Add credits to the meter without checking its limit: work already done, or limits switched off."""
+    await _meter(db, user_id)
+    await db.usage.update_one({"_id": _meter_id(user_id)}, _inc(kind, credits))
+
+
+async def _spend(db, user_id: str, plan: str, kind: str, credits: float) -> None:
+    if not enabled():
+        await _record(db, user_id, kind, credits)
+        return
     limit = PLANS[plan]["meter"]
     doc = await _meter(db, user_id)
     done = await db.usage.find_one_and_update(
         {"_id": _meter_id(user_id), "sessionUsed": {"$lte": limit["session"] - credits},
          "weekUsed": {"$lte": limit["week"] - credits}},
-        {"$inc": {"sessionUsed": credits, "weekUsed": credits}}, return_document=True)
+        _inc(kind, credits), return_document=True)
     if done:
         return
     week = doc.get("weekUsed", 0) + credits > limit["week"]
@@ -348,8 +366,6 @@ async def use_premium(db, user_id: str, size: int = 0, model: Optional[str] = No
     """Use credits for one message on a premium model (Claude, GPT), by what it costs on that model for how much
     is sent. False when the meter is empty, so the chat answers with Krish Basic instead: premium messages cost
     money each."""
-    if not enabled():
-        return True
     plan = await plan_of(db, user_id)
     try:
         await _spend(db, user_id, plan, "chat", cost("chat", size, plan, model, think))
@@ -361,9 +377,8 @@ async def use_premium(db, user_id: str, size: int = 0, model: Optional[str] = No
 async def use(db, user_id: str, kind: str, size: Optional[int] = None, model: Optional[str] = None) -> None:
     """Use the credits one build, picture, deck or video takes (see cost). Raises LimitReached when the meter
     doesn't cover it."""
-    if enabled():
-        plan = await plan_of(db, user_id)
-        await _spend(db, user_id, plan, kind, cost(kind, size, plan, model))
+    plan = await plan_of(db, user_id)
+    await _spend(db, user_id, plan, kind, cost(kind, size, plan, model))
     if kind in ("picture", "deck", "video"):  # for the owner's numbers; builds are counted with their message
         import monitor  # imported here: monitor imports limits
         await monitor.count(db, user_id, kind)
@@ -373,23 +388,54 @@ async def use(db, user_id: str, kind: str, size: Optional[int] = None, model: Op
 # wrote, across all of a build's steps) is one credit. The credits taken before the reply count toward it.
 TOKENS_PER_CREDIT = 5000
 MAX_TOKEN_CREDITS = 80  # one reply never takes more than this
+# Chat on Krish Basic (the free plan): a credit is CHAT_TOKENS_PER_CREDIT tokens, counted to a tenth of a credit,
+# so a quick question (about 3,000 tokens with the system prompt) is under 2% of a session, and a long chat with a
+# file (40,000 tokens) about 20%. One reply never takes more than MAX_CHAT_CREDITS.
+CHAT_TOKENS_PER_CREDIT = 5000
+MAX_CHAT_CREDITS = 20
 
 
 def token_credits(tokens: int) -> int:
     return min(MAX_TOKEN_CREDITS, -(-max(0, int(tokens)) // TOKENS_PER_CREDIT))
 
 
-async def charge_tokens(db, user_id: str, tokens: int, prepaid: int = 0) -> int:
+def chat_credits(tokens: int) -> float:
+    """Credits a free-plan Krish Basic reply uses for the tokens it took: a tenth at least, never more than
+    MAX_CHAT_CREDITS."""
+    return min(MAX_CHAT_CREDITS, max(0.1, round(max(0, int(tokens)) / CHAT_TOKENS_PER_CREDIT, 1)))
+
+
+async def charge_tokens(db, user_id: str, tokens: int, prepaid: int = 0, kind: str = "build") -> int:
     """After a reply: take the credits its tokens used beyond what was taken up front. It can take the meter
     past its limit (the work is done); the next request then waits for the refill. Returns the credits taken."""
-    if not enabled() or not user_id:
+    if not user_id:
         return 0
     extra = token_credits(tokens) - prepaid
     if extra <= 0:
         return 0
-    await _meter(db, user_id)
-    await db.usage.update_one({"_id": _meter_id(user_id)}, {"$inc": {"sessionUsed": extra, "weekUsed": extra}})
+    await _record(db, user_id, kind, extra)
     return extra
+
+
+async def charge_reply(db, user_id: str, tokens: int, *, app: bool, model_paid: bool, ask_chars: int = 0) -> float:
+    """After a reply, put the tokens it really used on the meter: an App Builder turn or a premium-model chat
+    (beyond the credits taken up front), and on the free plan every chat on Krish Basic too, by its tokens.
+    Chat on Krish Basic on Pro and Max is never counted. Returns the credits taken."""
+    if not user_id or tokens <= 0:
+        return 0
+    plan = await plan_of(db, user_id)
+    if app or model_paid:
+        if plan == "basic" and not app:  # the free plan's Haiku answers: nothing was taken up front
+            credits = chat_credits(tokens)
+            await _record(db, user_id, "chat", credits)
+            return credits
+        prepaid = cost("build" if app else "chat", ask_chars, plan)
+        return await charge_tokens(db, user_id, tokens, prepaid, "build" if app else "chat")
+    if plan != "basic":
+        return 0
+    credits = chat_credits(tokens)
+    await _record(db, user_id, "chat", credits)
+    return credits
 
 
 # Fair use: every reply (chat included) adds the tokens it really used to a daily count per user, so no one
@@ -460,11 +506,11 @@ async def check_left(db, user_id: str, kind: str, size: Optional[int] = None, mo
 
 async def refund(db, user_id: str, kind: str, size: Optional[int] = None, model: Optional[str] = None) -> None:
     """Give back what a request used, e.g. when a picture failed to be made."""
-    if not enabled():
-        return
     credits = cost(kind, size, await plan_of(db, user_id), model)
     await db.usage.update_one({"_id": _meter_id(user_id), "sessionUsed": {"$gte": credits}},
                               {"$inc": {"sessionUsed": -credits}})
+    await db.usage.update_one({"_id": _meter_id(user_id), f"sessionKinds.{kind}": {"$gte": credits}},
+                              {"$inc": {f"sessionKinds.{kind}": -credits}})
     await db.usage.update_one({"_id": _meter_id(user_id), "weekUsed": {"$gte": credits}},
                               {"$inc": {"weekUsed": -credits}})
 
@@ -540,7 +586,10 @@ def meter_view(plan: str, doc: dict) -> dict:
                     "resetsAt": doc["sessionStart"] + SESSION_HOURS * 3600 if session_on else None,
                     "hours": SESSION_HOURS},
         "week": {"used": doc.get("weekUsed", 0) if week_on else 0, "limit": limit["week"],
-                 "resetsAt": doc["weekStart"] + WEEK_DAYS * 86400 if week_on else None},
+                 "resetsAt": doc["weekStart"] + WEEK_DAYS * 86400 if week_on else None, "days": WEEK_DAYS},
+        # What this session's credits went on (chat, build, picture, deck, video), for the Usage page.
+        "kinds": {k: round(v, 1) for k, v in (doc.get("sessionKinds") or {}).items() if v and k in METER_KINDS}
+        if session_on else {},
         "tokensPerCredit": TOKENS_PER_CREDIT,
     }
 
@@ -560,4 +609,12 @@ async def summary(db, user_id: str) -> dict:
             "costs": {"build": [cost("build", 0, plan), cost("build", 0, plan, "claude-sonnet-5-5")],
                       "picture": cost("picture", 1, plan), "deck": cost("deck", None, plan),
                       "videoSecond": cost("video", 1, plan),
-                      "chat": [cost("chat", 0, plan, "claude-haiku-5-5"), cost("chat", 0, plan, "claude-sonnet-5-5")]}}
+                      "chat": [cost("chat", 0, plan, "claude-haiku-5-5"), cost("chat", 0, plan, "claude-sonnet-5-5")],
+                      # A small change to an app and a big new app, by the tokens such builds really take.
+                      "buildRange": [max(cost("build", 0, plan), token_credits(20_000)),
+                                     max(cost("build", 0, plan, "claude-sonnet-5-5") if PLANS[plan]["premium"]
+                                         else cost("build", 2000, plan), token_credits(120_000))],
+                      # Chat on Krish Basic by how heavy it is: a quick question, a long chat, a chat about a file.
+                      # None on Pro and Max, where it is never counted.
+                      "basicChat": [chat_credits(3_000), chat_credits(12_000), chat_credits(40_000)]
+                      if plan == "basic" else None}}

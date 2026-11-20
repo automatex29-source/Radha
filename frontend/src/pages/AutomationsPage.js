@@ -588,7 +588,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
               checked={form.thorough} disabled={options.rules && !rules.thorough && !form.thorough} locked={options.rules && !rules.thorough}
               onChange={(v) => set({ thorough: v })} testid="opt-thorough" />
             <OptionRow icon={ShieldCheck} title="Ask me before sending emails"
-              hint={options.rules && !rules.noAsk ? "Every email Krish writes waits for your OK. Sending without asking is part of the Max plan." : "Every email waits for your OK. Turn off to let this job send on its own."}
+              hint={options.rules && !rules.noAsk ? "Every email Krish writes waits for your OK. Sending without asking is part of the Pro and Max plans." : "Every email waits for your OK. Turn off to let this job send on its own."}
               checked={form.askFirst !== false} disabled={options.rules && !rules.noAsk && form.askFirst !== false} locked={options.rules && !rules.noAsk}
               onChange={(v) => set({ askFirst: v })} testid="opt-ask-first" />
             <OptionRow icon={Mail} title="Email me the result"

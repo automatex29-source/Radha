@@ -1,7 +1,7 @@
 """Web research tools: search and page fetching.
 
-Search uses Tavily when TAVILY_API_KEY is set, otherwise DuckDuckGo's HTML
-endpoint (no key needed). Fetching guards against SSRF: only http(s), and every
+Search uses the search APIs whose keys are set (Tavily, Serper, Brave), otherwise DuckDuckGo, Bing and Yahoo
+together (no key needed), with DuckDuckGo lite and Wikipedia as the last resort. Fetching guards against SSRF: only http(s), and every
 hop of a redirect must resolve to a public address.
 """
 import asyncio
@@ -196,8 +196,20 @@ def parse_bing_html(html: str, limit: int) -> List[dict]:
     return results
 
 
+class Blocked(Exception):
+    """The engine answered with a robot check instead of results."""
+
+
+_DDG_HEADERS = {"Referer": "https://html.duckduckgo.com/", "Origin": "https://html.duckduckgo.com",
+                "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-User": "?1", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+
+
 async def _ddg(client: httpx.AsyncClient, query: str, limit: int) -> List[dict]:
-    resp = await client.post("https://html.duckduckgo.com/html/", data={"q": query})
+    resp = await client.post("https://html.duckduckgo.com/html/", data={"q": query, "b": "", "kl": "wt-wt"},
+                             headers=_DDG_HEADERS)
+    if resp.status_code in (202, 403, 429) or "challenge-form" in resp.text or "anomaly-modal" in resp.text:
+        raise Blocked(f"robot check (HTTP {resp.status_code})")
     results = parse_ddg_html(resp.text, limit) if resp.status_code == 200 else []
     if not results:
         logger.warning("DuckDuckGo gave no results (HTTP %s)", resp.status_code)
@@ -212,8 +224,45 @@ async def _ddg_lite(client: httpx.AsyncClient, query: str, limit: int) -> List[d
     return results
 
 
+def _yahoo_real_url(href: str) -> str:
+    # Yahoo wraps results as r.search.yahoo.com/.../RU=<encoded url>/RK=2/RS=...
+    if "/RU=" not in href:
+        return href
+    start = href.find("http", href.find("/RU=") + 1)
+    ends = [i for i in (href.rfind("/RK="), href.rfind("/RS=")) if i > start]
+    return unquote(href[start:min(ends)]) if start > 0 and ends else href
+
+
+def parse_yahoo_html(html: str, limit: int) -> List[dict]:
+    doc = lxml.html.fromstring(html)
+    results = []
+    for div in doc.xpath('//div[contains(@class,"algo-sr")]'):
+        links = div.xpath('.//div[contains(@class,"compTitle")]//a[@href]')
+        if not links:
+            continue
+        url = _yahoo_real_url(links[0].get("href", ""))
+        if not url.startswith("http") or "yahoo.com" in urlparse(url).netloc:
+            continue
+        heading = div.xpath(".//h3//a/@aria-label") or [" ".join(h.text_content().split()) for h in div.xpath(".//h3")]
+        title = heading[0] if heading else " ".join(links[0].text_content().split())
+        text = div.xpath('.//div[contains(@class,"compText")]')
+        results.append({"title": " ".join(title.split()), "url": url,
+                        "snippet": " ".join(text[0].text_content().split()) if text else ""})
+        if len(results) >= limit:
+            break
+    return results
+
+
+async def _yahoo(client: httpx.AsyncClient, query: str, limit: int) -> List[dict]:
+    resp = await client.get("https://search.yahoo.com/search", params={"p": query, "ei": "UTF-8", "nojs": 1})
+    results = parse_yahoo_html(resp.text, limit) if resp.status_code == 200 else []
+    if not results:
+        logger.warning("Yahoo gave no results (HTTP %s)", resp.status_code)
+    return results
+
+
 async def _bing(client: httpx.AsyncClient, query: str, limit: int) -> List[dict]:
-    resp = await client.get("https://www.bing.com/search", params={"q": query, "setlang": "en"})
+    resp = await client.get("https://www.bing.com/search", params={"q": query, "setlang": "en", "count": 15})
     results = parse_bing_html(resp.text, limit) if resp.status_code == 200 else []
     if not results:
         logger.warning("Bing gave no results (HTTP %s)", resp.status_code)
@@ -228,6 +277,78 @@ async def _wikipedia(client: httpx.AsyncClient, query: str, limit: int) -> List[
     return [{"title": h["title"], "url": "https://en.wikipedia.org/wiki/" + h["title"].replace(" ", "_"),
              "snippet": " ".join(lxml.html.fromstring(f"<p>{h.get('snippet') or ' '}</p>").text_content().split())}
             for h in hits]
+
+
+# Search APIs, used when their key is set in Render. They answer every time, fast, from any server; the free
+# engines above can turn a server away with a robot check. Free tiers: Tavily 1,000 searches a month, Serper
+# (Google results) 2,500 to start, Brave 2,000 a month.
+async def _tavily(client: httpx.AsyncClient, query: str, limit: int) -> List[dict]:
+    key = os.environ["TAVILY_API_KEY"].strip()
+    resp = await client.post("https://api.tavily.com/search", headers={"Authorization": f"Bearer {key}"}, json={
+        "api_key": key, "query": query, "max_results": limit, "search_depth": "basic",
+        "topic": "news" if _NEWS.search(query) else "general"})
+    if resp.status_code in (401, 403):
+        raise RuntimeError(f"Tavily refused the key (HTTP {resp.status_code}): check TAVILY_API_KEY in Render")
+    if resp.status_code in (429, 432, 433):
+        raise RuntimeError(f"Tavily's search limit is used up (HTTP {resp.status_code})")
+    resp.raise_for_status()
+    # Tavily sends the page's own text, so these results need no second trip to read the pages.
+    return [{"title": r.get("title", ""), "url": r.get("url", ""), "snippet": " ".join((r.get("content") or "").split())[:900]}
+            for r in resp.json().get("results", [])]
+
+
+_NEWS = re.compile(r"\b(news|headlines?|today|latest|breaking|this week|yesterday)\b", re.I)
+
+
+async def _serper(client: httpx.AsyncClient, query: str, limit: int) -> List[dict]:
+    resp = await client.post("https://google.serper.dev/search", json={"q": query, "num": limit},
+                             headers={"X-API-KEY": os.environ["SERPER_API_KEY"]})
+    resp.raise_for_status()
+    data = resp.json()
+    out = []
+    box = data.get("answerBox") or {}
+    if box.get("link") and (box.get("snippet") or box.get("answer")):
+        out.append({"title": box.get("title") or box["link"], "url": box["link"],
+                    "snippet": box.get("answer") or box.get("snippet")})
+    out += [{"title": r.get("title", ""), "url": r.get("link", ""), "snippet": r.get("snippet", "")}
+            for r in data.get("organic", [])]
+    return out[:limit]
+
+
+async def _brave(client: httpx.AsyncClient, query: str, limit: int) -> List[dict]:
+    resp = await client.get("https://api.search.brave.com/res/v1/web/search", params={"q": query, "count": limit},
+                            headers={"X-Subscription-Token": os.environ["BRAVE_SEARCH_API_KEY"],
+                                     "Accept": "application/json"})
+    resp.raise_for_status()
+    found = (resp.json().get("web") or {}).get("results", [])
+    return [{"title": r.get("title", ""), "url": r.get("url", ""),
+             "snippet": " ".join(lxml.html.fromstring(f"<p>{r.get('description') or ' '}</p>").text_content().split())}
+            for r in found]
+
+
+KEYED_ENGINES = (("TAVILY_API_KEY", _tavily), ("SERPER_API_KEY", _serper), ("BRAVE_SEARCH_API_KEY", _brave))
+
+
+def keyed_engines() -> list:
+    return [engine for key, engine in KEYED_ENGINES if os.environ.get(key, "").strip()]
+
+
+# How each engine has been doing since the server started, for the owner (and the logs): a server whose free
+# engines keep failing needs a search key.
+_health: dict = {}
+
+
+def _note(engine, result) -> None:
+    h = _health.setdefault(engine.__name__.strip("_"), {"ok": 0, "failed": 0, "lastError": ""})
+    if isinstance(result, list) and result:
+        h["ok"] += 1
+    else:
+        h["failed"] += 1
+        h["lastError"] = (repr(result) if isinstance(result, Exception) else "no results")[:160]
+
+
+def engine_health() -> dict:
+    return {name: dict(h) for name, h in _health.items()}
 
 
 # Pages that rarely answer a question (logins, pin boards, app stores) go to the back of the list.
@@ -274,12 +395,17 @@ def merge(lists: List[List[dict]], limit: int, per_site: int = 2) -> List[dict]:
     return out
 
 
+ENGINE_TIMEOUT = 5.0  # one engine's whole answer; the others keep going
+
+
 async def _try(engine, client, query: str, limit: int):
     try:
-        return await engine(client, query, limit)
+        result = await asyncio.wait_for(engine(client, query, limit), ENGINE_TIMEOUT)
     except Exception as exc:
-        logger.warning("Search via %s failed: %s", engine.__name__, exc)
-        return exc
+        logger.warning("Search via %s failed: %r", engine.__name__, exc)
+        result = exc
+    _note(engine, result)
+    return result
 
 
 # Searches and page reads are kept for a few minutes: a follow-up, a retry or Pro search asking the same query
@@ -321,47 +447,59 @@ MERGE_GRACE = 1.2
 SEARCH_TIMEOUT = httpx.Timeout(6.0, connect=4.0)
 
 
+async def _race(engines, client, query: str, limit: int, per_site: int) -> tuple:
+    """Asks the engines together and merges what they found: once one has answered, the rest get MERGE_GRACE
+    longer. Returns (results, last error)."""
+    tasks = [asyncio.ensure_future(_try(engine, client, query, limit + 2)) for engine in engines]
+    try:
+        pending = set(tasks)
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            if any(isinstance(t.result(), list) and t.result() for t in done):
+                if pending:
+                    await asyncio.wait(pending, timeout=MERGE_GRACE)
+                break
+    finally:
+        for t in tasks:
+            t.cancel()
+    found = [t.result() for t in tasks if t.done() and not t.cancelled()]
+    lists = [r for r in found if isinstance(r, list) and r]
+    error = next((r for r in found if isinstance(r, Exception)), None)
+    return (merge(lists, limit, per_site) if lists else []), error
+
+
 async def _search_engines(query: str, limit: int) -> List[dict]:
-    tavily_key = os.environ.get("TAVILY_API_KEY")
+    # A site: search (Reddit, YouTube) wants many pages from that one site.
+    per_site = 0 if "site:" in query else 2
     async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT, follow_redirects=True,
-                                 headers={"User-Agent": BROWSER_UA, "Accept-Language": "en-US,en;q=0.9"}) as client:
-        if tavily_key:
-            resp = await client.post("https://api.tavily.com/search", json={
-                "api_key": tavily_key, "query": query, "max_results": limit, "search_depth": "basic",
-            })
-            resp.raise_for_status()
-            return [{"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")[:400]}
-                    for r in resp.json().get("results", [])]
-        tasks = [asyncio.ensure_future(_try(engine, client, query, limit + 2)) for engine in (_ddg, _bing)]
-        try:
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            if pending:
-                answered = any(isinstance(t.result(), list) and t.result() for t in done)
-                await asyncio.wait(pending, timeout=MERGE_GRACE if answered else None)
-        finally:
-            for t in tasks:
-                t.cancel()
-        found = [t.result() for t in tasks if t.done() and not t.cancelled()]
-        lists = [r for r in found if isinstance(r, list) and r]
-        if lists:
-            # A site: search (Reddit, YouTube) wants many pages from that one site.
-            return merge(lists, limit, 0 if "site:" in query else 2)
-        last_error = next((r for r in found if isinstance(r, Exception)), None)
-        # Both main engines failed: DuckDuckGo lite and Wikipedia are asked together, lite's pages first.
-        backups = await asyncio.gather(_try(_ddg_lite, client, query, limit), _try(_wikipedia, client, query, limit))
-        for results in backups:
-            if isinstance(results, Exception):
-                last_error = results
-            elif results:
+                                 headers={"User-Agent": BROWSER_UA, "Accept-Language": "en-IN,en;q=0.9"}) as client:
+        last_error = None
+        keyed = keyed_engines()
+        if keyed:
+            results, last_error = await _race(keyed, client, query, limit, per_site)
+            if results:
                 return results
+        # The free engines: DuckDuckGo, Bing and Yahoo together, so one turning the server away costs nothing.
+        results, error = await _race((_ddg, _bing, _yahoo), client, query, limit, per_site)
+        if results:
+            return results
+        last_error = error or last_error
+        # All of them failed: DuckDuckGo lite and Wikipedia are asked together, lite's pages first.
+        backups = await asyncio.gather(_try(_ddg_lite, client, query, limit), _try(_wikipedia, client, query, limit))
+        for found in backups:
+            if isinstance(found, Exception):
+                last_error = found
+            elif found:
+                return found
         if last_error:
             raise last_error
         return []
 
 
 async def search(query: str, limit: int = 6) -> List[dict]:
-    """Web results: Tavily with a key; otherwise DuckDuckGo and Bing at the same time, merged (each finds pages
-    the other misses), then DuckDuckGo lite and Wikipedia when both fail. Results are reused for a few minutes."""
+    """Web results: the search APIs with keys first; otherwise (or when they fail) DuckDuckGo, Bing and Yahoo at
+    the same time, merged (each finds pages the others miss), then DuckDuckGo lite and Wikipedia. Results are
+    reused for a few minutes."""
     limit = max(1, min(limit, 10))
     query = " ".join((query or "").split())
     results = await _remembered(("search", query.lower(), limit), SEARCH_TTL, lambda: _search_engines(query, limit))

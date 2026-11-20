@@ -157,3 +157,31 @@ def test_panchang_day():
     p = panchang.day_panchang(date(2026, 10, 25), 28.61, 77.21, ZoneInfo("Asia/Kolkata"))
     assert p["tithi"] == "Shukla Chaturdashi" and p["month"].startswith("Ashwin")
     assert p["vara"].startswith("Ravivara")
+
+
+def test_google_api_turned_off_is_not_blamed_on_the_user():
+    import httpx
+    off = httpx.Response(403, json={"error": {"message": "Google Sheets API has not been used in project 123 before "
+                                                         "or it is disabled.", "status": "PERMISSION_DENIED"}})
+    with pytest.raises(RuntimeError, match="switched off on Krish's side"):
+        connector_tools._check(off)
+    with pytest.raises(RuntimeError, match="connect it again"):
+        connector_tools._check(httpx.Response(401, json={"error": {"message": "Invalid Credentials"}}))
+
+
+def test_sheet_range_is_escaped_in_the_url(monkeypatch):
+    seen = []
+
+    async def fake_get(url, token, params=None, headers=None):
+        seen.append(url)
+        import httpx
+        body = {"sheets": [{"properties": {"title": "Q1 / Orders"}}]} if "/values/" not in url else {"values": [["a"]]}
+        return httpx.Response(200, json=body)
+
+    async def fake_token(ctx, cid):
+        return "t"
+
+    monkeypatch.setattr(connector_tools, "_get", fake_get)
+    monkeypatch.setattr(connector_tools, "_token", fake_token)
+    run(connector_tools._sheets_read(None, {"sheet": "1" * 30}))
+    assert seen[-1].endswith("/values/'Q1%20%2F%20Orders'")
