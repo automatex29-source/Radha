@@ -3,7 +3,6 @@
 $ErrorActionPreference = 'Stop'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$url = if ($env:FREELLMAPI_URL) { $env:FREELLMAPI_URL } else { 'http://localhost:3001' }
 
 $key = $env:FREELLMAPI_API_KEY
 $keyFile = Join-Path $here '.key'
@@ -19,10 +18,17 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
-try {
-  Invoke-WebRequest -Uri "$url/v1/models" -Headers @{ Authorization = "Bearer $key" } -TimeoutSec 5 -UseBasicParsing | Out-Null
-} catch {
-  Write-Host "FreeLLMAPI is not answering at $url. Open the FreeLLMAPI app first." -ForegroundColor Red
+# Desktop app listens on 31415, the Docker/server install on 3001.
+$candidates = if ($env:FREELLMAPI_URL) { @($env:FREELLMAPI_URL) } else { @('http://localhost:31415', 'http://localhost:3001') }
+$url = $null
+foreach ($c in $candidates) {
+  try {
+    Invoke-WebRequest -Uri "$c/v1/models" -Headers @{ Authorization = "Bearer $key" } -TimeoutSec 5 -UseBasicParsing | Out-Null
+    $url = $c; break
+  } catch {}
+}
+if (-not $url) {
+  Write-Host "FreeLLMAPI is not answering at $($candidates -join ' or '). Open the FreeLLMAPI app first." -ForegroundColor Red
   exit 1
 }
 

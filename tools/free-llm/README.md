@@ -53,4 +53,6 @@ you to normal.
   personal coding, not for Krish's users.
 - Keep the key private and do not open FreeLLMAPI to the internet: anyone with
   the key can use your free quota.
+- The script finds the app on its own: the desktop app uses port 31415 and the
+  Docker install uses 3001. Set `FREELLMAPI_URL` to use another address.
 - Something wrong? Run `npx freellmapi doctor`.

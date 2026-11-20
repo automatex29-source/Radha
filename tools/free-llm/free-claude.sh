@@ -4,7 +4,6 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-URL="${FREELLMAPI_URL:-http://localhost:3001}"
 
 if [[ -z "${FREELLMAPI_API_KEY:-}" && -f "$HERE/.key" ]]; then
   FREELLMAPI_API_KEY="$(tr -d '[:space:]' < "$HERE/.key")"
@@ -20,8 +19,15 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! curl -fsS -o /dev/null --max-time 5 "$URL/v1/models" -H "Authorization: Bearer $FREELLMAPI_API_KEY"; then
-  echo "FreeLLMAPI is not answering at $URL. Open the FreeLLMAPI app first." >&2
+# Desktop app listens on 31415, the Docker/server install on 3001.
+URL=""
+for c in ${FREELLMAPI_URL:-http://localhost:31415 http://localhost:3001}; do
+  if curl -fs -o /dev/null --max-time 5 "$c/v1/models" -H "Authorization: Bearer $FREELLMAPI_API_KEY"; then
+    URL="$c"; break
+  fi
+done
+if [[ -z "$URL" ]]; then
+  echo "FreeLLMAPI is not answering. Open the FreeLLMAPI app first (or set FREELLMAPI_URL)." >&2
   exit 1
 fi
 
