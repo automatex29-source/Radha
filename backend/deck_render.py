@@ -141,6 +141,26 @@ def _table(v) -> Optional[dict]:
     return {"columns": cols + [""] * (n - len(cols)) if cols else [], "rows": [r + [""] * (n - len(r)) for r in rows]}
 
 
+def _notes(v) -> str:
+    """Speaker notes as plain text. Models sometimes send a list of sentences, or that list as text
+    ("['First.', 'Second.']"), which showed up in the notes as Python brackets and quotes."""
+    if isinstance(v, str) and re.fullmatch(r"\s*\[[\s\S]*\]\s*", v):
+        import ast
+        import json
+
+        for load in (json.loads, ast.literal_eval):
+            try:
+                parsed = load(v)
+            except Exception:
+                continue
+            if isinstance(parsed, list):
+                v = parsed
+                break
+    if isinstance(v, (list, tuple)):
+        return " ".join(str(x).strip() for x in v if str(x).strip())
+    return str(v or "").strip()
+
+
 def normalize_slide(raw: dict, keep_id: bool = True) -> dict:
     """Clamp a model- or user-written slide to the fields and lengths the layouts can draw."""
     raw = raw if isinstance(raw, dict) else {}
@@ -170,7 +190,7 @@ def normalize_slide(raw: dict, keep_id: bool = True) -> dict:
         "image_query": _s(raw.get("image_query"), 60),
         "image_prompt": _s(raw.get("image_prompt"), 400),
         "image": _image(raw.get("image")),
-        "notes": str(raw.get("notes") or "")[:2000],
+        "notes": _notes(raw.get("notes"))[:2000],
     }
     return slide
 

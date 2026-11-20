@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import re
-from typing import AsyncIterator, Callable, List, Optional, Union
+from typing import AsyncIterator, List, Optional, Union
 
 _PROVIDER_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY",
                  "groq": "GROQ_API_KEY", "cerebras": "CEREBRAS_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
@@ -268,36 +268,33 @@ def _compact_call(call: dict) -> dict:
     return {**call, "function": {**call["function"], "arguments": args}}
 
 
-PINNED_ASK_CHARS = 6000  # the latest request is kept even when older turns are dropped, up to this long
+def _question_index(messages: List[dict]) -> int:
+    """Index of the message that asked this turn's question: the last user message (not a nudge the agent
+    loop added after a tool step, which follows the tool results)."""
+    last = None
+    for i, m in enumerate(messages):
+        if m.get("role") == "user":
+            if last is not None and any(x.get("role") == "tool" for x in messages[last:i]) and _is_nudge(m):
+                continue  # "Now answer my question…" after tools: the question is still the earlier one
+            last = i
+    return last if last is not None else len(messages)
 
 
-def _drop_oldest(rest: List[dict], too_big: Callable[[List[dict]], bool]) -> List[dict]:
-    """Drop the oldest turns of `rest` until `too_big` is false, never splitting a tool call from its results and
-    never dropping the latest user message (the request being worked on) or the last turn.
+def _is_nudge(m: dict) -> bool:
+    text = m.get("content") if isinstance(m.get("content"), str) else ""
+    return text.startswith(_NUDGE_PREFIXES)
 
-    Dropping the request too left a free builder looking at a file it had just read with no question in sight,
-    and it answered "Namaste! How can I help you today?" instead of fixing the app."""
-    units: List[List[dict]] = []
-    for m in rest:
-        if m["role"] == "tool" and units and (units[-1][0].get("tool_calls")):
-            units[-1].append(m)
-        else:
-            units.append([m])
-    ask = max((i for i, u in enumerate(units) if u[0]["role"] == "user"), default=None)
-    if ask is not None and isinstance(units[ask][0].get("content"), str):
-        units[ask] = [{**units[ask][0], "content": _shorten(units[ask][0]["content"], PINNED_ASK_CHARS)}]
-    flat = lambda us: [m for u in us for m in u]
-    while too_big(flat(units)):
-        drop = next((i for i in range(len(units) - 1) if i != ask), None)
-        if drop is None:
-            break
-        units.pop(drop)
-        if ask is not None and drop < ask:
-            ask -= 1
-    out = flat(units)
-    while len(out) > 1 and out[0]["role"] == "tool":
-        out = out[1:]  # a tool result can't start the conversation
-    return out
+
+# The agent loop's own follow-up messages (agent.runtime): they aren't the user's question.
+_NUDGE_PREFIXES = ("Now answer my question", "Your last tool call was cut off")
+
+
+def _head_tail(text: str, keep: int) -> str:
+    """Shorten a tool result keeping its start and its end (a run's error and exit code come last)."""
+    if len(text) <= keep:
+        return text
+    half = max(100, keep // 2)
+    return text[:half] + f"\n… [{len(text) - 2 * half} chars omitted] …\n" + text[-half:]
 
 
 def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[dict]:
@@ -306,22 +303,46 @@ def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[d
     1. Older tool results and tool-call arguments are shortened (the latest step stays intact).
     2. If that isn't enough, the oldest turns are dropped, keeping the system prompt and
        never splitting an assistant tool call from its results.
+    3. This turn's question is never dropped: after a tool step (a code run, a search, a file read) the
+       request is the question plus the tool's long output, and dropping "the oldest turns" used to remove
+       the question itself, so the model answered "How can I help you today?". Instead this turn's tool
+       results and written code are shortened, then the system prompt.
     """
     limit = budget - _MIN_OUTPUT - estimate_tokens(tools)
     if estimate_tokens(messages) <= limit:
         return messages
     last_call = max((i for i, m in enumerate(messages) if m.get("tool_calls")), default=len(messages))
+    q = _question_index(messages)
     out = []
     for i, m in enumerate(messages):
         if i < last_call and m["role"] == "tool":
-            m = {**m, "content": _shorten(m.get("content") or "", 600)}
+            m = {**m, "content": _head_tail(m.get("content") or "", 600)}
         elif i < last_call and m.get("tool_calls"):
             m = {**m, "tool_calls": [_compact_call(c) for c in m["tool_calls"]]}
-        elif i < len(messages) - 1 and m["role"] in ("user", "assistant") and isinstance(m.get("content"), str):
+        elif i < len(messages) - 1 and i != q and m["role"] in ("user", "assistant") and isinstance(m.get("content"), str):
             m = {**m, "content": _shorten(m["content"], 2000)}
         out.append(m)
     head = [m for m in out[:1] if m["role"] == "system"]
-    rest = _drop_oldest(out[len(head):], lambda kept: estimate_tokens(head + kept) > limit)
+    q -= len(head)
+    rest = out[len(head):]
+    # Drop the oldest turns, but never this turn's question or what came after it.
+    while q > 0 and estimate_tokens(head + rest) > limit:
+        rest, q = rest[1:], q - 1
+        while q > 0 and rest and rest[0]["role"] == "tool":
+            rest, q = rest[1:], q - 1  # a tool result can't start the conversation
+    if estimate_tokens(head + rest) > limit:
+        # Still too long: shorten this turn's own steps (tool output, the code it wrote), latest step last.
+        for keep in (1500, 600):
+            for i in range(len(rest)):
+                m = rest[i]
+                if m["role"] == "tool":
+                    rest[i] = {**m, "content": _head_tail(m.get("content") or "", keep)}
+                elif m.get("tool_calls"):
+                    rest[i] = {**m, "tool_calls": [_compact_call(c) for c in m["tool_calls"]]}
+            if estimate_tokens(head + rest) <= limit:
+                break
+    if estimate_tokens(head + rest) > limit and 0 <= q < len(rest) and isinstance(rest[q].get("content"), str):
+        rest[q] = {**rest[q], "content": _shorten(rest[q]["content"], 4000)}  # a whole pasted file, say
     if estimate_tokens(head + rest) > limit and head:
         # Cut only what is over (plus a margin), not down to half the room: a prompt a little over the budget
         # lost its file excerpts and search results that way.

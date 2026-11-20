@@ -7,6 +7,8 @@ questions they got wrong can be tried again.
 import html
 import json
 
+from .plain_math import plain_math
+
 MAX_QUESTIONS = 40
 
 
@@ -18,8 +20,8 @@ def clean_questions(questions) -> list:
     for q in questions:
         if not isinstance(q, dict):
             continue
-        text = str(q.get("question") or "").strip()
-        opts = [str(o).strip()[:300] for o in (q.get("options") or []) if str(o).strip()] \
+        text = plain_math(str(q.get("question") or "").strip())
+        opts = [plain_math(str(o).strip())[:300] for o in (q.get("options") or []) if str(o).strip()] \
             if isinstance(q.get("options"), list) else []
         answer = q.get("answer")
         if isinstance(answer, str):  # the model sometimes gives the option text or a letter instead of an index
@@ -34,7 +36,7 @@ def clean_questions(questions) -> list:
             continue
         if not isinstance(answer, int) or isinstance(answer, bool) or not 0 <= answer < len(opts):
             continue
-        out.append({"q": text[:800], "o": opts, "a": answer, "e": str(q.get("explain") or "").strip()[:1200]})
+        out.append({"q": text[:800], "o": opts, "a": answer, "e": plain_math(str(q.get("explain") or "").strip())[:1200]})
     if not out:
         raise ValueError("Give at least one question with 2-5 options and the index of the right one in 'answer'")
     return out[:MAX_QUESTIONS]

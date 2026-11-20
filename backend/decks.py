@@ -258,6 +258,20 @@ async def fill_pictures(deck_id: str, only_ids: Optional[set] = None):
         if img is None:
             async with stock_slots:
                 img = await deck_images.find_stock(slide, used, topic)
+        if img is None and state["mode"] == "stock" and state["ai_failures"] < 2:
+            # No photo found (the photo search can be down or have nothing): an AI picture beats an empty slot.
+            async with ai_slots:
+                try:
+                    await limits.use(db, deck["userId"], "picture")
+                except limits.LimitReached:
+                    pass
+                else:
+                    try:
+                        img = await deck_images.make_ai(db, deck["userId"], slide, topic)
+                    except Exception as exc:
+                        await limits.refund(db, deck["userId"], "picture")
+                        state["ai_failures"] += 1
+                        logger.info("no photo and the AI picture failed too: %s", exc)
         if img:
             await db.decks.update_one({"id": deck_id, "slides.id": slide["id"]}, {"$set": {"slides.$.image": img}})
 
@@ -299,6 +313,11 @@ def clean_outline(raw) -> List[dict]:
     return out
 
 
+def _same(slide: dict) -> str:
+    """What a slide says, without its id: two slides with the same value are copies."""
+    return json.dumps({k: v for k, v in slide.items() if k not in ("id", "image")}, sort_keys=True, default=str)
+
+
 async def generate_slides(deck_id: str, model: str):
     deck = await db.decks.find_one({"id": deck_id})
     outline, total = deck["outline"], len(deck["outline"])
@@ -317,7 +336,10 @@ async def generate_slides(deck_id: str, model: str):
             data = await ask_json(model, SLIDES_SYSTEM,
                                   base + f"Write slides {start + 1} to {end} only (exactly {end - start} slides), "
                                   f"following the outline. The previous slide's layout was {prev}.")
-            batch = [normalize_slide(s, keep_id=False) for s in (data.get("slides") or [])][: end - start]
+            # A model asked for slides 4 to 6 sometimes writes slide 3 again first: skip a copy of a slide made.
+            made = {_same(s) for s in slides}
+            batch = [s for s in (normalize_slide(s, keep_id=False) for s in (data.get("slides") or []))
+                     if _same(s) not in made][: end - start]
             for s in batch:
                 if s["layout"] == "chart" and not s["chart"]:
                     s["layout"] = "bullets"

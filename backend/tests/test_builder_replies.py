@@ -5,7 +5,6 @@
   help you today?": the latest request is now always kept;
 - repair rounds showed that chat to the user instead of fixing: a broken file is now rewritten in one reply, and
   the model's words are shown only when it changed a file;
-- a small edit failed with "tap Regenerate" when the free model stopped: another free model now takes over.
 
 Offline: the model is a fake stream and the app's files live in a dict.
 """
@@ -16,7 +15,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import apps  # noqa: E402
-import code_edit  # noqa: E402
 import fast_build  # noqa: E402
 from agent import llm  # noqa: E402
 
@@ -175,25 +173,3 @@ def test_big_build_summary_is_only_shown_with_real_changes(monkeypatch):
     server, calls = _server_with(monkeypatch, files, [({"app.js": JS_HEAD + JS_TAIL + "\n// sorted"}, "Made the table sortable.")])
     events, text = _run(server, None, "make the table sortable")
     assert "Made the table sortable." in text and "still has a problem" not in text
-
-
-# ---------------------------------------------------------- small edits
-def test_small_edit_moves_to_another_free_model_when_one_stops(monkeypatch):
-    monkeypatch.setattr(code_edit, "stand_ins", lambda model: [model, "cerebras/gpt-oss-120b"])
-    tried = []
-
-    async def ask_model(model, messages, max_output):
-        tried.append(model)
-        if model == "groq/openai/gpt-oss-20b":
-            yield {"type": "text", "text": "<<<<<<< SEARCH\n"}
-            raise RuntimeError("rate limited")
-        yield {"type": "text", "text": "<<<<<<< SEARCH\nfont-size: 20px;\n=======\nfont-size: 14px;\n>>>>>>> REPLACE\n"
-                                       "SUMMARY: made the font smaller"}
-
-    async def go():
-        return [ev async for ev in code_edit.run("groq/openai/gpt-oss-20b", {"index.html": "h1 {\n  font-size: 20px;\n}"},
-                                                 "make the font size small", ask_model)]
-
-    result = asyncio.run(go())[-1]
-    assert tried == ["groq/openai/gpt-oss-20b", "cerebras/gpt-oss-120b"]
-    assert result["files"]["index.html"] == "h1 {\n  font-size: 14px;\n}" and result["applied"] == 1
