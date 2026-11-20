@@ -79,7 +79,7 @@ def test_counsellor_is_krish_robo_without_religion_tools_or_memory(client):
     call, body = _send(client, cid, "My name is Meera and I feel lost after failing my exam")
     system = call["messages"][0]["content"]
     assert "You are the Counsellor in Krish AI" in system and "Tele-MANAS 14416" in system and "988" in system
-    assert "Gita 2.47" in system and "Most replies have no verse" in system  # the Gita only when it truly fits
+    assert "Gita 2.47" in system and "never in two replies in a row" in system  # the Gita for a struggle, not every reply
     assert counsellor.NO_VERSE not in system
     assert system.endswith(counsellor.BRIEF)  # short replies by default
     assert counsellor.REPLIES in system and "Make them feel known" in system
@@ -183,7 +183,7 @@ def test_counsellor_rules_stay_in_the_prompt():
                  "Give real answers, not just chat", "answer out loud in the language they speak",
                  "Make them feel good, for real"):
         assert rule in counsellor.PROMPT
-    assert "Gita verse only if it truly fits" in counsellor.BRIEF and "script" in counsellor.BRIEF
+    assert "Gita verse when they share a struggle" in counsellor.BRIEF and "script" in counsellor.BRIEF
     assert "answer it directly" in counsellor.BRIEF
     assert "findahelpline.com" in counsellor.HELPLINES
 
