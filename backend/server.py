@@ -2381,6 +2381,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(counsellor.REPLIES)
     if counselling and counsellor.verse_note(history_docs):
         system_parts.append(counsellor.NO_VERSE)
+    elif counselling and counsellor.gita_note(history_docs):
+        system_parts.append(counsellor.GITA_NOTE)
     if counselling and not voice:
         system_parts.append(counsellor.BRIEF)
     if counselling and voice:
