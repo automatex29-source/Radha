@@ -2049,6 +2049,12 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
     ending silently."""
     said, changed, plan, tools_used = [], False, [], set()
     first_version = False
+    ask = next((m["content"] for m in reversed(llm_messages) if m.get("role") == "user"
+                and isinstance(m.get("content"), str)), "")
+    # "Fix it", "Fix errors with AI" or the preview's automatic fix: the app is always checked and repaired
+    # afterwards, and the model's words are shown only when it changed a file.
+    fixing = bool(ctx.app_id and use_tools and _FIX_ASK.match(ask or ""))
+    agent_changed = False
     if fast_for and ctx.app_id and use_tools:
         # The first build of a fresh app: a starter on screen at once, then every file in one streamed reply.
         files = await apps.snapshot(ctx.app_id)
@@ -2078,11 +2084,20 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
                                   max_steps=max_steps):
             if ev["type"] == "text":
                 said.append(ev["text"])
+                if fixing:
+                    continue
             elif ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
                 changed = True
             if ev["type"] == "tool_start":
                 tools_used.add(ev["name"])
             yield ev
+        if fixing:
+            agent_changed = changed
+            if changed and "".join(said).strip():
+                yield {"type": "text", "text": "".join(said).strip()}
+            else:
+                said = []
+            changed = True
     if not ctx.app_id and use_tools and not tools_used & set(_MEDIA_TOOLS):
         ask = next((m["content"] for m in reversed(llm_messages) if m.get("role") == "user"
                     and isinstance(m.get("content"), str)), "")
@@ -2091,6 +2106,8 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
     if not (ctx.app_id and use_tools and changed):
         return
     problems, features_checked, reviewed = [], False, False
+    # The errors the preview showed, for a fix the static checks can't see (an error only a click causes).
+    shown = [l.strip() for l in (ask or "").split("\n")[1:] if l.strip()] if fixing else []
     # A new app or a big change gets one senior-engineer code review once it passes the tests (not on Groq's
     # small free budget, where the files rarely fit and every request counts).
     wants_review = SELF_REVIEW and bool(plan or first_version) and \
@@ -2101,6 +2118,8 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
                 problems = ev["problems"]
             else:
                 yield ev
+        if not problems and shown and repair_round == 0 and not agent_changed:
+            problems = ["The preview shows: " + e for e in shown[:5]]
         if not problems and plan and not features_checked and repair_round < REPAIR_ROUNDS:
             features_checked = True  # once per turn: each check is one more request on the free tier
             async for ev in _feature_events(ctx, model, plan):
@@ -2122,19 +2141,67 @@ async def _agent_events(stream_fn, ctx: ToolContext, model: str, llm_messages: l
         llm_messages.append({"role": "assistant", "content": "".join(said).strip() or "I wrote the files."})
         llm_messages.append({"role": "user", "content": (
             "Automatic test of the app found these problems:\n- " + "\n- ".join(problems)
-            + "\nFix every one now (read the files, then edit_file or write_file the missing parts so the whole app "
-            "works), then say in one short line what you fixed.")})
+            + "\nFix every one now: read the files, then call edit_file or write_file for the missing parts so the "
+            "whole app works. Don't greet me, don't ask what to build and don't write a plan: change the files, "
+            "then say in one short line what you fixed.")})
         said = []
-        async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
-                                  max_steps=REPAIR_STEPS):
-            if ev["type"] == "text":
-                said.append(ev["text"])
-            yield ev
+        fixed = False
+        files = await apps.snapshot(ctx.app_id)
+        path = next((p for p in map(lambda x: fast_build.broken_file(x, files), problems) if p), None)
+        if path and len(files[path]) <= fast_build.fix_room(model):
+            # A file that doesn't parse: the whole corrected file in one reply, which free models do far more
+            # reliably than a chain of edit_file calls.
+            async for ev in _fix_file_events(stream_fn, ctx, model, path, files[path],
+                                             next(p for p in problems if p.startswith(path)), ask):
+                if ev["type"] == "fixed":
+                    fixed = ev["ok"]
+                    said = [ev["said"]] if fixed else []
+                else:
+                    yield ev
+        if not fixed:
+            # The model's words are shown only when it really changed a file: a free model that answers a repair
+            # with chat ("Namaste! How can I help you today?") is never shown to the user.
+            async for ev in run_agent(stream_fn, tool_registry, ctx, model, llm_messages, use_tools=True,
+                                      max_steps=REPAIR_STEPS):
+                if ev["type"] == "text":
+                    said.append(ev["text"])
+                    continue
+                if ev["type"] == "tool_end" and ev["name"] in _FILE_TOOLS and ev["ok"]:
+                    fixed = True
+                yield ev
+            if not fixed:
+                said = []
+        if said:
+            yield {"type": "text", "text": "".join(said).strip() + "\n\n"}
     if first_version:
         await apps.commit(ctx.app_id, "First version", author="Krish AI")
     if problems:
         yield {"type": "text", "text": "\n\nHeads up, the app still has a problem: " + problems[0].split(" The file looks cut off")[0]
                + " Tap “Fix errors with AI” under the preview, or reply “fix it”."}
+
+
+_FIX_ASK = re.compile(r"\s*(?:auto-fix:|the preview shows (?:this|these) errors?|fix(?:\s+(?:it|this|that|them|"
+                      r"the (?:app|errors?|bugs?|problems?)|errors?|all|everything))?\s*[.!]*\s*$)", re.IGNORECASE)
+
+
+async def _fix_file_events(stream_fn, ctx: ToolContext, model: str, path: str, code: str, problem: str,
+                           request: str):
+    """Rewrite one broken file in a single reply (fast_build.fix_messages). Yields the file being typed and saved;
+    the last event is {"type": "fixed", "ok": the file was saved, "said": its one line}."""
+    # The user's own request for the app: the first message of the build, not "fix it".
+    convo = [m for m in await db.messages.find({"conversationId": ctx.conversation_id}).sort("createdAt", 1)
+             .to_list(50) if m.get("role") == "user"] if ctx.conversation_id else []
+    first = next((m.get("content") or "" for m in convo if not _FIX_ASK.match(m.get("content") or "")), request)
+    result = None
+    async for ev in fast_build.draft(stream_fn, ctx.app_id, model, fast_build.fix_messages(path, code, problem, first),
+                                     rules=None, force_path=path):
+        if ev["type"] == "draft_done":
+            result = ev
+        elif ev["type"] != "text":
+            yield ev
+    ok = bool(result and path in result["files"])
+    line = (result or {}).get("said", "").strip().splitlines()
+    yield {"type": "fixed", "ok": ok, "said": (line[-1] if line and len(line[-1]) < 300 else f"Fixed {path}.") if ok else ""}
 
 
 def _builder_summary(steps: list) -> str:

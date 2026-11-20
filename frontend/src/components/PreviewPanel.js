@@ -4,6 +4,11 @@ import remarkGfm from "remark-gfm";
 import { api, mediaUrl, getToken, API, formatApiError } from "@/lib/api";
 import { X, Download, Loader2, Code2, Eye, FileSpreadsheet, Presentation, FileText, Globe, File, FileArchive, FileCode2 } from "lucide-react";
 import ScrollTable from "@/components/ScrollTable";
+import ResizeHandle, { useStoredWidth } from "@/components/ResizeHandle";
+
+// The preview starts at about half the screen; drag its edge to change that (remembered in this browser).
+const PANEL_START = () => Math.round(Math.min(820, Math.max(420, window.innerWidth * 0.46)));
+const PANEL_MAX = () => Math.max(420, window.innerWidth - 420);
 
 export function fileKind(item) {
   const ct = item?.contentType || "";
@@ -133,6 +138,7 @@ export default function PreviewPanel({ item, onClose }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("preview");
+  const [panelWidth, setPanelWidth] = useStoredWidth("krish-preview-width", PANEL_START(), 360, PANEL_MAX);
   const kind = fileKind(item);
   const meta = KIND_META[kind] || KIND_META.file;
 
@@ -168,8 +174,11 @@ export default function PreviewPanel({ item, onClose }) {
   } else body = <p className="p-6 text-sm text-muted-foreground">No preview for this file type — download it instead.</p>;
 
   return (
-    <aside className="fixed inset-0 z-50 flex flex-col border-l border-border bg-sunken lg:static lg:z-auto lg:w-[46%] lg:min-w-[420px] lg:max-w-[820px]"
-      data-testid="preview-panel">
+    <>
+    <ResizeHandle width={panelWidth} onWidth={setPanelWidth} side="right" initial={PANEL_START()} className="max-lg:hidden"
+      label="Drag to make the chat or the preview bigger" />
+    <aside className="fixed inset-0 z-50 flex flex-col border-l border-border bg-sunken lg:static lg:z-auto lg:w-[var(--panel-w)] lg:shrink-0"
+      style={{ "--panel-w": `${panelWidth}px` }} data-testid="preview-panel">
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
         <meta.icon className={`h-4 w-4 shrink-0 ${meta.color}`} />
         <div className="min-w-0 flex-1">
@@ -197,5 +206,6 @@ export default function PreviewPanel({ item, onClose }) {
       </div>
       <div className="min-h-0 flex-1">{body}</div>
     </aside>
+    </>
   );
 }

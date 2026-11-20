@@ -5,6 +5,11 @@ import { buildPreview, extractFiles } from "@/lib/codeFiles";
 import { DownloadMenu, projectBtn, useProjectActions } from "@/components/CodeProject";
 import ThinkingShape from "@/components/ThinkingShape";
 import { LoadingCanvas } from "@/components/PictureMaking";
+import ResizeHandle, { useStoredWidth } from "@/components/ResizeHandle";
+
+// The code and preview side starts at about half the screen; drag its edge to change that.
+const PANEL_START = () => Math.round(Math.min(960, Math.max(380, window.innerWidth * 0.48)));
+const PANEL_MAX = () => Math.max(380, window.innerWidth - 380);
 
 /**
  * The chat's side panel for a reply with code files, like Claude's artifacts: a live Preview and the Code,
@@ -15,6 +20,7 @@ export default function CodePanel({ content, streaming, onClose }) {
   const files = useMemo(() => extractFiles(content, streaming), [content, streaming]);
   const html = useMemo(() => (streaming ? null : buildPreview(files)), [files, streaming]);
   const [tab, setTab] = useState("preview");
+  const [panelWidth, setPanelWidth] = useStoredWidth("krish-code-panel-width", PANEL_START(), 340, PANEL_MAX);
   const [path, setPath] = useState(null);
   const [full, setFull] = useState(false);
   const [reload, setReload] = useState(0);
@@ -44,10 +50,13 @@ export default function CodePanel({ content, streaming, onClose }) {
   const iconBtn = "rounded-md p-1.5 text-muted-foreground hover:bg-surface hover:text-foreground";
 
   return (
-    <aside data-testid="code-panel"
+    <>
+    {!full && <ResizeHandle width={panelWidth} onWidth={setPanelWidth} side="right" initial={PANEL_START()}
+      label="Drag to make the chat or the code bigger" />}
+    <aside data-testid="code-panel" style={{ "--panel-w": `${panelWidth}px` }}
       className={`flex min-h-0 flex-col border-border bg-card ${full
         ? "fixed inset-0 z-50"
-        : "max-md:fixed max-md:inset-0 max-md:z-50 md:w-[48%] md:min-w-[380px] md:max-w-[960px] md:shrink-0 md:border-l"}`}>
+        : "max-md:fixed max-md:inset-0 max-md:z-50 md:w-[var(--panel-w)] md:shrink-0 md:border-l"}`}>
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold" data-testid="code-panel-title">{name}</p>
@@ -115,5 +124,6 @@ export default function CodePanel({ content, streaming, onClose }) {
         )}
       </div>
     </aside>
+    </>
   );
 }
