@@ -18,11 +18,12 @@ import { useT } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import {
   Plus, Search, Loader2, CalendarDays, Archive, MessageSquare, Trash2, Pencil, LogOut, Check, X, PanelLeftClose, Sun, Moon, Brain, LifeBuoy, Settings, Crown, Users, Gift,
-  LayoutDashboard, Sparkles, ArrowUpRight, Monitor, ChevronsUpDown,
+  LayoutDashboard, Sparkles, ArrowUpRight, Monitor, ChevronsUpDown, CircleDot,
 } from "lucide-react";
 import KrishWordmark from "@/components/KrishWordmark";
 import NavList from "@/components/NavList";
 import UserAvatar from "@/components/UserAvatar";
+import { inAndroidApp, toggleFloatingButton } from "@/lib/pwa";
 
 function groupByDate(convs) {
   const groups = { Today: [], Yesterday: [], "Previous 7 Days": [], Older: [] };
@@ -262,6 +263,11 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
             <DropdownMenuItem data-testid="menu-plans" onClick={() => navigate("/plans")} className={ITEM}>
               <Crown className={ICON} /> {t("plans")}
             </DropdownMenuItem>
+            {inAndroidApp && (
+              <DropdownMenuItem data-testid="menu-floating-button" onClick={toggleFloatingButton} className={ITEM}>
+                <CircleDot className={ICON} /> Floating Krish button
+              </DropdownMenuItem>
+            )}
             {INVITES_ON && (
               <DropdownMenuItem data-testid="menu-invite" onClick={() => setInviteOpen(true)} className={ITEM}>
                 <Gift className={ICON} /> Invite friends

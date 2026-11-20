@@ -5,8 +5,9 @@ import { AppLogo } from "@/components/BrandLogos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, Check, CheckCircle2, ExternalLink, Loader2, Lock, Plus, Search, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, CheckCircle2, ExternalLink, FolderOpen, Loader2, Lock, Plus, Search, Send, ShieldCheck } from "lucide-react";
 import { AddApp, CustomDetail, DirectoryDetail, customLogo } from "@/components/settings/CustomConnectors";
+import { pickGoogleFiles } from "@/lib/googlePicker";
 
 const FILTERS = [["all", "All"], ["connected", "Connected"], ["work", "Work & files"], ["messaging", "Messaging"], ["developer", "Developer"]];
 const WORK = ["work", "files", "money", "automation"];
@@ -240,6 +241,18 @@ function Detail({ c, onBack, onChange, onClose }) {
     } catch (e) { fail(e); }
     finally { setBusy(false); }
   };
+  // Drive and Sheets: the user picks the files Krish may use in Google's picker. The settings window closes first,
+  // because it would otherwise keep the picker from getting clicks and typing.
+  const choose = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/connectors/${c.id}/picker`);
+      onClose();
+      const files = await pickGoogleFiles(data);
+      if (files.length) toast.success(`Krish can now use ${files.length === 1 ? files[0].name : `${files.length} files`}. Ask about ${files.length === 1 ? "it" : "them"} in any chat.`);
+    } catch (e) { fail(e); }
+    finally { setBusy(false); }
+  };
   const test = async () => {
     setBusy(true);
     try { await api.post(`/connectors/${c.id}/test`, {}); toast.success(`Sent. Check ${c.name}.`); }
@@ -270,8 +283,16 @@ function Detail({ c, onBack, onChange, onClose }) {
       </div>
 
       <div className="mt-6">
+        {c.connected && c.picker && (
+          <p className="mb-3 text-[13px] text-muted-foreground" data-testid="connector-picker-hint">
+            Krish only sees the {c.picker === "sheets" ? "sheets" : "files"} you choose. Press the button to add more any time.</p>
+        )}
         {c.connected ? (
           <div className="flex flex-wrap gap-2">
+            {c.picker && (
+              <Button onClick={choose} disabled={busy} className="h-10" data-testid="connector-choose-files">
+                <FolderOpen className="mr-1.5 h-4 w-4" /> {c.picker === "sheets" ? "Choose sheets" : "Choose files"}</Button>
+            )}
             {["telegram", "whatsapp", "slack", "discord"].includes(c.id) && (
               <Button variant="outline" onClick={test} disabled={busy} className="h-10" data-testid="connector-test">
                 <Send className="mr-1.5 h-4 w-4" /> Send a test message</Button>
@@ -324,7 +345,9 @@ function Detail({ c, onBack, onChange, onClose }) {
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : `Connect ${c.name}`}</Button>
         )}
         {!c.connected && c.ready && !c.locked && c.how === "google" && (
-          <p className="mt-3 text-xs text-muted-foreground">You'll authorise access securely on Google's page and choose what Krish may see.</p>
+          <p className="mt-3 text-xs text-muted-foreground">{c.picker
+            ? "You'll sign in on Google's page, then choose the files Krish may use. Krish sees nothing else in your Drive."
+            : "You'll authorise access securely on Google's page and choose what Krish may see."}</p>
         )}
       </div>
     </div>

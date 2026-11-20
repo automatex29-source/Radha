@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the Krish icon. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="new_chat" android:enabled="true" android:icon="@drawable/shortcut_chat"
+        android:shortcutShortLabel="@string/shortcutNewChat" android:shortcutLongLabel="@string/shortcutNewChat">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="net.krishai.app"
+            android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:data="https://krishai.net/?new=1&amp;source=android" />
+    </shortcut>
+    <shortcut android:shortcutId="talk" android:enabled="true" android:icon="@drawable/shortcut_mic"
+        android:shortcutShortLabel="@string/shortcutTalk" android:shortcutLongLabel="@string/shortcutTalk">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="net.krishai.app"
+            android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:data="https://krishai.net/?voice=1&amp;source=android" />
+    </shortcut>
+    <shortcut android:shortcutId="apps" android:enabled="true" android:icon="@drawable/shortcut_apps"
+        android:shortcutShortLabel="@string/shortcutApps" android:shortcutLongLabel="@string/shortcutApps">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="net.krishai.app"
+            android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:data="https://krishai.net/apps?source=android" />
+    </shortcut>
+    <shortcut android:shortcutId="bubble" android:enabled="true" android:icon="@drawable/shortcut_bubble"
+        android:shortcutShortLabel="@string/shortcutBubble" android:shortcutLongLabel="@string/shortcutBubble">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="net.krishai.app"
+            android:targetClass="net.krishai.app.BubbleActivity" android:data="krishai://floating-button" />
+    </shortcut>
+</shortcuts>

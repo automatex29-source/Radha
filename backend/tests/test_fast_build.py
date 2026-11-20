@@ -154,8 +154,9 @@ def test_cut_off_reply_still_saves_what_was_written(monkeypatch):
     files = dict(apps.TEMPLATES["blank"])
     _store(monkeypatch, files)
 
-    async def stream_fn(model, messages, tools):
-        yield {"type": "text", "text": "- Plan\n```html index.html\n<html><body>half"}
+    async def stream_fn(model, messages, tools):  # cut off, and every request to go on says nothing
+        if len(messages) <= 1:
+            yield {"type": "text", "text": "- Plan\n```html index.html\n<html><body>half"}
 
     async def go():
         return [ev async for ev in fast_build.draft(stream_fn, "a1", "m", [])]

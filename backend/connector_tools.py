@@ -75,6 +75,9 @@ def _q(text: str) -> str:
 
 
 # -------------------------------------------------------------------- Drive
+PICK_HINT = ("Krish can only open the files the user chose for it. Ask the user to open Settings > Connectors > "
+             "{app} and press Choose files, then pick the file there.")
+
 _EXPORT = {"application/vnd.google-apps.document": ("text/plain", "txt"),
            "application/vnd.google-apps.spreadsheet": ("text/csv", "csv"),
            "application/vnd.google-apps.presentation": ("text/plain", "txt")}
@@ -99,14 +102,23 @@ async def _drive_search(ctx: ToolContext, args: dict) -> ToolOutput:
     r = await _get(f"{GAPI}/drive/v3/files", token, params)
     files = r.json().get("files", [])
     if not files:
-        return ToolOutput(content="No files found in Google Drive." + (" Try other words." if query else ""),
-                          summary="No files found")
+        return ToolOutput(content="No matching files among the ones the user chose for Krish. "
+                                  + PICK_HINT.format(app="Google Drive"), summary="No files found")
     lines = [f"- {f['name']} (id: {f['id']}, {f['mimeType'].split('.')[-1].split('/')[-1]}, "
              f"changed {f.get('modifiedTime', '')[:10]}) {f.get('webViewLink', '')}" for f in files]
     return ToolOutput(content="Google Drive files:\n" + "\n".join(lines), summary=f"Found {len(files)} files")
 
 
 async def _drive_read(ctx: ToolContext, args: dict) -> ToolOutput:
+    try:
+        return await _drive_read_file(ctx, args)
+    except RuntimeError as exc:
+        if str(exc).startswith("Not found"):
+            raise RuntimeError(PICK_HINT.format(app="Google Drive"))
+        raise
+
+
+async def _drive_read_file(ctx: ToolContext, args: dict) -> ToolOutput:
     token = await _token(ctx, "google_drive")
     fid = (args.get("file_id") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{10,200}", fid):
@@ -323,6 +335,18 @@ def _range(value: str) -> str:
     return rng
 
 
+def _picked_sheet(fn):
+    """A sheet the user didn't choose for Krish answers 404: say how to choose it."""
+    async def run(ctx: ToolContext, args: dict) -> ToolOutput:
+        try:
+            return await fn(ctx, args)
+        except RuntimeError as exc:
+            if str(exc).startswith("Not found"):
+                raise RuntimeError(PICK_HINT.format(app="Google Sheets"))
+            raise
+    return run
+
+
 async def _sheets_read(ctx: ToolContext, args: dict) -> ToolOutput:
     token = await _token(ctx, "google_sheets")
     sid = _sheet_id(args.get("sheet"))
@@ -506,8 +530,8 @@ I = {"type": "integer"}
 
 def register_tools(registry: ToolRegistry):
     tools = [
-        Tool("drive_search", "Search the user's Google Drive by file name or words inside files. Leave 'query' "
-             "empty to list recent files. Then drive_read a file by its id.",
+        Tool("drive_search", "Search the Google Drive files the user chose for Krish, by file name or words inside "
+             "them. Leave 'query' empty to list them. Then drive_read a file by its id.",
              _obj({"query": S, "max_results": I}, []), _drive_search, label="Search Google Drive", connector="google_drive"),
         Tool("drive_read", "Read a Google Drive file's text (Docs, Sheets as CSV, Slides, PDF, Word, Excel).",
              _obj({"file_id": S}, ["file_id"]), _drive_read, label="Read Drive file", connector="google_drive"),
@@ -533,13 +557,13 @@ def register_tools(registry: ToolRegistry):
              "unless they let this automation send on its own. Give thread_id to reply in a thread.",
              _obj({"to": S, "subject": S, "body": S, "thread_id": S}, ["to", "body"]), _gmail_send,
              label="Send email", connector="gmail"),
-        Tool("sheets_read", "Read a Google Sheet by its link or id. 'range' is optional, e.g. 'Orders!A1:F100'.",
-             _obj({"sheet": S, "range": S}, ["sheet"]), _sheets_read, label="Read Google Sheet",
+        Tool("sheets_read", "Read a Google Sheet the user chose for Krish (or Krish made), by its link or id. 'range' is optional, e.g. 'Orders!A1:F100'.",
+             _obj({"sheet": S, "range": S}, ["sheet"]), _picked_sheet(_sheets_read), label="Read Google Sheet",
              connector="google_sheets"),
         Tool("sheets_append", "Add rows to the end of a Google Sheet. 'rows' is a list of rows, each a list of cell "
              "values. 'range' picks the tab, e.g. 'Orders!A1' (default: the first tab).",
              _obj({"sheet": S, "range": S, "rows": {"type": "array", "items": {"type": "array", "items": S}}},
-                  ["sheet", "rows"]), _sheets_append, label="Add rows to sheet", connector="google_sheets"),
+                  ["sheet", "rows"]), _picked_sheet(_sheets_append), label="Add rows to sheet", connector="google_sheets"),
         Tool("sheets_create", "Make a new Google Sheet, with an optional header row. Returns its link and id.",
              _obj({"title": S, "header": {"type": "array", "items": S}}, ["title"]), _sheets_create,
              label="Make Google Sheet", connector="google_sheets"),
