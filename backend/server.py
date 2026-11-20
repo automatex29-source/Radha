@@ -20,7 +20,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Literal, Optional
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File, Form, Header, Query
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -53,6 +53,7 @@ import appdata
 import automations
 import custom_connectors
 import live_search
+import understand
 import study as study_mode
 import search_modes
 import related
@@ -1127,7 +1128,11 @@ UNDERSTAND_USER = (
     "read another way. Ask one short clarifying question, offering the two or three likely options, only when "
     "you truly can't tell what they want and a wrong guess would waste their time. Reply in the language and "
     "script they write in: Hinglish in English letters gets Hinglish in English letters, Hindi in Devanagari "
-    "gets Devanagari, English gets English, and a mix gets the same mix, written correctly and simply.\n\n"
+    "gets Devanagari, English gets English, and a mix gets the same mix, written correctly and simply. "
+    "When one message asks several things (\"price kya hai aur kaha milega\", a numbered list of questions), "
+    "answer every one of them, in the order asked, and never answer only the first. When a request is clear "
+    "but loosely worded (\"exel shet bana do\", \"ek pic chahiye\"), do it with the right tool instead of "
+    "asking them to rephrase.\n\n"
 )
 
 # The App Builder's base prompt. It replaces SYSTEM_PROMPT there: the chat prompt's "put code in fenced blocks"
@@ -1450,6 +1455,10 @@ def _study_ask(text: Optional[str]) -> bool:
     return bool(_STUDY_ASK.search(text or ""))
 
 
+# "reply in English", "hindi me batao": the user chose the reply's language themselves.
+_NAMES_LANGUAGE = re.compile(r"\b(hindi|english|devanagari)\b", re.I)
+
+
 ENGLISH_NOTE = ("The user's latest message is in English. Write your whole reply in English, even when the topic "
                 "is Indian (a word like chai or yaar is fine). Not in Hinglish and not in Hindi.")
 
@@ -1538,7 +1547,9 @@ CODE_PROMPT = (
     "error or the code needed to find it is missing, give the likeliest cause and fix, then ask for the exact error "
     "or file in one line.\n"
     "- For a follow-up (\"still not working\", \"add a login\", \"now in Java\"), work from the latest version of "
-    "the code in this chat and keep everything that already works. If they ask to change a file (\"remove the dropdown "
+    "the code in this chat and keep everything that already works. Keep building that same program: never switch to "
+    "a different program, topic, language or framework they didn't ask for, and don't answer from web results that "
+    "aren't about their code. If they ask to change a file (\"remove the dropdown "
     "from index\") that you can't see in this chat, never write a new one from scratch: ask them in one line to "
     "paste or attach that file.\n"
     "- Before writing new code, settle the approach in a sentence or two (data structures, edge cases, and time "
@@ -1613,8 +1624,21 @@ _THANKS = re.compile(r"^\W*(?:thanks?|thank you|thx|ty|ok(?:ay)?|cool|great|nice
 FOLLOW_UP_CHARS = 400
 
 
+# Words that point back at the code in the chat ("isme login daal do", "the button"). Not "it" or "ye": "will it
+# rain today?" in a chat about code is still a weather question.
+_POINTS_BACK = re.compile(
+    r"\b(isme|isse|isko|iske|ismein|usme|usko|code|page|app|site|website|game|button|buttons|form|function|"
+    r"file|script|program|screen|ui|layout|design|feature|features|error|bug|output|upar)\b", re.IGNORECASE)
+CODE_CHAT_TURNS = 6  # how far back (user and assistant messages) a follow-up still belongs to a chat about code
+
+
 def _coding_turn(history_docs: list) -> bool:
-    """True when the latest user message is a coding question, or a short follow-up in a chat about code."""
+    """True when the latest user message is a coding question, or a follow-up in a chat about code.
+
+    In a chat about code, a change asked with words like "best", "latest" or "current" ("add the best colours",
+    "show the current user") used to count as a fresh-facts question: the turn lost the coding prompt and model,
+    searched the web for the words, and answered about something else. Now a follow-up that asks for a change or
+    points back at the code ("it", "isme", "the button") stays a coding turn, even a long one."""
     turns = [m for m in history_docs if m["role"] in ("user", "assistant")]
     at = next((i for i in range(len(turns) - 1, -1, -1) if turns[i]["role"] == "user"), None)
     if at is None:
@@ -1622,12 +1646,17 @@ def _coding_turn(history_docs: list) -> bool:
     text = turns[at]["content"] or ""
     if _code_ask(text):
         return True
-    if len(text) > FOLLOW_UP_CHARS or _THANKS.match(text) or _ideas_ask(text) or live_search.suggests_web(text):
+    if _THANKS.match(text) or _ideas_ask(text):
         return False
-    before = turns[:at]
-    reply = next((m["content"] or "" for m in reversed(before) if m["role"] == "assistant"), "")
-    asked = next((m["content"] or "" for m in reversed(before) if m["role"] == "user"), "")
-    return "```" in reply or _code_ask(asked)
+    before = turns[max(0, at - CODE_CHAT_TURNS):at]
+    code_chat = any("```" in (m["content"] or "") for m in before if m["role"] == "assistant") or \
+        any(_code_ask(m["content"] or "") for m in before if m["role"] == "user")
+    if not code_chat:
+        return False
+    about_the_code = code_edit.wants_edit(code_edit.without_code(text)) or bool(_POINTS_BACK.search(text))
+    if len(text) > FOLLOW_UP_CHARS:
+        return about_the_code
+    return about_the_code or not live_search.suggests_web(text)
 
 
 # Requests for ideas (brainstorming, names, business or content ideas) get IDEAS_PROMPT.
@@ -1673,7 +1702,8 @@ LONG_CHAT_TOKENS = 6000
 COUNSEL_FREE_MODEL = os.environ.get("COUNSEL_FREE_MODEL", "gemini-3.5-flash")
 
 
-def _auto_model(history_docs: list, text: Optional[str], coding: bool = False, counselling: bool = False) -> str:
+def _auto_model(history_docs: list, text: Optional[str], coding: bool = False, counselling: bool = False,
+                hard: bool = False) -> str:
     """The free model that answers a Krish AI question. Pictures go to Gemini (it can see them), long chats to
     Cerebras (most room), hard questions to gpt-oss-120b (it reasons), everything else to Gemini (quick). Coding
     questions then move to Krish Coder in _to_coder. Gemini hands over to Groq, then Cerebras, when it runs out."""
@@ -1684,7 +1714,7 @@ def _auto_model(history_docs: list, text: Optional[str], coding: bool = False, c
         wanted = [COUNSEL_FREE_MODEL, "gemini-3.5-flash-lite", "cerebras/gpt-oss-120b", "openai/gpt-oss-120b"]
     elif agent_llm.estimate_tokens([m.get("content") or "" for m in history_docs]) > LONG_CHAT_TOKENS:
         wanted = ["cerebras/gpt-oss-120b", "openai/gpt-oss-120b"]
-    elif coding or _hard_ask(text or "") or _code_ask(text or ""):
+    elif coding or hard or _hard_ask(text or "") or _code_ask(text or ""):
         wanted = ["cerebras/gpt-oss-120b", "openai/gpt-oss-120b"]
     else:
         wanted = ["gemini-3.5-flash-lite"]
@@ -2245,9 +2275,18 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
 
     chosen = model  # the model the user picked, kept for the chat even when the coding model answers
     last_user = next((m["content"] for m in reversed(history_docs) if m["role"] == "user"), None)
-    coding = _coding_turn(history_docs)
+    # What the latest message means, read with the chat (typos, Hinglish, "iska price?", several asks in one):
+    # the checks below look at both the raw words and this reading. None when skipped or slow (understand.py).
+    reading = None
+    if last_user and not (conv or {}).get("appId") and not counselling and not extra_system:
+        reading = await understand.read(history_docs)
+    meant = reading["question"] if reading else ""
+    asks = [t for t in (last_user, meant) if t]  # the raw message, then the reading of it
+    wants_tool = reading["tool"] if reading else ""
+    coding = _coding_turn(history_docs) or _code_ask(meant) or bool(reading and reading["kind"] == "code")
+    hard = any(_hard_ask(t) for t in asks) or bool(reading and reading["kind"] == "maths")
     if model == AUTO_MODEL:
-        model = _auto_model(history_docs, last_user, coding, counselling)
+        model = _auto_model(history_docs, last_user, coding, counselling, hard=hard)
     if _to_coder(model, conv, coding, history_docs, counselling or voice or bool(extra_system)):
         model = CODER_MODEL
     base = counsellor.PROMPT if counselling else BUILDER_PROMPT if (conv or {}).get("appId") else SYSTEM_PROMPT
@@ -2315,14 +2354,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     # Files attached to this chat, plus project documents (RAG).
     if user_id and last_user:  # files attached to the chat, in the Counsellor too
         lean = agent_llm.lean(model)
-        if lean and agent and not (conv or {}).get("appId") and not _TOOL_ASK.search(last_user) and \
+        if lean and agent and not (conv or {}).get("appId") and not any(_TOOL_ASK.search(t) for t in asks) and not wants_tool and \
                 await db.files.count_documents({"conversationId": conv_id, "is_deleted": False}):
             # Groq's free tier can't fit the tools AND a document in one request; a question about
             # the document needs the document more.
             agent = False
         budget = FILE_WORDS if not lean else FILE_WORDS_LEAN if not agent else FILE_WORDS_LEAN_TOOLS
         try:
-            file_ctx, sources = await _file_context(conv_id, user_id, project_id, last_user, budget)
+            file_ctx, sources = await _file_context(conv_id, user_id, project_id, "\n".join(asks), budget)
             if file_ctx:
                 system_parts.append(file_ctx)
         except Exception:
@@ -2336,7 +2375,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     ai_limit = None  # set when a free model's usage limit ends the reply (the chat shows a card)
     token_count = agent_llm.start_token_count()  # the tokens this reply really uses, for the usage meter
     if agent and not app_id and not extra_system and not think and not study and agent_llm.lean(model) \
-            and _quick_chat(history_docs) and not _mentions_apps(last_user, app_names) \
+            and _quick_chat(history_docs) and not wants_tool and not any(_mentions_apps(t, app_names) for t in asks) \
             and not await db.files.count_documents(
                 {"conversationId": conv_id, "is_deleted": False}):
         agent = False
@@ -2352,22 +2391,28 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     # it. Otherwise Krish searches on its own when the question needs fresh or checkable facts (auto_search),
     # and agent turns can still call web_search themselves.
     asked = live_search.asks_for_search(last_user or "")
+    # A coding turn ("add the best colours", "show the current user") searches only when asked: the words of a
+    # change to the code made a poor search, and the results pulled the answer away from the user's code.
     chosen_web = web or pro or focus != "web" or bool(extra_system) or bool(app_id) or asked \
-        or plugin_state.get("auto_search", False)
-    auto = not chosen_web and not counselling and live_search.auto_search(last_user or "")
+        or (plugin_state.get("auto_search", False) and not coding)
+    auto = not chosen_web and not counselling and not coding and (live_search.auto_search(last_user or "") or
+                                                   bool(reading and reading["web"]) or wants_tool == "web_search")
     searching = chosen_web or auto
     web = web or asked
-    web_hint = not searching and not counselling and not voice and live_search.suggests_web(last_user or "")
+    web_hint = not searching and not counselling and not voice and not coding and \
+        live_search.suggests_web(last_user or "")
     if not searching and not counselling:
         system_parts.append(WEB_AUTO_NOTE if agent else WEB_OFF_NOTE)
     # How-tos, recipes and lessons get a row of YouTube videos, whether or not the web was searched.
     videos = not (coding or counselling or voice or app_id or extra_system) and \
-        search_modes.wants_videos(last_user or "")
+        any(search_modes.wants_videos(t) for t in asks)
     # Look up live info (news, rates, prices) up front, so the answer never depends on the model choosing to search.
     if not app_id and not counselling:
         user_texts = [m["content"] for m in history_docs if m["role"] == "user"]
+        look_for = (reading["search"] or meant) if reading else ""  # "aur iska price?" -> "iPhone 16 price India"
         # Like Claude: "Searching the web" with the query shows while the search runs (Pro shows its own step).
-        searching_for = "" if pro else live_search.search_label(user_texts, search=searching, force=web, focus=focus)
+        searching_for = "" if pro else live_search.search_label(user_texts, search=searching, force=web, focus=focus,
+                                                                      meant=look_for)
         if searching_for:
             yield f"event: searching\ndata: {_sse_json({'query': searching_for, 'focus': focus})}\n\n"
         if pro:
@@ -2375,7 +2420,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
                         "args": {"query": (last_user or "")[:200]}, "status": "running"}
             yield f"event: tool\ndata: {_sse_json(pro_step)}\n\n"
         found = await live_search.gather(user_texts, search=searching, force=web, focus=focus, pro=pro, model=model,
-                                        videos=videos)
+                                        videos=videos, meant=look_for)
         if found["context"]:
             system_parts.append(found["context"])
             web_hint = web_hint and searching  # a live rates, weather or stock card already answered it
@@ -2411,7 +2456,7 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(agent_prompt())
     if study and not app_id and not counselling:
         system_parts.append(STUDY_PROMPT)
-    studying = not app_id and not counselling and not extra_system and (study or _study_ask(last_user))
+    studying = not app_id and not counselling and not extra_system and (study or any(_study_ask(t) for t in asks))
     if studying:
         system_parts.append(study_mode.RULES)
     if user_id and studying:
@@ -2429,14 +2474,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             system_parts.append(CODE_PROMPT)
             if not agent_llm.lean(model):
                 system_parts.append(CODE_DEPTH)
-        elif _ideas_ask(last_user or ""):
+        elif any(_ideas_ask(t) for t in asks):
             system_parts.append(IDEAS_PROMPT)
     if think and not counselling:
         system_parts.append(THINK_PROMPT)
     # Without Think, a hard question still gets more reasoning from the free models (never in voice, the app
     # builder or a counselling chat, where a quick reply matters more).
     reasoning = think or (agent_llm.DEEPER if not (voice or app_id or counselling or extra_system)
-                          and (_hard_ask(last_user or "") or coding) else False)
+                          and (hard or coding) else False)
     if app_id and not think:
         # A build is a hard task: the free builder (gpt-oss) otherwise plans a whole app at its lightest setting.
         reasoning = agent_llm.DEEPER
@@ -2455,10 +2500,14 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     if counselling and voice:
         system_parts.append(counsellor.VOICE)
     # Free models often drift to English or formal Hindi; the last line of the prompt is the one they follow.
-    if base is SYSTEM_PROMPT and not voice and not coding and not study and _study_ask(last_user):
+    understood = understand.prompt_note(reading, last_user or "")
+    if understood:
+        system_parts.append(understood)
+    if base is SYSTEM_PROMPT and not voice and not coding and not study and any(_study_ask(t) for t in asks):
         # Study mode asks its own check question after each idea; a known class or exam needs no asking.
         system_parts.append(STUDY_CLOSE_KNOWN if (study_mode.clean(student) or {}).get("level") else STUDY_CLOSE_NOTE)
-    if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
+    if not counselling and not voice and not app_id and not coding and (_hinglish_chat(history_docs) or (
+            reading and reading["lang"] == "hinglish" and not _NAMES_LANGUAGE.search(last_user or ""))):
         system_parts.append(HINGLISH_NOTE)
     elif not counselling and not voice and not app_id and _english_chat(history_docs, settings_lang):
         system_parts.append(ENGLISH_NOTE)
@@ -2489,7 +2538,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
             ctx = ToolContext(db=db, user_id=user_id, conversation_id=conv_id, app_id=app_id, focused=focused,
                               model=model, sources=None if app_id else sources,
                               searches_left=None if app_id else (1 if searched else MAX_WEB_SEARCHES),
-                              web=not counselling, research=chosen_web or bool(_RESEARCH_ASK.search(last_user or "")),
+                              web=not counselling, research=chosen_web or wants_tool == "deep_research" or
+                              any(_RESEARCH_ASK.search(t) for t in asks),
                               connected=connected, extra=own_tools,
                               plugins_off=frozenset(k for k, on in plugin_state.items() if not on))
             stream_fn = functools.partial(agent_llm.stream_completion, think=reasoning)
@@ -3993,6 +4043,25 @@ help_center.init(db)
 app.include_router(help_center.router)
 daily_verse.init(db)
 app.include_router(daily_verse.routes(current_user_id))
+
+# The Krish AI Android app (android/) shows krishai.net full screen with no address bar only when this file says
+# the app belongs to this site. It lists the SHA-256 fingerprints of the keys the app is signed with: the upload
+# key below, plus Google Play's app signing key, which Play Console shows after the first upload
+# (Setup > App signing). Add that one in ANDROID_CERT_SHA256 (several can be separated by commas).
+ANDROID_PACKAGE = "net.krishai.app"
+ANDROID_UPLOAD_KEY_SHA256 = "41:F8:49:F7:08:B2:94:3C:63:57:87:71:07:EB:C7:BC:86:9A:DB:93:D9:47:57:24:E2:14:89:79:FA:6C:ED:20"
+
+
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+async def android_asset_links():
+    prints = [ANDROID_UPLOAD_KEY_SHA256] + [
+        p.strip().upper() for p in os.environ.get("ANDROID_CERT_SHA256", "").split(",") if p.strip()]
+    return JSONResponse([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {"namespace": "android_app", "package_name": ANDROID_PACKAGE,
+                   "sha256_cert_fingerprints": list(dict.fromkeys(prints))},
+    }], headers={"Cache-Control": "public, max-age=3600"})
+
 
 # Serve the built frontend (frontend/build) from the same origin, so a single
 # process runs all of RADHA. In development the Vite dev server is used instead.

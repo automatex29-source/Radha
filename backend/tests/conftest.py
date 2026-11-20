@@ -12,6 +12,9 @@ os.environ.setdefault("PLATFORM_FEE_PERCENT", "0")  # amounts in the billing tes
 # Making videos is off by default (see media.video_enabled); the video tests run the kept code with it on, and
 # test_video_off.py checks the default.
 os.environ.setdefault("VIDEO_GENERATION", "on")
+# Reading the question first (understand.py) is one more model call; the tests that mock the model's answer
+# would get it first. test_read_the_question.py turns it on.
+os.environ.setdefault("UNDERSTAND", "0")
 
 
 @pytest.fixture(autouse=True, scope="module")
