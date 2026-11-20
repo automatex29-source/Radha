@@ -269,7 +269,9 @@ def wants_images(text: str) -> bool:
         return False
     return bool(re.search(r"\b(show|photo|photos|picture|pictures|image|images|look like|looks like|design|"
                           r"who is|who was|where is|car|phone|laptop|place|places|temple|fort|beach|city|animal|"
-                          r"bird|flower|dish|recipe|dress|logo|building|monument)\b", t))
+                          r"bird|flower|dish|recipe|dress|logo|building|monument|visit|trip|travel|tourist|"
+                          r"planet|galaxy|festival|dog|cat|tiger|lion|elephant|actor|actress|singer|cricketer|bike|"
+                          r"watch|shoes|interior|garden|painting|tasveer|photo dikhao)\b", t))
 
 
 async def safe(coro, timeout: float, default):

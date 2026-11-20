@@ -297,6 +297,36 @@ def _head_tail(text: str, keep: int) -> str:
     return text[:half] + f"\n… [{len(text) - 2 * half} chars omitted] …\n" + text[-half:]
 
 
+_RECAP_TOKENS = 450  # the most a recap of dropped turns may take (about 1,300 characters)
+
+
+def _recap(dropped: List[dict]) -> str:
+    """A short recap of the turns dropped to fit the budget: each user message and the start of each answer,
+    shortened so that the whole chat (its oldest facts too: a name, a place, what they're building) fits; the
+    newest are kept first when even that is too long."""
+    said = []
+    for m in dropped:
+        text = " ".join((m.get("content") if isinstance(m.get("content"), str) else "" or "").split())
+        if m.get("role") in ("user", "assistant") and text:
+            said.append((m["role"], text))
+    if not said:
+        return ""
+    budget = int(_RECAP_TOKENS * _CHARS_PER_TOKEN) - 160
+    per = max(60, budget // len(said))
+    lines = [f"- User: {t[:min(220, per)]}" if role == "user" else f"  Krish: {t[:min(140, per // 2 + 20)]}"
+             for role, t in said]
+    kept, used = [], 0
+    for line in reversed(lines):
+        if used + len(line) > budget:
+            break
+        kept.append(line)
+        used += len(line) + 1
+    if not kept:
+        return ""
+    return ("Earlier in this chat (older messages, shortened to fit; use them for anything the user refers back "
+            "to):\n" + "\n".join(reversed(kept)))
+
+
 def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[dict]:
     """Shrink a conversation so the prompt leaves room for at least _MIN_OUTPUT tokens.
 
@@ -325,11 +355,34 @@ def fit_messages(messages: List[dict], tools: List[dict], budget: int) -> List[d
     head = [m for m in out[:1] if m["role"] == "system"]
     q -= len(head)
     rest = out[len(head):]
-    # Drop the oldest turns, but never this turn's question or what came after it.
-    while q > 0 and estimate_tokens(head + rest) > limit:
+    # Drop the oldest turns, but never this turn's question or what came after it. What was dropped is kept as a
+    # short recap in the system prompt, so in a long chat Krish still knows what was asked and said earlier.
+    dropped = []
+
+    def drop_oldest():
+        nonlocal rest, q
+        dropped.append(rest[0])
         rest, q = rest[1:], q - 1
         while q > 0 and rest and rest[0]["role"] == "tool":
             rest, q = rest[1:], q - 1  # a tool result can't start the conversation
+
+    while q > 0 and estimate_tokens(head + rest) > limit:
+        drop_oldest()
+    if dropped and head:
+        # Room for the recap comes from dropping a little more of the oldest chat, never from this turn or the
+        # system prompt: when it can't fit that way, the chat is trimmed exactly as it was without one.
+        kept = (rest, q, len(dropped))
+        while True:
+            recap = _recap(dropped)
+            with_recap = [{**head[0], "content": head[0]["content"] + "\n\n" + recap}] if recap else head
+            if recap and estimate_tokens(with_recap + rest) <= limit:
+                head = with_recap
+                break
+            if q <= 0 or not recap:
+                rest, q = kept[0], kept[1]
+                del dropped[kept[2]:]
+                break
+            drop_oldest()
     if estimate_tokens(head + rest) > limit:
         # Still too long: shorten this turn's own steps (tool output, the code it wrote), latest step last.
         for keep in (1500, 600):
