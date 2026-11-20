@@ -1450,6 +1450,23 @@ def _study_ask(text: Optional[str]) -> bool:
     return bool(_STUDY_ASK.search(text or ""))
 
 
+ENGLISH_NOTE = ("The user's latest message is in English. Write your whole reply in English, even when the topic "
+                "is Indian (a word like chai or yaar is fine). Not in Hinglish and not in Hindi.")
+
+
+def _english_chat(history_docs: list, settings_lang: Optional[str] = None) -> bool:
+    """True when the latest message is plainly English (5+ English words, no Hindi words or letters, no language
+    named) and the app language is English or unset. Free models sometimes answer these in Hinglish."""
+    if settings_lang not in (None, "", "en", "english"):
+        return False
+    said = [m.get("content") or "" for m in history_docs if m.get("role") == "user"]
+    text = said[-1] if said else ""
+    if re.search(r"[\u0900-\u097F]", text) or re.search(r"\b(hindi|hinglish|devanagari)\b", text, re.I):
+        return False
+    words = re.findall(r"[A-Za-z']+", text)
+    return len(words) >= 5 and not _HINGLISH_WORDS.search(text)
+
+
 def _hinglish_chat(history_docs: list) -> bool:
     """True when the reply should be in Hinglish: the latest message is, or it is a short follow-up ("ok",
     "aur?", "2nd one") in a chat where the person's message before it was."""
@@ -2374,6 +2391,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
         system_parts.append(STUDY_CLOSE_KNOWN if (study_mode.clean(student) or {}).get("level") else STUDY_CLOSE_NOTE)
     if not counselling and not voice and not app_id and not coding and _hinglish_chat(history_docs):
         system_parts.append(HINGLISH_NOTE)
+    elif not counselling and not voice and not app_id and _english_chat(history_docs, settings_lang):
+        system_parts.append(ENGLISH_NOTE)
     if agent and not counselling and not voice and not app_id and _DECK_ASK.search(last_user or ""):
         system_parts.append(DECK_NOTE)
     system_prompt = "\n\n".join(system_parts)
@@ -2907,12 +2926,39 @@ async def _code_edit_response(conv_id: str, user_id: str, model: str, files: dic
     return await _live_response(conv_id, user_id, _code_edit_turn(conv_id, model, files, ask))
 
 
+async def _code_edit_events(model: str, files: dict, ask: str):
+    """code_edit.run, tried once more with another free model when the first one fails (busy, out of free
+    requests, or the file too big for its budget). Nothing is saved until the end, so starting over is safe.
+    Yields {"type": "model", "model"} before the second try."""
+    try:
+        async for ev in code_edit.run(model, files, ask):
+            yield ev
+        return
+    except (asyncio.CancelledError, GeneratorExit):
+        raise
+    except Exception as exc:
+        backup = code_edit.backup_model(model)
+        if not backup:
+            raise
+        logger.warning("code edit with %s failed (%s), trying %s", model, str(exc)[:200], backup)
+    yield {"type": "model", "model": backup}
+    async for ev in code_edit.run(backup, files, ask):
+        yield ev
+
+
 async def _code_edit_turn(conv_id: str, model: str, files: dict, ask: str):
     """Change the user's own code in place with small edits (see code_edit.py) and reply with the whole file."""
     model = code_edit.editing_model(model)
     steps, text, failed = [], "", False
     try:
-        async for ev in code_edit.run(model, files, ask):
+        async for ev in _code_edit_events(model, files, ask):
+            if ev["type"] == "model":
+                model = ev["model"]
+                for step in steps:
+                    if step["status"] == "running":
+                        step.update(status="error", summary="Trying another model", output="", media=[])
+                        yield f"event: tool_result\ndata: {_sse_json(step)}\n\n"
+                continue
             if ev["type"] == "heartbeat":
                 yield ": keepalive\n\n"
             elif ev["type"] == "part":
