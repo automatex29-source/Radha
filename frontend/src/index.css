@@ -713,3 +713,19 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
   .kai-receipt { animation: none; transform: none; }
   .kai-pos-screen, .kai-pos-status, .kai-pos-led { animation: none; }
 }
+.kai-card-float { animation: kai-card-float 2.4s ease-in-out infinite; transform: rotate(-12deg); }
+@keyframes kai-card-float { 0%, 100% { transform: translate(0, 0) rotate(-12deg); } 50% { transform: translate(-4px, -6px) rotate(-9deg); } }
+.kai-card-tapped { animation: kai-card-tap 1.1s cubic-bezier(.3,.7,.3,1) forwards; }
+@keyframes kai-card-tap { 0% { transform: rotate(-12deg); } 45% { transform: translate(-70px, -150px) rotate(0deg) scale(0.92); } 70% { transform: translate(-70px, -146px) rotate(0deg) scale(0.92); } 100% { transform: translate(6px, 10px) rotate(-14deg); opacity: 0.85; } }
+.kai-pos-shake { animation: kai-shake 0.25s ease-in-out 2 0.45s; }
+@keyframes kai-shake { 25% { transform: translateX(-1.5px); } 75% { transform: translateX(1.5px); } }
+.kai-pos-wave { animation: kai-wave 1.2s ease-in-out infinite; }
+@keyframes kai-wave { 50% { opacity: 0.35; transform: scale(0.92); } }
+.kai-dot { width: 6px; height: 6px; border-radius: 9999px; background: currentColor; animation: kai-dot 0.9s ease-in-out infinite; }
+@keyframes kai-dot { 50% { opacity: 0.2; transform: translateY(-2px); } }
+.kai-receipt-hint { animation: kai-wave 1.6s ease-in-out infinite 3s; }
+.kai-invoice-shine { animation: kai-shine 2.8s ease-in-out infinite 1s; }
+@keyframes kai-shine { 0% { left: -50%; } 45%, 100% { left: 130%; } }
+@media (prefers-reduced-motion: reduce) {
+  .kai-card-float, .kai-card-tapped, .kai-pos-shake, .kai-pos-wave, .kai-dot, .kai-receipt-hint, .kai-invoice-shine { animation: none; }
+}
