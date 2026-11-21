@@ -54,6 +54,12 @@ services:
       # receipts show it split out. Leave it unset until the business is GST registered.
       - key: GSTIN
         sync: false
+      # Optional: printed on every invoice (Settings > Billing and the invoice email). BUSINESS_NAME defaults to
+      # EmpireX; BUSINESS_ADDRESS is the registered address on one line (needed on GST invoices).
+      - key: BUSINESS_NAME
+        sync: false
+      - key: BUSINESS_ADDRESS
+        sync: false
       # Optional, free: raises the image/video limits (https://enter.pollinations.ai, sign in with GitHub).
       - key: POLLINATIONS_API_KEY
         sync: false

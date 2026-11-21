@@ -82,6 +82,7 @@ import setup_status
 import promos
 import referrals
 import growth_mail
+import invoices
 import invite_card
 import connectors
 import connector_tools
@@ -968,17 +969,32 @@ async def export_account(user_id: str = Depends(current_user_id)):
 
 @api.get("/billing/payments")
 async def billing_payments(user_id: str = Depends(current_user_id)):
-    """Settings > Billing: the user's payments, newest first."""
+    """Settings > Billing: the user's payments, newest first, each with its invoice number."""
+    await invoices.backfill(db, user_id)
     rows = await db.payments.find({"userId": user_id, "status": {"$in": ["paid", "captured"]}},
                                   {"_id": 0, "orderId": 1, "plan": 1, "amount": 1, "currency": 1, "status": 1,
                                    "createdAt": 1, "paidAt": 1, "promoCode": 1, "autopay": 1, "baseAmount": 1,
-                                   "gst": 1, "gstin": 1, "platformFee": 1}).sort("createdAt", -1).to_list(50)
-    return {"payments": [{**r, "planName": limits.PLANS.get(r.get("plan"), {}).get("name", r.get("plan")),
+                                   "gst": 1, "gstin": 1, "platformFee": 1, "invoice.number": 1}).sort("createdAt", -1).to_list(50)
+    return {"payments": [{**{k: v for k, v in r.items() if k != "invoice"},
+                          "invoiceNo": (r.get("invoice") or {}).get("number"),
+                          "planName": limits.PLANS.get(r.get("plan"), {}).get("name", r.get("plan")),
                           "amount": (r.get("amount") or 0) / 100,
                           **({"baseAmount": r["baseAmount"] / 100} if r.get("baseAmount") else {}),
                           **({"gst": r["gst"] / 100} if r.get("gst") else {}),
                           **({"platformFee": r["platformFee"] / 100} if r.get("platformFee") else {})}
                          for r in rows]}
+
+
+@api.get("/billing/invoices/{order_id}.pdf")
+async def billing_invoice_pdf(order_id: str, download: bool = False, user_id: str = Depends(current_user_id)):
+    """Settings > Billing: the invoice of one of the user's payments, as a PDF."""
+    pay = await db.payments.find_one({"orderId": order_id, "userId": user_id, "status": {"$in": ["paid", "captured"]}})
+    if not pay:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    pay["invoice"] = await invoices.assign(db, pay)
+    return Response(content=invoices.pdf(pay), media_type="application/pdf", headers={
+        "Content-Disposition": f'{"attachment" if download else "inline"}; filename="{invoices.filename(pay)}"',
+        "Cache-Control": "private, no-store"})
 
 
 @api.get("/models")

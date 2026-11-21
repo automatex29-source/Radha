@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 import growth_mail
+import invoices
 import limits
 import promos
 
@@ -213,8 +214,18 @@ async def _activate(db, order_id: str, payment_id: str, amount=None) -> bool:
         await promos.count_use(db, pay["promoCode"])
     expires = await grant_days(db, pay["userId"], pay["plan"], DAYS)
     logger.info("User %s is on %s until %s (order %s)", pay["userId"], pay["plan"], expires, order_id)
+    await _invoice(db, order_id)
     await _thank_you(db, pay["userId"], expires)
     return True
+
+
+async def _invoice(db, order_id: str) -> None:
+    """Number the payment's invoice now, and email it (with the PDF) in the background."""
+    try:
+        await invoices.assign(db, await db.payments.find_one({"orderId": order_id}))
+    except Exception as exc:  # the Billing page numbers it later; a payment never fails over its invoice
+        logger.warning("Couldn't number the invoice for order %s: %s", order_id, exc)
+    invoices.issue_later(db, order_id)
 
 
 async def _thank_you(db, user_id: str, expires) -> None:
@@ -368,6 +379,7 @@ async def _charged(db, sub_id: str, payment_id: str, amount=None) -> bool:
     if first:
         await _stop_others(db, sub["userId"], sub_id)
     expires = await grant_days(db, sub["userId"], sub["plan"], DAYS)
+    await _invoice(db, f"sub_{payment_id}")
     logger.info("Autopay: user %s is on %s until %s (subscription %s)", sub["userId"], sub["plan"], expires, sub_id)
     if first:
         await _thank_you(db, sub["userId"], expires)

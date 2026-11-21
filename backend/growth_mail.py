@@ -119,7 +119,7 @@ def plan_started(app_url: str, name: str, plan: str, until: str) -> tuple:
              "Here's what's new for you:")
     tries = TRY_PAID.get(plan, TRY_PAID["pro"])
     body = _layout(picture, heading, intro, tries, f"Start using {plan_name}", app_url,
-                   "Need help or a receipt? Write to us from the Help Center inside the app.")
+                   "Your invoice is on its way in a separate email, and always in Settings &gt; Billing.")
     return subject, body, _text(heading, intro, tries, app_url)
 
 

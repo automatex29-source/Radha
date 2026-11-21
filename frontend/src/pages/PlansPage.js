@@ -275,6 +275,7 @@ export default function PlansPage() {
           key: order.keyId, ...(oneTime ? { order_id: order.orderId, amount: order.amount, currency: order.currency }
             : { subscription_id: order.subscriptionId }),
           name: "Krish AI",
+          image: `${window.location.origin}/icon-512.png`, // the Krish AI logo at the top of the checkout
           description: (oneTime ? `${order.planName} plan · 1 month` : `${order.planName} plan · renews monthly`)
             + (order.platformFee ? ` · ₹${order.baseAmount / 100} + ₹${order.platformFee / 100} platform fee` : ""),
           prefill: { name: order.name, email: order.email },
@@ -299,7 +300,14 @@ export default function PlansPage() {
           },
           modal: { ondismiss: resolve },
         });
-        rzp.on("payment.failed", (r) => toast.error(r?.error?.description || "The payment didn't go through. No money was taken."));
+        rzp.on("payment.failed", (r) => {
+          const why = r?.error?.description || "";
+          // Razorpay blocks payments from a website that isn't approved on the account (Account & Settings >
+          // Website and app details): it's on our side, so say so instead of Razorpay's wording.
+          toast.error(/website does not match|registered website/i.test(why)
+            ? "Payments are being switched on for krishai.net. Please try again in a little while. No money was taken."
+            : why || "The payment didn't go through. No money was taken.");
+        });
         rzp.open();
       });
     } catch (e) {

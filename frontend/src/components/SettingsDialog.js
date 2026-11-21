@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import MemoryDialog from "@/components/MemoryDialog";
 import { toast } from "sonner";
 import {
-  Bell, Blocks, Brain, Check, ChevronLeft, ChevronRight, CreditCard, Crown, Download, Gauge, Languages,
+  Bell, Blocks, Brain, Check, ChevronLeft, ChevronRight, CreditCard, Crown, Download, FileText, Gauge, Languages,
   Loader2, LogOut, Monitor, Moon, Pencil, Plug, Settings, Shield, Smartphone, Sun, Trash2, User,
 } from "lucide-react";
 import { canInstall, install, isIos, isStandalone, onInstallChange, pushSupported, turnVerseOff, turnVerseOn, verseOn } from "@/lib/pwa";
@@ -411,6 +411,26 @@ function Billing({ onClose }) {
       toast.success("Autopay is off. You won't be charged again.");
     } catch (e) { toast.error(formatApiError(e)); } finally { setStopping(false); }
   };
+  const [opening, setOpening] = useState(null); // the invoice being fetched
+  // The invoice PDF: View opens it in a new tab (the tab is opened first, so phones don't block it),
+  // Download saves it.
+  const invoice = async (p, save) => {
+    setOpening(p.orderId + (save ? ":d" : ""));
+    const tab = save ? null : window.open("", "_blank");
+    try {
+      const { data } = await api.get(`/billing/invoices/${encodeURIComponent(p.orderId)}.pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+      if (tab) tab.location.href = url;
+      else {
+        const a = document.createElement("a");
+        a.href = url; a.download = `Krish-AI-Invoice-${(p.invoiceNo || p.orderId).replace(/\//g, "-")}.pdf`; a.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      if (tab) tab.close();
+      toast.error(formatApiError(e));
+    } finally { setOpening(null); }
+  };
   const plan = user?.plan || "basic";
   const plans = () => { onClose(); navigate("/plans"); };
 
@@ -446,7 +466,8 @@ function Billing({ onClose }) {
           </Button>
         )}
       </Block>
-      <Block title="Payment history" testid="billing-history">
+      <Block title="Payments and invoices" testid="billing-history"
+        hint="Every payment has an invoice. We email it to you too.">
         {payments === null ? <Loader2 className="h-4 w-4 animate-spin text-primary" />
           : payments.length === 0 ? <p className="text-[13px] text-muted-foreground">No payments yet.</p>
             : (
@@ -455,7 +476,7 @@ function Billing({ onClose }) {
                   <div key={p.orderId} className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 text-sm last:border-0">
                     <div className="min-w-0">
                       <p className="font-medium">Krish {p.planName}, {p.autopay ? "monthly autopay" : "30 days"}</p>
-                      <p className="text-xs text-muted-foreground">{fmtDate(p.paidAt || p.createdAt)}{p.promoCode ? ` · ${p.promoCode}` : ""}</p>
+                      <p className="text-xs text-muted-foreground">{fmtDate(p.paidAt || p.createdAt)}{p.promoCode ? ` · ${p.promoCode}` : ""}{p.invoiceNo ? ` · ${p.invoiceNo}` : ""}</p>
                       {(p.gst > 0 || p.platformFee > 0) && (
                         <p className="text-xs text-muted-foreground" data-testid="billing-gst">
                           ₹{p.baseAmount.toFixed(2)}
@@ -465,7 +486,19 @@ function Billing({ onClose }) {
                         </p>
                       )}
                     </div>
-                    <span className="shrink-0 tabular-nums">₹{p.amount}</span>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <span className="tabular-nums font-medium">₹{p.amount}</span>
+                      <div className="flex gap-1.5">
+                        <Button variant="outline" size="sm" className="h-7 rounded-lg px-2.5 text-xs" disabled={!!opening}
+                          onClick={() => invoice(p, false)} data-testid="billing-invoice-view">
+                          {opening === p.orderId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><FileText className="mr-1 h-3.5 w-3.5" />Invoice</>}
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-7 w-7 rounded-lg p-0" disabled={!!opening} aria-label="Download invoice"
+                          onClick={() => invoice(p, true)} data-testid="billing-invoice-download">
+                          {opening === p.orderId + ":d" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
