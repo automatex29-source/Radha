@@ -54,11 +54,11 @@ export default function DiscoverPage() {
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
-      <div className="radha-scroll flex-1 overflow-y-auto">
+      <div className="kai-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10" data-testid="discover-page" style={accentStyle("discover")}>
           <PageHero scene="discover" icon={Compass} title={t("discover")} subtitle="Today's top stories. Tap one to read it, or ask Krish to explain." />
 
-          <div className="radha-scroll -mx-4 mt-6 flex gap-2 overflow-x-auto px-4 pb-1" data-testid="discover-topics">
+          <div className="kai-scroll -mx-4 mt-6 flex gap-2 overflow-x-auto px-4 pb-1" data-testid="discover-topics">
             {TOPICS.map((x) => (
               <button key={x.id} onClick={() => setParams(x.id === "top" ? {} : { topic: x.id }, { replace: true })}
                 data-testid={`discover-topic-${x.id}`} aria-pressed={topic === x.id}

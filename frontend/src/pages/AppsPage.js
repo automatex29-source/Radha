@@ -67,7 +67,7 @@ function NewAppBox({ busy, onCreate }) {
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} data-testid="new-app-input" autoFocus
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); if (ready) build(); } }}
           placeholder="Describe the app you want to build…"
-          className="radha-scroll block min-h-[96px] w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-relaxed placeholder:text-muted-foreground/70 focus:outline-none" />
+          className="kai-scroll block min-h-[96px] w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-relaxed placeholder:text-muted-foreground/70 focus:outline-none" />
         <div className="flex items-center gap-1 px-2.5 pb-2.5">
           <button type="button" onClick={boost} disabled={!text.trim() || boosting} data-testid="new-app-boost"
             title="Turn a short idea into a detailed brief"
@@ -162,7 +162,7 @@ export default function AppsPage() {
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background max-md:flex-col">
       <IconRail />
-      <div className="radha-scroll flex-1 overflow-y-auto">
+      <div className="kai-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-4 pb-16 pt-12 sm:px-6 sm:pt-[12vh]">
           <header className="mb-6 text-center">
             <h1 className="text-[28px] font-semibold tracking-tight sm:text-[32px]" data-testid="apps-title">What do you want to build?</h1>

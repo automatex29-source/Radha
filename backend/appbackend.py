@@ -4,7 +4,7 @@ appdata.py gives every app a database and accounts that the page uses straight f
 enough for a to-do list, but not for a shop or a booking app: any visitor could change a price, a form
 could save half an order, and nothing on the server could check stock or a time slot. So an app can add:
 
-backend.json   the data model and its rules, enforced by the server on every RADHA.db call:
+backend.json   the data model and its rules, enforced by the server on every KRISH.db call:
     {
       "collections": {
         "products": {"read": "anyone", "create": "admin", "update": "admin", "delete": "admin",
@@ -21,7 +21,7 @@ backend.json   the data model and its rules, enforced by the server on every RAD
     with required, default, min, max, options, unique and hidden (only its owner and admins see it).
     "extra": false on a collection refuses fields that aren't listed.
 
-api/<name>.js  server code the page calls with `await RADHA.api("name", input)`:
+api/<name>.js  server code the page calls with `await KRISH.api("name", input)`:
     export default async function (input, ctx) {
       const product = await ctx.db.get("products", input.productId);
       if (!product) ctx.fail("That cake is sold out", 404);
@@ -75,8 +75,8 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 _FN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,59}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _URL_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
-_API_CALL_RE = re.compile(r"RADHA\.api\(\s*[\"'`]([^\"'`]+)[\"'`]")
-_DB_CALL_RE = re.compile(r"RADHA\.db\.(?:list|get|add|update|remove|watch)\(\s*[\"'`]([A-Za-z0-9_-]+)[\"'`]")
+_API_CALL_RE = re.compile(r"(?:KRISH|RADHA)\.api\(\s*[\"'`]([^\"'`]+)[\"'`]")
+_DB_CALL_RE = re.compile(r"(?:KRISH|RADHA)\.db\.(?:list|get|add|update|remove|watch)\(\s*[\"'`]([A-Za-z0-9_-]+)[\"'`]")
 _parsed: Dict[str, Tuple[Optional[dict], List[str]]] = {}
 
 
@@ -167,14 +167,14 @@ DRAFT_HOURS = 12
 
 
 def draft_key(app_id: str) -> str:
-    """A signed key, put only into the owner's preview pages, that makes RADHA calls use the working copy."""
+    """A signed key, put only into the owner's preview pages, that makes KRISH calls use the working copy."""
     payload = {"type": "appdraft", "app": app_id, "exp": datetime.now(timezone.utc) + timedelta(hours=DRAFT_HOURS)}
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
 
 
 def is_draft(request: Optional[Request], app_id: str) -> bool:
     """True only for a request from the owner's preview of this app (a valid draft key for this app)."""
-    key = request.headers.get("X-Radha-Draft", "") if request else ""
+    key = (request.headers.get("X-Krish-Draft") or request.headers.get("X-Radha-Draft") or "") if request else ""
     if not key or key == "1":
         return False
     try:
@@ -509,10 +509,10 @@ async def run_function(app_id: str, files: Dict[str, str], name: str, input_valu
     for pkg in ("package.json", API_DIR + "package.json"):
         if pkg not in code:
             code[pkg] = '{"type": "module"}'
-    code[".radha/runner.mjs"] = _RUNNER
+    code[".krish/runner.mjs"] = _RUNNER
     services = _Services(app_id, app_id + TEST_SUFFIX if test else app_id, rules, who, request, test)
     start = {"t": "start", "file": path, "input": input_value, "user": who}
-    res = await sandbox.run_rpc(["node", ".radha/runner.mjs"], code, start, services.handle,
+    res = await sandbox.run_rpc(["node", ".krish/runner.mjs"], code, start, services.handle,
                                 timeout=FUNCTION_SECONDS, max_calls=MAX_CALLS)
     if res.timed_out:
         return {"ok": False, "status": 504, "error": f"{path} took longer than {FUNCTION_SECONDS} seconds", "logs": res.logs}
@@ -524,7 +524,7 @@ async def run_function(app_id: str, files: Dict[str, str], name: str, input_valu
     if out["ok"]:
         out["result"] = res.done.get("result")
     else:
-        stack = re.sub(r"file://\S*?/radha-rpc-[^/]+/", "", str(res.done.get("stack") or ""))
+        stack = re.sub(r"file://\S*?/krish-rpc-[^/]+/", "", str(res.done.get("stack") or ""))
         out.update(status=int(res.done.get("status") or 500), error=str(res.done.get("error") or "Failed")[:500],
                    stack=stack)
     return out
@@ -572,11 +572,11 @@ async def _examples(app_id: str, files: Dict[str, str], name: str) -> List[Any]:
     code = {p: c for p, c in files.items() if p.endswith((".js", ".mjs", ".json"))}
     for pkg in ("package.json", API_DIR + "package.json"):
         code.setdefault(pkg, '{"type": "module"}')
-    code[".radha/examples.mjs"] = (
+    code[".krish/examples.mjs"] = (
         "import { pathToFileURL } from 'node:url'; import path from 'node:path';"
         f"const m = await import(pathToFileURL(path.resolve({json.dumps(path)})).href);"
         "process.stdout.write(JSON.stringify(Array.isArray(m.examples) ? m.examples.slice(0, 5) : []));")
-    res = await sandbox.run_shell("node .radha/examples.mjs", code)
+    res = await sandbox.run_shell("node .krish/examples.mjs", code)
     try:
         out = json.loads(res.stdout.strip() or "[]")
         return out if isinstance(out, list) else []
@@ -585,12 +585,12 @@ async def _examples(app_id: str, files: Dict[str, str], name: str) -> List[Any]:
 
 
 def uses_backend(files: Dict[str, str]) -> bool:
-    return RULES_FILE in files or bool(function_names(files)) or any("RADHA.api(" in c for c in files.values())
+    return RULES_FILE in files or bool(function_names(files)) or any("KRISH.api(" in c or "RADHA.api(" in c for c in files.values())
 
 
 async def backend_problems(app_id: str, files: Dict[str, str]) -> Tuple[List[str], List[str]]:
     """Test the app's backend the way an engineer would before shipping: backend.json is valid, every
-    RADHA.api call has its function, every function runs its examples (and an empty request) without
+    KRISH.api call has its function, every function runs its examples (and an empty request) without
     crashing, on a throwaway copy of the data. Returns (problems, a line per check that passed)."""
     problems, passed = [], []
     rules = None
@@ -607,7 +607,7 @@ async def backend_problems(app_id: str, files: Dict[str, str]) -> Tuple[List[str
             called.setdefault(n, path)
     for n, path in sorted(called.items()):
         if n not in names:
-            problems.append(f"{path} calls RADHA.api(\"{n}\") but there is no {API_DIR}{n}.js: write it, "
+            problems.append(f"{path} calls KRISH.api(\"{n}\") but there is no {API_DIR}{n}.js: write it, "
                             "with export default async function (input, ctx)")
     if rules:
         for path, content in pages.items():

@@ -157,7 +157,7 @@ export default function AutomationsPage() {
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
       <div className="flex min-h-0 min-w-0 flex-1">
-        <div className={`radha-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5 max-md:max-w-none max-md:border-r-0 max-md:p-4 ${phoneDetail ? "max-md:hidden" : ""}`}>
+        <div className={`kai-scroll w-full max-w-md shrink-0 overflow-y-auto border-r border-border p-5 max-md:max-w-none max-md:border-r-0 max-md:p-4 ${phoneDetail ? "max-md:hidden" : ""}`}>
           <PageHero compact scene="automations" icon={Workflow} title="Automations"
             subtitle="Jobs Krish does for you on time, or when an email comes in.">
             <Button size="sm" onClick={() => setEditing(fresh())} data-testid="new-automation" className="gap-1.5 bg-white font-semibold text-slate-900 shadow-lg hover:bg-white/90"><Plus className="h-4 w-4" /> New</Button>
@@ -326,7 +326,7 @@ function IdeasRow({ rules, onPick }) {
   return (
     <div className="-mx-1 mb-2" data-testid="ideas-row">
       <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Ready-made jobs</p>
-      <div className="radha-scroll flex gap-2 overflow-x-auto px-1 pb-1">
+      <div className="kai-scroll flex gap-2 overflow-x-auto px-1 pb-1">
         {EXAMPLES.map((ex) => (
           <button key={ex.name} onClick={() => onPick(ex)} title={ex.prompt}
             className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card py-1.5 pl-2 pr-3 text-xs hover:border-primary/50">
@@ -469,7 +469,7 @@ function AutomationDialog({ form: initial, models, options, onClose, onSaved }) 
   const field = "h-9 w-full rounded-md border border-border bg-card px-2 text-sm";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="radha-scroll max-h-[92dvh] max-w-lg overflow-y-auto">
+      <DialogContent className="kai-scroll max-h-[92dvh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{form.id ? "Edit automation" : "New automation"}</DialogTitle>
           <DialogDescription>An agent that plans its own steps and uses every tool. Describe the goal, or write the steps yourself.</DialogDescription>
@@ -691,7 +691,7 @@ function RunCard({ run: r, onOpen, onPreview, onStop }) {
       )}
       {r.error && r.status !== "stopped" && <p className={`mt-2 text-xs ${r.status === "skipped" ? "text-amber-700 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"}`}>{r.error}</p>}
       {r.output && (
-        <div className={`radha-prose mt-3 min-w-0 text-sm ${open || !long ? "" : "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"}`}>
+        <div className={`kai-prose mt-3 min-w-0 text-sm ${open || !long ? "" : "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"}`}>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{r.output}</ReactMarkdown>
         </div>
       )}
@@ -783,7 +783,7 @@ function AutomationDetail({ automation: a, onChanged, onEdit, onBack, approvals 
   const hookUrl = a.webhookUrl ? absoluteUrl(a.webhookUrl) : null;
   return (
     <div className="flex h-full">
-      <div className="radha-scroll min-w-0 flex-1 overflow-y-auto p-4 sm:p-6" data-testid="automation-detail">
+      <div className="kai-scroll min-w-0 flex-1 overflow-y-auto p-4 sm:p-6" data-testid="automation-detail">
         <button onClick={onBack} className="mb-3 flex items-center gap-1.5 py-1 text-sm text-muted-foreground hover:text-foreground md:hidden" data-testid="automation-back">
           <ArrowLeft className="h-4 w-4" /> All automations
         </button>

@@ -1,6 +1,6 @@
 """Model router.
 
-RADHA -> AI Runtime -> ModelRouter -> ModelProvider -> LLM
+KRISH -> AI Runtime -> ModelRouter -> ModelProvider -> LLM
 
 The router owns the registry of providers and resolves an incoming model id
 to the provider that serves it. New providers are added by registering them

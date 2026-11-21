@@ -108,14 +108,14 @@ export function SearchTabs({ sources, images = [], videos = [], searched, id, re
         ))}
       </div>
       {tab === "answer" && (
-        <div className="radha-fade-up">
+        <div className="kai-fade-up">
           {sources.length > 0 && <ReadLine items={sources} onOpen={() => setTab("sources")} />}
           {children}
         </div>
       )}
-      {tab === "sources" && <div className="radha-fade-up"><SourceList items={sources} queries={searched?.queries || []} id={id} /></div>}
-      {tab === "images" && <div className="radha-fade-up">{renderImages?.()}</div>}
-      {tab === "videos" && <div className="radha-fade-up">{renderVideos?.()}</div>}
+      {tab === "sources" && <div className="kai-fade-up"><SourceList items={sources} queries={searched?.queries || []} id={id} /></div>}
+      {tab === "images" && <div className="kai-fade-up">{renderImages?.()}</div>}
+      {tab === "videos" && <div className="kai-fade-up">{renderVideos?.()}</div>}
     </div>
   );
 }

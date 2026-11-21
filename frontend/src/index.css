@@ -157,17 +157,17 @@
   ::selection { background: hsl(var(--primary) / 0.25); }
 }
 
-/* --- RADHA custom utilities --- */
-.radha-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-.radha-scroll::-webkit-scrollbar-track { background: transparent; }
-.radha-scroll::-webkit-scrollbar-thumb { background: hsl(var(--scrollbar)); border-radius: 9999px; }
-.radha-scroll::-webkit-scrollbar-thumb:hover { background: hsl(var(--scrollbar-hover)); }
-.radha-scroll { scrollbar-width: thin; scrollbar-color: hsl(var(--scrollbar)) transparent; }
+/* --- Krish custom utilities --- */
+.kai-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.kai-scroll::-webkit-scrollbar-track { background: transparent; }
+.kai-scroll::-webkit-scrollbar-thumb { background: hsl(var(--scrollbar)); border-radius: 9999px; }
+.kai-scroll::-webkit-scrollbar-thumb:hover { background: hsl(var(--scrollbar-hover)); }
+.kai-scroll { scrollbar-width: thin; scrollbar-color: hsl(var(--scrollbar)) transparent; }
 /* Home view: fits the screen, so no scrollbar shows (it can still scroll on very short screens). */
 .krish-no-scrollbar { scrollbar-width: none; }
 .krish-no-scrollbar::-webkit-scrollbar { display: none; }
 
-.radha-grid {
+.kai-grid {
   background-image:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
@@ -235,7 +235,7 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
 /* Step rail: steps on a soft saffron-to-green line. The running step pulses saffron and shows its live detail
    (search words, page, code); finished steps get a green tick, failed ones a red cross. */
 .krish-rail { display: flex; flex-direction: column; }
-.krish-rail-row { position: relative; display: flex; gap: 0.6rem; padding-bottom: 0.35rem; animation: radha-fade-up .3s ease both; }
+.krish-rail-row { position: relative; display: flex; gap: 0.6rem; padding-bottom: 0.35rem; animation: kai-fade-up .3s ease both; }
 .krish-rail-row:not(:last-child)::before { content: ""; position: absolute; left: 6px; top: 1.45rem; bottom: 0.05rem; width: 2px; border-radius: 2px;
   background: linear-gradient(#FF8A1E, var(--thinking-green)); opacity: 0.35; }
 .krish-rail-dot { position: relative; z-index: 1; margin-top: 0.42rem; display: flex; height: 14px; width: 14px; flex-shrink: 0; align-items: center;
@@ -246,7 +246,7 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
 .krish-rail-dot.is-wait { background: rgb(217 119 6 / 0.16); color: rgb(217 119 6); }
 .krish-rail-dot.is-stop { background: hsl(var(--surface)); box-shadow: inset 0 0 0 2px hsl(var(--border-strong)); }
 @keyframes krish-rail-pulse { 0% { box-shadow: 0 0 0 0 rgb(255 138 30 / 0.5); } 100% { box-shadow: 0 0 0 7px rgb(255 138 30 / 0); } }
-.krish-rail-live { margin: -0.1rem 0 0.2rem; font-size: 0.75rem; color: hsl(var(--muted-foreground) / 0.8); animation: radha-fade-up .25s ease both; }
+.krish-rail-live { margin: -0.1rem 0 0.2rem; font-size: 0.75rem; color: hsl(var(--muted-foreground) / 0.8); animation: kai-fade-up .25s ease both; }
 .krish-rail .krish-step { margin-left: -0.375rem; }
 /* "Krish is thinking…" leads with a shape shift: a square outline turns and softens into a circle and back,
    with a saffron centre. */
@@ -266,9 +266,9 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
   background: hsl(var(--card)); padding: 0.65rem 0.75rem 0.7rem; text-align: left; white-space: normal;
   box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.28); font-family: var(--font-sans); pointer-events: none;
 }
-@media (hover: hover) { .krish-cite:hover .krish-cite-card { display: flex; animation: radha-fade-up .18s ease both; } }
+@media (hover: hover) { .krish-cite:hover .krish-cite-card { display: flex; animation: kai-fade-up .18s ease both; } }
 /* Source cards ease in one after another when the search finishes. */
-.krish-source-row > .krish-source-card:not(.krish-source-skeleton) { animation: radha-fade-up .35s ease both; }
+.krish-source-row > .krish-source-card:not(.krish-source-skeleton) { animation: kai-fade-up .35s ease both; }
 .krish-source-row > .krish-source-card:nth-child(2) { animation-delay: 60ms; }
 .krish-source-row > .krish-source-card:nth-child(3) { animation-delay: 120ms; }
 .krish-source-row > .krish-source-card:nth-child(4) { animation-delay: 180ms; }
@@ -322,11 +322,11 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
   .krish-thinking-words, .krish-answer.is-streaming > *::after, .krish-answer.is-streaming li::after { animation: none; }
 }
 
-@keyframes radha-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.radha-fade-up { animation: radha-fade-up 0.4s ease both; }
+@keyframes kai-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.kai-fade-up { animation: kai-fade-up 0.4s ease both; }
 
 /* Gradient headline treatment */
-.radha-heading-gradient {
+.kai-heading-gradient {
   background: var(--heading-gradient);
   -webkit-background-clip: text;
   background-clip: text;
@@ -334,11 +334,11 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
 }
 
 /* Soft elevated glow used on primary CTAs / cards on hover */
-.radha-lift { transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease; }
-.radha-lift:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(99, 102, 241, 0.16); }
+.kai-lift { transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease; }
+.kai-lift:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(99, 102, 241, 0.16); }
 
 /* Ambient orbs for empty / hero states */
-.radha-orb {
+.kai-orb {
   position: absolute;
   border-radius: 9999px;
   filter: blur(90px);
@@ -347,41 +347,41 @@ a.krish-source-card:hover, button.krish-source-card:hover { border-color: hsl(va
 }
 
 /* markdown prose: replies use the reading font (--font-reading) */
-.radha-prose { font-family: var(--font-reading); font-optical-sizing: auto; font-size: 1rem; line-height: 1.7; letter-spacing: -0.003em; color: hsl(var(--foreground) / 0.9); overflow-wrap: break-word; text-wrap: pretty; font-kerning: normal; }
-.radha-prose > :first-child { margin-top: 0; }
-.radha-prose > :last-child { margin-bottom: 0; }
-.radha-prose p { margin: 0.85em 0; }
-.radha-prose strong { font-weight: 650; color: hsl(var(--foreground)); }
-.radha-prose em { font-style: italic; }
-.radha-prose h1, .radha-prose h2, .radha-prose h3, .radha-prose h4 { font-family: var(--font-heading); font-weight: 600; line-height: 1.3; margin: 1.5em 0 0.5em; letter-spacing: -0.018em; color: hsl(var(--foreground)); text-wrap: balance; }
-.radha-prose h1 { font-size: 1.4em; }
-.radha-prose h2 { font-size: 1.18em; }
-.radha-prose h3 { font-size: 1.06em; }
-.radha-prose h4 { font-size: 1em; }
-.radha-prose ul, .radha-prose ol { margin: 0.7em 0; padding-left: 1.5em; }
-.radha-prose li { margin: 0.35em 0; padding-left: 0.25em; }
-.radha-prose li > p { margin: 0.3em 0; }
-.radha-prose li::marker { color: hsl(var(--primary) / 0.7); }
-.radha-prose ol > li::marker { font-weight: 600; }
-.radha-prose ul { list-style: disc; }
-.radha-prose ol { list-style: decimal; }
-.radha-prose a { color: hsl(var(--brand)); text-decoration: underline; text-underline-offset: 2px; }
-.radha-prose a.krish-cite { color: hsl(var(--muted-foreground)); text-decoration: none; font-family: var(--font-sans); }
-.radha-prose a.krish-cite:hover { color: hsl(var(--primary-foreground)); }
-.radha-prose hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.4em 0; }
-.radha-prose blockquote { border-left: 3px solid hsl(var(--primary) / 0.6); background: hsl(var(--primary) / 0.05); border-radius: 0 10px 10px 0; padding: 0.6em 1em; color: hsl(var(--foreground) / 0.82); margin: 1em 0; }
-.radha-prose blockquote > p { margin: 0.3em 0; }
-.radha-prose code { font-family: var(--font-mono); font-size: 0.86em; background: hsl(var(--sunken)); border: 1px solid hsl(var(--border)); border-radius: 5px; padding: 0.1em 0.35em; color: hsl(var(--brand-soft)); }
-.radha-prose pre { font-size: 0.92em; line-height: 1.6; background: hsl(var(--sunken)) !important; border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 0.9rem 1rem; overflow-x: auto; margin: 0.9em 0; }
-.radha-prose pre code { font-size: inherit; background: transparent; border: none; padding: 0; color: hsl(var(--foreground) / 0.9); }
-.radha-prose table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0.9em 0; font-size: 0.9em; line-height: 1.5; border: 1px solid hsl(var(--border)); border-radius: 12px; overflow: hidden; background: hsl(var(--card)); }
-.radha-prose .radha-table-wrap { margin: 0.9em 0; max-width: 100%; overflow-x: auto; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); }
-.radha-prose .radha-table-wrap table { margin: 0; border: 0; border-radius: 0; }
-.radha-prose th, .radha-prose td { border-bottom: 1px solid hsl(var(--border)); padding: 0.55em 0.85em; text-align: left; vertical-align: top; }
-.radha-prose th + th, .radha-prose td + td { border-left: 1px solid hsl(var(--border)); }
-.radha-prose tbody tr:last-child td { border-bottom: 0; }
-.radha-prose tbody tr:nth-child(even) td { background: hsl(var(--primary) / 0.035); }
-.radha-prose th { background: hsl(var(--primary) / 0.08); font-weight: 600; color: hsl(var(--foreground)); }
+.kai-prose { font-family: var(--font-reading); font-optical-sizing: auto; font-size: 1rem; line-height: 1.7; letter-spacing: -0.003em; color: hsl(var(--foreground) / 0.9); overflow-wrap: break-word; text-wrap: pretty; font-kerning: normal; }
+.kai-prose > :first-child { margin-top: 0; }
+.kai-prose > :last-child { margin-bottom: 0; }
+.kai-prose p { margin: 0.85em 0; }
+.kai-prose strong { font-weight: 650; color: hsl(var(--foreground)); }
+.kai-prose em { font-style: italic; }
+.kai-prose h1, .kai-prose h2, .kai-prose h3, .kai-prose h4 { font-family: var(--font-heading); font-weight: 600; line-height: 1.3; margin: 1.5em 0 0.5em; letter-spacing: -0.018em; color: hsl(var(--foreground)); text-wrap: balance; }
+.kai-prose h1 { font-size: 1.4em; }
+.kai-prose h2 { font-size: 1.18em; }
+.kai-prose h3 { font-size: 1.06em; }
+.kai-prose h4 { font-size: 1em; }
+.kai-prose ul, .kai-prose ol { margin: 0.7em 0; padding-left: 1.5em; }
+.kai-prose li { margin: 0.35em 0; padding-left: 0.25em; }
+.kai-prose li > p { margin: 0.3em 0; }
+.kai-prose li::marker { color: hsl(var(--primary) / 0.7); }
+.kai-prose ol > li::marker { font-weight: 600; }
+.kai-prose ul { list-style: disc; }
+.kai-prose ol { list-style: decimal; }
+.kai-prose a { color: hsl(var(--brand)); text-decoration: underline; text-underline-offset: 2px; }
+.kai-prose a.krish-cite { color: hsl(var(--muted-foreground)); text-decoration: none; font-family: var(--font-sans); }
+.kai-prose a.krish-cite:hover { color: hsl(var(--primary-foreground)); }
+.kai-prose hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.4em 0; }
+.kai-prose blockquote { border-left: 3px solid hsl(var(--primary) / 0.6); background: hsl(var(--primary) / 0.05); border-radius: 0 10px 10px 0; padding: 0.6em 1em; color: hsl(var(--foreground) / 0.82); margin: 1em 0; }
+.kai-prose blockquote > p { margin: 0.3em 0; }
+.kai-prose code { font-family: var(--font-mono); font-size: 0.86em; background: hsl(var(--sunken)); border: 1px solid hsl(var(--border)); border-radius: 5px; padding: 0.1em 0.35em; color: hsl(var(--brand-soft)); }
+.kai-prose pre { font-size: 0.92em; line-height: 1.6; background: hsl(var(--sunken)) !important; border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 0.9rem 1rem; overflow-x: auto; margin: 0.9em 0; }
+.kai-prose pre code { font-size: inherit; background: transparent; border: none; padding: 0; color: hsl(var(--foreground) / 0.9); }
+.kai-prose table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0.9em 0; font-size: 0.9em; line-height: 1.5; border: 1px solid hsl(var(--border)); border-radius: 12px; overflow: hidden; background: hsl(var(--card)); }
+.kai-prose .kai-table-wrap { margin: 0.9em 0; max-width: 100%; overflow-x: auto; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); }
+.kai-prose .kai-table-wrap table { margin: 0; border: 0; border-radius: 0; }
+.kai-prose th, .kai-prose td { border-bottom: 1px solid hsl(var(--border)); padding: 0.55em 0.85em; text-align: left; vertical-align: top; }
+.kai-prose th + th, .kai-prose td + td { border-left: 1px solid hsl(var(--border)); }
+.kai-prose tbody tr:last-child td { border-bottom: 0; }
+.kai-prose tbody tr:nth-child(even) td { background: hsl(var(--primary) / 0.035); }
+.kai-prose th { background: hsl(var(--primary) / 0.08); font-weight: 600; color: hsl(var(--foreground)); }
 
 /* Chat answers: a little larger than the UI (which shrinks to 15px on computers), with roomier lines. */
 .krish-answer { font-size: 16.5px; line-height: 1.72; }
@@ -410,7 +410,7 @@ body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 @media (hover: none) {
   .group-hover\:opacity-100, .group-hover\/code\:opacity-100 { opacity: 1; }
   /* The code Copy button is always shown here, so it gets its own strip above the code. */
-  .radha-prose .group\/code > pre { padding-top: 2.75rem; }
+  .kai-prose .group\/code > pre { padding-top: 2.75rem; }
 }
 
 @keyframes krish-drawer-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
@@ -683,8 +683,8 @@ html:not(.dark) .krish-aurora, html:not(.dark) .krish-hero-grid { display: none;
 .krish-pic-chip:first-child { border-color: rgb(255 138 30 / 0.4); color: #B85A06; background: rgb(255 138 30 / 0.06); }
 .dark .krish-pic-chip:first-child { color: #FFB46B; }
 .krish-viewer { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; background: #050608;
-  padding-bottom: env(safe-area-inset-bottom); animation: radha-fade-up .2s ease both; font-family: var(--font-sans); }
-.krish-viewer-img { max-height: 100%; max-width: 100%; border-radius: 0.9rem; object-fit: contain; animation: radha-fade-up .25s ease both; }
+  padding-bottom: env(safe-area-inset-bottom); animation: kai-fade-up .2s ease both; font-family: var(--font-sans); }
+.krish-viewer-img { max-height: 100%; max-width: 100%; border-radius: 0.9rem; object-fit: contain; animation: kai-fade-up .25s ease both; }
 .krish-viewer-nav { position: absolute; top: 50%; z-index: 1; display: flex; height: 2.5rem; width: 2.5rem; transform: translateY(-50%);
   align-items: center; justify-content: center; border-radius: 9999px; background: rgb(255 255 255 / 0.08); color: #fff; }
 .krish-viewer-nav:hover { background: rgb(255 255 255 / 0.16); }

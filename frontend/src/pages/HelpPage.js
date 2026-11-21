@@ -155,13 +155,13 @@ export default function HelpPage() {
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
-      <div className="radha-scroll flex-1 overflow-y-auto">
+      <div className="kai-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10" data-testid="help-page">
           <div className="text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <LifeBuoy className="h-6 w-6" />
             </div>
-            <h1 className="radha-heading-gradient mt-4 text-3xl font-extrabold tracking-tighter sm:text-4xl">Help Center</h1>
+            <h1 className="kai-heading-gradient mt-4 text-3xl font-extrabold tracking-tighter sm:text-4xl">Help Center</h1>
             <p className="mt-2 text-sm text-muted-foreground">Find answers, report a problem, or tell us what you think.</p>
             <p className="mt-1 text-sm text-muted-foreground" data-testid="help-email">
               Or email us at <a href={`mailto:${HELP_EMAIL}`} className="font-medium text-primary underline-offset-2 hover:underline">{HELP_EMAIL}</a>

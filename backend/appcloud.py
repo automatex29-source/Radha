@@ -1,11 +1,11 @@
 """More backend for apps made in the App Builder, on top of appdata's database and accounts.
 
-The page gets these on the same global RADHA object (see appdata.SDK):
+The page gets these on the same global KRISH object (see appdata.SDK):
 
-  await RADHA.ai(prompt, {system, history, json})   an answer from the free AI model
-  await RADHA.notify({subject, message, replyTo})   emails the app's owner (contact forms, orders, bookings)
-  await RADHA.files.upload(file)                    stores a picture or document, returns {url, ...}
-  await RADHA.fetch(url, {method, headers, body})   calls an outside API from the server (no CORS problems)
+  await KRISH.ai(prompt, {system, history, json})   an answer from the free AI model
+  await KRISH.notify({subject, message, replyTo})   emails the app's owner (contact forms, orders, bookings)
+  await KRISH.files.upload(file)                    stores a picture or document, returns {url, ...}
+  await KRISH.fetch(url, {method, headers, body})   calls an outside API from the server (no CORS problems)
   POST /api/appdata/<app>/hook/<collection>?key=…   other tools (Zapier, Make, n8n, forms) push data in
 
 Like appdata, these endpoints are public (visitors of a published app have no Krish AI login), so each is
@@ -116,7 +116,7 @@ class AiIn(BaseModel):
     history: List[Turn] = Field(default_factory=list, max_length=20)
     json_mode: bool = Field(default=False, alias="json")
     # Pictures to look at: data: URLs (the SDK makes them from a File, <img> or canvas) or this app's own
-    # RADHA.files links. Other links are refused (the server never fetches a URL a visitor names).
+    # KRISH.files links. Other links are refused (the server never fetches a URL a visitor names).
     images: List[str] = Field(default_factory=list, max_length=3)
 
 
@@ -133,7 +133,7 @@ _FILE_LINK_RE = re.compile(r"/api/appdata/([^/]+)/files/([0-9a-f]{32})$")
 
 
 async def _image_bytes(app_id: str, ref: str) -> bytes:
-    """One picture for RADHA.ai: a data: URL, or a link to a file this app stored with RADHA.files."""
+    """One picture for KRISH.ai: a data: URL, or a link to a file this app stored with KRISH.files."""
     ref = (ref or "").strip()
     if ref.startswith("data:"):
         head, _, b64 = ref.partition(",")
@@ -147,7 +147,7 @@ async def _image_bytes(app_id: str, ref: str) -> bytes:
         m = _FILE_LINK_RE.search(urlparse(ref).path if "://" in ref else ref)
         doc = m and m.group(1) == app_id and await db.appdata_files.find_one({"appId": app_id, "id": m.group(2)})
         if not doc or not doc["type"].startswith("image/"):
-            raise HTTPException(status_code=400, detail="Send the picture itself (a File, <img> or canvas) or a RADHA.files link")
+            raise HTTPException(status_code=400, detail="Send the picture itself (a File, <img> or canvas) or a KRISH.files link")
         data = bytes(doc["data"])
     if len(data) > MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="That picture is too large (max 5 MB)")
@@ -155,7 +155,7 @@ async def _image_bytes(app_id: str, ref: str) -> bytes:
 
 
 async def _see(app_id: str, body: "AiIn") -> dict:
-    """RADHA.ai with pictures: a free vision model answers; without one, the text read from them goes to the
+    """KRISH.ai with pictures: a free vision model answers; without one, the text read from them goes to the
     text model."""
     pictures = [await _image_bytes(app_id, ref) for ref in body.images[:3]]
     system = body.system or "You look at pictures inside a web app and answer clearly and briefly."
@@ -231,7 +231,7 @@ class ImageIn(BaseModel):
 
 @router.post("/{app_id}/image")
 async def make_image(app_id: str, body: ImageIn, request: Request):
-    """RADHA.image(prompt): a link to a new AI picture. It's made (free providers) and kept the first time the
+    """KRISH.image(prompt): a link to a new AI picture. It's made (free providers) and kept the first time the
     link is opened (site_images.py), so the same prompt and variant always shows the same picture."""
     import site_images
     await _app(app_id)
@@ -459,7 +459,8 @@ async def data_overview(app_id: str, request: Request):
     groups = await db.appdata_docs.aggregate([
         {"$match": {"appId": app_id}}, {"$group": {"_id": "$collection", "count": {"$sum": 1}}}, {"$sort": {"_id": 1}},
     ]).to_list(200)
-    origin = (os.environ.get("PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL") or str(request.base_url)).rstrip("/")
+    import apps
+    origin = apps.public_origin() or str(request.base_url).rstrip("/")
     return {
         "collections": [{"name": g["_id"], "count": g["count"]} for g in groups],
         "users": await db.appdata_users.count_documents({"appId": app_id}),

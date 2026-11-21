@@ -66,7 +66,7 @@ async def _describe_with_groq(data: bytes) -> Optional[str]:
 
 
 async def ask(images: List[bytes], question: str, system: str = "", json_mode: bool = False) -> Optional[str]:
-    """A free vision model's answer to `question` about the pictures (an app's RADHA.ai with images).
+    """A free vision model's answer to `question` about the pictures (an app's KRISH.ai with images).
     None when no vision model is set up here."""
     if not os.environ.get("GROQ_API_KEY") or not VISION_MODEL or not images:
         return None

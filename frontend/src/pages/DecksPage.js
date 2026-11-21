@@ -168,7 +168,7 @@ export default function DecksPage() {
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
-      <div className="radha-scroll flex-1 overflow-y-auto">
+      <div className="kai-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
           {step === "prompt" ? (
             <section className="mx-auto max-w-4xl text-center" data-testid="deck-create" style={accentStyle("decks")}>
@@ -314,7 +314,7 @@ export default function DecksPage() {
             ) : (
               <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {decks.map((d) => (
-                  <div key={d.id} className="radha-lift group relative overflow-hidden rounded-xl border border-border bg-card hover:border-primary/50" data-testid={`deck-card-${d.id}`}>
+                  <div key={d.id} className="kai-lift group relative overflow-hidden rounded-xl border border-border bg-card hover:border-primary/50" data-testid={`deck-card-${d.id}`}>
                     <button onClick={() => navigate(`/decks/${d.id}`)} className="block w-full text-left">
                       <ScaledSlide slide={d.cover || PREVIEW_SLIDE(d.title)} theme={findTheme(themes, d.theme)} />
                       <div className="p-3">

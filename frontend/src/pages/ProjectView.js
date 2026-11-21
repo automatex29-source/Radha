@@ -134,7 +134,7 @@ export default function ProjectView() {
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
-      <div className="radha-scroll flex-1 overflow-y-auto">
+      <div className="kai-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
           <button onClick={() => navigate("/projects")} className="mb-5 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" data-testid="back-to-projects">
             <ArrowLeft className="h-4 w-4" /> All projects

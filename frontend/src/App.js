@@ -122,7 +122,7 @@ function Gate() {
 
 export default function App() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem storageKey="radha-theme" disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem storageKey="kai-theme" disableTransitionOnChange>
       <div className="App">
         <ErrorBoundary>
         <AuthProvider>

@@ -65,7 +65,7 @@ export default function AiLimitCard({ limit, id }) {
 
   return (
     <div data-testid={`ai-limit-card-${id}`}
-      className="krish-limit radha-fade-up mt-1 max-w-[30rem] overflow-hidden rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-20px_rgba(0,0,0,0.25)]">
+      className="krish-limit kai-fade-up mt-1 max-w-[30rem] overflow-hidden rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-20px_rgba(0,0,0,0.25)]">
       <div className="flex items-center gap-3.5 p-4 pb-3.5">
         <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface">
           <BrandMark className="h-8 w-8" thinking={!ready} />

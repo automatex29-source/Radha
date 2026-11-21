@@ -50,7 +50,7 @@ export default function DocsPage() {
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
-      <div className="radha-scroll flex-1 overflow-y-auto">
+      <div className="kai-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10" style={accentStyle("docs")}>
           <PageHero scene="docs" overlap icon={FileText} title="Docs" subtitle="Write with Krish side by side. Select any part and ask Krish to change it, then download as Word or PDF." />
 
@@ -81,7 +81,7 @@ export default function DocsPage() {
               {docs.map((d) => (
                 <div key={d.id} role="button" tabIndex={0} onClick={() => navigate(`/docs/${d.id}`)} data-testid={`doc-card-${d.id}`}
                   onKeyDown={(e) => { if (e.key === "Enter") navigate(`/docs/${d.id}`); }}
-                  className="radha-lift group flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50">
+                  className="kai-lift group flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50">
                   <FileText className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{d.title}</p>

@@ -51,7 +51,7 @@ export default function InvitePage() {
         {invite === null ? (
           <div className="flex flex-1 justify-center py-32"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : (
-          <main className="radha-fade-up">
+          <main className="kai-fade-up">
             <section className="mt-8 flex flex-col items-center text-center sm:mt-12">
               <div className="relative h-40 w-64 overflow-hidden rounded-3xl sm:h-48 sm:w-80">
                 {videoOk ? (

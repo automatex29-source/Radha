@@ -65,7 +65,7 @@ export default function ProjectsPage() {
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
-      <div className="radha-scroll flex-1 overflow-y-auto">
+      <div className="kai-scroll flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
           <PageHero scene="projects" icon={FolderKanban} title="Projects" subtitle="Group conversations, files and knowledge. Krish AI grounds answers in a project's documents.">
             <Dialog open={open} onOpenChange={setOpen}>
@@ -106,7 +106,7 @@ export default function ProjectsPage() {
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {ASSISTANT_TEMPLATES.map((t) => (
                 <button key={t.name} onClick={() => startTemplate(t)} disabled={!!starting} data-testid={`assistant-template-${t.name}`}
-                  className="radha-lift flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 text-left hover:border-primary/50 disabled:opacity-60">
+                  className="kai-lift flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 text-left hover:border-primary/50 disabled:opacity-60">
                   <span className="text-2xl leading-none" aria-hidden>{t.emoji}</span>
                   <span className="min-w-0">
                     <span className="flex items-center gap-1.5 text-sm font-semibold">{t.name}{starting === t.name && <Loader2 className="h-3.5 w-3.5 animate-spin" />}</span>
@@ -131,7 +131,7 @@ export default function ProjectsPage() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {projects.map((p) => (
                   <button key={p.id} data-testid={`project-card-${p.id}`} onClick={() => navigate(`/projects/${p.id}`)}
-                    className="radha-lift group rounded-xl border border-border bg-card p-5 text-left hover:border-primary/50">
+                    className="kai-lift group rounded-xl border border-border bg-card p-5 text-left hover:border-primary/50">
                     <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-strong text-primary transition-colors group-hover:bg-primary group-hover:text-white">
                       <FolderKanban className="h-5 w-5" />
                     </div>

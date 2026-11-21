@@ -97,7 +97,7 @@ class TestServing:
     def test_preview_injects_bridge_and_sandboxes(self):
         resp = apps._serve({"index.html": "<html><head></head><body>x</body></html>"}, "", bridge=True, cache="no-store")
         body = resp.body.decode()
-        assert "radha-preview" in body and body.index("radha-preview") < body.index("<body>")
+        assert "kai-preview" in body and body.index("kai-preview") < body.index("<body>")
         assert resp.headers["content-security-policy"].startswith("sandbox allow-scripts")
         assert "allow-same-origin" not in resp.headers["content-security-policy"]
 

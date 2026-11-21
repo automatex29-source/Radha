@@ -21,7 +21,7 @@ export default function LimitBanner() {
 
   return (
     <div data-testid="limit-banner"
-      className="radha-fade-up mx-auto mb-2 flex w-full max-w-3xl items-center gap-2.5 rounded-xl border border-border bg-surface px-3.5 py-2 text-[13px] text-muted-foreground">
+      className="kai-fade-up mx-auto mb-2 flex w-full max-w-3xl items-center gap-2.5 rounded-xl border border-border bg-surface px-3.5 py-2 text-[13px] text-muted-foreground">
       <span className="relative flex h-2 w-2 shrink-0">
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
         <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />

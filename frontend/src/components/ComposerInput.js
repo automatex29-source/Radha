@@ -179,7 +179,7 @@ export default function ComposerInput({
   return (
     <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-1 sm:px-4 sm:pb-5">
       {(images.length > 0 || attachments.length > 0 || pending.length > 0) && (
-        <div className="radha-scroll -mx-1 mb-2 flex gap-2.5 overflow-x-auto px-1 pb-1 pt-2 sm:flex-wrap sm:overflow-visible" data-testid="composer-attachments">
+        <div className="kai-scroll -mx-1 mb-2 flex gap-2.5 overflow-x-auto px-1 pb-1 pt-2 sm:flex-wrap sm:overflow-visible" data-testid="composer-attachments">
           {groupImages(images).map((img) => img.videoGroup ? (
             <FileCard key={img.videoGroup.id} name={img.videoGroup.name} contentType="video/mp4" testId="composer-video"
               extra={`${img.count} frames · ${img.videoGroup.duration.toFixed(1)}s`}
@@ -215,7 +215,7 @@ export default function ComposerInput({
           disabled={disabled}
           rows={1}
           placeholder={rec.recording ? t("listening") : placeholder || t(agentMode && !narrowScreen() ? "askAnything" : "message")}
-          className="radha-scroll max-h-[200px] w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          className="kai-scroll max-h-[200px] w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
         <div className="flex items-center justify-between gap-1 px-1 pt-1">
           <div className="flex min-w-0 items-center gap-1">

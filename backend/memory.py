@@ -1,9 +1,9 @@
-"""RADHA's memory of the user: facts it keeps across chats.
+"""KRISH's memory of the user: facts it keeps across chats.
 
 Facts are added by hand (the Memory panel, project pages) or learned automatically
 from what the user says ("my shop is in Pune", "call me Raj", "remember that...").
 Learning runs in the background after a message is sent, with a small free model,
-and only when the message looks like it tells RADHA something about the user.
+and only when the message looks like it tells KRISH something about the user.
 The user can see, add and delete every fact, and turn learning off.
 """
 import json
@@ -25,7 +25,7 @@ _MAX_FACT_CHARS = 300
 MAX_FACTS = 1000
 PROMPT_FACTS = 150
 
-# Words that suggest the user is saying something about themselves or asking RADHA to (un)remember.
+# Words that suggest the user is saying something about themselves or asking KRISH to (un)remember.
 _HINT = re.compile(
     r"\b(my|mine|i am|i'm|im|i work|i run|i own|i have|i live|i prefer|i like|i love|i hate|i don'?t like|"
     r"we are|we're|our|call me|name is|remember|forget|don'?t forget|note that|from now on|always|never|"
@@ -145,7 +145,7 @@ async def learn(db, user_id: str, message: str, chat_model: str, ask=None) -> di
 
 
 async def prompt_section(db, user_id: str, project_id: Optional[str]) -> str:
-    """System-prompt text with what RADHA knows about the user, or "" when nothing."""
+    """System-prompt text with what KRISH knows about the user, or "" when nothing."""
     user = await db.users.find_one({"id": user_id}, {"name": 1})
     query = {"userId": user_id, "$or": [{"projectId": None}, {"projectId": project_id}]}
     facts = await db.memories.find(query).sort("createdAt", -1).to_list(PROMPT_FACTS)

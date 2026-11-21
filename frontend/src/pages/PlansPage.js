@@ -254,8 +254,10 @@ export default function PlansPage() {
       toast("Payments open in a day or two. We'll email you the moment Pro and Max are ready.");
       return;
     }
-    // Razorpay takes payments only from krishai.net: a tab still open on Render's own address moves there first.
-    if (/\.onrender\.com$/i.test(window.location.hostname)) {
+    // Razorpay takes payments only from krishai.net: a tab still open on another address of this server moves
+    // there first (local development stays where it is).
+    const host = window.location.hostname;
+    if (host !== "krishai.net" && host !== "www.krishai.net" && !/^(localhost|127\.|\[::1\]|192\.168\.|10\.)/.test(host)) {
       window.location.href = `https://krishai.net${window.location.pathname}${window.location.search}`;
       return;
     }

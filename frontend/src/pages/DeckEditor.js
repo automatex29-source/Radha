@@ -271,16 +271,16 @@ function PrintDeck({ slides, theme, onDone, title }) {
     return () => { cancelled = true; window.removeEventListener("afterprint", after); };
   }, [onDone]);
   return createPortal(
-    <div id="radha-deck-print" ref={ref}>
+    <div id="kai-deck-print" ref={ref}>
       <style>{`
-        #radha-deck-print { position: fixed; left: -100000px; top: 0; }
+        #kai-deck-print { position: fixed; left: -100000px; top: 0; }
         @page { size: ${SLIDE_W}px ${SLIDE_H}px; margin: 0; }
         @media print {
-          body > *:not(#radha-deck-print) { display: none !important; }
+          body > *:not(#kai-deck-print) { display: none !important; }
           html, body { margin: 0 !important; padding: 0 !important; background: none !important; }
-          #radha-deck-print { position: static; }
-          #radha-deck-print .deck-page { width: ${SLIDE_W}px; height: ${SLIDE_H}px; overflow: hidden; break-after: page; page-break-after: always; }
-          #radha-deck-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          #kai-deck-print { position: static; }
+          #kai-deck-print .deck-page { width: ${SLIDE_W}px; height: ${SLIDE_H}px; overflow: hidden; break-after: page; page-break-after: always; }
+          #kai-deck-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
       {slides.map((s, i) => (
@@ -506,9 +506,9 @@ export default function DeckEditor() {
           </DropdownMenu>
         </header>
 
-        <div className="radha-scroll flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <div className="kai-scroll flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
           {/* thumbnails */}
-          <aside className="radha-scroll hidden w-52 shrink-0 space-y-3 overflow-y-auto border-r border-border p-3 lg:block">
+          <aside className="kai-scroll hidden w-52 shrink-0 space-y-3 overflow-y-auto border-r border-border p-3 lg:block">
             {slides.map((s, i) => (
               <div key={s.id} className="group relative">
                 <button onClick={() => selectSlide(i)} data-testid={`deck-thumb-${i}`}
@@ -578,7 +578,7 @@ export default function DeckEditor() {
             </div>
             {tab === "ai" ? (
               <>
-                <div className="radha-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+                <div className="kai-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
                   {chat.length === 0 && (
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground">Tell Krish AI what to change. It edits slide {sel + 1} or the whole deck.</p>
@@ -608,7 +608,7 @@ export default function DeckEditor() {
                 </div>
               </>
             ) : (
-              <div className="radha-scroll min-h-0 flex-1 overflow-y-auto p-3">
+              <div className="kai-scroll min-h-0 flex-1 overflow-y-auto p-3">
                 {draft && current ? (
                   <>
                     <SlideForm draft={draft} setDraft={setDraft} />

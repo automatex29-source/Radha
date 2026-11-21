@@ -1,6 +1,6 @@
 """Core AI runtime data structures.
 
-These provider-agnostic types are the contract between RADHA's chat system
+These provider-agnostic types are the contract between KRISH's chat system
 and any underlying model provider. Adding a new provider must not require
 changing these shapes.
 """
@@ -22,7 +22,7 @@ class AIRequest:
     messages: List[ChatMessage]
     model: str
     system: Optional[str] = None
-    session_id: str = "radha-session"
+    session_id: str = "krish-session"
     max_tokens: int = 4096
     think: object = False  # how hard a reasoning model thinks (agent.llm.reasoning_effort)
     long_answer: bool = False  # code answers get more room, so a whole file isn't cut off

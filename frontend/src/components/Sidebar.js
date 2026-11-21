@@ -150,7 +150,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
       </div>
 
       {/* List */}
-      <div className="radha-scroll flex-1 overflow-y-auto px-3 pb-2">
+      <div className="kai-scroll flex-1 overflow-y-auto px-3 pb-2">
         {/* Phones have no side rail or tab bar: the sections sit at the top of the menu. */}
         {!query.trim() && (
           <div className="md:hidden">

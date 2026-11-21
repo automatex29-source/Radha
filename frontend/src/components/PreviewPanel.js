@@ -59,7 +59,7 @@ function SheetView({ sheets }) {
           ))}
         </div>
       )}
-      <div className="radha-scroll flex-1 overflow-auto">
+      <div className="kai-scroll flex-1 overflow-auto">
         <table className="w-full border-collapse text-xs" data-testid="preview-table">
           {head && (
             <thead className="sticky top-0">
@@ -88,7 +88,7 @@ function SheetView({ sheets }) {
 
 function SlidesView({ slides }) {
   return (
-    <div className="radha-scroll h-full space-y-5 overflow-y-auto p-5" data-testid="preview-slides">
+    <div className="kai-scroll h-full space-y-5 overflow-y-auto p-5" data-testid="preview-slides">
       {slides.map((s) => (
         <div key={s.index}>
           <div className="relative flex aspect-video flex-col overflow-hidden rounded-lg border border-border-strong bg-sunken p-[6%] shadow-lg">
@@ -163,14 +163,14 @@ export default function PreviewPanel({ item, onClose }) {
       srcDoc={`<!doctype html><meta charset="utf-8"><style>${DOC_CSS}</style>${data.html}`} />;
   } else if (data.type === "html") {
     body = tab === "code"
-      ? <pre className="radha-scroll h-full overflow-auto p-4 font-mono text-xs text-brand-soft">{data.html}</pre>
+      ? <pre className="kai-scroll h-full overflow-auto p-4 font-mono text-xs text-brand-soft">{data.html}</pre>
       // No allow-same-origin: the page runs scripts in an isolated origin with no access to Krish AI.
       : <iframe title={item.name} sandbox="allow-scripts allow-forms allow-modals allow-popups" className="h-full w-full bg-white"
           srcDoc={data.html} data-testid="preview-html" />;
   } else if (data.type === "markdown") {
-    body = <div className="radha-prose radha-scroll h-full overflow-y-auto p-6"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{data.text}</ReactMarkdown></div>;
+    body = <div className="kai-prose kai-scroll h-full overflow-y-auto p-6"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ScrollTable }}>{data.text}</ReactMarkdown></div>;
   } else if (data.type === "code") {
-    body = <pre className="radha-scroll h-full overflow-auto whitespace-pre-wrap p-4 font-mono text-xs text-foreground">{data.text}</pre>;
+    body = <pre className="kai-scroll h-full overflow-auto whitespace-pre-wrap p-4 font-mono text-xs text-foreground">{data.text}</pre>;
   } else body = <p className="p-6 text-sm text-muted-foreground">No preview for this file type — download it instead.</p>;
 
   return (

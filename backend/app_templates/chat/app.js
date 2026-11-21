@@ -1,4 +1,4 @@
-// A real AI chat: RADHA.ai answers through Krish AI's free backend (no API key needed).
+// A real AI chat: KRISH.ai answers through Krish AI's free backend (no API key needed).
 const SYSTEM = "You are Nova, a friendly and concise assistant. Answer in short paragraphs.";
 const STARTERS = ["Plan a 3-day trip to Goa", "Explain compound interest simply", "Write a birthday wish for my mom", "Give me a 20-minute workout"];
 const $ = (id) => document.getElementById(id);
@@ -31,7 +31,7 @@ async function ask(text) {
   busy = true;
   render(true);
   try {
-    const answer = await RADHA.ai(text.trim(), { system: SYSTEM, history: history.slice(-11, -1) });
+    const answer = await KRISH.ai(text.trim(), { system: SYSTEM, history: history.slice(-11, -1) });
     history.push({ role: "assistant", content: answer });
   } catch (err) {
     history.push({ role: "assistant", content: "Sorry, I couldn't answer just now: " + err.message });

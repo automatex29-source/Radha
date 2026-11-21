@@ -156,3 +156,8 @@ def test_pages_on_the_onrender_address_move_to_krishai_net(client):
     # The API (health checks, Razorpay's webhook) still answers there, and krishai.net itself isn't redirected.
     assert client.get("/api/", headers={"host": "radha-u4he.onrender.com"}).status_code == 200
     assert client.get("/plans", headers={"host": "krishai.net"}, follow_redirects=False).status_code != 301
+
+
+def test_desktop_downloads_refuse_odd_names(client):
+    assert client.get("/api/download/desktop/..%2Fsecret").status_code == 404
+    assert client.get("/api/download/desktop/.env").status_code == 404

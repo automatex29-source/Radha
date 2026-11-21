@@ -1,3 +1,4 @@
+import "@/lib/migrateStorage"; // first: older saved keys move before anything reads them
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";

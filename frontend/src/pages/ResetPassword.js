@@ -46,8 +46,8 @@ export default function ResetPassword() {
 
   return (
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background px-5 py-10" data-testid="reset-password-page">
-      <div className="radha-orb -top-20 left-1/2 h-64 w-64 -translate-x-1/2 bg-indigo-600/25" />
-      <div className="relative w-full max-w-sm radha-fade-up">
+      <div className="kai-orb -top-20 left-1/2 h-64 w-64 -translate-x-1/2 bg-indigo-600/25" />
+      <div className="relative w-full max-w-sm kai-fade-up">
         <div className="mb-8 flex items-center gap-3">
           <BrandMark className="h-11 w-11" />
           <p className="text-3xl leading-none"><KrishWordmark /></p>

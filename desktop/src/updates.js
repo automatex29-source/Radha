@@ -4,7 +4,7 @@
 // the Mac app says a new version is ready and opens the download.
 const { app, dialog, Notification, shell } = require("electron");
 
-const MAC_DOWNLOAD = "https://github.com/automatex29-source/Radha/releases/download/desktop-latest/Krish-AI-Mac.dmg";
+const MAC_DOWNLOAD = "https://krishai.net/api/download/desktop/Krish-AI-Mac.dmg";
 const EVERY = 4 * 60 * 60 * 1000;
 
 let updater = null;

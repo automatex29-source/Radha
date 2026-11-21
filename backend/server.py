@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import httpx
 import secrets
 import time
 import uuid
@@ -131,7 +132,7 @@ AI_MODEL = (os.environ.get("AI_MODEL")
             or next((m["id"] for m in sorted(AVAILABLE_MODELS, key=lambda m: agent_llm.paid(m["id"]))
                      if agent_llm.configured(m["id"])), "claude-sonnet-5-5"))
 
-# AI Runtime: RADHA -> Router -> Provider -> LLM
+# AI Runtime: KRISH -> Router -> Provider -> LLM
 # Providers use the Emergent Universal Key on Emergent, or LiteLLM with your own
 # keys elsewhere. Adding a provider is a single .register() call.
 model_router = (
@@ -995,6 +996,46 @@ async def billing_invoice_pdf(order_id: str, download: bool = False, user_id: st
     return Response(content=invoices.pdf(pay), media_type="application/pdf", headers={
         "Content-Disposition": f'{"attachment" if download else "inline"}; filename="{invoices.filename(pay)}"',
         "Cache-Control": "private, no-store"})
+
+
+# The desktop app's installers and update files live on a GitHub release. They are served from krishai.net so
+# download links and the app's update checks never show where the code is kept.
+DESKTOP_RELEASE = (os.environ.get("DESKTOP_RELEASE_URL") or
+                   "https://github.com/automatex29-source/Radha/releases/download/desktop-latest").rstrip("/")
+_DESKTOP_FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
+
+
+@api.api_route("/download/desktop/{name}", methods=["GET", "HEAD"])
+async def desktop_download(name: str, request: Request):
+    """Krish-AI-Setup.exe, Krish-AI-Mac.dmg, Krish-AI-Linux.AppImage, latest.yml, ... streamed from the release."""
+    if not _DESKTOP_FILE_RE.match(name) or ".." in name:
+        raise HTTPException(status_code=404, detail="Not found")
+    headers = {k: v for k, v in (("Range", request.headers.get("range")), ("If-None-Match", request.headers.get("if-none-match"))) if v}
+    client = httpx.AsyncClient(timeout=httpx.Timeout(30, read=120), follow_redirects=True)
+    upstream = await client.send(client.build_request(request.method, f"{DESKTOP_RELEASE}/{name}", headers=headers), stream=True)
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=404 if upstream.status_code == 404 else 502, detail="Download not available")
+    keep = {k: upstream.headers[k] for k in ("content-length", "content-range", "accept-ranges", "etag", "last-modified")
+            if k in upstream.headers}
+    keep["Content-Disposition"] = f'attachment; filename="{name}"'
+    keep["Cache-Control"] = "public, max-age=300"
+    ctype = "text/yaml" if name.endswith((".yml", ".yaml")) else "application/octet-stream"
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    if request.method == "HEAD":
+        await upstream.aclose()
+        await client.aclose()
+        return Response(status_code=upstream.status_code, headers=keep, media_type=ctype)
+    return StreamingResponse(body(), status_code=upstream.status_code, headers=keep, media_type=ctype)
 
 
 @api.get("/models")
@@ -1976,9 +2017,9 @@ async def _app_problems(app_id: str):
         if problems:
             yield {"type": "problems", "problems": problems}
             return
-    # Apps on Krish's backend (RADHA.db, .ai, .notify...) aren't pressed: a click could email the owner or change
+    # Apps on Krish's backend (KRISH.db, .ai, .notify...) aren't pressed: a click could email the owner or change
     # real data, and the browser test has no signed-in user. Their static checks still run.
-    if problems or not agent_browser.available() or any("RADHA." in c for c in files.values()):
+    if problems or not agent_browser.available() or any("KRISH." in c or "RADHA." in c for c in files.values()):
         yield {"type": "problems", "problems": problems}
         return
     step_id = f"smoke-{uuid.uuid4().hex[:8]}"
@@ -4003,7 +4044,7 @@ async def delete_memory(mid: str, user_id: str = Depends(current_user_id)):
 
 @api.delete("/memory")
 async def clear_memory(user_id: str = Depends(current_user_id)):
-    """Forget everything RADHA remembers about the user (project memory is kept)."""
+    """Forget everything KRISH remembers about the user (project memory is kept)."""
     res = await db.memories.delete_many({"userId": user_id, "projectId": None})
     return {"ok": True, "deleted": res.deleted_count}
 
@@ -4080,7 +4121,7 @@ async def android_asset_links():
 
 
 # Serve the built frontend (frontend/build) from the same origin, so a single
-# process runs all of RADHA. In development the Vite dev server is used instead.
+# process runs all of KRISH. In development the Vite dev server is used instead.
 FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST") or ROOT_DIR.parent / "frontend" / "build").resolve()
 if (FRONTEND_DIST / "index.html").is_file():
     from fastapi.responses import FileResponse
@@ -4225,7 +4266,7 @@ app.add_middleware(SecurityHeaders)
 
 class CustomDomains:
     """A published app on its owner's own domain (apps.set_domain): any page on that host is the site, and its
-    /api calls (the RADHA backend) reach the API as usual. Plain ASGI, so streamed replies are untouched."""
+    /api calls (the KRISH backend) reach the API as usual. Plain ASGI, so streamed replies are untouched."""
 
     def __init__(self, app):
         self.app = app
