@@ -254,6 +254,11 @@ export default function PlansPage() {
       toast("Payments open in a day or two. We'll email you the moment Pro and Max are ready.");
       return;
     }
+    // Razorpay takes payments only from krishai.net: a tab still open on Render's own address moves there first.
+    if (/\.onrender\.com$/i.test(window.location.hostname)) {
+      window.location.href = `https://krishai.net${window.location.pathname}${window.location.search}`;
+      return;
+    }
     setBuying(planId);
     // Autopay (a monthly Razorpay subscription) unless an offer code is on, or autopay isn't switched on for the
     // Razorpay account yet: then it's a one-time 30-day payment.

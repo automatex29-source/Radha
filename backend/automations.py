@@ -461,7 +461,8 @@ async def recover_lost_runs():
 
 # ----------------------------------------------------------------- delivery
 def _app_url() -> str:
-    return (os.environ.get("APP_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+    import growth_mail
+    return growth_mail.app_url()
 
 
 def _summary_text(auto: dict, run: dict, limit: int) -> str:

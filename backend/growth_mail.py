@@ -124,8 +124,13 @@ def plan_started(app_url: str, name: str, plan: str, until: str) -> tuple:
 
 
 def app_url() -> str:
-    """The app's public address for links and pictures (Render sets RENDER_EXTERNAL_URL by itself)."""
-    return (os.environ.get("APP_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+    """The app's public address for links and pictures in emails: APP_URL, else krishai.net (SITE_URL) when running
+    on Render. Never Render's own onrender.com address: Razorpay refuses payments made there."""
+    if os.environ.get("APP_URL"):
+        return os.environ["APP_URL"].rstrip("/")
+    if os.environ.get("RENDER_EXTERNAL_URL"):
+        return (os.environ.get("SITE_URL") or "https://krishai.net").rstrip("/")
+    return ""
 
 
 async def send(to: str, mail: tuple) -> None:

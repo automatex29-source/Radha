@@ -555,7 +555,7 @@ def _reset_hash(token: str) -> str:
 def _app_url(request: Request) -> str:
     # Prefer a configured address over the request's Host header, so a forged
     # Host can't put someone else's site into the emailed link.
-    url = os.environ.get("APP_URL") or os.environ.get("RENDER_EXTERNAL_URL") or str(request.base_url)
+    url = growth_mail.app_url() or str(request.base_url)
     return url.rstrip("/")
 
 
@@ -4245,6 +4245,28 @@ class CustomDomains:
 
 
 app.add_middleware(CustomDomains)
+
+
+class MainAddress:
+    """Pages opened on Render's own address (radha-xxxx.onrender.com) move to krishai.net (SITE_URL), keeping the
+    path. Razorpay only takes payments from the website registered on the account, so the checkout must never
+    open on the onrender.com copy. /api stays reachable there (health checks, Razorpay's webhook, older apps)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["path"].startswith("/api/") or scope["method"] not in ("GET", "HEAD"):
+            return await self.app(scope, receive, send)
+        host = next((v.decode("latin-1") for k, v in scope.get("headers", []) if k == b"host"), "").split(":")[0]
+        if not host.lower().endswith(".onrender.com") or SITE_URL.split("//")[-1].lower() == host.lower():
+            return await self.app(scope, receive, send)
+        query = scope.get("query_string", b"").decode("latin-1")
+        target = SITE_URL + scope["path"] + (f"?{query}" if query else "")
+        await Response(status_code=301, headers={"Location": target, "Cache-Control": "no-cache"})(scope, receive, send)
+
+
+app.add_middleware(MainAddress)
 
 
 async def _ensure_auth_secret():

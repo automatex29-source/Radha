@@ -148,3 +148,11 @@ def test_financial_year_turns_over_in_april_ist():
     import invoices
     assert invoices.financial_year(datetime.fromisoformat("2027-03-31T18:00:00+00:00")) == "2026-27"
     assert invoices.financial_year(datetime.fromisoformat("2027-03-31T19:00:00+00:00")) == "2027-28"  # 00:30 IST
+
+
+def test_pages_on_the_onrender_address_move_to_krishai_net(client):
+    r = client.get("/plans?x=1", headers={"host": "radha-u4he.onrender.com"}, follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "https://krishai.net/plans?x=1"
+    # The API (health checks, Razorpay's webhook) still answers there, and krishai.net itself isn't redirected.
+    assert client.get("/api/", headers={"host": "radha-u4he.onrender.com"}).status_code == 200
+    assert client.get("/plans", headers={"host": "krishai.net"}, follow_redirects=False).status_code != 301
