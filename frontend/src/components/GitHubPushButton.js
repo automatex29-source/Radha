@@ -10,7 +10,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
 
-const TOKEN_KEY = "radha_github_token";
+const TOKEN_KEY = "kai_github_token";
 const NEW_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo&description=Krish%20AI%20App%20Builder";
 
 const readToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };

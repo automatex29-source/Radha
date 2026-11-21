@@ -6,8 +6,8 @@ import { canInstall, install, onInstallChange } from "@/lib/pwa";
 import { toast } from "sonner";
 import { AppWindow, Check, Download, Keyboard, Link2, Loader2, Power, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 
-// Installers are built by .github/workflows/desktop.yml and kept on one GitHub release, so these links never change.
-const RELEASE = "https://github.com/automatex29-source/Radha/releases/download/desktop-latest";
+// Installers are served from krishai.net (the server streams them from where they are built), so these links never change.
+const RELEASE = "https://krishai.net/api/download/desktop";
 const PLATFORMS = {
   windows: { name: "Windows", file: `${RELEASE}/Krish-AI-Setup.exe`, note: "Windows 10 and 11", shortcut: "Ctrl + Alt + K" },
   mac: { name: "Mac", file: `${RELEASE}/Krish-AI-Mac.dmg`, note: "Apple silicon and Intel, macOS 11 or newer", shortcut: "Option + Command + K" },

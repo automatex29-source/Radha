@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import httpx
 import secrets
 import time
 import uuid
@@ -82,6 +83,7 @@ import setup_status
 import promos
 import referrals
 import growth_mail
+import invoices
 import invite_card
 import connectors
 import connector_tools
@@ -130,7 +132,7 @@ AI_MODEL = (os.environ.get("AI_MODEL")
             or next((m["id"] for m in sorted(AVAILABLE_MODELS, key=lambda m: agent_llm.paid(m["id"]))
                      if agent_llm.configured(m["id"])), "claude-sonnet-5-5"))
 
-# AI Runtime: RADHA -> Router -> Provider -> LLM
+# AI Runtime: KRISH -> Router -> Provider -> LLM
 # Providers use the Emergent Universal Key on Emergent, or LiteLLM with your own
 # keys elsewhere. Adding a provider is a single .register() call.
 model_router = (
@@ -554,7 +556,7 @@ def _reset_hash(token: str) -> str:
 def _app_url(request: Request) -> str:
     # Prefer a configured address over the request's Host header, so a forged
     # Host can't put someone else's site into the emailed link.
-    url = os.environ.get("APP_URL") or os.environ.get("RENDER_EXTERNAL_URL") or str(request.base_url)
+    url = growth_mail.app_url() or str(request.base_url)
     return url.rstrip("/")
 
 
@@ -968,17 +970,72 @@ async def export_account(user_id: str = Depends(current_user_id)):
 
 @api.get("/billing/payments")
 async def billing_payments(user_id: str = Depends(current_user_id)):
-    """Settings > Billing: the user's payments, newest first."""
+    """Settings > Billing: the user's payments, newest first, each with its invoice number."""
+    await invoices.backfill(db, user_id)
     rows = await db.payments.find({"userId": user_id, "status": {"$in": ["paid", "captured"]}},
                                   {"_id": 0, "orderId": 1, "plan": 1, "amount": 1, "currency": 1, "status": 1,
                                    "createdAt": 1, "paidAt": 1, "promoCode": 1, "autopay": 1, "baseAmount": 1,
-                                   "gst": 1, "gstin": 1, "platformFee": 1}).sort("createdAt", -1).to_list(50)
-    return {"payments": [{**r, "planName": limits.PLANS.get(r.get("plan"), {}).get("name", r.get("plan")),
+                                   "gst": 1, "gstin": 1, "platformFee": 1, "invoice.number": 1}).sort("createdAt", -1).to_list(50)
+    return {"payments": [{**{k: v for k, v in r.items() if k != "invoice"},
+                          "invoiceNo": (r.get("invoice") or {}).get("number"),
+                          "planName": limits.PLANS.get(r.get("plan"), {}).get("name", r.get("plan")),
                           "amount": (r.get("amount") or 0) / 100,
                           **({"baseAmount": r["baseAmount"] / 100} if r.get("baseAmount") else {}),
                           **({"gst": r["gst"] / 100} if r.get("gst") else {}),
                           **({"platformFee": r["platformFee"] / 100} if r.get("platformFee") else {})}
                          for r in rows]}
+
+
+@api.get("/billing/invoices/{order_id}.pdf")
+async def billing_invoice_pdf(order_id: str, download: bool = False, user_id: str = Depends(current_user_id)):
+    """Settings > Billing: the invoice of one of the user's payments, as a PDF."""
+    pay = await db.payments.find_one({"orderId": order_id, "userId": user_id, "status": {"$in": ["paid", "captured"]}})
+    if not pay:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    pay["invoice"] = await invoices.assign(db, pay)
+    return Response(content=invoices.pdf(pay), media_type="application/pdf", headers={
+        "Content-Disposition": f'{"attachment" if download else "inline"}; filename="{invoices.filename(pay)}"',
+        "Cache-Control": "private, no-store"})
+
+
+# The desktop app's installers and update files live on a GitHub release. They are served from krishai.net so
+# download links and the app's update checks never show where the code is kept.
+DESKTOP_RELEASE = (os.environ.get("DESKTOP_RELEASE_URL") or
+                   "https://github.com/automatex29-source/Radha/releases/download/desktop-latest").rstrip("/")
+_DESKTOP_FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
+
+
+@api.api_route("/download/desktop/{name}", methods=["GET", "HEAD"])
+async def desktop_download(name: str, request: Request):
+    """Krish-AI-Setup.exe, Krish-AI-Mac.dmg, Krish-AI-Linux.AppImage, latest.yml, ... streamed from the release."""
+    if not _DESKTOP_FILE_RE.match(name) or ".." in name:
+        raise HTTPException(status_code=404, detail="Not found")
+    headers = {k: v for k, v in (("Range", request.headers.get("range")), ("If-None-Match", request.headers.get("if-none-match"))) if v}
+    client = httpx.AsyncClient(timeout=httpx.Timeout(30, read=120), follow_redirects=True)
+    upstream = await client.send(client.build_request(request.method, f"{DESKTOP_RELEASE}/{name}", headers=headers), stream=True)
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=404 if upstream.status_code == 404 else 502, detail="Download not available")
+    keep = {k: upstream.headers[k] for k in ("content-length", "content-range", "accept-ranges", "etag", "last-modified")
+            if k in upstream.headers}
+    keep["Content-Disposition"] = f'attachment; filename="{name}"'
+    keep["Cache-Control"] = "public, max-age=300"
+    ctype = "text/yaml" if name.endswith((".yml", ".yaml")) else "application/octet-stream"
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    if request.method == "HEAD":
+        await upstream.aclose()
+        await client.aclose()
+        return Response(status_code=upstream.status_code, headers=keep, media_type=ctype)
+    return StreamingResponse(body(), status_code=upstream.status_code, headers=keep, media_type=ctype)
 
 
 @api.get("/models")
@@ -1960,9 +2017,9 @@ async def _app_problems(app_id: str):
         if problems:
             yield {"type": "problems", "problems": problems}
             return
-    # Apps on Krish's backend (RADHA.db, .ai, .notify...) aren't pressed: a click could email the owner or change
+    # Apps on Krish's backend (KRISH.db, .ai, .notify...) aren't pressed: a click could email the owner or change
     # real data, and the browser test has no signed-in user. Their static checks still run.
-    if problems or not agent_browser.available() or any("RADHA." in c for c in files.values()):
+    if problems or not agent_browser.available() or any("KRISH." in c or "RADHA." in c for c in files.values()):
         yield {"type": "problems", "problems": problems}
         return
     step_id = f"smoke-{uuid.uuid4().hex[:8]}"
@@ -3987,7 +4044,7 @@ async def delete_memory(mid: str, user_id: str = Depends(current_user_id)):
 
 @api.delete("/memory")
 async def clear_memory(user_id: str = Depends(current_user_id)):
-    """Forget everything RADHA remembers about the user (project memory is kept)."""
+    """Forget everything KRISH remembers about the user (project memory is kept)."""
     res = await db.memories.delete_many({"userId": user_id, "projectId": None})
     return {"ok": True, "deleted": res.deleted_count}
 
@@ -4064,7 +4121,7 @@ async def android_asset_links():
 
 
 # Serve the built frontend (frontend/build) from the same origin, so a single
-# process runs all of RADHA. In development the Vite dev server is used instead.
+# process runs all of KRISH. In development the Vite dev server is used instead.
 FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST") or ROOT_DIR.parent / "frontend" / "build").resolve()
 if (FRONTEND_DIST / "index.html").is_file():
     from fastapi.responses import FileResponse
@@ -4209,7 +4266,7 @@ app.add_middleware(SecurityHeaders)
 
 class CustomDomains:
     """A published app on its owner's own domain (apps.set_domain): any page on that host is the site, and its
-    /api calls (the RADHA backend) reach the API as usual. Plain ASGI, so streamed replies are untouched."""
+    /api calls (the KRISH backend) reach the API as usual. Plain ASGI, so streamed replies are untouched."""
 
     def __init__(self, app):
         self.app = app
@@ -4229,6 +4286,28 @@ class CustomDomains:
 
 
 app.add_middleware(CustomDomains)
+
+
+class MainAddress:
+    """Pages opened on Render's own address (radha-xxxx.onrender.com) move to krishai.net (SITE_URL), keeping the
+    path. Razorpay only takes payments from the website registered on the account, so the checkout must never
+    open on the onrender.com copy. /api stays reachable there (health checks, Razorpay's webhook, older apps)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["path"].startswith("/api/") or scope["method"] not in ("GET", "HEAD"):
+            return await self.app(scope, receive, send)
+        host = next((v.decode("latin-1") for k, v in scope.get("headers", []) if k == b"host"), "").split(":")[0]
+        if not host.lower().endswith(".onrender.com") or SITE_URL.split("//")[-1].lower() == host.lower():
+            return await self.app(scope, receive, send)
+        query = scope.get("query_string", b"").decode("latin-1")
+        target = SITE_URL + scope["path"] + (f"?{query}" if query else "")
+        await Response(status_code=301, headers={"Location": target, "Cache-Control": "no-cache"})(scope, receive, send)
+
+
+app.add_middleware(MainAddress)
 
 
 async def _ensure_auth_secret():

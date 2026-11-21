@@ -33,7 +33,7 @@ export default function AssistantInvite() {
   return (
     <div className="flex h-dvh w-full overflow-hidden krish-canvas max-md:flex-col">
       <IconRail />
-      <div className="radha-scroll flex flex-1 items-center justify-center overflow-y-auto px-4 py-10">
+      <div className="kai-scroll flex flex-1 items-center justify-center overflow-y-auto px-4 py-10">
         <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-sm" data-testid="assistant-invite">
           {error ? <p className="text-sm text-muted-foreground">{error}</p> : !info ? (
             <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />

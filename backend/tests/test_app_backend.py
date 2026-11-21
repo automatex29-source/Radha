@@ -138,7 +138,7 @@ def test_only_the_owners_preview_can_use_the_working_copy(env):
     assert c.post("/api/appdata/app1/db/products", json=item).status_code == 200  # the live rules
     for fake in ("1", "true", appbackend.draft_key("other-app"), "garbage"):
         assert c.post("/api/appdata/app1/db/products", json=item, headers={"X-Radha-Draft": fake}).status_code == 200
-    draft = {"X-Radha-Draft": appbackend.draft_key("app1")}
+    draft = {"X-Krish-Draft": appbackend.draft_key("app1")}
     assert c.post("/api/appdata/app1/db/products", json=item, headers=draft).status_code == 401  # working copy's rules
     # in the owner's preview a signed-in test account is an admin; outside it, the same account is not
     h = token(c, "tester@x.com")
@@ -146,7 +146,7 @@ def test_only_the_owners_preview_can_use_the_working_copy(env):
     assert not c.get("/api/appdata/app1/auth/me", headers=h).json()["isAdmin"]
     # the key is only ever put into preview pages
     assert appbackend.draft_key("app1")[:10] in appdata.sdk_script("app1", draft=True)
-    assert "X-Radha-Draft" in appdata.sdk_script("app1") and "D=null" in appdata.sdk_script("app1")
+    assert "X-Krish-Draft" in appdata.sdk_script("app1") and "D=null" in appdata.sdk_script("app1")
 
 
 def test_owner_only_reads_and_hidden_fields(env):
@@ -214,3 +214,13 @@ def test_function_timeout_and_sandbox_has_no_network(env, monkeypatch):
     put("api/spin.js", "export default async function () { while (true) {} }")
     r = c.post("/api/appdata/app1/api/spin", json={"input": {}}, headers={"X-Radha-Draft": appbackend.draft_key("app1")})
     assert r.status_code == 504
+
+
+def test_the_app_client_is_krish_and_old_apps_keep_working():
+    import appdata
+    new = appdata.sdk_script("app1")
+    assert "window.KRISH=" in new and "RADHA" not in new and "radha" not in new
+    assert appdata.uses_legacy_name({"index.html": "<script>RADHA.db.list('x')</script>"})
+    assert not appdata.uses_legacy_name({"index.html": "<script>KRISH.db.list('x')</script>"})
+    old = appdata.sdk_script("app1", legacy=True)
+    assert 'L="RADHA"' in old and "window[L]=window.KRISH" in old

@@ -29,7 +29,7 @@ VIEWPORT = {"width": 1280, "height": 800}
 
 _SNAPSHOT_JS = """
 (maxElements) => {
-  document.querySelectorAll('[data-radha-ref]').forEach(e => e.removeAttribute('data-radha-ref'));
+  document.querySelectorAll('[data-krish-ref]').forEach(e => e.removeAttribute('data-krish-ref'));
   const sel = 'a[href], button, input:not([type=hidden]), textarea, select, summary, [role=button], [role=link], [role=tab], [role=menuitem], [role=checkbox], [contenteditable=true]';
   const out = [];
   let n = 0;
@@ -39,7 +39,7 @@ _SNAPSHOT_JS = """
     if (r.width < 2 || r.height < 2 || style.visibility === 'hidden' || style.display === 'none') continue;
     if (r.bottom < 0 || r.top > innerHeight * 3) continue;
     n += 1;
-    el.setAttribute('data-radha-ref', String(n));
+    el.setAttribute('data-krish-ref', String(n));
     const tag = el.tagName.toLowerCase();
     const kind = el.getAttribute('role') || (tag === 'input' ? `input[${el.type}]` : tag === 'a' ? 'link' : tag);
     const label = (el.getAttribute('aria-label') || el.innerText || el.value || el.placeholder || el.name || el.title || '')
@@ -197,7 +197,7 @@ class BrowserManager:
     @staticmethod
     def _locator(page, args: dict):
         if args.get("ref") is not None:
-            return page.locator(f'[data-radha-ref="{int(args["ref"])}"]').first
+            return page.locator(f'[data-krish-ref="{int(args["ref"])}"]').first
         if args.get("selector"):
             return page.locator(str(args["selector"])).first
         if args.get("text"):

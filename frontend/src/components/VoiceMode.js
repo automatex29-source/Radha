@@ -13,7 +13,7 @@ const LABELS = {
   speaking: "Speaking… talk or tap to interrupt",
 };
 
-const BARGE_KEY = "radha.voiceBargeIn";
+const BARGE_KEY = "kai.voiceBargeIn";
 const canShareScreen = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getDisplayMedia;
 
 /** One still from the live camera or screen, as a JPEG no wider than 1280px (null if not ready). */
@@ -268,7 +268,7 @@ export default function VoiceMode({ onClose, onUtterance, onCancelReply, voice }
       {error && <p className="mt-2 max-w-md text-center text-xs text-destructive">{error}</p>}
       <div className="mt-6 w-full max-w-lg space-y-3 text-center">
         {heard && <p className="text-sm text-muted-foreground">“{heard}”</p>}
-        {reply && <p className="radha-scroll max-h-40 overflow-y-auto text-sm text-foreground">{speechText(reply)}</p>}
+        {reply && <p className="kai-scroll max-h-40 overflow-y-auto text-sm text-foreground">{speechText(reply)}</p>}
       </div>
 
       <div className="absolute bottom-8 flex flex-col items-center gap-4">

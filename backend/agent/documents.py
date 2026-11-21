@@ -11,7 +11,7 @@ from typing import Any, List, Optional
 
 from markdown_it import MarkdownIt
 
-ACCENT = "6366F1"  # RADHA indigo
+ACCENT = "6366F1"  # KRISH indigo
 MAX_ROWS = 20_000
 MAX_SLIDES = 60
 

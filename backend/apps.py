@@ -7,9 +7,9 @@ Storage (MongoDB):
   app_blobs     content-addressed file versions: {hash, content}
   app_commits   snapshots: {id, appId, parent, message, author, files: {path: hash}}
 
-Preview and published sites are served from RADHA's API origin, so every response
+Preview and published sites are served from KRISH's API origin, so every response
 carries a CSP `sandbox` header: the page runs in an opaque origin and can never
-read RADHA's storage or call its API with the user's session.
+read KRISH's storage or call its API with the user's session.
 """
 import asyncio
 import difflib
@@ -55,7 +55,7 @@ MAX_TOTAL_BYTES = 20 * 1024 * 1024
 PREVIEW_TOKEN_HOURS = 12
 _PATH_RE = re.compile(r"^[A-Za-z0-9_\-. ][A-Za-z0-9_\-./ ]*$")
 SANDBOX_CSP = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-PREVIEW_ORIGIN = "https://app.radha.local/"
+PREVIEW_ORIGIN = "https://app.krish.local/"
 
 TEMPLATES = {
     "blank": {
@@ -217,11 +217,11 @@ DESIGN_GUIDE = (
 
 # Sandboxed pages have an opaque origin, where touching localStorage throws; give them an in-memory one.
 _STORAGE_SHIM = """<script>(function(){try{window.localStorage.getItem("x")}catch(e){function S(){var m={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null},setItem:function(k,v){m[k]=String(v)},removeItem:function(k){delete m[k]},clear:function(){m={}},key:function(i){return Object.keys(m)[i]||null},get length(){return Object.keys(m).length}}}try{Object.defineProperty(window,"localStorage",{value:S(),configurable:true});Object.defineProperty(window,"sessionStorage",{value:S(),configurable:true})}catch(e){}}})();</script>"""
-_CONSOLE_BRIDGE = """<script>(function(){function s(l,a){try{parent.postMessage({source:"radha-preview",level:l,message:Array.prototype.map.call(a,function(x){try{return typeof x==="string"?x:(x instanceof Error?x.message:JSON.stringify(x))}catch(e){return String(x)}}).join(" ")},"*")}catch(e){}}["log","info","warn","error"].forEach(function(l){var o=console[l];console[l]=function(){s(l,arguments);return o.apply(console,arguments)}});addEventListener("error",function(e){s("error",[e.message+(e.filename?" ("+e.filename.split("/").pop()+":"+e.lineno+")":"")])});addEventListener("unhandledrejection",function(e){s("error",["Unhandled promise rejection: "+((e.reason&&e.reason.message)||e.reason)])})})();</script>"""
+_CONSOLE_BRIDGE = """<script>(function(){function s(l,a){try{parent.postMessage({source:"kai-preview",level:l,message:Array.prototype.map.call(a,function(x){try{return typeof x==="string"?x:(x instanceof Error?x.message:JSON.stringify(x))}catch(e){return String(x)}}).join(" ")},"*")}catch(e){}}["log","info","warn","error"].forEach(function(l){var o=console[l];console[l]=function(){s(l,arguments);return o.apply(console,arguments)}});addEventListener("error",function(e){s("error",[e.message+(e.filename?" ("+e.filename.split("/").pop()+":"+e.lineno+")":"")])});addEventListener("unhandledrejection",function(e){s("error",["Unhandled promise rejection: "+((e.reason&&e.reason.message)||e.reason)])})})();</script>"""
 
 # Click to edit: the builder asks the preview to let the user pick an element; the page outlines what's under the
 # pointer and sends back the clicked element (a CSS path, its HTML and text) instead of running the click.
-_PICK_BRIDGE = """<script>(function(){var on=false,box=null,tip=null;function css(e){if(e.id)return"#"+e.id;var p=[];while(e&&e.nodeType===1&&e!==document.body&&p.length<4){var s=e.tagName.toLowerCase();if(e.id){p.unshift("#"+e.id);break}var c=(e.getAttribute("class")||"").trim().split(/\\s+/).filter(function(x){return x&&x.indexOf(":")<0}).slice(0,2);if(c.length)s+="."+c.join(".");var sib=e.parentNode?Array.prototype.filter.call(e.parentNode.children,function(x){return x.tagName===e.tagName}):[];if(sib.length>1)s+=":nth-of-type("+(sib.indexOf(e)+1)+")";p.unshift(s);e=e.parentElement}return p.join(" > ")}function ui(){if(box)return;box=document.createElement("div");box.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #8b5cf6;background:rgba(139,92,246,.12);border-radius:4px;transition:all .06s";tip=document.createElement("div");tip.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;background:#8b5cf6;color:#fff;font:600 11px system-ui;padding:2px 6px;border-radius:4px";document.documentElement.appendChild(box);document.documentElement.appendChild(tip)}function off(){on=false;if(box){box.remove();tip.remove();box=tip=null}document.documentElement.style.cursor=""}function over(ev){if(!on)return;ui();var r=ev.target.getBoundingClientRect();box.style.left=r.left+"px";box.style.top=r.top+"px";box.style.width=r.width+"px";box.style.height=r.height+"px";tip.textContent=ev.target.tagName.toLowerCase()+(ev.target.id?"#"+ev.target.id:"");tip.style.left=r.left+"px";tip.style.top=Math.max(0,r.top-20)+"px"}function click(ev){if(!on)return;ev.preventDefault();ev.stopPropagation();var e=ev.target,h=e.outerHTML||"";if(h.length>700)h=h.slice(0,700)+"…";try{parent.postMessage({source:"radha-preview",kind:"pick",selector:css(e),html:h,text:(e.innerText||"").trim().slice(0,160),tag:e.tagName.toLowerCase(),raw:(e.textContent||"").trim().slice(0,500),leaf:!e.children.length,color:getComputedStyle(e).color,bg:getComputedStyle(e).backgroundColor},"*")}catch(x){}off()}addEventListener("mouseover",over,true);addEventListener("click",click,true);addEventListener("keydown",function(e){if(on&&e.key==="Escape"){off();try{parent.postMessage({source:"radha-preview",kind:"pick-cancel"},"*")}catch(x){}}},true);addEventListener("message",function(e){if(e.source!==parent||!e.data||e.data.source!=="radha-builder")return;if(e.data.pick){on=true;document.documentElement.style.cursor="crosshair"}else off()})})();</script>"""
+_PICK_BRIDGE = """<script>(function(){var on=false,box=null,tip=null;function css(e){if(e.id)return"#"+e.id;var p=[];while(e&&e.nodeType===1&&e!==document.body&&p.length<4){var s=e.tagName.toLowerCase();if(e.id){p.unshift("#"+e.id);break}var c=(e.getAttribute("class")||"").trim().split(/\\s+/).filter(function(x){return x&&x.indexOf(":")<0}).slice(0,2);if(c.length)s+="."+c.join(".");var sib=e.parentNode?Array.prototype.filter.call(e.parentNode.children,function(x){return x.tagName===e.tagName}):[];if(sib.length>1)s+=":nth-of-type("+(sib.indexOf(e)+1)+")";p.unshift(s);e=e.parentElement}return p.join(" > ")}function ui(){if(box)return;box=document.createElement("div");box.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #8b5cf6;background:rgba(139,92,246,.12);border-radius:4px;transition:all .06s";tip=document.createElement("div");tip.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;background:#8b5cf6;color:#fff;font:600 11px system-ui;padding:2px 6px;border-radius:4px";document.documentElement.appendChild(box);document.documentElement.appendChild(tip)}function off(){on=false;if(box){box.remove();tip.remove();box=tip=null}document.documentElement.style.cursor=""}function over(ev){if(!on)return;ui();var r=ev.target.getBoundingClientRect();box.style.left=r.left+"px";box.style.top=r.top+"px";box.style.width=r.width+"px";box.style.height=r.height+"px";tip.textContent=ev.target.tagName.toLowerCase()+(ev.target.id?"#"+ev.target.id:"");tip.style.left=r.left+"px";tip.style.top=Math.max(0,r.top-20)+"px"}function click(ev){if(!on)return;ev.preventDefault();ev.stopPropagation();var e=ev.target,h=e.outerHTML||"";if(h.length>700)h=h.slice(0,700)+"…";try{parent.postMessage({source:"kai-preview",kind:"pick",selector:css(e),html:h,text:(e.innerText||"").trim().slice(0,160),tag:e.tagName.toLowerCase(),raw:(e.textContent||"").trim().slice(0,500),leaf:!e.children.length,color:getComputedStyle(e).color,bg:getComputedStyle(e).backgroundColor},"*")}catch(x){}off()}addEventListener("mouseover",over,true);addEventListener("click",click,true);addEventListener("keydown",function(e){if(on&&e.key==="Escape"){off();try{parent.postMessage({source:"kai-preview",kind:"pick-cancel"},"*")}catch(x){}}},true);addEventListener("message",function(e){if(e.source!==parent||!e.data||e.data.source!=="kai-builder")return;if(e.data.pick){on=true;document.documentElement.style.cursor="crosshair"}else off()})})();</script>"""
 
 
 def init(database):
@@ -255,7 +255,7 @@ def clean_path(path: str) -> str:
     while path.startswith("./"):
         path = path[2:]
     if (not path or len(path) > 200 or path.startswith("/") or ".." in path.split("/") or "//" in path
-            or not _PATH_RE.match(path) or path.split("/")[0] in (".git", ".radha")):
+            or not _PATH_RE.match(path) or path.split("/")[0] in (".git", ".krish", ".radha")):
         raise ValueError(f"Invalid file path '{path}'")
     return path
 
@@ -547,8 +547,10 @@ async def restore(app_id: str, commit_id: str, author: str = "You") -> Optional[
 
 
 def public_origin() -> str:
-    """This server's public address (Render sets RENDER_EXTERNAL_URL), for links in files that leave it."""
-    return (os.environ.get("PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+    """This server's public address for links in files that leave it: PUBLIC_URL, else krishai.net on Render
+    (never Render's own onrender.com address, which users must not see)."""
+    import growth_mail
+    return (os.environ.get("PUBLIC_URL") or "").rstrip("/") or growth_mail.app_url()
 
 
 def portable(files: Dict[str, str]) -> Dict[str, str]:
@@ -567,7 +569,7 @@ def portable(files: Dict[str, str]) -> Dict[str, str]:
 
 async def export_zip(app: dict, include_git: bool = True) -> bytes:
     working = portable(await snapshot(app["id"]))
-    workdir = tempfile.mkdtemp(prefix="radha-export-")
+    workdir = tempfile.mkdtemp(prefix="krish-export-")
     try:
         if include_git:
             commits = await db.app_commits.find({"appId": app["id"]}).sort([("createdAt", 1), ("seq", 1)]).to_list(5000)
@@ -591,7 +593,7 @@ async def export_zip(app: dict, include_git: bool = True) -> bytes:
 
 
 def _build_git_repo(workdir: str, commits: List[dict], contents: Dict[str, Dict[str, str]]):
-    """Real git history (one git commit per RADHA version) via dulwich."""
+    """Real git history (one git commit per KRISH version) via dulwich."""
     from dulwich.objects import Blob, Commit, Tree
     from dulwich.repo import Repo
 
@@ -706,29 +708,29 @@ async def app_prompt(database, app_id: str) -> str:
         + "- Put logic worth testing in plain modules and add tests (e.g. tests/*.test.mjs run with `node --test`, "
         "or Python unittest) and run them with run_command.\n"
         "- When a change works, call commit with a short message describing it.\n"
-        "- Backend: every app already has a database and user accounts with no setup, through the global RADHA "
-        "object (works in the preview and on the published site): await RADHA.auth.signup(email, password, name), "
-        "await RADHA.auth.login(email, password), RADHA.auth.user (null when signed out), RADHA.auth.logout(); "
-        "await RADHA.db.list(collection, {mine: true}) returns [{id, data, ownerId, createdAt}] newest first; "
-        "RADHA.db.add(collection, data, {private: true}), RADHA.db.update(collection, id, data), "
-        "RADHA.db.remove(collection, id). All calls return promises and throw Error with a readable message. "
-        "Filter with RADHA.db.list(collection, {where: {status: 'open'}, limit: 20}); live updates with "
-        "RADHA.db.watch(collection, rows => render(rows)) (returns a stop function). "
+        "- Backend: every app already has a database and user accounts with no setup, through the global KRISH "
+        "object (works in the preview and on the published site): await KRISH.auth.signup(email, password, name), "
+        "await KRISH.auth.login(email, password), KRISH.auth.user (null when signed out), KRISH.auth.logout(); "
+        "await KRISH.db.list(collection, {mine: true}) returns [{id, data, ownerId, createdAt}] newest first; "
+        "KRISH.db.add(collection, data, {private: true}), KRISH.db.update(collection, id, data), "
+        "KRISH.db.remove(collection, id). All calls return promises and throw Error with a readable message. "
+        "Filter with KRISH.db.list(collection, {where: {status: 'open'}, limit: 20}); live updates with "
+        "KRISH.db.watch(collection, rows => render(rows)) (returns a stop function). "
         "Use it when data must be shared between visitors or the app needs accounts; otherwise use localStorage.\n"
         "- More backend, all free and ready, use them to make the app really work instead of faking it: "
-        "await RADHA.ai(prompt, {system, history: [{role, content}]}) returns the AI's answer text ({json: true} "
+        "await KRISH.ai(prompt, {system, history: [{role, content}]}) returns the AI's answer text ({json: true} "
         "returns parsed JSON) for chatbots, writing, summaries, quizzes and recommendations; "
-        "the AI can see pictures: await RADHA.ai(question, {images: [fileInput.files[0]]}) (a File, an <img>, a "
-        "canvas or a RADHA.files link; up to 3) or await RADHA.see(picture, question), for apps that read a photo "
+        "the AI can see pictures: await KRISH.ai(question, {images: [fileInput.files[0]]}) (a File, an <img>, a "
+        "canvas or a KRISH.files link; up to 3) or await KRISH.see(picture, question), for apps that read a photo "
         "(identify a plant or dish, read a receipt or bill, describe a room, check homework, rate an outfit), with "
         "{json: true} to get fields back; show the picture the user picked next to the answer. "
-        "The app can make its own pictures: const url = await RADHA.image(\"watercolour fox reading a book\", "
+        "The app can make its own pictures: const url = await KRISH.image(\"watercolour fox reading a book\", "
         "{width: 1024, height: 768}) gives a link to a new AI picture (it waits until the picture is ready; the same "
         "words always give the same picture, {variant: 2} gives another one) for avatar makers, story books, "
         "product mockups, posters and \"generate\" buttons; show a shimmer placeholder while it's made. "
-        "await RADHA.notify({subject, message, replyTo, ...fields}) emails the app's owner (contact forms, orders, "
-        "bookings, leads) and saves it to their inbox; await RADHA.files.upload(fileInput.files[0]) stores a "
-        "picture or document (max 2 MB) and returns {url, name}; await RADHA.fetch(url, {method, headers, body}) "
+        "await KRISH.notify({subject, message, replyTo, ...fields}) emails the app's owner (contact forms, orders, "
+        "bookings, leads) and saves it to their inbox; await KRISH.files.upload(fileInput.files[0]) stores a "
+        "picture or document (max 2 MB) and returns {url, name}; await KRISH.fetch(url, {method, headers, body}) "
         "calls any public API from the server (no CORS problems) and returns {status, ok, data, text}. "
         "Show a loading state while these run and a friendly message if they fail.\n"
         + BACKEND_GUIDE
@@ -742,7 +744,7 @@ BACKEND_GUIDE = (
     "- Real backend: build it like a software engineer whenever the app takes orders, bookings, payments, "
     "sign-ups, stock, scores, roles, or any data one visitor must not be able to change for another. Never trust "
     "the browser with prices, totals, stock, slots or who may do what.\n"
-    "  1. Data model and rules in backend.json, enforced by the server on every RADHA.db call: "
+    "  1. Data model and rules in backend.json, enforced by the server on every KRISH.db call: "
     "{\"collections\": {\"products\": {\"read\": \"anyone\", \"create\": \"admin\", "
     "\"update\": \"admin\", \"delete\": \"admin\", \"fields\": {\"name\": {\"type\": \"string\", "
     "\"required\": true, \"max\": 80}, \"price\": {\"type\": \"number\", \"min\": 0, \"required\": true}}}, "
@@ -753,10 +755,10 @@ BACKEND_GUIDE = (
     "integer, boolean, email, phone, date, url, ref (to another collection), list, object, any; options: required, "
     "default, min, max, options (a list of allowed values), unique, hidden (only its owner and admins see it). "
     "List every collection the pages use. The owner makes admins in the Data tab (in the preview every signed-in "
-    "account is an admin, so the owner can try it); RADHA.auth.isAdmin is true for admins, "
+    "account is an admin, so the owner can try it); KRISH.auth.isAdmin is true for admins, "
     "so show admin screens (add products, see all orders, change status) only to them.\n"
     "  2. Server code for anything that must be trusted: api/<name>.js, called from the page with "
-    "const result = await RADHA.api(\"<name>\", input). Write it as an ES module: export default async function "
+    "const result = await KRISH.api(\"<name>\", input). Write it as an ES module: export default async function "
     "(input, ctx) { ... return result } with ctx.user ({id, email, name, isAdmin} or null), ctx.db.get(c, id), "
     "ctx.db.list(c, {where, limit, mine}), ctx.db.find(c, where), ctx.db.count(c, where), ctx.db.add(c, data), "
     "ctx.db.update(c, id, data), ctx.db.remove(c, id) (full access, field rules still apply), ctx.ai(prompt), "
@@ -766,7 +768,7 @@ BACKEND_GUIDE = (
     "wrong; read prices from the database, never from the input; check stock or slot clashes before saving. "
     "Add export const examples = [{...}] with one or two realistic inputs: every function is run with them, and "
     "with an empty input, before the user sees the app, and a crash comes back to you to fix.\n"
-    "  3. In the page, show the error message from a failed RADHA.api or RADHA.db call next to the form, disable "
+    "  3. In the page, show the error message from a failed KRISH.api or KRISH.db call next to the form, disable "
     "the button while it runs, and re-load the list after a change.\n"
 )
 
@@ -855,7 +857,7 @@ def _serve(files: Dict[str, str], path: str, bridge: bool, cache: str, app_id: O
         content = jsx_compile.relative_html(path, content, files)
         if uses_kit(content):
             content = _before_body_end(_after_head(content, font_tags(content)), "<script>" + KIT_JS + "</script>")
-        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id, draft=bridge) if app_id else "")
+        inject = _STORAGE_SHIM + (_CONSOLE_BRIDGE + _PICK_BRIDGE if bridge else "") + (appdata.sdk_script(app_id, draft=bridge, legacy=appdata.uses_legacy_name(files)) if app_id else "")
         idx = content.lower().find("<head>")
         content = content[:idx + 6] + inject + content[idx + 6:] if idx >= 0 else inject + content
     return Response(content, media_type=f"{ctype}; charset=utf-8" if ctype.startswith("text/") else ctype, headers=headers)
@@ -1860,16 +1862,16 @@ async def serve_site(slug: str, path: str = ""):
 _IDEAS = [
     (lambda c: "body.dark" not in c and "dark-mode" not in c and "darkmode" not in c and "theme" not in c,
      "Add a dark mode switch", "Add a dark mode switch in the header that remembers the choice."),
-    (lambda c: "radha.auth" not in c and ("<form" in c or "cart" in c or "booking" in c),
-     "Add sign up and login", "Add sign up and login with RADHA.auth, and show the user's name in the header when signed in."),
-    (lambda c: "localstorage" not in c and "radha.db" not in c,
+    (lambda c: "radha.auth" not in c and "krish.auth" not in c and ("<form" in c or "cart" in c or "booking" in c),
+     "Add sign up and login", "Add sign up and login with KRISH.auth, and show the user's name in the header when signed in."),
+    (lambda c: "localstorage" not in c and "radha.db" not in c and "krish.db" not in c,
      "Remember data after refresh", "Save the app's data so it is still there after a page refresh."),
-    (lambda c: "<form" in c and "radha.notify" not in c,
-     "Email me form messages", "When someone sends a form, email it to me with RADHA.notify and show a thank-you message."),
+    (lambda c: "<form" in c and "radha.notify" not in c and "krish.notify" not in c,
+     "Email me form messages", "When someone sends a form, email it to me with KRISH.notify and show a thank-you message."),
     (lambda c: "search" not in c,
      "Add a search bar", "Add a search bar that filters the main list as I type."),
-    (lambda c: "radha.ai" not in c,
-     "Add an AI helper", "Add a small AI helper chat button (bottom right) that answers questions about this app with RADHA.ai."),
+    (lambda c: "radha.ai" not in c and "krish.ai" not in c,
+     "Add an AI helper", "Add a small AI helper chat button (bottom right) that answers questions about this app with KRISH.ai."),
     (lambda c: "chart" not in c and ("<table" in c or "stat" in c or "total" in c),
      "Add charts", "Add a chart (Chart.js) that shows the main numbers visually."),
     (lambda c: "reveal" not in c and "fade-up" not in c and "@keyframes" not in c and "animation" not in c,

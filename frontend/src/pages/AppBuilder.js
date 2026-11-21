@@ -454,7 +454,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, width, pr
   return (
     <aside className={`flex w-[400px] shrink-0 flex-col max-md:!w-full ${hiddenOnPhone ? "max-md:hidden" : ""}`}
       style={width ? { width } : undefined} data-testid="builder-chat">
-      <div ref={scrollRef} className="radha-scroll flex-1 space-y-5 overflow-y-auto px-4 py-5">
+      <div ref={scrollRef} className="kai-scroll flex-1 space-y-5 overflow-y-auto px-4 py-5">
         {messages.length === 0 && !streaming && (
           <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
             <p className="font-semibold text-foreground">What should we build?</p>
@@ -526,7 +526,7 @@ function BuilderChat({ app, appId, onFilesChanged, hiddenOnPhone, ask, width, pr
           <textarea value={input} onChange={(e) => setInput(e.target.value)} onPaste={onPaste} rows={3} data-testid="builder-input"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !window.matchMedia?.("(pointer: coarse)").matches) { e.preventDefault(); send(); } }}
             placeholder="Add a dark mode toggle and save todos in the browser…"
-            className="radha-scroll w-full resize-none bg-transparent px-2 py-1 text-sm focus:outline-none" />
+            className="kai-scroll w-full resize-none bg-transparent px-2 py-1 text-sm focus:outline-none" />
           {images.length > 0 && (
             <div className="flex flex-wrap gap-2.5 px-1 pb-1.5" data-testid="builder-images">
               {images.map((img, i) => (
@@ -611,7 +611,7 @@ function LiveCode({ draft }) {
           <span className="ml-auto rounded-full bg-card/85 px-2 py-0.5 font-mono backdrop-blur">{lines.length} lines</span>
         </div>
       </div>
-      <pre ref={ref} className="radha-scroll max-h-56 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground/90">
+      <pre ref={ref} className="kai-scroll max-h-56 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground/90">
         {lines.slice(-200).join("\n")}<span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-primary align-middle" />
       </pre>
     </div>
@@ -643,7 +643,7 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
 
   useEffect(() => {
     const onMessage = (e) => {
-      if (e.source !== frameRef.current?.contentWindow || e.data?.source !== "radha-preview") return;
+      if (e.source !== frameRef.current?.contentWindow || e.data?.source !== "kai-preview") return;
       if (e.data.kind === "pick") {
         setPicking(false);
         const p = { selector: String(e.data.selector || "").slice(0, 300), html: String(e.data.html || "").slice(0, 800), text: String(e.data.text || "").slice(0, 160),
@@ -666,7 +666,7 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
     const next = !picking;
     setPicking(next);
     setPicked(null);
-    frameRef.current?.contentWindow?.postMessage({ source: "radha-builder", pick: next }, "*");
+    frameRef.current?.contentWindow?.postMessage({ source: "kai-builder", pick: next }, "*");
   };
   const sendChange = (e) => {
     e.preventDefault();
@@ -793,7 +793,7 @@ function PreviewTab({ url, reloadKey, onReload, onFix, appId, onChanged, autoFix
         {intro && <div className="absolute inset-0 z-10"><KrishIntro building={intro === "building"} /></div>}
         {url && (
           <iframe key={reloadKey} ref={frameRef} src={url} title="App preview" data-testid="app-preview-frame"
-            onLoad={() => { if (picking) frameRef.current?.contentWindow?.postMessage({ source: "radha-builder", pick: true }, "*"); }}
+            onLoad={() => { if (picking) frameRef.current?.contentWindow?.postMessage({ source: "kai-builder", pick: true }, "*"); }}
             sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"
             style={width ? { width, maxWidth: "100%" } : undefined}
             className={width ? "h-full shrink-0 rounded-xl border border-border bg-white shadow-lg" : "h-full w-full"} />
@@ -903,7 +903,7 @@ function CodeTab({ appId, files, changes, onSaved }) {
   const dirty = content !== original;
   return (
     <div className="flex h-full">
-      <div className="radha-scroll w-56 shrink-0 overflow-y-auto border-r border-border py-2" data-testid="file-tree">
+      <div className="kai-scroll w-56 shrink-0 overflow-y-auto border-r border-border py-2" data-testid="file-tree">
         <div className="flex items-center justify-between px-3 pb-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Files</span>
           <button onClick={newFile} title="New file" data-testid="new-file" className="text-muted-foreground hover:text-foreground"><FilePlus className="h-3.5 w-3.5" /></button>
@@ -927,7 +927,7 @@ function CodeTab({ appId, files, changes, onSaved }) {
         {loading ? <div className="flex flex-1 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : (
           <textarea value={content} onChange={(e) => setContent(e.target.value)} onKeyDown={onKeyDown} spellCheck={false}
             data-testid="code-editor" disabled={!path}
-            className="radha-scroll flex-1 resize-none bg-background p-4 font-mono text-[12.5px] leading-relaxed text-foreground/90 focus:outline-none" />
+            className="kai-scroll flex-1 resize-none bg-background p-4 font-mono text-[12.5px] leading-relaxed text-foreground/90 focus:outline-none" />
         )}
       </div>
     </div>
@@ -967,7 +967,7 @@ function TerminalTab({ appId }) {
           </button>
         ))}
       </div>
-      <div className="radha-scroll flex-1 space-y-3 overflow-y-auto p-3">
+      <div className="kai-scroll flex-1 space-y-3 overflow-y-auto p-3">
         {entries.length === 0 && <p className="text-muted-foreground">Commands run in a sandbox copy of the app's files (no network). Changes they make aren't saved.</p>}
         {entries.map((e, i) => (
           <div key={i}>
@@ -996,7 +996,7 @@ function DiffView({ diffs }) {
   if (!diffs) return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>;
   if (!diffs.length) return <p className="p-4 text-xs text-muted-foreground">No file changes.</p>;
   return (
-    <div className="radha-scroll h-full space-y-4 overflow-y-auto p-4" data-testid="diff-view">
+    <div className="kai-scroll h-full space-y-4 overflow-y-auto p-4" data-testid="diff-view">
       {diffs.map((d) => (
         <div key={d.path} className="overflow-hidden rounded-lg border border-border">
           <p className="border-b border-border bg-card px-3 py-1.5 font-mono text-xs">
@@ -1037,7 +1037,7 @@ function HistoryTab({ appId, commits, pending, onRestored, focus }) {
 
   return (
     <div className="flex h-full">
-      <div className="radha-scroll w-72 shrink-0 overflow-y-auto border-r border-border" data-testid="commit-list">
+      <div className="kai-scroll w-72 shrink-0 overflow-y-auto border-r border-border" data-testid="commit-list">
         {pending > 0 && (
           <button onClick={() => setSelected("working")} className={`block w-full border-b border-border px-3 py-2.5 text-left ${selected === "working" ? "bg-surface-strong" : "hover:bg-card"}`}>
             <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Unsaved changes</p>

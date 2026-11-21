@@ -14,7 +14,7 @@ export const API = `${BACKEND_URL}/api`;
 /** Absolute URL for an /api path (for links people copy or open in a new tab). */
 export const absoluteUrl = (path) => `${BACKEND_URL || window.location.origin}${path}`;
 
-const TOKEN_KEY = "radha_token";
+const TOKEN_KEY = "kai_token";
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);

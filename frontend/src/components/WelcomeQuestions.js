@@ -259,7 +259,7 @@ export default function WelcomeQuestions() {
       </div>
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-xl flex-col px-5 pb-6 pt-8 sm:justify-center sm:pt-6">
-          <div key={step} className="radha-fade-up">
+          <div key={step} className="kai-fade-up">
           <h1 className="text-[1.35rem] font-extrabold leading-tight tracking-tight text-foreground sm:text-[1.75rem]">{q.title}</h1>
           <p className="mt-1.5 text-[13px] text-muted-foreground sm:text-sm">{q.hint}</p>
           <div className="mt-5">

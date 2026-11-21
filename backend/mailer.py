@@ -36,8 +36,9 @@ def configured() -> bool:
     return p == "resend" or (p == "brevo" and bool(_sender()))
 
 
-async def send(to: str, subject: str, html: str, text: str) -> None:
-    """Send one email. Raises RuntimeError with a readable reason on failure."""
+async def send(to: str, subject: str, html: str, text: str, attachments: list = None) -> None:
+    """Send one email. `attachments` is a list of (file name, base64 content), e.g. an invoice PDF.
+    Raises RuntimeError with a readable reason on failure."""
     p = provider()
     sender = _sender()
     async with httpx.AsyncClient(timeout=20) as client:
@@ -51,6 +52,7 @@ async def send(to: str, subject: str, html: str, text: str) -> None:
                     "subject": subject,
                     "htmlContent": html,
                     "textContent": text,
+                    **({"attachment": [{"name": n, "content": c} for n, c in attachments]} if attachments else {}),
                 },
             )
         elif p == "resend":
@@ -63,6 +65,7 @@ async def send(to: str, subject: str, html: str, text: str) -> None:
                     "subject": subject,
                     "html": html,
                     "text": text,
+                    **({"attachments": [{"filename": n, "content": c} for n, c in attachments]} if attachments else {}),
                 },
             )
         else:

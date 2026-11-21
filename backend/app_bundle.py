@@ -2,7 +2,7 @@
 
 Each page gets everything it needs written into it: its stylesheets as <style>, its scripts as <script> (React and
 other module code bundled by esbuild, packages from esm.sh), the design kit's CSS and motion script, its fonts, and
-the RADHA client pointed at this server so logins, data and AI keep working. A one-page app downloads as that
+the KRISH client pointed at this server so logins, data and AI keep working. A one-page app downloads as that
 page alone; an app with several pages downloads as a ZIP of pages that each work on their own.
 """
 import io
@@ -51,7 +51,7 @@ def _bundle_module(entry: str, files: Dict[str, str]) -> Optional[tuple]:
     esbuild = jsx_compile.esbuild_path()
     if not esbuild:
         return None
-    tmp = tempfile.mkdtemp(prefix="radha-bundle-")
+    tmp = tempfile.mkdtemp(prefix="krish-bundle-")
     try:
         for path, content in files.items():
             target = os.path.join(tmp, "src", path)
@@ -127,7 +127,7 @@ def page(files: Dict[str, str], path: str, app_id: Optional[str] = None, origin:
     if kit:
         html = apps._before_body_end(apps._after_head(html, apps.font_tags(html)), f"<script>\n{_script(apps.KIT_JS)}\n</script>\n")
     if app_id and origin:
-        html = apps._after_head(html, appdata.sdk_script(app_id, origin=origin))
+        html = apps._after_head(html, appdata.sdk_script(app_id, origin=origin, legacy=appdata.uses_legacy_name(files)))
     if not re.search(r"<meta[^>]+charset", html, re.IGNORECASE):
         html = apps._after_head(html, '<meta charset="utf-8">')
     return site_images.rewrite(html, origin), used
@@ -155,7 +155,7 @@ def pages_zip(files: Dict[str, str], root: str, app_id: Optional[str] = None, or
     for p, content in files.items():
         if p in out or p in used or p.endswith((apps.KIT_NAME, apps.KIT_JS_NAME)):
             continue
-        if p.split("/")[0] in ("node_modules", ".radha"):
+        if p.split("/")[0] in ("node_modules", ".krish", ".radha"):
             continue
         out[p] = site_images.rewrite(content, origin) if origin else content
     buf = io.BytesIO()

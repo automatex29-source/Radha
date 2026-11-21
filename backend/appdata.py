@@ -1,15 +1,15 @@
 """A built-in backend for apps made in the App Builder: a document database and user accounts.
 
-Pages served by RADHA (preview and published sites) get a small `RADHA` client (see SDK below):
+Pages served by KRISH (preview and published sites) get a small `KRISH` client (see SDK below):
 
-  await RADHA.auth.signup(email, password, name)   await RADHA.auth.login(email, password)
-  RADHA.auth.user / RADHA.auth.logout()
-  await RADHA.db.list("posts", { mine: true })     await RADHA.db.add("posts", {...}, { private: true })
-  await RADHA.db.update("posts", id, {...})        await RADHA.db.remove("posts", id)
-  RADHA.db.list("posts", { where: {tag: "news"}, limit: 20 })   RADHA.db.watch("posts", rows => ...)
-  RADHA.ai (with {images}) / RADHA.see / RADHA.image / RADHA.notify / RADHA.files / RADHA.fetch are served by appcloud.py.
+  await KRISH.auth.signup(email, password, name)   await KRISH.auth.login(email, password)
+  KRISH.auth.user / KRISH.auth.logout()
+  await KRISH.db.list("posts", { mine: true })     await KRISH.db.add("posts", {...}, { private: true })
+  await KRISH.db.update("posts", id, {...})        await KRISH.db.remove("posts", id)
+  KRISH.db.list("posts", { where: {tag: "news"}, limit: 20 })   KRISH.db.watch("posts", rows => ...)
+  KRISH.ai (with {images}) / KRISH.see / KRISH.image / KRISH.notify / KRISH.files / KRISH.fetch are served by appcloud.py.
 
-The data belongs to the app, not to a RADHA user, and published sites are public, so anyone
+The data belongs to the app, not to a KRISH user, and published sites are public, so anyone
 who opens the app can call these endpoints. Rules: a document created by a signed-in user can
 only be changed or deleted by that user, and a private one is only visible to them. Sizes are
 capped to protect the shared (free-tier) database.
@@ -44,10 +44,10 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 _FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-SDK = """<script>(function(){var A=%s,D=%s,B=(%s||new URL(location.href).origin)+"/api/appdata/"+A,K="radha-user-"+A,T=null,U=null;
-try{var s=JSON.parse(localStorage.getItem(K)||"null");if(s){T=s.token;U=s.user}}catch(e){}
+SDK = """<script>(function(){var A=%s,D=%s,B=(%s||new URL(location.href).origin)+"/api/appdata/"+A,L=%s,K="krish-user-"+A,T=null,U=null;
+try{var s=JSON.parse(localStorage.getItem(K)||(L&&localStorage.getItem(L.toLowerCase()+"-user-"+A))||"null");if(s){T=s.token;U=s.user}}catch(e){}
 function keep(){try{T?localStorage.setItem(K,JSON.stringify({token:T,user:U})):localStorage.removeItem(K)}catch(e){}}
-async function call(m,p,b){var h={"Content-Type":"application/json"};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]=D;
+async function call(m,p,b){var h={"Content-Type":"application/json"};if(T)h.Authorization="Bearer "+T;if(D)h["X-Krish-Draft"]=D;
 var r=await fetch(B+p,{method:m,headers:h,body:b===undefined?undefined:JSON.stringify(b)});var j=null;try{j=await r.json()}catch(e){}
 if(!r.ok)throw new Error((j&&j.detail&&(j.detail.msg||j.detail))||("Request failed ("+r.status+")"));return j}
 function signed(r){T=r.token;U=r.user;keep();return U}
@@ -62,7 +62,7 @@ watch:function(c,cb,o){var on=true,last="";function tick(){if(!on)return;dbApi.l
 if(s!==last){last=s;cb(r)}}).catch(function(){}).then(function(){if(on)setTimeout(tick,(o&&o.every)||4000)})}tick();return function(){on=false}},get:function(c,id){return call("GET",q(c)+"/"+encodeURIComponent(id))},
 add:function(c,d,o){return call("POST",q(c),{data:d,private:!!(o&&o.private)})},update:function(c,id,d){return call("PATCH",q(c)+"/"+encodeURIComponent(id),{data:d})},
 remove:function(c,id){return call("DELETE",q(c)+"/"+encodeURIComponent(id))}};
-async function form(p,fd){var h={};if(T)h.Authorization="Bearer "+T;if(D)h["X-Radha-Draft"]=D;var r=await fetch(B+p,{method:"POST",headers:h,body:fd});var j=null;
+async function form(p,fd){var h={};if(T)h.Authorization="Bearer "+T;if(D)h["X-Krish-Draft"]=D;var r=await fetch(B+p,{method:"POST",headers:h,body:fd});var j=null;
 try{j=await r.json()}catch(e){}if(!r.ok)throw new Error((j&&j.detail&&(j.detail.msg||j.detail))||("Upload failed ("+r.status+")"));return j}
 function pic(x){return new Promise(function(ok,no){if(typeof x==="string"){if(x.indexOf("data:")===0||x.indexOf("/files/")>0)return ok(x);x=Object.assign(new Image(),{crossOrigin:"anonymous",src:x})}
 function draw(el,w,h){var s=Math.min(1,1280/Math.max(w,h)),c=document.createElement("canvas");c.width=Math.round(w*s);c.height=Math.round(h*s);c.getContext("2d").drawImage(el,0,0,c.width,c.height);ok(c.toDataURL("image/jpeg",.85))}
@@ -80,7 +80,7 @@ function notify(m){m=m||{};var x={};for(var k in m)if(["subject","message","repl
 return call("POST","/notify",{subject:m.subject||"",message:m.message||JSON.stringify(x,null,1),replyTo:m.replyTo||m.email||"",fields:x})}
 function rfetch(u,o){o=o||{};return call("POST","/fetch",{url:String(u),method:(o.method||"GET").toUpperCase(),headers:o.headers||{},body:o.body===undefined?null:o.body})}
 function api(n,i){return call("POST","/api/"+encodeURIComponent(n),{input:i===undefined?null:i}).then(function(r){return r.result})}
-window.RADHA={appId:A,auth:auth,db:dbApi,ai:ai,see:see,image:image,files:files,notify:notify,fetch:rfetch,api:api};if(T)auth.refresh();})();</script>"""
+window.KRISH={appId:A,auth:auth,db:dbApi,ai:ai,see:see,image:image,files:files,notify:notify,fetch:rfetch,api:api};if(L)window[L]=window.KRISH;if(T)auth.refresh();})();</script>"""
 
 
 def init(database):
@@ -95,11 +95,18 @@ async def ensure_indexes():
     await db.appdata_users.create_index([("appId", 1), ("email", 1)], unique=True)
 
 
-def sdk_script(app_id: str, draft: bool = False, origin: str = "") -> str:
-    """The RADHA client for a page. `draft` (the builder's preview) runs the working copy's rules and server code;
+LEGACY_NAME = "RADHA"  # what the client was called before; only apps whose own code still uses it get the alias
+
+
+def uses_legacy_name(files) -> bool:
+    return any(LEGACY_NAME + "." in (c or "") for c in (files.values() if isinstance(files, dict) else files))
+
+
+def sdk_script(app_id: str, draft: bool = False, origin: str = "", legacy: bool = False) -> str:
+    """The KRISH client for a page. `draft` (the builder's preview) runs the working copy's rules and server code;
     `origin` is this server's address for a page opened from somewhere else (a downloaded file)."""
     return SDK % (json.dumps(app_id), json.dumps(appbackend.draft_key(app_id)) if draft else "null",
-                  json.dumps(origin) if origin else "null")
+                  json.dumps(origin) if origin else "null", json.dumps(LEGACY_NAME) if legacy else "null")
 
 
 def _now() -> str:

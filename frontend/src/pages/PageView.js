@@ -71,7 +71,7 @@ export default function PageView() {
             )}
 
             <div className="mt-6"><LiveCards items={live} /></div>
-            <div className="radha-prose mt-2 text-[1.02rem]" dir="auto">
+            <div className="kai-prose mt-2 text-[1.02rem]" dir="auto">
               <SourcesContext.Provider value={sources}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SourceChip, table: ScrollTable, pre: DiagramPre }}>{linkCitations(page.content, sources)}</ReactMarkdown>
               </SourcesContext.Provider>

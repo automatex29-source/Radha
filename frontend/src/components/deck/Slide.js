@@ -18,14 +18,14 @@ const MOTION_CSS = "@keyframes deckRise{from{opacity:0;transform:translateY(28px
   "@media (prefers-reduced-motion: reduce){.deck-motion *{animation:none!important}}";
 
 function loadFonts() {
-  if (typeof document === "undefined" || document.getElementById("radha-deck-fonts")) return;
+  if (typeof document === "undefined" || document.getElementById("kai-deck-fonts")) return;
   const link = document.createElement("link");
-  link.id = "radha-deck-fonts";
+  link.id = "kai-deck-fonts";
   link.rel = "stylesheet";
   link.href = FONTS_HREF;
   document.head.appendChild(link);
   const style = document.createElement("style");
-  style.id = "radha-deck-motion";
+  style.id = "kai-deck-motion";
   style.textContent = MOTION_CSS;
   document.head.appendChild(style);
 }

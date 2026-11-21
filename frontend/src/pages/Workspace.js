@@ -961,7 +961,7 @@ export default function Workspace({ mode = null }) {
         </header>
 
         {/* Messages */}
-        <div ref={scrollRef} className={`radha-scroll flex-1 overflow-x-hidden overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
+        <div ref={scrollRef} className={`kai-scroll flex-1 overflow-x-hidden overflow-y-auto ${messages.length === 0 && !streaming && !loadingConv ? "krish-no-scrollbar" : ""}`}>
           {loadingConv ? (
             <div className="flex h-full items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -1175,7 +1175,7 @@ function EmptyState({ onPick }) {
   const items = TOPICS.find((x) => x.id === topic)?.items || [];
   return (
     <div data-testid="empty-state-welcome" className="relative mx-auto flex min-h-full max-w-3xl flex-col justify-center px-3 py-4 sm:px-4">
-      <div className="krish-hero radha-fade-up relative overflow-hidden rounded-3xl border border-border bg-card/60 px-5 py-4 sm:px-8 sm:py-5 [@media(max-height:760px)]:sm:py-3">
+      <div className="krish-hero kai-fade-up relative overflow-hidden rounded-3xl border border-border bg-card/60 px-5 py-4 sm:px-8 sm:py-5 [@media(max-height:760px)]:sm:py-3">
         <div className="krish-aurora" aria-hidden="true"><span /><span /><span /></div>
         <div className="krish-hero-grid" aria-hidden="true" />
         <div className="relative flex items-center gap-3 sm:gap-4 md:gap-8">
@@ -1256,7 +1256,7 @@ function MoodCheckIn({ onPick, pro }) {
     onPick(`I'm feeling ${m.feel} right now.${before}`);
   };
   return (
-    <div data-testid="mood-check-in" className="radha-fade-up relative mt-5 rounded-2xl border border-border bg-card/70 px-4 py-3 shadow-sm backdrop-blur-sm sm:mt-6 sm:px-5">
+    <div data-testid="mood-check-in" className="kai-fade-up relative mt-5 rounded-2xl border border-border bg-card/70 px-4 py-3 shadow-sm backdrop-blur-sm sm:mt-6 sm:px-5">
       <p className="text-sm font-semibold text-foreground max-sm:text-center">
         {last ? <>You felt {last.mood.feel} {when}. How are you now?</> : "How are you feeling right now?"}
       </p>
@@ -1283,7 +1283,7 @@ function CounselEmptyState({ onPick, onBreathe, last, onResume }) {
   const g = useMemo(() => pickGreeting(first), [first]);
   return (
     <div data-testid="counsellor-welcome" className="relative mx-auto flex min-h-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-8 sm:py-8">
-      <div className="radha-fade-up relative flex items-center gap-4 max-md:flex-col-reverse md:gap-10">
+      <div className="kai-fade-up relative flex items-center gap-4 max-md:flex-col-reverse md:gap-10">
         <div className="relative min-w-0 flex-1 max-md:text-center">
           <Sparkle className="absolute -left-7 top-6 h-6 w-6 text-amber-400 max-md:hidden" />
           <h2 className="text-[1.6rem] font-extrabold leading-[1.1] tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem]">

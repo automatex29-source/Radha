@@ -167,7 +167,7 @@ async def run_shell(command: str, files: Optional[Dict[str, Union[str, bytes]]] 
 
 
 async def _run(build_cmd, files: Dict[str, Union[str, bytes]], collect_artifacts: bool, skip=frozenset()) -> RunResult:
-    workdir = Path(tempfile.mkdtemp(prefix="radha-sbx-"))
+    workdir = Path(tempfile.mkdtemp(prefix="krish-sbx-"))
     try:
         _write_files(workdir, files)
         isolated = network_isolation_available()
@@ -232,7 +232,7 @@ async def run_rpc(argv: List[str], files: Dict[str, Union[str, bytes]], start: d
     "status" when handle raises); and ends with {"t": "done", ...}. The child never reaches the network or the
     database itself: everything it needs goes through `handle`, where the caller checks it.
     """
-    workdir = Path(tempfile.mkdtemp(prefix="radha-rpc-"))
+    workdir = Path(tempfile.mkdtemp(prefix="krish-rpc-"))
     logs: List[str] = []
     try:
         _write_files(workdir, files)

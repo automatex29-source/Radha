@@ -276,7 +276,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   if (isUser && editing) {
     const save = () => { const text = draft.trim(); if (!text) return; setEditing(false); if (text !== message.content) onEdit?.(text); };
     return (
-      <div className="flex justify-end radha-fade-up" data-testid={`user-message-editing-${message.id}`}>
+      <div className="flex justify-end kai-fade-up" data-testid={`user-message-editing-${message.id}`}>
         <div className="w-full max-w-[85%] rounded-2xl border border-primary/50 bg-card p-3 shadow-sm">
           <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} dir="auto"
             onKeyDown={(e) => {
@@ -302,7 +302,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
 
   if (isUser) {
     return (
-      <div className="group flex flex-col items-end radha-fade-up" data-testid={`user-message-item-${message.id}`}>
+      <div className="group flex flex-col items-end kai-fade-up" data-testid={`user-message-item-${message.id}`}>
       <div className="flex w-full justify-end gap-3">
         <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-indigo-100 bg-gradient-to-br from-indigo-50 to-violet-50 px-4 py-2.5 text-[0.95rem] leading-relaxed text-foreground shadow-[0_6px_20px_-10px_rgba(99,102,241,0.35)] dark:border-indigo-400/20 dark:from-indigo-500/15 dark:to-violet-500/10 sm:px-5">
           {message.audio?.id && (
@@ -368,7 +368,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
   }
 
   return (
-    <div className="group flex gap-3 radha-fade-up" data-testid={`ai-message-item-${message.id}`}>
+    <div className="group flex gap-3 kai-fade-up" data-testid={`ai-message-item-${message.id}`}>
       {agent ? <AgentAvatar agent={agent} speaking={streaming} className="mt-0.5 h-8 w-8 text-base max-sm:hidden" />
         : <BrandMark className="mt-0.5 h-8 w-8 shrink-0 max-sm:hidden" thinking={streaming} />}
       <div className="min-w-0 flex-1">
@@ -393,7 +393,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
         {(() => {
           const answerBody = (
             message.aiLimit ? <AiLimitCard limit={message.aiLimit} id={message.id} /> : (
-        <div dir="auto" className={`radha-prose krish-answer min-w-0 ${streaming && shown ? "is-streaming" : ""}`}>
+        <div dir="auto" className={`kai-prose krish-answer min-w-0 ${streaming && shown ? "is-streaming" : ""}`}>
           <AnswerStreaming.Provider value={!!streaming}>
             <SourcesContext.Provider value={webSources}>
             <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={math ? math.rehype : undefined} components={{ pre: CodeBlock, a: SourceChip, table: ScrollTable, blockquote: DraftBlock }}>

@@ -27,7 +27,7 @@ export const accentStyle = (scene) => {
 export default function PageHero({ icon: Icon, title, subtitle, children, scene, overlap = false, compact = false, testid }) {
   return (
     <div data-testid={testid} style={accentStyle(scene)}
-      className={`kb-hero radha-fade-up rounded-3xl text-left ${compact ? "px-4 py-3" : `px-4 pt-4 sm:px-7 sm:pt-5 ${overlap ? "pb-12 sm:pb-14" : "pb-4 sm:pb-5"}`}`}>
+      className={`kb-hero kai-fade-up rounded-3xl text-left ${compact ? "px-4 py-3" : `px-4 pt-4 sm:px-7 sm:pt-5 ${overlap ? "pb-12 sm:pb-14" : "pb-4 sm:pb-5"}`}`}>
       <div className="kb-blobs" aria-hidden="true"><i /><i /><i /></div>
       <div className="kb-grid" aria-hidden="true" />
       <div className="kb-shine" aria-hidden="true" />

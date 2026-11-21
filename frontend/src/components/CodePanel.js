@@ -117,7 +117,7 @@ export default function CodePanel({ content, streaming, onClose }) {
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
               </button>
             </div>
-            <pre className="radha-scroll min-h-0 flex-1 overflow-auto bg-sunken p-3 font-mono text-xs leading-relaxed" data-testid="code-panel-code">
+            <pre className="kai-scroll min-h-0 flex-1 overflow-auto bg-sunken p-3 font-mono text-xs leading-relaxed" data-testid="code-panel-code">
               <code>{file.content}</code>
             </pre>
           </div>

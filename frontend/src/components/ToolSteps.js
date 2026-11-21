@@ -95,13 +95,13 @@ function Step({ step }) {
         </button>
         {live && <p className={`krish-rail-live truncate ${mono}`} data-testid="tool-step-live">{live}</p>}
         {open && details && (
-          <div className="mb-1 mt-1 space-y-2 rounded-lg border border-border bg-sunken p-2 radha-fade-up">
+          <div className="mb-1 mt-1 space-y-2 rounded-lg border border-border bg-sunken p-2 kai-fade-up">
             {step.summary && <p className="px-1 text-[11.5px] text-muted-foreground">{step.summary}</p>}
             {step.name === "run_python" && step.args?.code && (
-              <pre className="radha-scroll max-h-64 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] text-foreground/85">{step.args.code}</pre>
+              <pre className="kai-scroll max-h-64 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] text-foreground/85">{step.args.code}</pre>
             )}
             {step.output && (
-              <pre className="radha-scroll max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-2 font-mono text-[11px] text-muted-foreground">{step.output}</pre>
+              <pre className="kai-scroll max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-2 font-mono text-[11px] text-muted-foreground">{step.output}</pre>
             )}
           </div>
         )}
