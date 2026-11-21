@@ -408,8 +408,10 @@ async def gather(user_messages: List[str], search: bool = True, force: bool = Fa
         else:
             jobs["search"] = asyncio.wait_for(_search(text, 8 if force else 5, focus, model),
                                               LOOKUP_TIMEOUT + READ_TIMEOUT)
-        if force and focus == "web" and search_modes.wants_images(text):
-            jobs["images"] = asyncio.wait_for(search_modes.images(text[:150], 6), LOOKUP_TIMEOUT)
+        # Pictures make answers about places, people, products and animals easier to enjoy, like Perplexity's
+        # image strip: with the Search button, and also when Krish searches on its own.
+        if focus == "web" and not writing and search_modes.wants_images(text):
+            jobs["images"] = asyncio.wait_for(search_modes.images(text[:150], 6 if force else 4), LOOKUP_TIMEOUT)
     if focus == "web" and (videos if videos is not None else search and force) and search_modes.wants_videos(text):
         jobs["videos"] = asyncio.wait_for(search_modes.video(video_query(text), 4), LOOKUP_TIMEOUT + 4)
     if not jobs and (writing or not widgets.is_weather(text)):

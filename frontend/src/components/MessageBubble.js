@@ -196,42 +196,107 @@ function SpeakButton({ text, voice, id }) {
   );
 }
 
-/** 👍 / 👎 on one of Krish's answers. A 👎 shares the question and answer with EmpireX to make Krish better. */
-function RateButtons({ message }) {
+// What a 👎 can say was wrong (sent with the rating, and with "Try again" so the new answer fixes it).
+export const DISLIKE_REASONS = ["Off topic", "Forgot what we said", "Wrong or made up", "Didn't do what I asked",
+  "Too long", "Too short", "Boring"];
+
+/** 👍 / 👎 on one of Krish's answers. A 👎 asks what was wrong (a tap, and a note if they like) and, on the
+ * latest answer, offers "Try again", which writes a new answer that fixes it, like ChatGPT. */
+function RateButtons({ message, onFeedback }) {
   const [rating, setRating] = useState(message.rating || null);
   const [busy, setBusy] = useState(false);
+  const send = async (next, extra = {}) => {
+    setBusy(true);
+    try {
+      await api.post(`/conversations/${message.conversationId}/messages/${message.id}/feedback`, { rating: next, ...extra });
+      return true;
+    } catch (e) {
+      toast.error(formatApiError(e));
+      return false;
+    } finally { setBusy(false); }
+  };
   const rate = async (value) => {
     const next = rating === value ? null : value;
     const before = rating;
     setRating(next);
-    setBusy(true);
-    try {
-      await api.post(`/conversations/${message.conversationId}/messages/${message.id}/feedback`, { rating: next });
-      if (next === "down") toast.success("Thanks. We'll use this to make Krish's answers better.");
-    } catch (e) {
-      setRating(before);
-      toast.error(formatApiError(e));
-    } finally { setBusy(false); }
+    if (!(await send(next))) { setRating(before); return; }
+    if (next === "up") toast.success("Thanks! Glad that helped.");
+    onFeedback?.(next === "down");
   };
-  const cls = (on) => `flex h-6 w-6 items-center justify-center rounded-md transition-colors ${on ? "text-primary" : "text-muted-foreground hover:text-foreground"}`;
+  const cls = (on) => `flex h-6 w-6 items-center justify-center rounded-md transition-colors max-md:h-9 max-md:w-9 ${on ? "text-primary" : "text-muted-foreground hover:text-foreground"}`;
   return (
     <span className="flex items-center gap-0.5" data-testid={`rate-${message.id}`}>
       <button type="button" disabled={busy} onClick={() => rate("up")} aria-label="Good answer" aria-pressed={rating === "up"}
         title="Good answer" data-testid={`rate-up-${message.id}`} className={cls(rating === "up")}>
-        <ThumbsUp className={`h-3 w-3 ${rating === "up" ? "fill-current" : ""}`} />
+        <ThumbsUp className={`h-3 w-3 max-md:h-4 max-md:w-4 ${rating === "up" ? "fill-current" : ""}`} />
       </button>
       <button type="button" disabled={busy} onClick={() => rate("down")} aria-label="Bad answer" aria-pressed={rating === "down"}
         title="Bad answer (shares it with EmpireX to improve Krish)" data-testid={`rate-down-${message.id}`} className={cls(rating === "down")}>
-        <ThumbsDown className={`h-3 w-3 ${rating === "down" ? "fill-current" : ""}`} />
+        <ThumbsDown className={`h-3 w-3 max-md:h-4 max-md:w-4 ${rating === "down" ? "fill-current" : ""}`} />
       </button>
     </span>
   );
 }
 
+/** After a 👎: what was wrong? A tap on a reason, an optional note, then Send or (latest answer) Try again. */
+function DislikePanel({ message, onRetry, onClose }) {
+  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (retry) => {
+    setBusy(true);
+    try {
+      await api.post(`/conversations/${message.conversationId}/messages/${message.id}/feedback`,
+        { rating: "down", reason: reason || null, note: note.trim() || null });
+    } catch (e) {
+      toast.error(formatApiError(e));
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    onClose();
+    if (retry && onRetry) onRetry([reason, note.trim()].filter(Boolean).join(": "));
+    else toast.success("Thanks. We'll use this to make Krish's answers better.");
+  };
+  return (
+    <div className="mt-2 rounded-xl border border-border bg-surface p-3" data-testid={`dislike-panel-${message.id}`}>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[12px] font-medium text-foreground">What went wrong?</span>
+        <button type="button" onClick={onClose} aria-label="Close" className="text-[11px] text-muted-foreground hover:text-foreground">Close</button>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {DISLIKE_REASONS.map((r) => (
+          <button key={r} type="button" onClick={() => setReason(reason === r ? "" : r)} aria-pressed={reason === r}
+            data-testid={`dislike-reason-${r.replace(/\W+/g, "-").toLowerCase()}`}
+            className={`rounded-full border px-2.5 py-1 text-[12px] transition-colors max-md:py-1.5 ${reason === r
+              ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-border-strong hover:text-foreground"}`}>
+            {r}
+          </button>
+        ))}
+      </div>
+      <input value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} dir="auto"
+        onKeyDown={(e) => { if (e.key === "Enter" && !busy) submit(!!onRetry); }}
+        placeholder="Tell Krish more (optional)" data-testid={`dislike-note-${message.id}`}
+        className="mt-2 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-[13px] outline-none focus:border-border-strong" />
+      <div className="mt-2 flex justify-end gap-2">
+        <button type="button" disabled={busy} onClick={() => submit(false)} data-testid={`dislike-send-${message.id}`}
+          className="rounded-lg px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground">Send</button>
+        {onRetry && (
+          <button type="button" disabled={busy || (!reason && !note.trim())} onClick={() => submit(true)} data-testid={`dislike-retry-${message.id}`}
+            className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground disabled:opacity-50">
+            Try again
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const PICTURE_TOOLS = new Set(["generate_image", "edit_image"]);
 
-export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, quickReplies, compactSteps = false, agent = null }) {
+export default function MessageBubble({ message, streaming, voiceEnabled, voice, onOpenMedia, codeProject = true, onOpenCode, codeActive, onAsk, onEdit, onRetry, quickReplies, compactSteps = false, agent = null }) {
   const [copied, setCopied] = useState(false);
+  const [disliking, setDisliking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const isUser = message.role === "user";
@@ -436,7 +501,7 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
           </div>
         )}
         {!streaming && message.content && !message.aiLimit && (
-          <div className="mt-2 flex items-center gap-3 max-md:mt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <div className={`mt-2 flex items-center gap-3 max-md:mt-1 transition-opacity focus-within:opacity-100 group-hover:opacity-100 max-md:opacity-100 ${onRetry ? "opacity-100" : "opacity-0"}`}>
             <button onClick={copyMsg} data-testid={`copy-message-button-${message.id}`}
               className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-9 max-md:px-1">
               {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
@@ -444,9 +509,10 @@ export default function MessageBubble({ message, streaming, voiceEnabled, voice,
             </button>
             {voiceEnabled && <SpeakButton text={message.content} voice={voice} id={message.id} />}
             {codeProject && <MakePageButton id={message.id} />}
-            {message.conversationId && message.id !== "streaming" && <RateButtons message={message} />}
+            {message.conversationId && message.id !== "streaming" && <RateButtons message={message} onFeedback={setDisliking} />}
           </div>
         )}
+        {disliking && !streaming && <DislikePanel message={message} onRetry={onRetry} onClose={() => setDisliking(false)} />}
         {!streaming && onAsk && message.related?.length > 0 && (quickReplies
           ? <QuickReplies items={message.related} onAsk={onAsk} id={message.id} />
           : <RelatedQuestions items={message.related} onAsk={onAsk} id={message.id} />)}

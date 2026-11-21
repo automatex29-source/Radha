@@ -252,6 +252,7 @@ class MessageIn(BaseModel):
 
 class RegenerateIn(BaseModel):
     model: Optional[str] = None
+    fix: Optional[str] = Field(default=None, max_length=600)  # what a 👎 said was wrong with the last answer
     agent: bool = False
     think: bool = False
     study: bool = False
@@ -1437,6 +1438,9 @@ ANSWER_SHAPES = (
     "- An explanation (why, how does it work): the one-line answer first, then two or three short paragraphs "
     "or bullets, each starting with its key idea in **bold**, and an everyday example.\n"
     "- A long answer with several parts: short ### headings so it can be skimmed, never more than four.\n"
+    "Make answers a pleasure to read: where it helps, add one vivid everyday example, a quick comparison or a "
+    "surprising fact the user likely didn't know, and a fitting emoji now and then in casual chats (never in serious "
+    "or sad ones), but never padding.\n"
     "Use the conversation: when the user says \"it\", \"that one\" or \"and in Delhi?\", answer about what you "
     "were just discussing, and don't repeat what you already told them."
 )
@@ -1555,6 +1559,15 @@ def now_line(now: Optional[datetime] = None) -> str:
     return (f"Right now it is {local.strftime('%A, %d %B %Y')}, {local.strftime('%I:%M %p').lstrip('0')} in India "
             "(IST). Use this for \"today\", \"tomorrow\", ages, countdowns and anything time-sensitive; if the user "
             "is somewhere else, convert.")
+
+
+def retry_note(fix: str) -> str:
+    """For "Try again" after a 👎: what the user said was wrong with the last answer, so the new one fixes it."""
+    said = re.sub(r"\s+", " ", fix).strip()[:600]
+    return ("The user tapped \"Try again\" because they didn't like your last answer to this message. What was "
+            f"wrong, in their words: \"{said}\". Write a new answer that fixes exactly that: re-read the whole chat "
+            "and the latest message, answer what they actually asked, and keep it in their language. Don't apologise "
+            "at length or mention the earlier answer; just give the better one.")
 
 
 THINK_PROMPT = (
@@ -2310,7 +2323,7 @@ def _builder_summary(steps: list) -> str:
 async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: Optional[str] = None,
                    max_steps: Optional[int] = None, think: bool = False, study: bool = False,
                    voice: bool = False, voice_lang: Optional[str] = None, web: bool = False,
-                   focus: str = "web", pro: bool = False):
+                   focus: str = "web", pro: bool = False, fix: Optional[str] = None):
     """Generate the assistant's reply to a conversation, as SSE-formatted chunks.
 
     If the conversation belongs to a project, relevant document chunks (RAG) and
@@ -2560,6 +2573,8 @@ async def run_turn(conv_id: str, model: str, agent: bool = False, extra_system: 
     understood = understand.prompt_note(reading, last_user or "")
     if understood:
         system_parts.append(understood)
+    if fix and fix.strip():
+        system_parts.append(retry_note(fix))
     if base is SYSTEM_PROMPT and not voice and not coding and not study and any(_study_ask(t) for t in asks):
         # Study mode asks its own check question after each idea; a known class or exam needs no asking.
         system_parts.append(STUDY_CLOSE_KNOWN if (study_mode.clean(student) or {}).get("level") else STUDY_CLOSE_NOTE)
@@ -2828,9 +2843,9 @@ async def _live_response(conv_id: str, user_id: str, turn) -> StreamingResponse:
 async def _stream_response(conv_id: str, user_id: str, model: str, agent: bool = False, think: bool = False,
                            study: bool = False, voice: bool = False, voice_lang: Optional[str] = None,
                            web: bool = False, focus: str = "web", pro: bool = False,
-                           notice: str = "") -> StreamingResponse:
+                           notice: str = "", fix: Optional[str] = None) -> StreamingResponse:
     turn = run_turn(conv_id, model, agent, think=think, study=study, voice=voice, voice_lang=voice_lang, web=web,
-                    focus=focus, pro=pro)
+                    focus=focus, pro=pro, fix=fix)
     return await _live_response(conv_id, user_id, _with_notice(notice, turn) if notice else turn)
 
 
@@ -3207,7 +3222,7 @@ async def regenerate_message(conv_id: str, body: RegenerateIn, user_id: str = De
             return await _code_edit_response(conv_id, user_id, model, *edit)
 
     return await _stream_response(conv_id, user_id, model, agent=body.agent, think=body.think, study=body.study, web=body.web,
-                            focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""))
+                            focus=body.focus, pro=body.pro, notice=conv.get("_notice", ""), fix=body.fix)
 
 
 @api.post("/conversations/{conv_id}/messages/{message_id}/edit")
@@ -3236,6 +3251,8 @@ async def edit_message(conv_id: str, message_id: str, body: EditIn, user_id: str
 
 class FeedbackIn(BaseModel):
     rating: Optional[Literal["up", "down"]] = None  # None takes the rating back
+    reason: Optional[str] = Field(default=None, max_length=60)  # a 👎's reason chip ("Off topic")
+    note: Optional[str] = Field(default=None, max_length=500)  # ...and what the user wrote
 
 
 @api.post("/conversations/{conv_id}/messages/{message_id}/feedback")
@@ -3254,6 +3271,8 @@ async def rate_message(conv_id: str, message_id: str, body: FeedbackIn, user_id:
         await db.message_feedback.insert_one({
             "messageId": message_id, "conversationId": conv_id, "userId": user_id, "rating": body.rating,
             "model": msg.get("model"), "createdAt": now_iso(),
+            **({"reason": body.reason.strip()} if body.rating == "down" and (body.reason or "").strip() else {}),
+            **({"note": body.note.strip()} if body.rating == "down" and (body.note or "").strip() else {}),
             **({"question": (question or {}).get("content", "")[:400], "answer": (msg.get("content") or "")[:600]}
                if body.rating == "down" else {}),
         })

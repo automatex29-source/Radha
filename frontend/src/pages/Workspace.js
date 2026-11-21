@@ -872,7 +872,8 @@ export default function Workspace({ mode = null }) {
   const sendRef = useRef(sendMessage);
   sendRef.current = sendMessage;
 
-  const regenerate = async ({ withWeb = false } = {}) => {
+  // `fix` is what a 👎 said was wrong ("Off topic: I asked about the second phone"); the new answer fixes it.
+  const regenerate = async ({ withWeb = false, fix = "" } = {}) => {
     if (!activeId || streaming || tooManyStreams()) return;
     setMessages((m) => {
       const copy = [...m];
@@ -880,7 +881,7 @@ export default function Workspace({ mode = null }) {
       return copy;
     });
     const search = withWeb ? { web: true, focus, pro } : searchOpts();
-    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...search }, activeId);
+    await runStream(`${API}/conversations/${activeId}/regenerate`, { model, agent: agentAvailable, think: think && !counselling, study: study && !counselling, ...search, ...(fix ? { fix } : {}) }, activeId);
   };
 
   // Edit an earlier question (like ChatGPT): the answers after it go, and Krish answers the new wording.
@@ -974,6 +975,7 @@ export default function Workspace({ mode = null }) {
               {messages.map((m, i) => <MessageBubble key={m.id} message={m} voiceEnabled={speechEnabled} onOpenMedia={setPreviewItem}
                 onEdit={!streaming && m.role === "user" && !String(m.id).startsWith("tmp-") ? (text) => editMessage(m.id, text) : undefined}
                 onAsk={i === messages.length - 1 && !streaming ? (q) => sendMessage(q) : undefined}
+                onRetry={i === messages.length - 1 && !streaming && m.role === "assistant" ? (fix) => regenerate({ fix }) : undefined}
                 onOpenCode={() => setCodePanel(m.id === latestCode?.id ? "live" : m.id)}
                 codeActive={!!codePanel && panelMessage?.id === m.id} quickReplies={counselling}
                 agent={chatAgent} voice={chatAgent?.voice} />)}
