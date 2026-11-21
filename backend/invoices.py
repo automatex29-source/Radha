@@ -8,7 +8,7 @@ get their number the first time the Billing page lists them.
 
 With a GSTIN set (see billing.gstin) the PDF is a Tax Invoice with the 18% GST split into CGST 9% and SGST 9%
 (an online sale to a person whose state isn't known is taxed where the seller is). Without one it is a plain
-invoice that says GST wasn't charged.
+invoice.
 
 Optional settings (Render > Environment), printed on every invoice:
   BUSINESS_NAME      the legal name of the seller (default EmpireX)
@@ -295,12 +295,6 @@ def pdf(pay: dict) -> bytes:
     y += 15
     text(L, y, "Amount in words", 8, True, MUTED)
     text(L, y + 4.5, in_words(amt["total"]), 9.3, True, w=W)
-    y += 14
-    note = ("GST at 18% is charged on the plan's taxable value, as shown above." if taxed else
-            "GST not charged: the seller is not registered under GST.")
-    text(L, y, note, 8.5, color=MUTED, w=W)
-    if amt["fee"]:
-        text(L, y + 4.4, "The platform fee covers the payment gateway's charges.", 8.5, color=MUTED, w=W)
 
     # Footer
     fy = doc.h - 30

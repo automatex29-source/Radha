@@ -11,10 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import MemoryDialog from "@/components/MemoryDialog";
+import ReceiptMachine from "@/components/settings/ReceiptMachine";
 import { toast } from "sonner";
 import {
-  Bell, Blocks, Brain, Check, ChevronLeft, ChevronRight, CreditCard, Crown, Download, FileText, Gauge, Languages,
-  Loader2, LogOut, Monitor, Moon, Pencil, Plug, Settings, Shield, Smartphone, Sun, Trash2, User,
+  Bell, Blocks, Brain, Check, ChevronLeft, ChevronRight, CreditCard, Crown, Download, Gauge, Languages,
+  Loader2, LogOut, Monitor, Receipt, Moon, Pencil, Plug, Settings, Shield, Smartphone, Sun, Trash2, User,
 } from "lucide-react";
 import { canInstall, install, isIos, isStandalone, onInstallChange, pushSupported, turnVerseOff, turnVerseOn, verseOn } from "@/lib/pwa";
 
@@ -399,9 +400,11 @@ function Billing({ onClose }) {
   const navigate = useNavigate();
   const [payments, setPayments] = useState(null);
   const [autopay, setAutopay] = useState(null);
+  const [renewable, setRenewable] = useState(false); // auto-renew can be set up (Razorpay Subscriptions on)
   const [stopping, setStopping] = useState(false);
+  const [receipt, setReceipt] = useState(null); // the payment whose receipt is printing
   useEffect(() => { api.get("/billing/payments").then(({ data }) => setPayments(data.payments)).catch(() => setPayments([])); }, []);
-  useEffect(() => { api.get("/usage").then(({ data }) => setAutopay(data.autopay)).catch(() => {}); }, []);
+  useEffect(() => { api.get("/usage").then(({ data }) => { setAutopay(data.autopay); setRenewable(!!data.autopayOn); }).catch(() => {}); }, []);
   const stopAutopay = async () => {
     if (!window.confirm(`Turn off autopay? You keep ${autopay.planName} until ${fmtDate(user.planExpiresAt)}, then go back to Basic.`)) return;
     setStopping(true);
@@ -433,6 +436,13 @@ function Billing({ onClose }) {
   };
   const plan = user?.plan || "basic";
   const plans = () => { onClose(); navigate("/plans"); };
+  // The auto-renew switch: off stops autopay; on goes to Plans, where one payment sets up the monthly renewal.
+  const toggleRenew = (on) => {
+    if (!on) { if (autopay) stopAutopay(); return; }
+    if (!renewable) { toast("Auto-renew is coming soon. Until then, renew from the Plans page when your days end."); return; }
+    toast("Pick your plan and pay once. It then renews every month by itself.");
+    plans();
+  };
 
   return (
     <>
@@ -457,53 +467,41 @@ function Billing({ onClose }) {
           {plan === "max" ? "See plans" : plan === "pro" ? "Renew or move to Max" : "Upgrade to Pro"}
         </Button>
       </div>
-      <Block title="Autopay" icon={CreditCard} testid="billing-autopay"
-        hint={autopay ? `On: ₹${autopay.amount} every month for ${autopay.planName}, through Razorpay (UPI Autopay or card). Krish never stores your card.`
-          : "Off. Paid plans renew every month by UPI Autopay or card once you turn it on from the Plans page."}>
-        {autopay && (
-          <Button variant="outline" onClick={stopAutopay} disabled={stopping} className="h-9 rounded-lg" data-testid="billing-autopay-off">
-            {stopping ? <Loader2 className="h-4 w-4 animate-spin" /> : "Turn off autopay"}
-          </Button>
-        )}
+      <Block title="Auto-renew" icon={CreditCard} testid="billing-autopay"
+        hint={autopay ? `On. ₹${autopay.amount} every month for ${autopay.planName}, by UPI Autopay or card through Razorpay. Krish never stores your card.`
+          : renewable ? "Off. Turn it on and your plan renews every month by itself, by UPI Autopay or card."
+            : "Off. Auto-renew is coming soon; for now, renew from the Plans page when your days end."}
+        right={stopping ? <Loader2 className="mt-1 h-4 w-4 animate-spin text-muted-foreground" />
+          : <Switch checked={!!autopay} onCheckedChange={toggleRenew} aria-label="Auto-renew" data-testid="billing-autopay-switch" />}>
       </Block>
       <Block title="Payments and invoices" testid="billing-history"
-        hint="Every payment has an invoice. We email it to you too.">
+        hint="Tap a payment to see its receipt and invoice. We email every invoice to you too.">
         {payments === null ? <Loader2 className="h-4 w-4 animate-spin text-primary" />
           : payments.length === 0 ? <p className="text-[13px] text-muted-foreground">No payments yet.</p>
             : (
               <div className="overflow-hidden rounded-xl border border-border">
                 {payments.map((p) => (
-                  <div key={p.orderId} className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 text-sm last:border-0">
-                    <div className="min-w-0">
-                      <p className="font-medium">Krish {p.planName}, {p.autopay ? "monthly autopay" : "30 days"}</p>
-                      <p className="text-xs text-muted-foreground">{fmtDate(p.paidAt || p.createdAt)}{p.promoCode ? ` · ${p.promoCode}` : ""}{p.invoiceNo ? ` · ${p.invoiceNo}` : ""}</p>
-                      {(p.gst > 0 || p.platformFee > 0) && (
-                        <p className="text-xs text-muted-foreground" data-testid="billing-gst">
-                          ₹{p.baseAmount.toFixed(2)}
-                          {p.gst > 0 && ` + ₹${p.gst.toFixed(2)} GST (18%)`}
-                          {p.platformFee > 0 && ` + ₹${p.platformFee.toFixed(2)} platform fee`}
-                          {p.gst > 0 && ` · GSTIN ${p.gstin}`}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1.5">
-                      <span className="tabular-nums font-medium">₹{p.amount}</span>
-                      <div className="flex gap-1.5">
-                        <Button variant="outline" size="sm" className="h-7 rounded-lg px-2.5 text-xs" disabled={!!opening}
-                          onClick={() => invoice(p, false)} data-testid="billing-invoice-view">
-                          {opening === p.orderId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><FileText className="mr-1 h-3.5 w-3.5" />Invoice</>}
-                        </Button>
-                        <Button variant="outline" size="sm" className="h-7 w-7 rounded-lg p-0" disabled={!!opening} aria-label="Download invoice"
-                          onClick={() => invoice(p, true)} data-testid="billing-invoice-download">
-                          {opening === p.orderId + ":d" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                        </Button>
+                  <button type="button" key={p.orderId} onClick={() => setReceipt(p)} data-testid="billing-payment"
+                    className="group flex w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left text-sm transition-colors last:border-0 hover:bg-surface-strong/60 active:scale-[0.995]">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <Receipt className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-medium">Krish {p.planName}, {p.autopay ? "monthly autopay" : "30 days"}</p>
+                        <p className="truncate text-xs text-muted-foreground">{fmtDate(p.paidAt || p.createdAt)}{p.invoiceNo ? ` · ${p.invoiceNo}` : ""}{p.promoCode ? ` · ${p.promoCode}` : ""}</p>
                       </div>
                     </div>
-                  </div>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <span className="tabular-nums font-medium">₹{p.amount}</span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                    </span>
+                  </button>
                 ))}
               </div>
             )}
       </Block>
+      <ReceiptMachine payment={receipt} onClose={() => setReceipt(null)} onInvoice={invoice} opening={opening} />
       <p className="text-xs text-muted-foreground">Questions about a payment? See the <a href="/refunds" target="_blank" rel="noreferrer" className="underline">refund policy</a>.</p>
     </>
   );
